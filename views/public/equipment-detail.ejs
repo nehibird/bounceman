@@ -1,0 +1,245 @@
+<%- include('../layouts/public', { body: `
+
+<!-- Breadcrumb -->
+<section class="py-3" style="background:white;border-bottom:1px solid #eee">
+  <div class="container">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-0" style="font-size:14px">
+        <li class="breadcrumb-item"><a href="/" style="color:var(--bm-blue)">Home</a></li>
+        <li class="breadcrumb-item"><a href="/equipment" style="color:var(--bm-blue)">Equipment</a></li>
+        <li class="breadcrumb-item active" aria-current="page">${item.name}</li>
+      </ol>
+    </nav>
+  </div>
+</section>
+
+<!-- Equipment Detail -->
+<section class="py-5">
+  <div class="container">
+    <div class="row g-5">
+
+      <!-- Left Column: Image Gallery -->
+      <div class="col-lg-7">
+        <div class="bg-white rounded-4 overflow-hidden shadow-sm">
+          <div id="mainImageWrap" style="position:relative;width:100%;padding-top:66%;overflow:hidden;background:#f0f0f0">
+            <img id="mainImage"
+              src="${images.length > 0 ? images.find(i => i.is_primary)?.image_path || images[0].image_path : '/assets/images/placeholder-bounce.svg'}"
+              alt="${item.name}"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover">
+          </div>
+          ${images.length > 1 ? `
+          <div class="d-flex gap-2 p-3 flex-wrap" id="thumbRow">
+            ${images.map((img, i) => `
+              <img src="${img.image_path}" alt="${item.name} photo ${i + 1}"
+                class="img-thumb" data-src="${img.image_path}"
+                style="width:80px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${img.is_primary ? 'var(--bm-orange)' : 'transparent'};opacity:${img.is_primary ? '1' : '0.6'};transition:all 0.2s">
+            `).join('')}
+          </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- Right Column: Info & Booking -->
+      <div class="col-lg-5">
+        <span class="badge-category mb-3 d-inline-block">${(item.category || '').replace(/_/g, ' ')}</span>
+        <h1 style="color:var(--bm-blue);font-size:32px;font-weight:700;margin-bottom:12px">${item.name}</h1>
+        <p class="text-muted" style="font-size:16px;line-height:1.6">${item.short_description || ''}</p>
+
+        <!-- Price Tiers -->
+        <div class="row g-3 mb-3">
+          <div class="col-4">
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+              <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">4 Hours</div>
+              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
+            </div>
+          </div>
+          <div class="col-4">
+            <div style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative">
+              <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bm-orange);color:white;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px">POPULAR</div>
+              <div style="font-size:12px;opacity:0.8;font-weight:600;text-transform:uppercase">Full Day</div>
+              <div style="font-size:24px;font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
+            </div>
+          </div>
+          <div class="col-4">
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+              <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">Overnight</div>
+              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Specs Grid -->
+        <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+          <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-clipboard-list me-2"></i>Specifications</h6>
+          <div class="row g-3">
+            ${item.dimensions ? `
+            <div class="col-6">
+              <div class="text-muted small">Dimensions</div>
+              <div style="font-weight:600"><i class="fas fa-ruler-combined me-1" style="color:var(--bm-orange)"></i>${item.dimensions}</div>
+            </div>
+            ` : ''}
+            ${item.capacity_kids ? `
+            <div class="col-6">
+              <div class="text-muted small">Capacity</div>
+              <div style="font-weight:600"><i class="fas fa-child me-1" style="color:var(--bm-orange)"></i>Up to ${item.capacity_kids} kids</div>
+            </div>
+            ` : ''}
+            ${item.age_range ? `
+            <div class="col-6">
+              <div class="text-muted small">Age Range</div>
+              <div style="font-weight:600"><i class="fas fa-birthday-cake me-1" style="color:var(--bm-orange)"></i>${item.age_range}</div>
+            </div>
+            ` : ''}
+            ${item.setup_time_min ? `
+            <div class="col-6">
+              <div class="text-muted small">Setup Time</div>
+              <div style="font-weight:600"><i class="fas fa-clock me-1" style="color:var(--bm-orange)"></i>${item.setup_time_min} min</div>
+            </div>
+            ` : ''}
+            ${item.power_required ? `
+            <div class="col-6">
+              <div class="text-muted small">Power</div>
+              <div style="font-weight:600"><i class="fas fa-bolt me-1" style="color:var(--bm-orange)"></i>${item.power_required}</div>
+            </div>
+            ` : ''}
+            ${item.weight_lbs ? `
+            <div class="col-6">
+              <div class="text-muted small">Weight</div>
+              <div style="font-weight:600"><i class="fas fa-weight-hanging me-1" style="color:var(--bm-orange)"></i>${item.weight_lbs} lbs</div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- Check Availability -->
+        <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+          <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-calendar-alt me-2"></i>Check Availability</h6>
+          <div class="input-group">
+            <input type="text" id="availDate" class="form-control" placeholder="Select a date..." readonly style="border-radius:12px 0 0 12px">
+            <button id="checkAvailBtn" class="btn" style="background:var(--bm-blue);color:white;border-radius:0 12px 12px 0;font-weight:600">
+              <i class="fas fa-search me-1"></i>Check
+            </button>
+          </div>
+          <div id="availResult" class="mt-3" style="display:none"></div>
+        </div>
+
+        <!-- Book Button -->
+        <a href="/booking?items=${item.id}" class="btn btn-book-now btn-lg w-100 mb-3">
+          <i class="fas fa-calendar-check me-2"></i>Book This Item
+        </a>
+
+        ${item.deposit_amount ? `
+        <p class="text-center text-muted small"><i class="fas fa-info-circle me-1"></i>A $${parseFloat(item.deposit_amount).toFixed(0)} deposit is required to reserve.</p>
+        ` : ''}
+      </div>
+
+    </div>
+
+    <!-- Full Description -->
+    ${item.description ? `
+    <div class="bg-white rounded-4 p-4 p-md-5 shadow-sm mt-5">
+      <h3 style="color:var(--bm-blue);font-weight:700;margin-bottom:20px">About This Rental</h3>
+      <div style="line-height:1.8;color:#555">${item.description}</div>
+    </div>
+    ` : ''}
+
+    <!-- Reviews -->
+    ${reviews.length > 0 ? `
+    <div class="mt-5">
+      <div class="section-title">
+        <h2>Customer Reviews</h2>
+      </div>
+      <div class="row g-4">
+        ${reviews.map(r => `
+        <div class="col-md-6">
+          <div class="testimonial-card">
+            <div class="stars mb-2">${'&#9733;'.repeat(r.rating)}${'&#9734;'.repeat(5 - r.rating)}</div>
+            <p>"${r.comment || 'Great experience!'}"</p>
+            <strong>${r.customer_name || 'Happy Customer'}</strong>
+            ${r.event_date ? '<span class="text-muted small ms-2">' + r.event_date + '</span>' : ''}
+          </div>
+        </div>
+        `).join('')}
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- Related Equipment -->
+    ${related.length > 0 ? `
+    <div class="mt-5">
+      <div class="section-title">
+        <h2>You Might Also Like</h2>
+      </div>
+      <div class="row g-4">
+        ${related.slice(0, 3).map(r => `
+        <div class="col-md-4">
+          <div class="equipment-card">
+            <img src="${r.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${r.name}">
+            <div class="card-body">
+              <span class="badge-category mb-2">${(r.category || '').replace(/_/g, ' ')}</span>
+              <h5 class="card-title mt-2">${r.name}</h5>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <span class="price-tag">From $${parseFloat(r.price_4hr || r.price_daily * 0.65).toFixed(0)}</span>
+                <a href="/equipment/${r.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
+              </div>
+            </div>
+          </div>
+        </div>
+        `).join('')}
+      </div>
+    </div>
+    ` : ''}
+
+  </div>
+</section>
+
+`, scripts: `
+<script>
+  // Image gallery switching
+  document.querySelectorAll('.img-thumb').forEach(function(thumb) {
+    thumb.addEventListener('click', function() {
+      var src = this.getAttribute('data-src');
+      document.getElementById('mainImage').src = src;
+      document.querySelectorAll('.img-thumb').forEach(function(t) {
+        t.style.border = '3px solid transparent';
+        t.style.opacity = '0.6';
+      });
+      this.style.border = '3px solid var(--bm-orange)';
+      this.style.opacity = '1';
+    });
+  });
+
+  // Flatpickr date picker
+  flatpickr('#availDate', {
+    minDate: 'today',
+    dateFormat: 'Y-m-d',
+    disableMobile: true
+  });
+
+  // Availability check
+  document.getElementById('checkAvailBtn').addEventListener('click', function() {
+    var date = document.getElementById('availDate').value;
+    var resultDiv = document.getElementById('availResult');
+    if (!date) {
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = '<div class="alert alert-warning mb-0 py-2"><i class="fas fa-exclamation-triangle me-1"></i>Please select a date first.</div>';
+      return;
+    }
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div class="text-center text-muted py-2"><i class="fas fa-spinner fa-spin me-1"></i>Checking...</div>';
+
+    fetch('/check-availability?item_id=${item.id}&date=' + encodeURIComponent(date))
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.available) {
+          resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2"><i class="fas fa-check-circle me-1"></i>Available on ' + date + '! <a href="/booking?items=${item.id}&date=' + date + '" class="alert-link">Book now</a></div>';
+        } else {
+          resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-times-circle me-1"></i>Sorry, not available on ' + date + '. Try another date.</div>';
+        }
+      })
+      .catch(function() {
+        resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-exclamation-circle me-1"></i>Could not check availability. Please try again.</div>';
+      });
+  });
+</script>
+` }) %>

@@ -1,0 +1,52 @@
+<%- include('../layouts/public', { body: `
+
+<section class="py-5">
+  <div class="container">
+    <div class="section-title">
+      <h2>Our Equipment</h2>
+      <p>Browse our inventory and find the perfect rental for your event</p>
+    </div>
+
+    <!-- Category Filter -->
+    <div class="text-center mb-4">
+      <a href="/equipment" class="btn ${activeCategory === 'all' ? 'btn-bm' : 'btn-outline-secondary'} rounded-pill m-1">All</a>
+      ${categories.map(c => `
+        <a href="/equipment?category=${c.slug}" class="btn ${activeCategory === c.slug ? 'btn-bm' : 'btn-outline-secondary'} rounded-pill m-1">${c.name}</a>
+      `).join('')}
+    </div>
+
+    <div class="row g-4">
+      ${equipment.length > 0 ? equipment.map(item => `
+      <div class="col-md-6 col-lg-4">
+        <div class="equipment-card">
+          <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
+          <div class="card-body">
+            <span class="badge-category mb-2">${(item.category || '').replace(/_/g, ' ')}</span>
+            <h5 class="card-title mt-2">${item.name}</h5>
+            <p class="text-muted small mb-2">${item.short_description || ''}</p>
+            <div class="small text-muted mb-3">
+              ${item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : ''}
+              ${item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : ''}
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+              <div>
+                <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill me-1">Details</a>
+                <a href="/booking?items=${item.id}" class="btn btn-sm btn-bm rounded-pill">Book</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      `).join('') : `
+      <div class="col-12 text-center py-5">
+        <div style="font-size:80px;opacity:0.3">🎪</div>
+        <h4 class="text-muted">No equipment available yet</h4>
+        <p class="text-muted">Check back soon — we're adding inventory!</p>
+      </div>
+      `}
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

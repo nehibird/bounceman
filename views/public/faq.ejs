@@ -1,0 +1,246 @@
+<%- include('../layouts/public', { body: `
+
+<!-- FAQ Hero -->
+<section class="hero-section" style="padding:60px 0">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1>Frequently Asked <span>Questions</span></h1>
+        <p>Everything you need to know about renting from Bounce Man. If you do not see your question here, just reach out!</p>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div style="font-size:140px;opacity:0.3">❓</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ Accordion -->
+<section class="py-5" style="padding-top:2rem !important">
+  <div class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-9">
+        <div class="accordion accordion-flush" id="faqAccordion" style="background:white;border-radius:20px;box-shadow:0 8px 30px rgba(0,0,0,0.08);overflow:hidden">
+
+          <!-- Q1 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-calendar-alt me-3" style="color:var(--bm-orange);width:20px"></i>
+                How far in advance should I book?
+              </button>
+            </h2>
+            <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                We recommend booking at least <strong>1-2 weeks in advance</strong>, especially during peak season (May through September). Weekends fill up fast, and popular units like our water slides can be booked out weeks ahead. That said, if you need something last minute, give us a call — we will do our best to accommodate you!
+              </div>
+            </div>
+          </div>
+
+          <!-- Q2 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-box-open me-3" style="color:var(--bm-orange);width:20px"></i>
+                What is included in the rental price?
+              </button>
+            </h2>
+            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Every rental includes <strong>delivery, professional setup, takedown, and pickup</strong>. We also sanitize every unit after each use. You do not need to worry about inflating, anchoring, or breaking anything down — we handle it all. The only thing not included is an electrical outlet (standard 110V household outlet within 50 feet of setup).
+              </div>
+            </div>
+          </div>
+
+          <!-- Q3 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-truck me-3" style="color:var(--bm-orange);width:20px"></i>
+                Do you deliver and set up?
+              </button>
+            </h2>
+            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Yes! Delivery, setup, and pickup are all part of our service. Delivery is <strong>FREE in Tonkawa</strong>. For surrounding areas like Ponca City, Stillwater, Blackwell, Newkirk, and Enid, there is a small delivery fee based on distance. Check our <a href="/service-areas" style="color:var(--bm-orange);font-weight:600">Service Areas</a> page for exact pricing.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q4 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-mountain me-3" style="color:var(--bm-orange);width:20px"></i>
+                What surfaces can inflatables be set up on?
+              </button>
+            </h2>
+            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Inflatables work best on <strong>flat, level grass</strong> — that is the ideal setup surface. We can also set up on concrete, asphalt, or dirt using sandbags instead of stakes. We <strong>cannot</strong> set up on gravel, steep slopes, or surfaces near power lines or trees with low branches. We will assess your setup location when we arrive to make sure it is safe.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q5 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-cloud-rain me-3" style="color:var(--bm-orange);width:20px"></i>
+                What happens if it rains?
+              </button>
+            </h2>
+            <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                A little drizzle usually is not a problem — kids actually love a slightly wet bounce house! However, if there is <strong>lightning, thunderstorms, or high winds (25+ mph)</strong>, we will need to deflate the unit for safety. In the case of severe weather, we offer a <strong>full refund or free reschedule</strong> to another date. We monitor weather forecasts and will communicate with you ahead of time if conditions look concerning.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q6 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-plug me-3" style="color:var(--bm-orange);width:20px"></i>
+                Do I need to provide power?
+              </button>
+            </h2>
+            <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Yes. Inflatables require a continuous-running electric blower to stay inflated. You will need a <strong>standard 110V household outlet</strong> within about 50 feet of the setup location. Each unit uses its own dedicated outlet (please do not share with other high-draw appliances). If you are setting up at a park or venue without power, let us know — we can discuss generator options.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q7 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq7" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-hourglass-half me-3" style="color:var(--bm-orange);width:20px"></i>
+                How long is a rental period?
+              </button>
+            </h2>
+            <div id="faq7" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Our standard rental is for <strong>up to 8 hours</strong> within a single day. We typically deliver and set up 1-2 hours before your event start time and pick up within a couple hours after your event ends. Need it longer? Multi-day and extended rentals are available at a discounted rate — just ask!
+              </div>
+            </div>
+          </div>
+
+          <!-- Q8 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq8" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-weight-hanging me-3" style="color:var(--bm-orange);width:20px"></i>
+                Is there an age or weight limit?
+              </button>
+            </h2>
+            <div id="faq8" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Each unit has its own <strong>capacity and weight limits</strong>, which are listed on the equipment detail page. Most standard bounce houses are designed for children ages 3-12. Some larger units and obstacle courses can handle teens and adults. We always recommend separating smaller children from older kids for safety. An adult should supervise at all times.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q9 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq9" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-hand-holding-dollar me-3" style="color:var(--bm-orange);width:20px"></i>
+                Do you require a deposit?
+              </button>
+            </h2>
+            <div id="faq9" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Yes, a <strong>small deposit</strong> is required at the time of booking to hold your date. The remaining balance is due before the day of delivery. We accept all major credit/debit cards and digital payments. The deposit amount is shown during the checkout process.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q10 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq10" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-shield-halved me-3" style="color:var(--bm-orange);width:20px"></i>
+                Are you insured?
+              </button>
+            </h2>
+            <div id="faq10" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Absolutely. Bounce Man LLC carries <strong>full commercial general liability insurance</strong>. We can provide a Certificate of Insurance (COI) upon request if your venue or park requires one. Safety and professionalism are at the core of everything we do.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q11 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq11" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-ban me-3" style="color:var(--bm-orange);width:20px"></i>
+                What is your cancellation policy?
+              </button>
+            </h2>
+            <div id="faq11" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                <ul style="padding-left:20px;margin:0">
+                  <li><strong>7+ days before:</strong> Full deposit refund</li>
+                  <li><strong>3-6 days before:</strong> 50% deposit refund or full credit toward a future date</li>
+                  <li><strong>Less than 3 days:</strong> Deposit is non-refundable, but we will try to reschedule</li>
+                  <li><strong>Weather cancellations:</strong> Full refund or free reschedule — always</li>
+                </ul>
+                <p style="margin:12px 0 0">See our <a href="/how-it-works" style="color:var(--bm-orange);font-weight:600">How It Works</a> page for full details.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q12 -->
+          <div class="accordion-item" style="border-bottom:1px solid #f0f0f0">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq12" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-layer-group me-3" style="color:var(--bm-orange);width:20px"></i>
+                Can I rent multiple items?
+              </button>
+            </h2>
+            <div id="faq12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                Of course! Many customers rent a bounce house plus a water slide, or add tables and chairs to their bounce house booking. You can add multiple items during the booking process. We also offer <a href="/packages" style="color:var(--bm-orange);font-weight:600">package deals</a> that bundle popular items together at a discounted price.
+              </div>
+            </div>
+          </div>
+
+          <!-- Q13 -->
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq13" style="font-weight:700;font-size:16px;color:var(--bm-blue);padding:20px 25px">
+                <i class="fas fa-broom me-3" style="color:var(--bm-orange);width:20px"></i>
+                How do I clean up after the event?
+              </button>
+            </h2>
+            <div id="faq13" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body" style="padding:0 25px 20px 62px;color:#555;line-height:1.8">
+                You do not have to! We handle all the cleanup. When your rental time is up, our team returns to deflate, pack up, and haul everything away. The only thing we ask is that you <strong>remove any debris, food, or personal items</strong> from inside the inflatable before we arrive for pickup. We take care of the rest.
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /accordion -->
+
+        <!-- Still have questions? -->
+        <div class="text-center mt-5">
+          <div style="background:var(--bm-gradient-cool);border-radius:20px;padding:40px;color:white">
+            <i class="fas fa-comments" style="font-size:40px;color:var(--bm-yellow);margin-bottom:15px"></i>
+            <h4 style="font-weight:700">Still Have Questions?</h4>
+            <p style="opacity:0.9;max-width:400px;margin:10px auto 20px">We are always happy to help. Reach out and we will get back to you quickly.</p>
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+              <a href="/contact" class="btn rounded-pill px-4" style="background:white;color:var(--bm-blue);font-weight:700"><i class="fas fa-envelope me-2"></i>Contact Us</a>
+              ${settings.company_phone ? '<a href="tel:' + settings.company_phone + '" class="btn rounded-pill px-4" style="background:var(--bm-yellow);color:#333;font-weight:700"><i class="fas fa-phone me-2"></i>Call Now</a>' : ''}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

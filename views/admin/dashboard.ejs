@@ -1,0 +1,106 @@
+<%- include('../layouts/admin', { body: `
+
+<!-- Stats Row -->
+<div class="row g-4 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Today's Events</div>
+          <div class="stat-value">${stats.todayBookings}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-calendar-day"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Month Revenue</div>
+          <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-dollar-sign"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Pending Bookings</div>
+          <div class="stat-value">${stats.pendingBookings}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-clock"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Total Customers</div>
+          <div class="stat-value">${stats.totalCustomers}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-users"></i></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row g-4 mb-4">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-calendar-check me-2"></i>Upcoming Events</span>
+        <a href="/admin/bookings" class="btn btn-sm btn-bm">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead><tr><th>Date</th><th>Customer</th><th>Time</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${upcoming.length > 0 ? upcoming.map(b => `
+              <tr>
+                <td><strong>${b.event_date}</strong></td>
+                <td>${b.first_name} ${b.last_name}</td>
+                <td>${b.event_start_time} - ${b.event_end_time}</td>
+                <td><span class="badge-status badge-${b.status}">${b.status}</span></td>
+                <td><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
+              </tr>
+              `).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No upcoming events</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card mb-4">
+      <div class="card-header"><i class="fas fa-bolt me-2"></i>Quick Actions</div>
+      <div class="card-body d-grid gap-2">
+        <a href="/admin/bookings?status=pending" class="btn btn-warning btn-sm"><i class="fas fa-clock me-2"></i>Pending (${stats.pendingBookings})</a>
+        <a href="/admin/equipment/new" class="btn btn-bm btn-sm"><i class="fas fa-plus me-2"></i>Add Equipment</a>
+        <a href="/admin/calendar" class="btn btn-outline-primary btn-sm"><i class="fas fa-calendar me-2"></i>View Calendar</a>
+        <a href="/admin/reviews" class="btn btn-outline-secondary btn-sm"><i class="fas fa-star me-2"></i>Reviews (${stats.pendingReviews} pending)</a>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><i class="fas fa-info-circle me-2"></i>Inventory</div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <span>Total Equipment</span><strong>${stats.totalEquipment}</strong>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Unsigned Contracts</span><strong class="text-warning">${stats.unsignedContracts}</strong>
+        </div>
+        <div class="d-flex justify-content-between">
+          <span>Week Bookings</span><strong>${stats.weekBookings}</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+`, scripts: '' }) %>

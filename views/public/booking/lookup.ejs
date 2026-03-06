@@ -1,0 +1,198 @@
+<%- include('../../layouts/public', { body: `
+
+<style>
+  .lookup-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); max-width: 500px; margin: 0 auto; }
+  .result-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 24px; }
+  .result-card h5 { color: var(--bm-blue); font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #f0f0f0; }
+  .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f8f8f8; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .label { color: #777; }
+  .detail-row .value { font-weight: 600; }
+
+  .status-badge { padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; display: inline-block; }
+  .status-pending { background: #fef3c7; color: #92400e; }
+  .status-confirmed { background: #d1fae5; color: #065f46; }
+  .status-completed { background: #dbeafe; color: #1e40af; }
+  .status-cancelled { background: #fee2e2; color: #991b1b; }
+
+  .payment-table { width: 100%; border-collapse: collapse; }
+  .payment-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  .payment-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+
+  .booking-num-display { font-size: 24px; font-weight: 700; color: var(--bm-blue); letter-spacing: 2px; }
+  .form-control { border: 2px solid #e9ecef; border-radius: 12px; padding: 12px 16px; transition: border-color 0.2s; }
+  .form-control:focus { border-color: var(--bm-orange); box-shadow: 0 0 0 3px rgba(255,107,53,0.1); }
+</style>
+
+<section class="py-5">
+  <div class="container">
+
+    <div class="section-title">
+      <h2>Look Up Your Booking</h2>
+      <p>Enter your booking number and email to view your reservation</p>
+    </div>
+
+    ${!booking && !error ? '<!-- Lookup Form -->' +
+    '<div class="lookup-card">' +
+      '<form action="/booking/lookup" method="POST">' +
+        '<div class="mb-3">' +
+          '<label class="form-label fw-bold">Booking Number</label>' +
+          '<input type="text" class="form-control" name="booking_number" required placeholder="e.g. BM-2026-0001" autofocus>' +
+        '</div>' +
+        '<div class="mb-4">' +
+          '<label class="form-label fw-bold">Email Address</label>' +
+          '<input type="email" class="form-control" name="email" required placeholder="john@example.com">' +
+        '</div>' +
+        '<button type="submit" class="btn btn-book-now w-100">' +
+          '<i class="fas fa-search me-2"></i>Look Up Booking' +
+        '</button>' +
+      '</form>' +
+    '</div>' : ''}
+
+    ${error ? '<!-- Error Alert -->' +
+    '<div class="alert alert-danger text-center" style="max-width:500px;margin:0 auto 24px;border-radius:12px;">' +
+      '<i class="fas fa-exclamation-circle me-2"></i>' + error +
+    '</div>' +
+    '<div class="lookup-card">' +
+      '<form action="/booking/lookup" method="POST">' +
+        '<div class="mb-3">' +
+          '<label class="form-label fw-bold">Booking Number</label>' +
+          '<input type="text" class="form-control" name="booking_number" required placeholder="e.g. BM-2026-0001" autofocus>' +
+        '</div>' +
+        '<div class="mb-4">' +
+          '<label class="form-label fw-bold">Email Address</label>' +
+          '<input type="email" class="form-control" name="email" required placeholder="john@example.com">' +
+        '</div>' +
+        '<button type="submit" class="btn btn-book-now w-100">' +
+          '<i class="fas fa-search me-2"></i>Try Again' +
+        '</button>' +
+      '</form>' +
+    '</div>' : ''}
+
+    ${booking ? '<!-- Booking Found -->' +
+    '<div class="row justify-content-center">' +
+      '<div class="col-lg-8">' +
+
+        '<!-- Booking Header -->' +
+        '<div class="result-card text-center">' +
+          '<div class="booking-num-display mb-2">' + booking.booking_number + '</div>' +
+          '<span class="status-badge status-' + (booking.status || 'pending') + '">' +
+            (booking.status || 'pending') +
+          '</span>' +
+        '</div>' +
+
+        '<!-- Event Details -->' +
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-calendar me-2"></i>Event Details</h5>' +
+          '<div class="detail-row">' +
+            '<span class="label">Event Date</span>' +
+            '<span class="value">' + (booking.event_date || '') + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Time</span>' +
+            '<span class="value">' + (booking.event_start_time || '') + ' - ' + (booking.event_end_time || '') + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Event Type</span>' +
+            '<span class="value">' + (booking.event_type || '') + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<!-- Items -->' +
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-box me-2"></i>Rental Items</h5>' +
+          (items && items.length > 0 ? items.map(function(item) {
+            return '<div class="detail-row">' +
+              '<span class="label">' + item.item_name + '</span>' +
+              '<span class="value">$' + parseFloat(item.unit_price).toFixed(2) + '</span>' +
+            '</div>';
+          }).join('') : '<p class="text-muted">No items on record</p>') +
+        '</div>' +
+
+        '<!-- Pricing Summary -->' +
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-receipt me-2"></i>Pricing</h5>' +
+          '<div class="detail-row">' +
+            '<span class="label">Subtotal</span>' +
+            '<span class="value">$' + parseFloat(booking.subtotal || 0).toFixed(2) + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Delivery Fee</span>' +
+            '<span class="value">' + (parseFloat(booking.delivery_fee || 0) === 0 ? 'FREE' : '$' + parseFloat(booking.delivery_fee).toFixed(2)) + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Tax</span>' +
+            '<span class="value">$' + parseFloat(booking.tax_amount || 0).toFixed(2) + '</span>' +
+          '</div>' +
+          '<div class="detail-row" style="font-weight:700;font-size:18px;color:var(--bm-blue);">' +
+            '<span>Total</span>' +
+            '<span>$' + parseFloat(booking.total || 0).toFixed(2) + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<!-- Payment History -->' +
+        (payments && payments.length > 0 ?
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-credit-card me-2"></i>Payment History</h5>' +
+          '<table class="payment-table">' +
+            '<thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>' +
+            '<tbody>' +
+            payments.map(function(p) {
+              return '<tr>' +
+                '<td>' + (p.date || '') + '</td>' +
+                '<td>' + (p.method || '') + '</td>' +
+                '<td>$' + parseFloat(p.amount || 0).toFixed(2) + '</td>' +
+                '<td><span class="status-badge status-' + (p.status || 'pending') + '" style="font-size:11px;padding:3px 10px;">' + (p.status || '') + '</span></td>' +
+              '</tr>';
+            }).join('') +
+            '</tbody>' +
+          '</table>' +
+        '</div>' : '') +
+
+        '<!-- Contract Status -->' +
+        (contract ?
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-file-signature me-2"></i>Rental Agreement</h5>' +
+          '<div class="d-flex justify-content-between align-items-center">' +
+            '<div>' +
+              '<span class="fw-bold">' + (contract.signed ? 'Signed' : 'Awaiting Signature') + '</span>' +
+              (contract.signed_at ? '<br><span class="text-muted small">Signed on ' + contract.signed_at + '</span>' : '') +
+            '</div>' +
+            (contract.signed ?
+              '<span class="status-badge status-completed"><i class="fas fa-check me-1"></i>Complete</span>' :
+              '<a href="/contract/' + (contract.id || booking.id || '') + '" class="btn btn-book-now btn-sm rounded-pill"><i class="fas fa-pen me-1"></i>Sign Now</a>'
+            ) +
+          '</div>' +
+        '</div>' : '') +
+
+        '<!-- Customer Info -->' +
+        '<div class="result-card">' +
+          '<h5><i class="fas fa-user me-2"></i>Customer Information</h5>' +
+          '<div class="detail-row">' +
+            '<span class="label">Name</span>' +
+            '<span class="value">' + (booking.first_name || '') + ' ' + (booking.last_name || '') + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Email</span>' +
+            '<span class="value">' + (booking.email || '') + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<span class="label">Phone</span>' +
+            '<span class="value">' + (booking.phone || '') + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<!-- Actions -->' +
+        '<div class="text-center mt-3">' +
+          '<a href="/booking/lookup" class="btn btn-outline-secondary rounded-pill px-4">' +
+            '<i class="fas fa-search me-2"></i>Look Up Another Booking' +
+          '</a>' +
+        '</div>' +
+
+      '</div>' +
+    '</div>' : ''}
+
+  </div>
+</section>
+
+`, scripts: '' }) %>

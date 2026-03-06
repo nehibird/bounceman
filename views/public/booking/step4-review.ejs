@@ -1,0 +1,267 @@
+<%- include('../../layouts/public', { body: `
+
+<style>
+  .booking-progress { display: flex; justify-content: center; gap: 0; margin-bottom: 40px; }
+  .booking-progress .step { display: flex; align-items: center; gap: 8px; padding: 12px 20px; color: #aaa; font-weight: 600; font-size: 14px; }
+  .booking-progress .step.active { color: var(--bm-orange); }
+  .booking-progress .step.completed { color: var(--bm-green); }
+  .booking-progress .step .step-num { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: #e9ecef; color: #aaa; }
+  .booking-progress .step.active .step-num { background: var(--bm-gradient); color: white; }
+  .booking-progress .step.completed .step-num { background: var(--bm-green); color: white; }
+  .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
+  .booking-progress .step-line.completed { background: var(--bm-green); }
+
+  .review-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 24px; }
+  .review-card h5 { color: var(--bm-blue); font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #f0f0f0; }
+  .review-row { display: flex; justify-content: space-between; padding: 6px 0; }
+  .review-row .label { color: #777; }
+  .review-row .value { font-weight: 600; color: #333; }
+
+  .line-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; }
+  .line-item:last-child { border-bottom: none; }
+  .line-item img { width: 60px; height: 60px; border-radius: 10px; object-fit: cover; }
+  .line-item .item-info { flex: 1; }
+  .line-item .item-price { font-weight: 700; color: var(--bm-orange); font-size: 18px; }
+
+  .price-breakdown { background: #f8f9fa; border-radius: 12px; padding: 20px; }
+  .price-line { display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; }
+  .price-line.discount { color: var(--bm-green); }
+  .price-line.total { border-top: 2px solid var(--bm-blue); margin-top: 8px; padding-top: 12px; font-size: 20px; font-weight: 700; color: var(--bm-blue); }
+  .price-line.deposit { color: var(--bm-orange); font-weight: 700; font-size: 16px; }
+
+  .terms-check { background: #fff3cd; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+</style>
+
+<section class="py-5">
+  <div class="container">
+
+    <!-- Progress Bar -->
+    <div class="booking-progress">
+      <div class="step completed">
+        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="d-none d-md-inline">Select Items</span>
+      </div>
+      <div class="step-line completed"></div>
+      <div class="step completed">
+        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="d-none d-md-inline">Pick Date</span>
+      </div>
+      <div class="step-line completed"></div>
+      <div class="step completed">
+        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="d-none d-md-inline">Your Details</span>
+      </div>
+      <div class="step-line completed"></div>
+      <div class="step active">
+        <span class="step-num">4</span>
+        <span class="d-none d-md-inline">Review</span>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>Review Your Booking</h2>
+      <p>Please verify everything looks correct before completing</p>
+    </div>
+
+    <form action="/booking/submit" method="POST" id="reviewForm">
+
+      <div class="row">
+        <!-- Left Column: Details -->
+        <div class="col-lg-7">
+
+          <!-- Line Items -->
+          <div class="review-card">
+            <h5><i class="fas fa-box me-2"></i>Rental Items</h5>
+            ${lineItems.map(function(item) {
+              return '<div class="line-item">' +
+                '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" alt="' + item.item_name + '">' +
+                '<div class="item-info">' +
+                  '<div class="fw-bold">' + item.item_name + '</div>' +
+                  '<div class="text-muted small">' + (rental_duration === '4hr' ? '4-hour rental' : rental_duration === 'overnight' ? 'Overnight rental' : 'Full day rental') + '</div>' +
+                '</div>' +
+                '<div class="item-price">$' + parseFloat(item.unit_price).toFixed(0) + '</div>' +
+              '</div>';
+            }).join('')}
+          </div>
+
+          <!-- Event Details -->
+          <div class="review-card">
+            <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
+            <div class="review-row">
+              <span class="label">Date</span>
+              <span class="value">${event.event_date}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Duration</span>
+              <span class="value">${rental_duration === '4hr' ? '4 Hours' : rental_duration === 'overnight' ? 'Overnight' : 'Full Day'}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Time</span>
+              <span class="value">${event.event_start_time} - ${event.event_end_time}${rental_duration === 'overnight' ? ' (next-day pickup)' : ''}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Event Type</span>
+              <span class="value">${event.event_type}</span>
+            </div>
+          </div>
+
+          <!-- Delivery Details -->
+          <div class="review-card">
+            <h5><i class="fas fa-truck me-2"></i>Delivery Details</h5>
+            <div class="review-row">
+              <span class="label">Address</span>
+              <span class="value">${delivery.delivery_address}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">City / ZIP</span>
+              <span class="value">${delivery.delivery_city}, ${delivery.delivery_zip}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Venue Type</span>
+              <span class="value">${delivery.venue_type}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Surface</span>
+              <span class="value">${delivery.surface_type}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Power Available</span>
+              <span class="value">${delivery.power_available ? '<i class="fas fa-check-circle text-success"></i> Yes' : '<i class="fas fa-times-circle text-danger"></i> No'}</span>
+            </div>
+            ${delivery.delivery_notes ? '<div class="review-row"><span class="label">Notes</span><span class="value">' + delivery.delivery_notes + '</span></div>' : ''}
+          </div>
+
+          <!-- Customer Details -->
+          <div class="review-card">
+            <h5><i class="fas fa-user me-2"></i>Customer Details</h5>
+            <div class="review-row">
+              <span class="label">Name</span>
+              <span class="value">${customer.first_name} ${customer.last_name}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Email</span>
+              <span class="value">${customer.email}</span>
+            </div>
+            <div class="review-row">
+              <span class="label">Phone</span>
+              <span class="value">${customer.phone}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Pricing -->
+        <div class="col-lg-5">
+          <div class="review-card" style="position:sticky;top:100px;">
+            <h5><i class="fas fa-receipt me-2"></i>Pricing Summary</h5>
+
+            <div class="price-breakdown">
+              <div class="price-line">
+                <span>Subtotal (${lineItems.length} item${lineItems.length !== 1 ? 's' : ''})</span>
+                <span>$${parseFloat(pricing.subtotal).toFixed(2)}</span>
+              </div>
+              <div class="price-line">
+                <span>Delivery Fee</span>
+                <span>${parseFloat(pricing.delivery_fee) === 0 ? '<span class="text-success fw-bold">FREE</span>' : '$' + parseFloat(pricing.delivery_fee).toFixed(2)}</span>
+              </div>
+              ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
+              <div class="price-line">
+                <span>Tax (${(parseFloat(pricing.tax_rate) * 100).toFixed(1)}%)</span>
+                <span>$${parseFloat(pricing.tax_amount).toFixed(2)}</span>
+              </div>
+              ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><i class="fas fa-tag me-1"></i>Discount (' + (pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
+              <div class="price-line total">
+                <span>Total</span>
+                <span>$${parseFloat(pricing.total).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div class="mt-3 p-3 text-center" style="background:var(--bm-light-bg);border-radius:12px;">
+              <div class="text-muted small mb-1">Deposit Due Now</div>
+              <div style="font-size:28px;font-weight:700;color:var(--bm-orange);">$${parseFloat(pricing.deposit_amount).toFixed(2)}</div>
+              <div class="text-muted small">Remaining $${(parseFloat(pricing.total) - parseFloat(pricing.deposit_amount)).toFixed(2)} due on delivery day</div>
+            </div>
+
+            <!-- Terms Agreement -->
+            <div class="terms-check mt-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="agreeTerms" required>
+                <label class="form-check-label small" for="agreeTerms">
+                  By completing this booking, I agree to the <a href="/rental-terms" target="_blank">rental terms and conditions</a>, including the cancellation policy and liability waiver requirements.
+                </label>
+              </div>
+            </div>
+
+            <!-- Hidden form fields carrying ALL data -->
+            ${lineItems.map(function(item) {
+              return '<input type="hidden" name="equipment_ids" value="' + item.equipment_id + '">';
+            }).join('')}
+            <input type="hidden" name="event_date" value="${event.event_date}">
+            <input type="hidden" name="event_start_time" value="${event.event_start_time}">
+            <input type="hidden" name="event_end_time" value="${event.event_end_time}">
+            <input type="hidden" name="event_type" value="${event.event_type}">
+            <input type="hidden" name="rental_duration" value="${rental_duration || 'daily'}">
+            <input type="hidden" name="subtotal" value="${pricing.subtotal}">
+            <input type="hidden" name="delivery_fee" value="${pricing.delivery_fee}">
+            <input type="hidden" name="tax_amount" value="${pricing.tax_amount}">
+            <input type="hidden" name="tax_rate" value="${pricing.tax_rate}">
+            <input type="hidden" name="discount_amount" value="${pricing.discount_amount || 0}">
+            <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+            <input type="hidden" name="damage_waiver_fee" value="${pricing.damage_waiver_fee || 0}">
+            <input type="hidden" name="total" value="${pricing.total}">
+            <input type="hidden" name="deposit_amount" value="${pricing.deposit_amount}">
+            <input type="hidden" name="first_name" value="${customer.first_name}">
+            <input type="hidden" name="last_name" value="${customer.last_name}">
+            <input type="hidden" name="email" value="${customer.email}">
+            <input type="hidden" name="phone" value="${customer.phone}">
+            <input type="hidden" name="delivery_address" value="${delivery.delivery_address}">
+            <input type="hidden" name="delivery_city" value="${delivery.delivery_city}">
+            <input type="hidden" name="delivery_zip" value="${delivery.delivery_zip}">
+            <input type="hidden" name="delivery_notes" value="${delivery.delivery_notes || ''}">
+            <input type="hidden" name="venue_type" value="${delivery.venue_type}">
+            <input type="hidden" name="surface_type" value="${delivery.surface_type}">
+            <input type="hidden" name="power_available" value="${delivery.power_available || false}">
+            <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+
+            <button type="submit" class="btn btn-book-now w-100 mt-3" id="submitBtn" disabled style="font-size:16px;padding:14px;">
+              <i class="fas fa-lock me-2"></i>Complete Booking &mdash; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit
+            </button>
+
+            <p class="text-muted text-center small mt-2 mb-0">
+              <i class="fas fa-shield-alt me-1"></i>Your information is secure and encrypted
+            </p>
+          </div>
+
+          <!-- Back Button -->
+          <div class="mt-3">
+            <a href="javascript:history.back()" class="btn btn-outline-secondary rounded-pill w-100">
+              <i class="fas fa-arrow-left me-2"></i>Go Back and Edit
+            </a>
+          </div>
+        </div>
+      </div>
+
+    </form>
+
+  </div>
+</section>
+
+`, scripts: `
+<script>
+  // Enable submit button only when terms are agreed
+  document.getElementById('agreeTerms').addEventListener('change', function() {
+    document.getElementById('submitBtn').disabled = !this.checked;
+  });
+
+  // Prevent double submission
+  document.getElementById('reviewForm').addEventListener('submit', function(e) {
+    var btn = document.getElementById('submitBtn');
+    if (btn.dataset.submitted) {
+      e.preventDefault();
+      return;
+    }
+    btn.dataset.submitted = 'true';
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+  });
+</script>
+` }) %>

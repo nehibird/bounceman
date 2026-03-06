@@ -1,0 +1,48 @@
+<%- include('../layouts/admin', { body: `
+
+<a href="/admin/settings" class="text-decoration-none mb-3 d-inline-block">
+  <i class="fas fa-arrow-left me-1"></i> Back to Settings
+</a>
+
+<h4 class="mb-4">${editUser ? 'Edit User' : 'New User'}</h4>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="${editUser ? '/admin/settings/users/' + editUser.id : '/admin/settings/users'}">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input type="text" name="name" class="form-control" required value="${editUser ? editUser.name : ''}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Email <span class="text-danger">*</span></label>
+          <input type="email" name="email" class="form-control" required value="${editUser ? editUser.email : ''}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Password ${editUser ? '(leave blank to keep current)' : '<span class="text-danger">*</span>'}</label>
+          <input type="password" name="password" class="form-control" ${editUser ? '' : 'required'} minlength="6">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-select">
+            <option value="staff" ${editUser && editUser.role === 'staff' ? 'selected' : ''}>Staff</option>
+            <option value="admin" ${editUser && editUser.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control" value="${editUser && editUser.phone ? editUser.phone : ''}">
+        </div>
+        ${editUser ? '<div class="col-md-6"><div class="form-check mt-2"><input type="checkbox" name="active" class="form-check-input" id="userActive" value="1" ' + (editUser.active ? 'checked' : '') + '><label class="form-check-label" for="userActive">Active</label></div></div>' : ''}
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-save me-1"></i> ${editUser ? 'Update User' : 'Create User'}
+        </button>
+        <a href="/admin/settings" class="btn btn-outline-secondary ms-2">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+`, scripts: `` }) %>

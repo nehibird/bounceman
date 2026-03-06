@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <% if (typeof page !== 'undefined' && page === 'calendar') { %>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <% } %>
+  <style>
+    :root {
+      --bm-primary: #FF6B35;
+      --bm-secondary: #004E89;
+      --bm-success: #2ECC71;
+      --bm-warning: #F39C12;
+      --bm-danger: #E74C3C;
+      --bm-dark: #2C3E50;
+      --bm-light: #F8F9FA;
+      --bm-sidebar-width: 260px;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; }
+    .admin-sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0;
+      width: var(--bm-sidebar-width); background: var(--bm-dark);
+      color: white; overflow-y: auto; z-index: 1000;
+      transition: transform 0.3s;
+    }
+    .admin-sidebar .logo {
+      padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .admin-sidebar .logo h4 { color: var(--bm-primary); margin: 0; font-weight: 800; letter-spacing: 1px; }
+    .admin-sidebar .logo small { color: rgba(255,255,255,0.5); font-size: 11px; }
+    .admin-sidebar nav a {
+      display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.7);
+      text-decoration: none; transition: all 0.2s; font-size: 14px; gap: 12px;
+      border-left: 3px solid transparent;
+    }
+    .admin-sidebar nav a:hover, .admin-sidebar nav a.active {
+      background: rgba(255,255,255,0.08); color: white; border-left-color: var(--bm-primary);
+    }
+    .admin-sidebar nav a i { width: 20px; text-align: center; }
+    .admin-sidebar nav .divider {
+      height: 1px; background: rgba(255,255,255,0.1); margin: 10px 20px;
+    }
+    .admin-sidebar nav .section-label {
+      padding: 8px 20px 4px; color: rgba(255,255,255,0.3); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .admin-main {
+      margin-left: var(--bm-sidebar-width); min-height: 100vh;
+    }
+    .admin-header {
+      background: white; padding: 15px 30px; border-bottom: 1px solid #e0e0e0;
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .admin-content { padding: 30px; }
+    .stat-card {
+      background: white; border-radius: 12px; padding: 24px; border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-2px); }
+    .stat-card .stat-icon {
+      width: 48px; height: 48px; border-radius: 12px; display: flex;
+      align-items: center; justify-content: center; font-size: 20px;
+    }
+    .stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--bm-dark); }
+    .stat-card .stat-label { color: #6c757d; font-size: 13px; }
+    .card { border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .card-header { background: white; border-bottom: 1px solid #eee; font-weight: 600; }
+    .badge-status {
+      padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    }
+    .badge-pending { background: #FFF3CD; color: #856404; }
+    .badge-confirmed { background: #D4EDDA; color: #155724; }
+    .badge-completed { background: #CCE5FF; color: #004085; }
+    .badge-cancelled { background: #F8D7DA; color: #721C24; }
+    .btn-bm { background: var(--bm-primary); color: white; border: none; }
+    .btn-bm:hover { background: #e55a2b; color: white; }
+    .btn-bm-outline { border: 2px solid var(--bm-primary); color: var(--bm-primary); }
+    .btn-bm-outline:hover { background: var(--bm-primary); color: white; }
+    @media (max-width: 768px) {
+      .admin-sidebar { transform: translateX(-100%); }
+      .admin-sidebar.open { transform: translateX(0); }
+      .admin-main { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="admin-sidebar" id="sidebar">
+    <div class="logo">
+      <h4>BOUNCE MAN</h4>
+      <small>Admin Dashboard</small>
+    </div>
+    <nav>
+      <a href="/admin" class="<%= page === 'dashboard' ? 'active' : '' %>">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </a>
+      <div class="section-label">Management</div>
+      <a href="/admin/bookings" class="<%= page === 'bookings' ? 'active' : '' %>">
+        <i class="fas fa-calendar-check"></i> Bookings
+      </a>
+      <a href="/admin/calendar" class="<%= page === 'calendar' ? 'active' : '' %>">
+        <i class="fas fa-calendar-alt"></i> Calendar
+      </a>
+      <a href="/admin/equipment" class="<%= page === 'equipment' ? 'active' : '' %>">
+        <i class="fas fa-castle"></i> Equipment
+      </a>
+      <a href="/admin/customers" class="<%= page === 'customers' ? 'active' : '' %>">
+        <i class="fas fa-users"></i> Customers
+      </a>
+      <div class="section-label">Operations</div>
+      <a href="/admin/delivery" class="<%= page === 'delivery' ? 'active' : '' %>">
+        <i class="fas fa-truck"></i> Delivery
+      </a>
+      <a href="/admin/maintenance" class="<%= page === 'maintenance' ? 'active' : '' %>">
+        <i class="fas fa-wrench"></i> Maintenance
+      </a>
+      <a href="/admin/communications" class="<%= page === 'communications' ? 'active' : '' %>">
+        <i class="fas fa-envelope"></i> Communications
+      </a>
+      <div class="section-label">Insights</div>
+      <a href="/admin/reports" class="<%= page === 'reports' ? 'active' : '' %>">
+        <i class="fas fa-chart-bar"></i> Reports
+      </a>
+      <a href="/admin/reviews" class="<%= page === 'reviews' ? 'active' : '' %>">
+        <i class="fas fa-star"></i> Reviews
+      </a>
+      <div class="divider"></div>
+      <a href="/admin/settings" class="<%= page === 'settings' ? 'active' : '' %>">
+        <i class="fas fa-cog"></i> Settings
+      </a>
+      <a href="/" target="_blank">
+        <i class="fas fa-external-link-alt"></i> View Website
+      </a>
+      <a href="/auth/logout">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </a>
+    </nav>
+  </aside>
+
+  <main class="admin-main">
+    <header class="admin-header">
+      <div>
+        <button class="btn btn-sm btn-outline-secondary d-md-none" onclick="document.getElementById('sidebar').classList.toggle('open')">
+          <i class="fas fa-bars"></i>
+        </button>
+        <strong><%= title.replace(' - Bounce Man Admin', '').replace(' - Admin', '') %></strong>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-muted small"><i class="fas fa-user"></i> <%= user.name %></span>
+      </div>
+    </header>
+    <div class="admin-content">
+      <%- body %>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <% if (typeof page !== 'undefined' && page === 'calendar') { %>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <% } %>
+  <% if (typeof page !== 'undefined' && page === 'reports') { %>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <% } %>
+  <%- typeof scripts !== 'undefined' ? scripts : '' %>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<%- include('../layouts/admin', { body: `
+
+<a href="/admin/settings" class="text-decoration-none mb-3 d-inline-block">
+  <i class="fas fa-arrow-left me-1"></i> Back to Settings
+</a>
+
+<h4 class="mb-4">${code ? 'Edit Discount Code' : 'New Discount Code'}</h4>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="${code ? '/admin/settings/codes/' + code.id : '/admin/settings/codes'}">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Code <span class="text-danger">*</span></label>
+          <input type="text" name="code" class="form-control text-uppercase" required value="${code ? code.code : ''}" placeholder="e.g. SUMMER20">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Type <span class="text-danger">*</span></label>
+          <select name="type" class="form-select" required>
+            <option value="percent" ${code && code.type === 'percent' ? 'selected' : ''}>Percent (%)</option>
+            <option value="flat" ${code && code.type === 'flat' ? 'selected' : ''}>Flat ($)</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Value <span class="text-danger">*</span></label>
+          <input type="number" name="value" class="form-control" required step="0.01" min="0" value="${code ? code.value : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Min Order ($)</label>
+          <input type="number" name="min_order" class="form-control" step="0.01" min="0" value="${code ? code.min_order : '0'}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Max Uses</label>
+          <input type="number" name="max_uses" class="form-control" min="1" value="${code && code.max_uses ? code.max_uses : ''}" placeholder="Unlimited">
+        </div>
+        <div class="col-md-4">
+          <div class="form-check mt-4">
+            <input type="checkbox" name="active" class="form-check-input" id="codeActive" value="1" ${code ? (code.active ? 'checked' : '') : 'checked'}>
+            <label class="form-check-label" for="codeActive">Active</label>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Valid From</label>
+          <input type="date" name="valid_from" class="form-control" value="${code && code.valid_from ? code.valid_from : ''}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Valid Until</label>
+          <input type="date" name="valid_until" class="form-control" value="${code && code.valid_until ? code.valid_until : ''}">
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-save me-1"></i> ${code ? 'Update Code' : 'Create Code'}
+        </button>
+        <a href="/admin/settings" class="btn btn-outline-secondary ms-2">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+`, scripts: `` }) %>

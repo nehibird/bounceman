@@ -1,0 +1,179 @@
+<%- include('../layouts/public', { body: `
+
+<!-- Reviews Hero -->
+<section class="hero-section" style="padding:60px 0">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1>Customer <span>Reviews</span></h1>
+        <p>See what our customers are saying about their Bounce Man experience!</p>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div style="font-size:140px;opacity:0.3">⭐</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Average Rating -->
+<section class="py-5" style="background:white">
+  <div class="container py-3">
+    <div class="row justify-content-center">
+      <div class="col-lg-6">
+        <div style="text-align:center;background:var(--bm-light-bg);border-radius:20px;padding:40px">
+          ${reviews && reviews.length > 0 ? (function() {
+            var total = 0;
+            for (var i = 0; i < reviews.length; i++) { total += reviews[i].rating; }
+            var avg = (total / reviews.length).toFixed(1);
+            var fullStars = Math.floor(avg);
+            var halfStar = (avg - fullStars) >= 0.5 ? 1 : 0;
+            var emptyStars = 5 - fullStars - halfStar;
+            var stars = '';
+            for (var s = 0; s < fullStars; s++) stars += '<i class="fas fa-star" style="color:var(--bm-yellow);font-size:32px"></i>';
+            if (halfStar) stars += '<i class="fas fa-star-half-stroke" style="color:var(--bm-yellow);font-size:32px"></i>';
+            for (var e = 0; e < emptyStars; e++) stars += '<i class="far fa-star" style="color:var(--bm-yellow);font-size:32px"></i>';
+            return '<div style="font-size:64px;font-weight:700;color:var(--bm-blue);font-family:Fredoka,sans-serif;line-height:1">' + avg + '</div><div style="margin:10px 0">' + stars + '</div><p style="color:#666;margin:0">Based on <strong>' + reviews.length + '</strong> review' + (reviews.length !== 1 ? 's' : '') + '</p>';
+          })() : '<div style="font-size:48px;opacity:0.3;margin-bottom:10px"><i class="far fa-star"></i></div><h4 style="color:var(--bm-blue)">No Reviews Yet</h4><p style="color:#666;margin:0">Be the first to share your experience!</p>'}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Review Cards -->
+${reviews && reviews.length > 0 ? '<section class="py-5 fun-bg"><div class="shape-circle shape-1"></div><div class="shape-circle shape-2"></div><div class="container py-4"><div class="row g-4">' + reviews.map(function(r) {
+  var stars = '';
+  for (var s = 0; s < 5; s++) {
+    stars += s < r.rating ? '<i class="fas fa-star" style="color:var(--bm-yellow)"></i>' : '<i class="far fa-star" style="color:var(--bm-yellow)"></i>';
+  }
+  var dateStr = '';
+  if (r.created_at) {
+    var d = new Date(r.created_at);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+  }
+  return '<div class="col-md-6 col-lg-4"><div class="testimonial-card" style="height:100%"><div class="stars mb-2" style="font-size:18px">' + stars + '</div><p style="color:#555;line-height:1.7;margin-bottom:15px">"' + (r.comment || 'Great experience!') + '"</p>' + (r.response ? '<div style="background:var(--bm-light-bg);border-radius:12px;padding:15px;margin-bottom:15px;border-left:4px solid var(--bm-orange)"><div style="font-size:12px;color:var(--bm-orange);font-weight:700;margin-bottom:5px"><i class="fas fa-reply me-1"></i>Bounce Man Reply</div><p style="color:#666;font-size:14px;margin:0">' + r.response + '</p></div>' : '') + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid #f0f0f0"><strong style="color:var(--bm-blue)">' + (r.customer_name || 'Happy Customer') + '</strong>' + (dateStr ? '<span style="color:#aaa;font-size:13px">' + dateStr + '</span>' : '') + '</div></div></div>';
+}).join('') + '</div></div></section>' : ''}
+
+<!-- Leave a Review Form -->
+<section class="py-5" style="background:white">
+  <div class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <div style="background:var(--bm-light-bg);border-radius:20px;padding:40px;box-shadow:0 8px 30px rgba(0,0,0,0.08)">
+          <div class="text-center mb-4">
+            <i class="fas fa-pen-to-square" style="font-size:40px;color:var(--bm-orange);margin-bottom:10px"></i>
+            <h3 style="color:var(--bm-blue);font-weight:700">Leave a Review</h3>
+            <p style="color:#666">Had a Bounce Man rental? We would love to hear about your experience!</p>
+          </div>
+
+          <div id="reviewSuccessAlert" style="display:none" class="alert alert-success text-center mb-4">
+            <i class="fas fa-check-circle me-2"></i>Thank you for your review! It has been submitted for approval.
+          </div>
+
+          <form action="/reviews" method="POST" id="reviewForm">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold" style="color:var(--bm-blue)">Your Name <span style="color:var(--bm-pink)">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text" style="background:white;border-right:none"><i class="fas fa-user" style="color:var(--bm-orange)"></i></span>
+                  <input type="text" name="customer_name" class="form-control" placeholder="Your name" required style="border-left:none;border-radius:0 8px 8px 0">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold" style="color:var(--bm-blue)">Booking Number <span style="color:#aaa;font-weight:400">(optional)</span></label>
+                <div class="input-group">
+                  <span class="input-group-text" style="background:white;border-right:none"><i class="fas fa-receipt" style="color:var(--bm-orange)"></i></span>
+                  <input type="text" name="booking_number" class="form-control" placeholder="e.g. BM-2026-001" style="border-left:none;border-radius:0 8px 8px 0">
+                </div>
+              </div>
+
+              <!-- Star Rating -->
+              <div class="col-12">
+                <label class="form-label fw-bold" style="color:var(--bm-blue)">Your Rating <span style="color:var(--bm-pink)">*</span></label>
+                <div id="starRating" style="display:flex;gap:8px;cursor:pointer;padding:10px 0">
+                  <i class="far fa-star star-input" data-value="1" style="font-size:36px;color:var(--bm-yellow);transition:transform 0.2s"></i>
+                  <i class="far fa-star star-input" data-value="2" style="font-size:36px;color:var(--bm-yellow);transition:transform 0.2s"></i>
+                  <i class="far fa-star star-input" data-value="3" style="font-size:36px;color:var(--bm-yellow);transition:transform 0.2s"></i>
+                  <i class="far fa-star star-input" data-value="4" style="font-size:36px;color:var(--bm-yellow);transition:transform 0.2s"></i>
+                  <i class="far fa-star star-input" data-value="5" style="font-size:36px;color:var(--bm-yellow);transition:transform 0.2s"></i>
+                </div>
+                <input type="hidden" name="rating" id="ratingValue" value="" required>
+              </div>
+
+              <!-- Comment -->
+              <div class="col-12">
+                <label class="form-label fw-bold" style="color:var(--bm-blue)">Your Review <span style="color:var(--bm-pink)">*</span></label>
+                <textarea name="comment" class="form-control" rows="4" placeholder="Tell us about your experience — how was the equipment, the delivery, the overall experience?" required style="border-radius:8px"></textarea>
+              </div>
+
+              <div class="col-12">
+                <button type="submit" class="btn btn-book-now btn-lg w-100" style="padding:14px">
+                  <i class="fas fa-paper-plane me-2"></i>Submit Review
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+`, scripts: `
+<script>
+  // Star rating interaction
+  (function() {
+    var stars = document.querySelectorAll('.star-input');
+    var ratingInput = document.getElementById('ratingValue');
+    var currentRating = 0;
+
+    stars.forEach(function(star) {
+      star.addEventListener('mouseenter', function() {
+        var val = parseInt(this.getAttribute('data-value'));
+        highlightStars(val);
+      });
+
+      star.addEventListener('mouseleave', function() {
+        highlightStars(currentRating);
+      });
+
+      star.addEventListener('click', function() {
+        currentRating = parseInt(this.getAttribute('data-value'));
+        ratingInput.value = currentRating;
+        highlightStars(currentRating);
+      });
+    });
+
+    function highlightStars(count) {
+      stars.forEach(function(s) {
+        var val = parseInt(s.getAttribute('data-value'));
+        if (val <= count) {
+          s.classList.remove('far');
+          s.classList.add('fas');
+          s.style.transform = 'scale(1.1)';
+        } else {
+          s.classList.remove('fas');
+          s.classList.add('far');
+          s.style.transform = 'scale(1)';
+        }
+      });
+    }
+
+    // Show success message if redirected after submit
+    if (window.location.search.indexOf('submitted=1') !== -1) {
+      var alert = document.getElementById('reviewSuccessAlert');
+      if (alert) alert.style.display = 'block';
+      window.scrollTo({ top: document.getElementById('reviewForm').offsetTop - 100, behavior: 'smooth' });
+    }
+
+    // Validate rating before submit
+    document.getElementById('reviewForm').addEventListener('submit', function(e) {
+      if (!ratingInput.value) {
+        e.preventDefault();
+        alert('Please select a star rating before submitting.');
+      }
+    });
+  })();
+</script>
+` }) %>

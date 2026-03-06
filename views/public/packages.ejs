@@ -1,0 +1,65 @@
+<%- include('../layouts/public', { body: `
+
+<section class="py-5">
+  <div class="container">
+    <div class="section-title">
+      <h2>Party Packages</h2>
+      <p>Save with our bundled deals!</p>
+    </div>
+
+    ${packages.length > 0 ? `
+    <div class="row g-4 justify-content-center">
+      ${packages.filter(p => p.active !== false).map((pkg, i) => `
+      <div class="col-md-6 col-lg-4">
+        <div class="bg-white rounded-4 overflow-hidden shadow-sm h-100 d-flex flex-column" style="border-top:4px solid ${i % 3 === 0 ? 'var(--bm-orange)' : i % 3 === 1 ? 'var(--bm-blue)' : 'var(--bm-pink)'}">
+          <div class="p-4 flex-grow-1">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <h4 style="color:var(--bm-blue);font-weight:700;margin:0">${pkg.name}</h4>
+              ${pkg.savings ? '<span class="badge rounded-pill" style="background:var(--bm-green);color:white;font-size:13px;font-weight:700">Save $' + pkg.savings + '!</span>' : ''}
+            </div>
+
+            <div class="mb-3">
+              <span class="price-tag" style="font-size:28px">$${parseFloat(pkg.price).toFixed(0)}</span>
+            </div>
+
+            ${pkg.description ? '<p class="text-muted mb-3" style="line-height:1.6">' + pkg.description + '</p>' : ''}
+
+            <h6 style="font-weight:700;color:#333;margin-bottom:12px"><i class="fas fa-box-open me-2" style="color:var(--bm-orange)"></i>Included Items</h6>
+            <ul class="list-unstyled mb-0">
+              ${pkg.items_list.split(',').map(function(itm) {
+                return '<li class="mb-2"><i class="fas fa-check-circle me-2" style="color:var(--bm-green)"></i>' + itm.trim() + '</li>';
+              }).join('')}
+            </ul>
+          </div>
+
+          <div class="p-4 pt-0">
+            <a href="/booking?package=${pkg.id}" class="btn btn-book-now w-100">
+              <i class="fas fa-calendar-check me-2"></i>Book This Package
+            </a>
+          </div>
+        </div>
+      </div>
+      `).join('')}
+    </div>
+    ` : `
+    <div class="text-center py-5">
+      <div style="font-size:80px;opacity:0.3">&#127881;</div>
+      <h4 class="text-muted">No packages available yet</h4>
+      <p class="text-muted">We're putting together some awesome deals. Check back soon!</p>
+      <a href="/equipment" class="btn btn-bm rounded-pill mt-3">Browse Individual Equipment</a>
+    </div>
+    `}
+
+    <!-- Custom Bundle CTA -->
+    <div class="mt-5 text-center bg-white rounded-4 p-5 shadow-sm">
+      <div style="font-size:48px;margin-bottom:16px"><i class="fas fa-puzzle-piece" style="color:var(--bm-purple)"></i></div>
+      <h3 style="color:var(--bm-blue);font-weight:700">Can't find what you need?</h3>
+      <p class="text-muted mb-4" style="max-width:500px;margin:0 auto">Build your own custom bundle by selecting exactly the equipment you want. Mix and match to create the perfect party setup!</p>
+      <a href="/booking" class="btn btn-book-now btn-lg">
+        <i class="fas fa-wand-magic-sparkles me-2"></i>Build Your Own Bundle
+      </a>
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

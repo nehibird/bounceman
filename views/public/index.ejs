@@ -1,0 +1,151 @@
+<%- include('../layouts/public', { body: `
+
+<!-- Hero Section -->
+<section class="hero-section">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1>Let's Make Your Party <span>Unforgettable!</span></h1>
+        <p>Bounce houses, water slides, and party equipment rental for Tonkawa, Ponca City, Stillwater, and surrounding Oklahoma areas.</p>
+        <div class="mt-4 d-flex gap-3 flex-wrap">
+          <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
+          <a href="/equipment" class="btn btn-outline-light btn-lg rounded-pill px-4">View Equipment <i class="fas fa-arrow-right ms-2"></i></a>
+        </div>
+        <div class="mt-4 d-flex gap-4">
+          <div><strong style="font-size:24px">100%</strong><br><small style="opacity:0.7">Clean & Sanitized</small></div>
+          <div><strong style="font-size:24px">24hr</strong><br><small style="opacity:0.7">Booking Response</small></div>
+          <div><strong style="font-size:24px">Free</strong><br><small style="opacity:0.7">Local Delivery</small></div>
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div style="font-size:180px;opacity:0.3">🏰</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How It Works -->
+<section class="py-5 fun-bg" style="background:white">
+  <div class="shape-circle shape-1"></div>
+  <div class="shape-circle shape-2"></div>
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>How It Works</h2>
+      <p>Renting is easy — just 4 simple steps!</p>
+    </div>
+    <div class="row g-4">
+      <div class="col-md-3">
+        <div class="how-it-works-step">
+          <div class="step-number">1</div>
+          <h4>Browse</h4>
+          <p>Check out our equipment and pick your favorites</p>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="how-it-works-step">
+          <div class="step-number">2</div>
+          <h4>Pick a Date</h4>
+          <p>Choose your event date and check availability</p>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="how-it-works-step">
+          <div class="step-number">3</div>
+          <h4>Book & Pay</h4>
+          <p>Reserve with a small deposit — pay the rest later</p>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="how-it-works-step">
+          <div class="step-number">4</div>
+          <h4>We Deliver!</h4>
+          <p>We set up, you party, we pick up. Easy!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Featured Equipment -->
+<section class="py-5">
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>Featured Equipment</h2>
+      <p>Our most popular rentals — book yours today!</p>
+    </div>
+    <div class="row g-4">
+${featured.length > 0 ? featured.map(item => `
+      <div class="col-md-6 col-lg-4">
+        <div class="equipment-card">
+          <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
+          <div class="card-body">
+            <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>
+            <h5 class="card-title mt-2">${item.name}</h5>
+            <p class="text-muted small">${item.short_description || ''}</p>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+              <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+`).join('') : `
+      <div class="col-12 text-center py-5">
+        <div style="font-size:80px;opacity:0.3">🎈</div>
+        <h4 class="text-muted">Equipment coming soon!</h4>
+        <p class="text-muted">We're getting our inventory ready. Check back soon!</p>
+      </div>
+`}
+    </div>
+    <div class="text-center mt-4">
+      <a href="/equipment" class="btn btn-bm btn-lg rounded-pill px-5">View All Equipment <i class="fas fa-arrow-right ms-2"></i></a>
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials -->
+${reviews.length > 0 ? `
+<section class="py-5" style="background:white">
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>What Our Customers Say</h2>
+    </div>
+    <div class="row g-4">
+      ${reviews.slice(0, 3).map(r => `
+      <div class="col-md-4">
+        <div class="testimonial-card">
+          <div class="stars mb-2">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
+          <p>"${r.comment || 'Great experience!'}"</p>
+          <strong>${r.customer_name || 'Happy Customer'}</strong>
+        </div>
+      </div>
+      `).join('')}
+    </div>
+  </div>
+</section>
+` : ''}
+
+<!-- Service Areas -->
+<section class="py-5 fun-bg">
+  <div class="shape-circle shape-1"></div>
+  <div class="shape-circle shape-3"></div>
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>We Come to You!</h2>
+      <p>Serving these Oklahoma communities</p>
+    </div>
+    <div class="row g-3 justify-content-center">
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Tonkawa</strong> <span class="badge bg-success">FREE Delivery</span></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Ponca City</strong></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Stillwater</strong></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Blackwell</strong></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Newkirk</strong></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Enid</strong></div></div>
+    </div>
+    <div class="text-center mt-4">
+      <a href="/service-areas" class="btn btn-outline-primary rounded-pill">View Delivery Zones & Pricing</a>
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

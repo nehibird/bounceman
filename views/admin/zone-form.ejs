@@ -1,0 +1,43 @@
+<%- include('../layouts/admin', { body: `
+
+<a href="/admin/settings" class="text-decoration-none mb-3 d-inline-block">
+  <i class="fas fa-arrow-left me-1"></i> Back to Settings
+</a>
+
+<h4 class="mb-4">${zone ? 'Edit Delivery Zone' : 'New Delivery Zone'}</h4>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="${zone ? '/admin/settings/zones/' + zone.id : '/admin/settings/zones'}">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Zone Name <span class="text-danger">*</span></label>
+          <input type="text" name="name" class="form-control" required value="${zone ? zone.name : ''}" placeholder="e.g. Ponca City">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Delivery Fee ($) <span class="text-danger">*</span></label>
+          <input type="number" name="delivery_fee" class="form-control" required step="0.01" min="0" value="${zone ? zone.delivery_fee : '0'}">
+        </div>
+        <div class="col-12">
+          <label class="form-label">ZIP Codes <span class="text-danger">*</span></label>
+          <input type="text" name="zip_codes" class="form-control" required value="${zone ? zone.zip_codes : ''}" placeholder="Comma-separated: 74601,74602,74604">
+          <div class="form-text">Enter ZIP codes separated by commas (no spaces).</div>
+        </div>
+        <div class="col-md-6">
+          <div class="form-check mt-2">
+            <input type="checkbox" name="active" class="form-check-input" id="zoneActive" value="1" ${zone ? (zone.active ? 'checked' : '') : 'checked'}>
+            <label class="form-check-label" for="zoneActive">Active</label>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-save me-1"></i> ${zone ? 'Update Zone' : 'Create Zone'}
+        </button>
+        <a href="/admin/settings" class="btn btn-outline-secondary ms-2">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+`, scripts: `` }) %>

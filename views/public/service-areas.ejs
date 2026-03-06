@@ -1,0 +1,134 @@
+<%- include('../layouts/public', { body: `
+
+<!-- Service Areas Hero -->
+<section class="hero-section" style="padding:60px 0">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1>Service <span>Areas</span></h1>
+        <p>FREE delivery to Ponca City, Blackwell, Tonkawa, Newkirk, Kaw City, and everywhere within 15 miles!</p>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div style="font-size:140px;opacity:0.3">📍</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Map Placeholder -->
+<section class="py-5" style="background:white">
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>Our Coverage Area</h2>
+      <p>North-Central Oklahoma — Kay County and beyond</p>
+    </div>
+    <div class="row justify-content-center">
+      <div class="col-lg-10">
+        <div style="background:var(--bm-gradient-cool);border-radius:20px;padding:60px;text-align:center;color:white;position:relative;overflow:hidden">
+          <div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:var(--bm-yellow);border-radius:50%;opacity:0.1"></div>
+          <div style="position:absolute;bottom:-30px;left:-30px;width:150px;height:150px;background:var(--bm-pink);border-radius:50%;opacity:0.1"></div>
+          <i class="fas fa-map-marked-alt" style="font-size:64px;opacity:0.9;margin-bottom:20px"></i>
+          <h4 style="font-weight:700">Serving Tonkawa, Ponca City, Blackwell, Newkirk, Perry, Kaw City & more</h4>
+          <p style="opacity:0.85;max-width:500px;margin:10px auto 0">Based in Tonkawa, OK (Kay County) — delivering fun within a 60+ mile radius</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Delivery Zones -->
+<section class="py-5 fun-bg">
+  <div class="shape-circle shape-1"></div>
+  <div class="shape-circle shape-2"></div>
+  <div class="container py-4">
+    <div class="section-title">
+      <h2>Delivery Zones & Pricing</h2>
+      <p>Transparent pricing based on distance from our home base in Tonkawa</p>
+    </div>
+
+    ${(function() {
+      var zipToTown = {'74653':'Tonkawa','74601':'Ponca City','74602':'Ponca City','74604':'Ponca City','74631':'Kaw City','74647':'Newkirk','74632':'Blackwell','74641':'Nardin','74073':'Stillwater','74644':'Marland','74646':'Red Rock','74651':'Perry','74630':'Braman','74074':'Stillwater','74075':'Stillwater','74076':'Stillwater','74078':'Stillwater','74058':'Morrison','74056':'Pawnee'};
+      function zipsToTowns(zips) {
+        if (!zips) return 'Contact for details';
+        var towns = []; var seen = {};
+        zips.split(',').forEach(function(z) { var t = zipToTown[z.trim()] || z.trim(); if (!seen[t]) { seen[t] = true; towns.push(t); } });
+        return towns.join(', ');
+      }
+      if (!zones || zones.length === 0) return '<div class="text-center py-5"><h4 style="color:var(--bm-blue)">Delivery zones coming soon!</h4></div>';
+      return '<div class="row g-4">' + zones.filter(function(z) { return z.active; }).map(function(z) { return '<div class="col-md-6 col-lg-4"><div style="background:white;border-radius:20px;padding:30px;box-shadow:0 8px 30px rgba(0,0,0,0.08);height:100%;position:relative;overflow:hidden"><div style="position:absolute;top:0;left:0;right:0;height:5px;background:' + (parseFloat(z.delivery_fee) === 0 ? 'var(--bm-green)' : 'var(--bm-gradient)') + '"></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:15px"><div style="width:50px;height:50px;border-radius:50%;background:' + (parseFloat(z.delivery_fee) === 0 ? 'var(--bm-green)' : 'var(--bm-blue)') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-map-pin" style="font-size:20px;color:white"></i></div><div><h5 style="color:var(--bm-blue);font-weight:700;margin:0">' + z.name + '</h5></div></div><div style="margin-bottom:15px"><span style="font-size:13px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Towns Served</span><p style="color:#555;margin:4px 0 0;font-size:15px">' + zipsToTowns(z.zip_codes) + '</p></div><div style="display:flex;justify-content:space-between;align-items:center;padding-top:15px;border-top:1px solid #f0f0f0"><div><span style="font-size:13px;color:#888;display:block">Delivery Fee</span><span style="font-size:24px;font-weight:700;color:' + (parseFloat(z.delivery_fee) === 0 ? 'var(--bm-green)' : 'var(--bm-orange)') + '">' + (parseFloat(z.delivery_fee) === 0 ? 'FREE' : '$' + parseFloat(z.delivery_fee).toFixed(0)) + '</span></div><div style="text-align:right"><span style="font-size:13px;color:#888;display:block">Min Order</span><span style="font-size:18px;font-weight:700;color:var(--bm-blue)">' + (z.min_order ? '$' + parseFloat(z.min_order).toFixed(0) : 'None') + '</span></div></div></div></div>'; }).join('') + '</div>';
+    })()}
+
+  </div>
+</section>
+
+<!-- Custom Quotes -->
+<section class="py-5" style="background:white">
+  <div class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <div style="background:var(--bm-light-bg);border-radius:20px;padding:40px;text-align:center;border:2px dashed var(--bm-orange)">
+          <i class="fas fa-map-location-dot" style="font-size:48px;color:var(--bm-orange);margin-bottom:15px"></i>
+          <h4 style="color:var(--bm-blue);font-weight:700">Outside Our Listed Zones?</h4>
+          <p style="color:#666;max-width:500px;margin:10px auto 20px;font-size:16px">
+            Do not see your area listed? We may still be able to deliver to you! We offer custom delivery quotes for locations outside our standard zones. Just reach out with your address and event details.
+          </p>
+          <a href="/contact" class="btn btn-book-now btn-lg"><i class="fas fa-envelope me-2"></i>Request a Custom Quote</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Not Sure CTA -->
+<section class="py-5" style="background:var(--bm-gradient-cool);color:white;text-align:center">
+  <div class="container py-3">
+    <div style="max-width:600px;margin:0 auto">
+      <i class="fas fa-question-circle" style="font-size:48px;color:var(--bm-yellow);margin-bottom:15px"></i>
+      <h2 style="font-weight:700;margin-bottom:15px">Not Sure If We Deliver to You?</h2>
+      <p style="font-size:18px;opacity:0.9;margin-bottom:25px">
+        Just send us your address and we will let you know right away. No commitment, no pressure — just a quick answer.
+      </p>
+      <div class="d-flex gap-3 justify-content-center flex-wrap">
+        <a href="/contact" class="btn btn-lg rounded-pill px-5" style="background:white;color:var(--bm-blue);font-weight:700"><i class="fas fa-envelope me-2"></i>Contact Us</a>
+        ${settings.company_phone ? '<a href="tel:' + settings.company_phone + '" class="btn btn-lg rounded-pill px-5" style="background:var(--bm-yellow);color:#333;font-weight:700"><i class="fas fa-phone me-2"></i>Call Us</a>' : ''}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Free Delivery Highlight -->
+<section class="py-5 fun-bg">
+  <div class="shape-circle shape-3"></div>
+  <div class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-10">
+        <div class="row g-4 align-items-center">
+          <div class="col-md-6">
+            <div style="background:white;border-radius:20px;padding:35px;box-shadow:0 8px 30px rgba(0,0,0,0.08)">
+              <div style="display:flex;align-items:center;gap:15px;margin-bottom:15px">
+                <div style="width:60px;height:60px;border-radius:50%;background:var(--bm-green);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <i class="fas fa-truck-fast" style="font-size:24px;color:white"></i>
+                </div>
+                <h5 style="color:var(--bm-blue);font-weight:700;margin:0">Free Delivery Across Kay County</h5>
+              </div>
+              <p style="color:#666;margin:0">Live in Ponca City, Blackwell, Tonkawa, Newkirk, or Kaw City? Delivery, setup, and pickup are completely free. Book with confidence knowing there are no hidden delivery costs.</p>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div style="background:white;border-radius:20px;padding:35px;box-shadow:0 8px 30px rgba(0,0,0,0.08)">
+              <div style="display:flex;align-items:center;gap:15px;margin-bottom:15px">
+                <div style="width:60px;height:60px;border-radius:50%;background:var(--bm-orange);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <i class="fas fa-handshake" style="font-size:24px;color:white"></i>
+                </div>
+                <h5 style="color:var(--bm-blue);font-weight:700;margin:0">Multi-Item Discounts</h5>
+              </div>
+              <p style="color:#666;margin:0">Renting multiple items for the same event? We offer bundle pricing and may waive or reduce delivery fees for larger orders. Ask us for details!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

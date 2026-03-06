@@ -1,0 +1,55 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Calendar</h4>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="badge bg-warning text-dark"><i class="fas fa-circle me-1" style="font-size:8px"></i> Pending</span>
+    <span class="badge bg-success"><i class="fas fa-circle me-1" style="font-size:8px"></i> Confirmed</span>
+    <span class="badge bg-primary"><i class="fas fa-circle me-1" style="font-size:8px"></i> Completed</span>
+    <span class="badge bg-danger"><i class="fas fa-circle me-1" style="font-size:8px"></i> Cancelled</span>
+    <span class="badge bg-dark"><i class="fas fa-circle me-1" style="font-size:8px"></i> Blocked</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div id="calendar"></div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var calendarEl = document.getElementById('calendar');
+  var statusColors = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
+
+  var bookingEvents = [
+    ${bookings.map(function(b) {
+      var name = (b.first_name + ' ' + b.last_name).replace(/'/g, '');
+      var items = b.items || '';
+      return "{title:'" + name + (items ? ' - ' + items.replace(/'/g, '') : '') + "',start:'" + b.event_date + "T" + (b.event_start_time || '08:00') + "',end:'" + b.event_date + "T" + (b.event_end_time || '17:00') + "',url:'/admin/bookings/" + b.id + "',backgroundColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',borderColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',textColor:'#fff'}";
+    }).join(',')}
+  ];
+
+  var blockedEvents = [
+    ${blocked.map(function(bl) {
+      return "{title:'" + (bl.reason || 'Blocked').replace(/'/g, '') + "',start:'" + bl.date + "',allDay:true,display:'background',backgroundColor:'rgba(231,76,60,0.2)',borderColor:'#E74C3C'}";
+    }).join(',')}
+  ];
+
+  var calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'dayGridMonth',
+    headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
+    events: bookingEvents.concat(blockedEvents),
+    eventClick: function(info) {
+      if (info.event.url) { info.jsEvent.preventDefault(); window.location.href = info.event.url; }
+    },
+    height: 'auto',
+    navLinks: true,
+    editable: false,
+    dayMaxEvents: true
+  });
+  calendar.render();
+});
+</script>
+` }) %>

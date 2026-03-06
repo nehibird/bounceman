@@ -1,0 +1,225 @@
+<%- include('../layouts/public', { body: `
+
+<section class="py-5">
+  <div class="container" style="max-width:800px">
+
+    <!-- Header -->
+    <div class="text-center mb-4">
+      <h1 style="color:var(--bm-blue);font-weight:700"><i class="fas fa-file-contract me-2"></i>Rental Agreement</h1>
+      <p class="text-muted">Booking #<strong>${contract.booking_number}</strong></p>
+    </div>
+
+    <!-- Customer Info -->
+    <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+      <div class="row">
+        <div class="col-sm-6">
+          <div class="text-muted small">Customer</div>
+          <div style="font-weight:700;font-size:18px">${contract.first_name} ${contract.last_name}</div>
+        </div>
+        <div class="col-sm-6 text-sm-end">
+          <div class="text-muted small">Event Date</div>
+          <div style="font-weight:700;font-size:18px">${contract.event_date}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contract Content -->
+    <div class="bg-white rounded-4 shadow-sm mb-4">
+      <div class="p-4" style="border-bottom:1px solid #eee">
+        <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><i class="fas fa-scroll me-2"></i>Terms & Conditions</h5>
+      </div>
+      <div id="contractContent" class="p-4" style="max-height:400px;overflow-y:auto;line-height:1.8;color:#555">
+        ${contract.content}
+      </div>
+    </div>
+
+    <!-- Signature Section -->
+    <div class="bg-white rounded-4 p-4 shadow-sm">
+      <h5 style="color:var(--bm-blue);font-weight:700;margin-bottom:20px"><i class="fas fa-signature me-2"></i>Your Signature</h5>
+
+      <!-- Signature Canvas -->
+      <div style="border:2px dashed #ccc;border-radius:12px;background:#fafafa;position:relative;margin-bottom:16px">
+        <canvas id="sigCanvas" width="720" height="200" style="width:100%;height:200px;display:block;cursor:crosshair;touch-action:none"></canvas>
+        <div id="sigPlaceholder" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#bbb;font-size:16px;pointer-events:none">
+          <i class="fas fa-pen me-2"></i>Sign here
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end mb-3">
+        <button id="clearSigBtn" class="btn btn-sm btn-outline-secondary rounded-pill">
+          <i class="fas fa-eraser me-1"></i>Clear Signature
+        </button>
+      </div>
+
+      <!-- Signer Name -->
+      <div class="mb-3">
+        <label for="signerName" class="form-label fw-bold">Print Name</label>
+        <input type="text" id="signerName" class="form-control" value="${contract.first_name} ${contract.last_name}" style="border-radius:12px">
+      </div>
+
+      <!-- Agreement Checkbox -->
+      <div class="form-check mb-4">
+        <input class="form-check-input" type="checkbox" id="agreeCheck">
+        <label class="form-check-label" for="agreeCheck">
+          I have read and agree to the terms and conditions above
+        </label>
+      </div>
+
+      <!-- Submit -->
+      <button id="signBtn" class="btn btn-book-now btn-lg w-100" disabled>
+        <i class="fas fa-check-circle me-2"></i>Sign Contract
+      </button>
+
+      <div id="signError" class="alert alert-danger mt-3" style="display:none"></div>
+      <div id="signLoading" class="text-center mt-3" style="display:none">
+        <i class="fas fa-spinner fa-spin me-1"></i>Submitting signature...
+      </div>
+    </div>
+
+  </div>
+</section>
+
+`, scripts: `
+<script>
+(function() {
+  var canvas = document.getElementById('sigCanvas');
+  var ctx = canvas.getContext('2d');
+  var drawing = false;
+  var hasSigned = false;
+  var placeholder = document.getElementById('sigPlaceholder');
+  var agreeCheck = document.getElementById('agreeCheck');
+  var signBtn = document.getElementById('signBtn');
+
+  // Scale canvas for retina displays
+  function resizeCanvas() {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#333';
+  }
+  resizeCanvas();
+  window.addEventListener('resize', function() {
+    if (!hasSigned) resizeCanvas();
+  });
+
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    var clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    var pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  }
+
+  function draw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    var pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    hasSigned = true;
+    placeholder.style.display = 'none';
+    updateBtn();
+  }
+
+  function stopDraw(e) {
+    if (drawing) {
+      e.preventDefault();
+      drawing = false;
+    }
+  }
+
+  // Mouse events
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mouseup', stopDraw);
+  canvas.addEventListener('mouseleave', stopDraw);
+
+  // Touch events
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove', draw, { passive: false });
+  canvas.addEventListener('touchend', stopDraw, { passive: false });
+  canvas.addEventListener('touchcancel', stopDraw, { passive: false });
+
+  // Clear
+  document.getElementById('clearSigBtn').addEventListener('click', function() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasSigned = false;
+    placeholder.style.display = 'block';
+    updateBtn();
+  });
+
+  // Toggle button
+  function updateBtn() {
+    signBtn.disabled = !(hasSigned && agreeCheck.checked);
+  }
+  agreeCheck.addEventListener('change', updateBtn);
+
+  // Submit
+  signBtn.addEventListener('click', function() {
+    var name = document.getElementById('signerName').value.trim();
+    if (!name) {
+      alert('Please enter your name.');
+      return;
+    }
+    if (!hasSigned) {
+      alert('Please draw your signature above.');
+      return;
+    }
+    if (!agreeCheck.checked) {
+      alert('Please agree to the terms.');
+      return;
+    }
+
+    signBtn.disabled = true;
+    document.getElementById('signLoading').style.display = 'block';
+    document.getElementById('signError').style.display = 'none';
+
+    var sigData = canvas.toDataURL('image/png');
+
+    fetch('/contract/${contract.id}/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        signature_data: sigData,
+        signer_name: name
+      })
+    })
+    .then(function(res) {
+      if (!res.ok) throw new Error('Server error: ' + res.status);
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.success) {
+        window.location.href = data.redirect || '/contract/${contract.id}/signed';
+      } else {
+        throw new Error(data.message || 'Signing failed.');
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('signError').style.display = 'block';
+      document.getElementById('signError').textContent = err.message || 'An error occurred. Please try again.';
+      signBtn.disabled = false;
+      document.getElementById('signLoading').style.display = 'none';
+    });
+  });
+})();
+</script>
+` }) %>

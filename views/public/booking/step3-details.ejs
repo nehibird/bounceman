@@ -1,0 +1,226 @@
+<%- include('../../layouts/public', { body: `
+
+<style>
+  .booking-progress { display: flex; justify-content: center; gap: 0; margin-bottom: 40px; }
+  .booking-progress .step { display: flex; align-items: center; gap: 8px; padding: 12px 20px; color: #aaa; font-weight: 600; font-size: 14px; }
+  .booking-progress .step.active { color: var(--bm-orange); }
+  .booking-progress .step.completed { color: var(--bm-green); }
+  .booking-progress .step .step-num { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: #e9ecef; color: #aaa; }
+  .booking-progress .step.active .step-num { background: var(--bm-gradient); color: white; }
+  .booking-progress .step.completed .step-num { background: var(--bm-green); color: white; }
+  .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
+  .booking-progress .step-line.completed { background: var(--bm-green); }
+
+  .details-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 24px; }
+  .details-card h5 { color: var(--bm-blue); font-weight: 700; margin-bottom: 20px; }
+  .form-control, .form-select { border: 2px solid #e9ecef; border-radius: 12px; padding: 10px 16px; transition: border-color 0.2s; }
+  .form-control:focus, .form-select:focus { border-color: var(--bm-orange); box-shadow: 0 0 0 3px rgba(255,107,53,0.1); }
+  .form-label { font-weight: 600; color: #555; }
+  .delivery-note { background: #fff3cd; border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+</style>
+
+<section class="py-5">
+  <div class="container">
+
+    <!-- Progress Bar -->
+    <div class="booking-progress">
+      <div class="step completed">
+        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="d-none d-md-inline">Select Items</span>
+      </div>
+      <div class="step-line completed"></div>
+      <div class="step completed">
+        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="d-none d-md-inline">Pick Date</span>
+      </div>
+      <div class="step-line completed"></div>
+      <div class="step active">
+        <span class="step-num">3</span>
+        <span class="d-none d-md-inline">Your Details</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <span class="d-none d-md-inline">Review</span>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>Your Details</h2>
+      <p>Tell us about you and your event</p>
+    </div>
+
+    <form action="/booking/review" method="POST" id="detailsForm">
+      <!-- Hidden fields carried from previous steps -->
+      <input type="hidden" name="equipment_ids" id="hiddenItems">
+      <input type="hidden" name="event_date" id="hiddenDate">
+      <input type="hidden" name="event_start_time" id="hiddenStart">
+      <input type="hidden" name="event_end_time" id="hiddenEnd">
+      <input type="hidden" name="rental_duration" id="hiddenDuration">
+
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+
+          <!-- Customer Information -->
+          <div class="details-card">
+            <h5><i class="fas fa-user me-2"></i>Customer Information</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">First Name *</label>
+                <input type="text" class="form-control" name="first_name" required placeholder="John">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Last Name *</label>
+                <input type="text" class="form-control" name="last_name" required placeholder="Smith">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Email *</label>
+                <input type="email" class="form-control" name="email" required placeholder="john@example.com">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phone *</label>
+                <input type="tel" class="form-control" name="phone" required placeholder="(580) 555-0123">
+              </div>
+            </div>
+          </div>
+
+          <!-- Delivery Information -->
+          <div class="details-card">
+            <h5><i class="fas fa-truck me-2"></i>Delivery Information</h5>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Delivery Address *</label>
+                <input type="text" class="form-control" name="delivery_address" required placeholder="123 Main Street">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">City *</label>
+                <input type="text" class="form-control" name="delivery_city" required placeholder="Tonkawa">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">ZIP Code *</label>
+                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput">
+              </div>
+              <div class="col-12">
+                <div class="delivery-note">
+                  <i class="fas fa-info-circle me-1"></i>
+                  <strong>Delivery fees</strong> vary by location. Tonkawa addresses enjoy FREE delivery!
+                  ${zones.map(function(z) { return '<br><span class="small">' + z.name + ' (' + z.zip_codes + '): ' + (z.delivery_fee == 0 ? 'FREE' : '$' + parseFloat(z.delivery_fee).toFixed(0)) + '</span>'; }).join('')}
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Delivery Notes</label>
+                <textarea class="form-control" name="delivery_notes" rows="3" placeholder="Gate code, best entrance to use, any special instructions..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Event Details -->
+          <div class="details-card">
+            <h5><i class="fas fa-party-horn me-2" style="font-family:'Font Awesome 6 Free'"></i><i class="fas fa-star me-2"></i>Event Details</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Event Type *</label>
+                <select class="form-select" name="event_type" required>
+                  <option value="">Select event type...</option>
+                  <option value="Birthday Party">Birthday Party</option>
+                  <option value="Corporate Event">Corporate Event</option>
+                  <option value="School Event">School Event</option>
+                  <option value="Church Event">Church Event</option>
+                  <option value="Community Event">Community Event</option>
+                  <option value="Wedding">Wedding</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Venue Type *</label>
+                <select class="form-select" name="venue_type" required>
+                  <option value="">Select venue type...</option>
+                  <option value="Backyard">Backyard</option>
+                  <option value="Park">Park</option>
+                  <option value="Indoor">Indoor</option>
+                  <option value="Commercial">Commercial</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Surface Type *</label>
+                <select class="form-select" name="surface_type" required>
+                  <option value="">Select surface type...</option>
+                  <option value="Grass">Grass</option>
+                  <option value="Concrete">Concrete</option>
+                  <option value="Asphalt">Asphalt</option>
+                  <option value="Dirt">Dirt</option>
+                </select>
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="power_available" value="true" id="powerCheck">
+                  <label class="form-check-label fw-bold" for="powerCheck">
+                    <i class="fas fa-plug me-1"></i>Power outlet available nearby
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discount Code -->
+          <div class="details-card">
+            <h5><i class="fas fa-tag me-2"></i>Discount Code</h5>
+            <div class="row g-3">
+              <div class="col-md-8">
+                <input type="text" class="form-control" name="discount_code" placeholder="Enter discount code (optional)">
+              </div>
+              <div class="col-md-4">
+                <p class="text-muted small mt-2 mb-0">Code will be applied at review.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Navigation -->
+          <div class="d-flex justify-content-between">
+            <a href="#" class="btn btn-outline-secondary rounded-pill px-4" id="backBtn">
+              <i class="fas fa-arrow-left me-2"></i>Back
+            </a>
+            <button type="submit" class="btn btn-book-now px-4">
+              Continue to Review<i class="fas fa-arrow-right ms-2"></i>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </form>
+
+  </div>
+</section>
+
+`, scripts: `
+<script>
+  // Pull query params from previous step and populate hidden fields
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var items = params.get('items') || '';
+    var date = params.get('event_date') || '';
+    var start = params.get('event_start_time') || '';
+    var end = params.get('event_end_time') || '';
+    var duration = params.get('rental_duration') || 'daily';
+
+    document.getElementById('hiddenItems').value = items;
+    document.getElementById('hiddenDate').value = date;
+    document.getElementById('hiddenStart').value = start;
+    document.getElementById('hiddenEnd').value = end;
+    document.getElementById('hiddenDuration').value = duration;
+
+    // Build back link
+    document.getElementById('backBtn').href = '/booking/date?items=' + items;
+  })();
+
+  // Phone formatting
+  document.querySelector('input[name="phone"]').addEventListener('input', function(e) {
+    var val = e.target.value.replace(/\\D/g, '');
+    if (val.length >= 6) {
+      e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3,6) + '-' + val.substring(6,10);
+    } else if (val.length >= 3) {
+      e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3);
+    }
+  });
+</script>
+` }) %>

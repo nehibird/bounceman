@@ -1,0 +1,231 @@
+<%- include('../../layouts/admin', { body: `
+
+<a href="/admin/equipment" class="text-decoration-none mb-3 d-inline-block">
+  <i class="fas fa-arrow-left me-1"></i> Back to Equipment
+</a>
+
+<h4 class="mb-4">${item ? 'Edit Equipment' : 'Add New Equipment'}</h4>
+
+<form method="POST" action="${item ? '/admin/equipment/' + item.id : '/admin/equipment'}" enctype="multipart/form-data">
+
+  <!-- Basic Info -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-info-circle me-2"></i>Basic Information</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input type="text" name="name" class="form-control" required value="${item ? item.name : ''}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Category <span class="text-danger">*</span></label>
+          <select name="category" class="form-select" required>
+            <option value="">Select category...</option>
+            ${categories.map(cat => `<option value="${cat.slug}" ${item && item.category === cat.slug ? 'selected' : ''}>${cat.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Short Description</label>
+          <input type="text" name="short_description" class="form-control" value="${item ? item.short_description || '' : ''}" maxlength="200" placeholder="Brief one-line description">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Full Description</label>
+          <textarea name="description" class="form-control" rows="4" placeholder="Detailed description of the equipment...">${item ? item.description || '' : ''}</textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Specifications -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-ruler-combined me-2"></i>Specifications</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Dimensions</label>
+          <input type="text" name="dimensions" class="form-control" placeholder="e.g. 15L x 15W x 13H" value="${item ? item.dimensions || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Weight (lbs)</label>
+          <input type="number" name="weight_lbs" class="form-control" value="${item ? item.weight_lbs || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Capacity (Kids)</label>
+          <input type="number" name="capacity_kids" class="form-control" value="${item ? item.capacity_kids || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Age Range</label>
+          <input type="text" name="age_range" class="form-control" placeholder="e.g. 3-12" value="${item ? item.age_range || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Setup Time (min)</label>
+          <input type="number" name="setup_time_min" class="form-control" value="${item ? item.setup_time_min || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Power Required</label>
+          <input type="text" name="power_required" class="form-control" placeholder="e.g. 20 amp circuit" value="${item ? item.power_required || '' : ''}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pricing -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-dollar-sign me-2"></i>Pricing</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label">Daily Price <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_daily" class="form-control" step="0.01" required value="${item ? item.price_daily || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Hourly Price</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_hourly" class="form-control" step="0.01" value="${item ? item.price_hourly || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">4-Hour Price</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_4hr" class="form-control" step="0.01" value="${item ? item.price_4hr || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Overnight Price</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_overnight" class="form-control" step="0.01" value="${item ? item.price_overnight || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Weekend Price</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_weekend" class="form-control" step="0.01" value="${item ? item.price_weekend || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Wet Use Price</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_wet" class="form-control" step="0.01" value="${item ? item.price_wet || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Deposit Amount</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="deposit_amount" class="form-control" step="0.01" value="${item ? item.deposit_amount || '' : ''}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Replacement Cost</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="replacement_cost" class="form-control" step="0.01" value="${item ? item.replacement_cost || '' : ''}">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Equipment Details -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-cog me-2"></i>Equipment Details</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Manufacturer</label>
+          <input type="text" name="manufacturer" class="form-control" value="${item ? item.manufacturer || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Model</label>
+          <input type="text" name="model" class="form-control" value="${item ? item.model || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Serial Number</label>
+          <input type="text" name="serial_number" class="form-control" value="${item ? item.serial_number || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Purchase Date</label>
+          <input type="date" name="purchase_date" class="form-control" value="${item ? item.purchase_date || '' : ''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Condition</label>
+          <select name="condition" class="form-select">
+            <option value="excellent" ${item && item.condition === 'excellent' ? 'selected' : ''}>Excellent</option>
+            <option value="good" ${item && item.condition === 'good' ? 'selected' : ''}>Good</option>
+            <option value="fair" ${item && item.condition === 'fair' ? 'selected' : ''}>Fair</option>
+            <option value="poor" ${item && item.condition === 'poor' ? 'selected' : ''}>Poor</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-select">
+            <option value="available" ${item && item.status === 'available' ? 'selected' : ''}>Available</option>
+            <option value="maintenance" ${item && item.status === 'maintenance' ? 'selected' : ''}>Maintenance</option>
+            <option value="retired" ${item && item.status === 'retired' ? 'selected' : ''}>Retired</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Options -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-sliders-h me-2"></i>Options</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="form-check">
+            <input type="checkbox" name="featured" class="form-check-input" id="featured" value="1" ${item && item.featured ? 'checked' : ''}>
+            <label class="form-check-label" for="featured">
+              <i class="fas fa-star text-warning me-1"></i> Featured Item
+            </label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Sort Order</label>
+          <input type="number" name="sort_order" class="form-control" value="${item ? item.sort_order || 0 : 0}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Images -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-images me-2"></i>Images</div>
+    <div class="card-body">
+      ${item && images && images.length > 0 ? `
+        <div class="mb-3">
+          <label class="form-label text-muted">Current Images</label>
+          <div class="d-flex flex-wrap gap-2">
+            ${images.map(img => '<div style="position:relative"><img src="' + img.url + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:2px solid #eee"></div>').join('')}
+          </div>
+        </div>
+      ` : ''}
+      <div>
+        <label class="form-label">Upload Images</label>
+        <input type="file" name="images" class="form-control" multiple accept="image/*">
+        <small class="text-muted">Select one or more images. JPG, PNG, or WebP recommended.</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="d-flex gap-2 mb-4">
+    <button type="submit" class="btn btn-bm btn-lg">
+      <i class="fas fa-${item ? 'save' : 'plus'} me-1"></i>
+      ${item ? 'Update Equipment' : 'Add Equipment'}
+    </button>
+    <a href="/admin/equipment" class="btn btn-outline-secondary btn-lg">Cancel</a>
+  </div>
+
+</form>
+
+`, scripts: '' }) %>

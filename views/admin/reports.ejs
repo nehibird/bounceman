@@ -1,0 +1,125 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Reports</h4>
+  <div class="d-flex gap-2">
+    <a href="/admin/reports?period=week" class="btn btn-sm ${period === 'week' ? 'btn-bm' : 'btn-bm-outline'}">Week</a>
+    <a href="/admin/reports?period=month" class="btn btn-sm ${period === 'month' ? 'btn-bm' : 'btn-bm-outline'}">Month</a>
+    <a href="/admin/reports?period=quarter" class="btn btn-sm ${period === 'quarter' ? 'btn-bm' : 'btn-bm-outline'}">Quarter</a>
+    <a href="/admin/reports?period=year" class="btn btn-sm ${period === 'year' ? 'btn-bm' : 'btn-bm-outline'}">Year</a>
+  </div>
+</div>
+
+<!-- Stat Cards -->
+<div class="row g-4 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Total Revenue</div>
+          <div class="stat-value">$${parseFloat(revenue || 0).toFixed(2)}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-dollar-sign"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Total Bookings</div>
+          <div class="stat-value">${bookingCount || 0}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-calendar-check"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="stat-label">Avg Ticket</div>
+          <div class="stat-value">$${parseFloat(avgTicket || 0).toFixed(2)}</div>
+        </div>
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-receipt"></i></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-chart-bar me-2"></i>Revenue by Month</div>
+      <div class="card-body">
+        <canvas id="revenueChart" height="300"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Bookings by Status</div>
+      <div class="card-body">
+        <canvas id="statusChart" height="300"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Top Items -->
+<div class="card">
+  <div class="card-header"><i class="fas fa-trophy me-2"></i>Top Equipment</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>#</th><th>Item</th><th>Rentals</th><th>Revenue</th></tr></thead>
+        <tbody>
+          ${topItems.length > 0 ? topItems.map(function(item, idx) { return '<tr><td><span class="badge ' + (idx < 3 ? 'bg-warning text-dark' : 'bg-secondary') + '">' + (idx + 1) + '</span></td><td><strong>' + item.item_name + '</strong></td><td>' + item.rentals + '</td><td>$' + parseFloat(item.revenue || 0).toFixed(2) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No data available</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var revenueCtx = document.getElementById('revenueChart').getContext('2d');
+  new Chart(revenueCtx, {
+    type: 'bar',
+    data: {
+      labels: [${revenueByMonth.map(function(m) { return "'" + m.month + "'"; }).join(',')}],
+      datasets: [{
+        label: 'Revenue',
+        data: [${revenueByMonth.map(function(m) { return m.revenue; }).join(',')}],
+        backgroundColor: 'rgba(255,107,53,0.7)', borderColor: '#FF6B35', borderWidth: 1, borderRadius: 6
+      }, {
+        label: 'Bookings',
+        data: [${revenueByMonth.map(function(m) { return m.bookings; }).join(',')}],
+        backgroundColor: 'rgba(0,78,137,0.7)', borderColor: '#004E89', borderWidth: 1, borderRadius: 6, yAxisID: 'y1'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: function(v) { return '$' + v; } } },
+        y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+
+  var statusCtx = document.getElementById('statusChart').getContext('2d');
+  var sColors = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
+  new Chart(statusCtx, {
+    type: 'doughnut',
+    data: {
+      labels: [${statusBreakdown.map(function(s) { return "'" + s.status + "'"; }).join(',')}],
+      datasets: [{ data: [${statusBreakdown.map(function(s) { return s.c; }).join(',')}], backgroundColor: [${statusBreakdown.map(function(s) { return "'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[s.status] || '#6c757d') + "'"; }).join(',')}], borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+  });
+});
+</script>
+` }) %>
