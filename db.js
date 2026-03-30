@@ -415,12 +415,10 @@ function initialize() {
   const catInsert = d.prepare('INSERT OR IGNORE INTO categories (id, name, slug, description, sort_order) VALUES (?, ?, ?, ?, ?)');
   const { v4: uuid } = require('uuid');
   const cats = [
-    ['Bounce Houses', 'bounce-houses', 'Standard and themed bounce houses for all ages', 1],
-    ['Combo Units', 'combo-units', 'Bounce house and slide combo units', 2],
-    ['Water Slides', 'water-slides', 'Water slides and wet/dry combos for summer fun', 3],
-    ['Obstacle Courses', 'obstacle-courses', 'Inflatable obstacle courses for competitive fun', 4],
-    ['Interactive Games', 'interactive-games', 'Interactive inflatable games and challenges', 5],
-    ['Add-Ons', 'add-ons', 'Tables, chairs, generators, and accessories', 6]
+    ['Bounce Houses', 'bounce_houses', 'Standard and themed bounce houses for all ages', 1],
+    ['Combo Units', 'combo_units', 'Bounce house and slide combo units', 2],
+    ['Water Slides', 'water_slides', 'Water slides and wet/dry combos for summer fun', 3],
+    ['Add-Ons', 'add_ons', 'Party extras to make your event even better', 4],
   ];
   for (const [name, slug, desc, order] of cats) {
     catInsert.run(uuid(), name, slug, desc, order);
