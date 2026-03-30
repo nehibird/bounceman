@@ -274,7 +274,10 @@
     var priceKey = dur === '4hr' ? '4hr' : (dur === 'overnight' ? 'overnight' : 'daily');
     document.querySelectorAll('.addon-price').forEach(function(el) {
       var price = el.getAttribute('data-price-' + priceKey);
-      el.textContent = '+
+      el.textContent = '+\x24' + price;
+    });
+  }
+
   function updateTierStyles() {
     var selected = document.querySelector('input[name="time_slot"]:checked');
     // Reset all tiers
