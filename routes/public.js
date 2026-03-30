@@ -59,7 +59,7 @@ router.get('/equipment', (req, res) => {
     `).all();
   }
 
-  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add_ons' ORDER BY sort_order").all();
+  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 ORDER BY sort_order").all();
 
   res.render('public/equipment', {
     title: 'Our Equipment - Bounce Man Rentals',
