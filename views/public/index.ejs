@@ -76,7 +76,7 @@
     <div class="row g-4">
 ${featured.length > 0 ? featured.map(item => `
       <div class="col-md-6 col-lg-4">
-        <div class="equipment-card">
+        <a href="/equipment/${item.slug}" style="text-decoration:none;color:inherit;display:block"><div class="equipment-card" style="cursor:pointer">
           <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
           <div class="card-body">
             <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>
@@ -87,7 +87,7 @@ ${featured.length > 0 ? featured.map(item => `
               <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
             </div>
           </div>
-        </div>
+        </div></a>
       </div>
 `).join('') : `
       <div class="col-12 text-center py-5">
