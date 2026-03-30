@@ -179,7 +179,8 @@ router.post('/review', (req, res) => {
   const damage_waiver_fee = parseFloat(settings.damage_waiver_fee || '15');
 
   const total = subtotal + delivery_fee + tax_amount + damage_waiver_fee - discount_amount;
-  const deposit_amount = Math.round(total * parseFloat(settings.deposit_percent || '0.25') * 100) / 100;
+  const deposit_pct = parseFloat(settings.deposit_percent || '25') / 100;
+  const deposit_amount = Math.round(total * deposit_pct * 100) / 100;
 
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',
