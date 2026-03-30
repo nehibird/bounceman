@@ -138,46 +138,13 @@
           </div>
           <div id="availResult" class="mb-3" style="display:none"></div>
 
-          <!-- Rental Duration -->
-          <div class="mb-3" id="durationSection" style="display:none!important" style="display:none">
-            <label class="form-label fw-bold small">Rental Duration</label>
-            <div class="row g-2">
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="4hr" id="detDur4hr" class="btn-check">
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDur4hr">
-                  <div class="fw-bold small">4 Hours</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
-                </label>
-              </div>
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="daily" id="detDurDaily" class="btn-check" checked>
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurDaily">
-                  <div class="fw-bold small">Full Day</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
-                </label>
-              </div>
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight" class="btn-check">
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurOvernight">
-                  <div class="fw-bold small">Overnight</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Time Selection -->
-          <div class="mb-3" id="timeSection" style="display:none!important" style="display:none">
-            <div class="row g-2">
-              <div class="col-6">
-                <label class="form-label fw-bold small">Start Time</label>
-                <select id="detStartTime" class="form-select form-select-sm" style="border-radius:12px"></select>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-bold small">End Time</label>
-                <select id="detEndTime" class="form-select form-select-sm" style="border-radius:12px"></select>
-              </div>
-            </div>
+          <!-- Hidden inputs for goToBooking() - duration/time controlled by top tier cards -->
+          <div style="display:none">
+            <input type="radio" name="detail_duration" value="4hr" id="detDur4hr">
+            <input type="radio" name="detail_duration" value="daily" id="detDurDaily" checked>
+            <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight">
+            <select id="detStartTime"><option value="09:00">9 AM</option></select>
+            <select id="detEndTime"><option value="19:00">7 PM</option></select>
           </div>
 
           <!-- Book Now Button -->
