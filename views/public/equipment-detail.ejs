@@ -140,46 +140,13 @@
           </div>
           <div id="availResult" class="mb-3" style="display:none"></div>
 
-          <!-- Rental Duration -->
-          <div class="mb-3" id="durationSection" style="display:none">
-            <label class="form-label fw-bold small">Rental Duration</label>
-            <div class="row g-2">
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="4hr" id="detDur4hr" class="btn-check">
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDur4hr">
-                  <div class="fw-bold small">4 Hours</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
-                </label>
-              </div>
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="daily" id="detDurDaily" class="btn-check" checked>
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurDaily">
-                  <div class="fw-bold small">Full Day</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
-                </label>
-              </div>
-              <div class="col-4">
-                <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight" class="btn-check">
-                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurOvernight">
-                  <div class="fw-bold small">Overnight</div>
-                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Time Selection -->
-          <div class="mb-3" id="timeSection" style="display:none">
-            <div class="row g-2">
-              <div class="col-6">
-                <label class="form-label fw-bold small">Start Time</label>
-                <select id="detStartTime" class="form-select form-select-sm" style="border-radius:12px"></select>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-bold small">End Time</label>
-                <select id="detEndTime" class="form-select form-select-sm" style="border-radius:12px"></select>
-              </div>
-            </div>
+          <!-- Duration radios (hidden, controlled by top tier cards) -->
+          <div style="display:none">
+            <input type="radio" name="detail_duration" value="4hr" id="detDur4hr" class="btn-check">
+            <input type="radio" name="detail_duration" value="daily" id="detDurDaily" class="btn-check" checked>
+            <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight" class="btn-check">
+            <select id="detStartTime"><option value="09:00">9:00 AM</option></select>
+            <select id="detEndTime"><option value="19:00">7:00 PM</option></select>
           </div>
 
           <!-- Book Now Button -->
@@ -187,62 +154,9 @@
             <i class="fas fa-calendar-check me-2"></i>Book Now
           </button>
 
-          ${item.deposit_amount ? '<p class="text-center text-muted small mt-2 mb-0"><i class="fas fa-info-circle me-1"></i>A $' + parseFloat(item.deposit_amount).toFixed(0) + ' deposit is required to reserve.</p>' : ''}
+          ${item.deposit_amount ? '<p class="text-center text-muted small mt-2 mb-0"><i class="fas fa-info-circle me-1"></i>A \x24' + parseFloat(item.deposit_amount).toFixed(0) + ' deposit is required to reserve.</p>' : ''}
         </div>
       </div>
-
-    </div>
-
-    <!-- Full Description -->
-    ${item.description ? `
-    <div class="bg-white rounded-4 p-4 p-md-5 shadow-sm mt-5">
-      <h3 style="color:var(--bm-blue);font-weight:700;margin-bottom:20px">About This Rental</h3>
-      <div style="line-height:1.8;color:#555">${item.description}</div>
-    </div>
-    ` : ''}
-
-    <!-- Reviews -->
-    ${reviews.length > 0 ? `
-    <div class="mt-5">
-      <div class="section-title">
-        <h2>Customer Reviews</h2>
-      </div>
-      <div class="row g-4">
-        ${reviews.map(r => `
-        <div class="col-md-6">
-          <div class="testimonial-card">
-            <div class="stars mb-2">${'&#9733;'.repeat(r.rating)}${'&#9734;'.repeat(5 - r.rating)}</div>
-            <p>"${r.comment || 'Great experience!'}"</p>
-            <strong>${r.customer_name || 'Happy Customer'}</strong>
-            ${r.event_date ? '<span class="text-muted small ms-2">' + r.event_date + '</span>' : ''}
-          </div>
-        </div>
-        `).join('')}
-      </div>
-    </div>
-    ` : ''}
-
-    <!-- Related Equipment -->
-    ${related.length > 0 ? `
-    <div class="mt-5">
-      <div class="section-title">
-        <h2>You Might Also Like</h2>
-      </div>
-      <div class="row g-4">
-        ${related.slice(0, 3).map(r => `
-        <div class="col-md-4">
-          <div class="equipment-card">
-            <img src="${r.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${r.name}">
-            <div class="card-body">
-              <span class="badge-category mb-2">${(r.category || '').replace(/_/g, ' ')}</span>
-              <h5 class="card-title mt-2">${r.name}</h5>
-              <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="price-tag">From $${parseFloat(r.price_4hr || r.price_daily * 0.65).toFixed(0)}</span>
-                <a href="/equipment/${r.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
-              </div>
-            </div>
-          </div>
-        </div>
         `).join('')}
       </div>
     </div>
@@ -267,24 +181,7 @@
     });
   });
 
-  // Build time options
-  (function() {
-    var startSel = document.getElementById('detStartTime');
-    var endSel = document.getElementById('detEndTime');
-    for (var h = 7; h <= 22; h++) {
-      for (var m = 0; m < 60; m += 30) {
-        if (h === 22 && m === 30) break;
-        var hour12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-        var ampm = h >= 12 ? 'PM' : 'AM';
-        var label = hour12 + ':' + (m < 10 ? '0' + m : m) + ' ' + ampm;
-        var val = (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
-        startSel.innerHTML += '<option value="' + val + '">' + label + '</option>';
-        endSel.innerHTML += '<option value="' + val + '">' + label + '</option>';
-      }
-    }
-    startSel.value = '09:00';
-    endSel.value = '17:00';
-  })();
+  // Time defaults set by tier selection JS
 
   var dateAvailable = false;
 
@@ -306,36 +203,26 @@
           if (data.available) {
             dateAvailable = true;
             resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2 small"><i class="fas fa-check-circle me-1"></i>Available on ' + dateStr + '!</div>';
-            document.getElementById('durationSection').style.display = '';
-            document.getElementById('timeSection').style.display = '';
+            // duration handled by top tiers
+            // time handled by top tiers
             document.getElementById('bookNowBtn').disabled = false;
           } else {
             resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2 small"><i class="fas fa-times-circle me-1"></i>Not available on ' + dateStr + '. Try another date.</div>';
-            document.getElementById('durationSection').style.display = 'none';
-            document.getElementById('timeSection').style.display = 'none';
+            // duration handled by top tiers
+            // time handled by top tiers
           }
         })
         .catch(function() {
           dateAvailable = true;
           resultDiv.innerHTML = '<div class="alert alert-info mb-0 py-2 small"><i class="fas fa-info-circle me-1"></i>Could not verify online. You may proceed.</div>';
-          document.getElementById('durationSection').style.display = '';
-          document.getElementById('timeSection').style.display = '';
+          // duration handled by top tiers
+          // time handled by top tiers
           document.getElementById('bookNowBtn').disabled = false;
         });
     }
   });
 
-  // Duration change updates times
-  document.querySelectorAll('input[name="detail_duration"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-      var dur = this.value;
-      var startSel = document.getElementById('detStartTime');
-      var endSel = document.getElementById('detEndTime');
-      if (dur === '4hr') { startSel.value = '10:00'; endSel.value = '14:00'; }
-      else if (dur === 'daily') { startSel.value = '09:00'; endSel.value = '17:00'; }
-      else if (dur === 'overnight') { startSel.value = '09:00'; endSel.value = '09:00'; }
-    });
-  });
+  // Duration handled by tier click JS above
 
   // Book Now — skip steps 1 & 2, go directly to customer details
   function goToBooking() {
