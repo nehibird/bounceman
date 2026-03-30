@@ -12,7 +12,7 @@
       <form method="GET" action="/equipment" class="d-inline-flex align-items-center gap-2 flex-wrap justify-content-center">
         <label for="date" class="fw-bold mb-0">Check availability for:</label>
         <input type="date" id="date" name="date" class="form-control form-control-sm" style="width:auto;display:inline-block" value="${eventDate || ''}" min="${new Date().toISOString().split('T')[0]}">
-        ${activeCategory && activeCategory !== 'all' ? '<input type="hidden" name="category" value="' + category + '">' : ''}
+        ${activeCategory && activeCategory !== 'all' ? '<input type="hidden" name="category" value="' + activeCategory + '">' : ''}
         <button type="submit" class="btn btn-sm btn-bm rounded-pill">Check Date</button>
         ${eventDate ? '<a href="/equipment" class="btn btn-sm btn-outline-secondary rounded-pill">Clear</a>' : ''}
       </form>
