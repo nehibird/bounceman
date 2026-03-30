@@ -24,9 +24,9 @@ router.get('/', (req, res) => {
   const equipment = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' ORDER BY e.sort_order
+    FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons' ORDER BY e.sort_order
   `).all();
-  const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order').all();
+  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
   const packages = db.prepare('SELECT * FROM packages WHERE active = 1').all();
 
   res.render('public/booking/step1-select', {
@@ -42,13 +42,10 @@ router.get('/date', (req, res) => {
   const settings = getSettings();
   const items = req.query.items ? req.query.items.split(',') : [];
 
-  // Get add-on items
   const addons = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e
-    WHERE e.category = 'add_ons' AND e.status = 'available'
-    ORDER BY e.sort_order
+    FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
   `).all();
 
   res.render('public/booking/step2-date', {
@@ -179,8 +176,7 @@ router.post('/review', (req, res) => {
   const damage_waiver_fee = parseFloat(settings.damage_waiver_fee || '15');
 
   const total = subtotal + delivery_fee + tax_amount + damage_waiver_fee - discount_amount;
-  const deposit_pct = parseFloat(settings.deposit_percent || '25') / 100;
-  const deposit_amount = Math.round(total * deposit_pct * 100) / 100;
+  const deposit_amount = Math.round(total * parseFloat(settings.deposit_percent || '0.25') * 100) / 100;
 
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',

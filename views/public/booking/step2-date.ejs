@@ -56,7 +56,8 @@
         <form id="dateForm" action="/booking/details" method="GET">
           <!-- Carry forward selected items -->
           <input type="hidden" name="items" value="${selectedItems.join(',')}">
-          
+          <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
+          <div id="addonItemsContainer"></div>
 
           <div class="date-card mb-4">
             <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
@@ -64,42 +65,51 @@
             <input type="hidden" name="event_date" id="eventDateInput" required>
           </div>
 
-          <!-- Time Slot Selection -->
+          <!-- Rental Duration Selector -->
           <div class="date-card mb-4">
-            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-clock me-2"></i>Choose Your Time Slot</h5>
+            <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>Rental Duration</h6>
             <div class="row g-3">
-              <div class="col-md-6">
-                <input type="radio" name="time_slot" value="morning" id="slotMorning" class="btn-check">
-                <label class="btn btn-outline-primary w-100 text-start" for="slotMorning" style="padding:16px;border-radius:12px">
-                  <div class="fw-bold"><i class="fas fa-sun me-2" style="color:#f59e0b"></i>Morning</div>
-                  <div class="text-muted small">9:00 AM - 1:00 PM (4 hours)</div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="4hr" id="dur4hr" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="dur4hr" style="padding:12px">
+                  <div class="fw-bold">4 Hours</div>
+                  <div class="small">Quick party</div>
                 </label>
               </div>
-              <div class="col-md-6">
-                <input type="radio" name="time_slot" value="afternoon" id="slotAfternoon" class="btn-check">
-                <label class="btn btn-outline-primary w-100 text-start" for="slotAfternoon" style="padding:16px;border-radius:12px">
-                  <div class="fw-bold"><i class="fas fa-cloud-sun me-2" style="color:#f97316"></i>Afternoon</div>
-                  <div class="text-muted small">3:00 PM - 7:00 PM (4 hours)</div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="daily" id="durDaily" class="btn-check" checked>
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="durDaily" style="padding:12px">
+                  <div class="fw-bold">Full Day</div>
+                  <div class="small">8 hours</div>
                 </label>
               </div>
-              <div class="col-md-6">
-                <input type="radio" name="time_slot" value="fullday" id="slotFullDay" class="btn-check" checked>
-                <label class="btn btn-outline-primary w-100 text-start" for="slotFullDay" style="padding:16px;border-radius:12px">
-                  <div class="fw-bold"><i class="fas fa-calendar-day me-2" style="color:#3b82f6"></i>Full Day</div>
-                  <div class="text-muted small">9:00 AM - 7:00 PM (10 hours)</div>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <input type="radio" name="time_slot" value="overnight" id="slotOvernight" class="btn-check">
-                <label class="btn btn-outline-primary w-100 text-start" for="slotOvernight" style="padding:16px;border-radius:12px">
-                  <div class="fw-bold"><i class="fas fa-moon me-2" style="color:#6366f1"></i>Overnight</div>
-                  <div class="text-muted small">3:00 PM - 10:00 AM next day</div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="overnight" id="durOvernight" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="durOvernight" style="padding:12px">
+                  <div class="fw-bold">Overnight</div>
+                  <div class="small">Next-day pickup</div>
                 </label>
               </div>
             </div>
-            <input type="hidden" name="rental_duration" id="hiddenDuration2" value="daily">
-            <input type="hidden" name="event_start_time" id="startTime" value="09:00">
-            <input type="hidden" name="event_end_time" id="endTime" value="19:00">
+          </div>
+
+          <div class="date-card mb-4">
+            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-clock me-2"></i>Event Time</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Start Time</label>
+                <select name="event_start_time" id="startTime" class="time-select" required>
+                  <option value="">Select start time...</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold">End Time</label>
+                <select name="event_end_time" id="endTime" class="time-select" required>
+                  <option value="">Select end time...</option>
+                </select>
+              </div>
+            </div>
+            <p class="text-muted small mt-2 mb-0" id="timeHint"><i class="fas fa-info-circle me-1"></i>Times auto-set based on rental duration. You can adjust if needed.</p>
           </div>
 
           <!-- Availability Check -->
@@ -113,30 +123,23 @@
             <div class="availability-result" id="availResult"></div>
           </div>
 
-          <!-- Add-Ons -->
-          ${(typeof addons !== 'undefined' && addons.length > 0) ? `
-          <div class="mt-4 mb-4">
-            <h5 class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Make your event even better</h5>
+          ${addons.length > 0 ? `
+          <!-- Add-Ons Section (shown after date selected) -->
+          <div class="date-card mb-4" id="addonsSection" style="display:none">
+            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-plus-circle me-2"></i>Add-Ons</h5>
+            <p class="text-muted small mb-3">Enhance your event with these extras:</p>
             <div class="row g-3">
-              ${addons.map(addon => `
-              <div class="col-md-6">
-                <div class="card border" style="border-radius:12px">
-                  <div class="card-body d-flex align-items-center gap-3">
-                    <div style="flex-shrink:0">
-                      <i class="fas fa-music" style="font-size:24px;color:var(--bm-orange)"></i>
-                    </div>
-                    <div style="flex:1">
-                      <h6 class="mb-1">${addon.name}</h6>
-                      <p class="text-muted small mb-1">${addon.short_description || ''}</p>
-                      <span class="fw-bold" style="color:var(--bm-orange)">+${parseFloat(addon.price_4hr).toFixed(0)} (4hr) / ${parseFloat(addon.price_daily).toFixed(0)} (full day)</span>
-                    </div>
-                    <div>
-                      <input type="checkbox" name="addon_ids" value="${addon.id}" class="form-check-input" style="width:24px;height:24px;cursor:pointer">
-                    </div>
-                  </div>
-                </div>
-              </div>
-              `).join('')}
+              ${addons.map(function(a) { return '<div class="col-md-6">' +
+                '<div class="d-flex align-items-center p-3 rounded-3" style="border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s" id="addon-card-' + a.id + '" onclick="toggleAddon(&quot;' + a.id + '&quot;, &quot;' + (a.name || '').replace(/"/g, '') + '&quot;, ' + (a.price_4hr || 0) + ', ' + (a.price_daily || 0) + ', ' + (a.price_overnight || 0) + ')">' +
+                  (a.image ? '<img src="' + a.image + '" alt="' + a.name + '" style="width:50px;height:50px;border-radius:8px;object-fit:cover" class="me-3">' : '<div class="me-3" style="width:50px;height:50px;border-radius:8px;background:#f0f0f0;display:flex;align-items:center;justify-content:center"><i class="fas fa-music" style="color:var(--bm-orange)"></i></div>') +
+                  '<div class="flex-grow-1">' +
+                    '<div class="fw-bold small">' + a.name + '</div>' +
+                    '<div class="text-muted small">' + (a.short_description || '') + '</div>' +
+                    '<div class="addon-price fw-bold small" style="color:var(--bm-orange)" data-4hr="' + (a.price_4hr || 0) + '" data-daily="' + (a.price_daily || 0) + '" data-overnight="' + (a.price_overnight || 0) + '">$' + parseFloat(a.price_daily || 0).toFixed(0) + '</div>' +
+                  '</div>' +
+                  '<div class="ms-2"><i class="fas fa-check-circle addon-check" id="addon-check-' + a.id + '" style="color:#ccc;font-size:20px;transition:color 0.2s"></i></div>' +
+                '</div>' +
+              '</div>'; }).join('')}
             </div>
           </div>
           ` : ''}
@@ -186,6 +189,7 @@
       var endSel = document.getElementById('endTime');
       var hint = document.getElementById('timeHint');
       document.getElementById('hiddenDuration').value = dur;
+      updateAddonPrices();
       if (dur === '4hr') {
         startSel.value = '10:00';
         endSel.value = '14:00';
@@ -202,6 +206,49 @@
     });
   });
 
+  // Add-on tracking
+  var selectedAddons = {};
+
+  function toggleAddon(id, name, price4hr, priceDaily, priceOvernight) {
+    var card = document.getElementById('addon-card-' + id);
+    var check = document.getElementById('addon-check-' + id);
+    if (selectedAddons[id]) {
+      delete selectedAddons[id];
+      card.style.borderColor = '#e9ecef';
+      card.style.background = '';
+      check.style.color = '#ccc';
+    } else {
+      selectedAddons[id] = { name: name, price4hr: price4hr, priceDaily: priceDaily, priceOvernight: priceOvernight };
+      card.style.borderColor = 'var(--bm-orange)';
+      card.style.background = '#fff8f5';
+      check.style.color = 'var(--bm-orange)';
+    }
+    updateAddonItems();
+  }
+
+  function updateAddonItems() {
+    // Update hidden addon items field
+    var container = document.getElementById('addonItemsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    Object.keys(selectedAddons).forEach(function(id) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'addon_ids';
+      input.value = id;
+      container.appendChild(input);
+    });
+  }
+
+  function updateAddonPrices() {
+    var dur = document.querySelector('input[name="rental_duration"]:checked');
+    var durVal = dur ? dur.value : 'daily';
+    document.querySelectorAll('.addon-price').forEach(function(el) {
+      var price = durVal === '4hr' ? el.dataset['4hr'] : (durVal === 'overnight' ? el.dataset.overnight : el.dataset.daily);
+      el.textContent = '$' + parseFloat(price || 0).toFixed(0);
+    });
+  }
+
   // Initialize Flatpickr inline calendar
   var fp = flatpickr('#datePicker', {
     inline: true,
@@ -213,6 +260,9 @@
       var r = document.getElementById('availResult');
       r.style.display = 'none';
       r.className = 'availability-result';
+      // Show add-ons section
+      var addonsEl = document.getElementById('addonsSection');
+      if (addonsEl) addonsEl.style.display = '';
     }
   });
 
@@ -256,39 +306,34 @@
     });
   }
 
-  // Time slot mapping
-  var slotConfig = {
-    morning:   { duration: '4hr',       start: '09:00', end: '13:00' },
-    afternoon: { duration: '4hr',       start: '15:00', end: '19:00' },
-    fullday:   { duration: 'daily',     start: '09:00', end: '19:00' },
-    overnight: { duration: 'overnight', start: '15:00', end: '10:00' }
-  };
-
-  // Update hidden fields when slot changes
-  document.querySelectorAll('input[name="time_slot"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-      var config = slotConfig[this.value];
-      if (config) {
-        document.getElementById('hiddenDuration2').value = config.duration;
-        document.getElementById('startTime').value = config.start;
-        document.getElementById('endTime').value = config.end;
-      }
-    });
-  });
-
-  // Form validation
+  // Form validation — merge addon IDs into items before submit
   document.getElementById('dateForm').addEventListener('submit', function(e) {
     if (!document.getElementById('eventDateInput').value) {
       e.preventDefault();
       alert('Please select an event date.');
       return;
     }
-    var slot = document.querySelector('input[name="time_slot"]:checked');
-    if (!slot) {
+    var start = document.getElementById('startTime').value;
+    var end = document.getElementById('endTime').value;
+    if (!start || !end) {
       e.preventDefault();
-      alert('Please select a time slot.');
+      alert('Please select start and end times.');
       return;
     }
+    var dur = document.querySelector('input[name="rental_duration"]:checked');
+    var durVal = dur ? dur.value : 'daily';
+    if (durVal !== 'overnight' && start >= end) {
+      e.preventDefault();
+      alert('End time must be after start time.');
+      return;
+    }
+    // Append selected addon IDs to items list
+    var itemsInput = document.querySelector('input[name="items"]');
+    var allIds = itemsInput.value.split(',').filter(Boolean);
+    Object.keys(selectedAddons).forEach(function(id) {
+      if (allIds.indexOf(id) === -1) allIds.push(id);
+    });
+    itemsInput.value = allIds.join(',');
   });
 </script>
 ` }) %>

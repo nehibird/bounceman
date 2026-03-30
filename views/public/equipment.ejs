@@ -7,17 +7,6 @@
       <p>Browse our inventory and find the perfect rental for your event</p>
     </div>
 
-    <!-- Date Filter -->
-    <div class="text-center mb-4">
-      <form method="GET" action="/equipment" class="d-inline-flex align-items-center gap-2 flex-wrap justify-content-center">
-        <label for="date" class="fw-bold mb-0">Check availability for:</label>
-        <input type="date" id="date" name="date" class="form-control form-control-sm" style="width:auto;display:inline-block" value="${eventDate || ''}" min="${new Date().toISOString().split('T')[0]}">
-        ${activeCategory && activeCategory !== 'all' ? '<input type="hidden" name="category" value="' + activeCategory + '">' : ''}
-        <button type="submit" class="btn btn-sm btn-bm rounded-pill">Check Date</button>
-        ${eventDate ? '<a href="/equipment" class="btn btn-sm btn-outline-secondary rounded-pill">Clear</a>' : ''}
-      </form>
-    </div>
-
     <!-- Category Filter -->
     <div class="text-center mb-4">
       <a href="/equipment" class="btn ${activeCategory === 'all' ? 'btn-bm' : 'btn-outline-secondary'} rounded-pill m-1">All</a>
@@ -29,9 +18,7 @@
     <div class="row g-4">
       ${equipment.length > 0 ? equipment.map(item => `
       <div class="col-md-6 col-lg-4">
-        <a href="/equipment/${item.slug}" class="equipment-card-link" style="text-decoration:none;color:inherit;display:block${item.booked ? ';opacity:0.5' : ''}">
-        <div class="equipment-card" style="cursor:pointer${item.booked ? ';position:relative' : ''}">
-          ${item.booked ? '<div style="position:absolute;top:10px;right:10px;background:#dc3545;color:white;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:bold;z-index:1">Booked</div>' : ''}
+        <div class="equipment-card">
           <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
           <div class="card-body">
             <span class="badge-category mb-2">${(item.category || '').replace(/_/g, ' ')}</span>
@@ -40,7 +27,6 @@
             <div class="small text-muted mb-3">
               ${item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : ''}
               ${item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : ''}
-              &bull; <i class="fas fa-clock me-1"></i>4hr: $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)} &bull; Full Day: $${parseFloat(item.price_daily).toFixed(0)}
             </div>
             <div class="d-flex justify-content-between align-items-center">
               <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
@@ -51,7 +37,6 @@
             </div>
           </div>
         </div>
-        </a>
       </div>
       `).join('') : `
       <div class="col-12 text-center py-5">

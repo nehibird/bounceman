@@ -45,50 +45,28 @@
         <h1 style="color:var(--bm-blue);font-size:32px;font-weight:700;margin-bottom:12px">${item.name}</h1>
         <p class="text-muted" style="font-size:16px;line-height:1.6">${item.short_description || ''}</p>
 
-        <!-- Price Tiers (clickable duration selector) -->
-        <div class="row g-3 mb-0">
+        <!-- Price Tiers -->
+        <div class="row g-3 mb-3">
           <div class="col-4">
-            <input type="radio" name="time_slot" value="4hr" id="tier4hr" class="btn-check" form="inlineBookingForm">
-            <label class="d-block" for="tier4hr" style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent;cursor:pointer;transition:all 0.2s" id="tierLabel4hr">
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
               <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">4 Hours</div>
               <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
-            </label>
+            </div>
           </div>
           <div class="col-4">
-            <input type="radio" name="time_slot" value="fullday" id="tierFullDay" class="btn-check" form="inlineBookingForm" checked>
-            <label class="d-block" for="tierFullDay" style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative;cursor:pointer;transition:all 0.2s" id="tierLabelFullDay">
+            <div style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative">
               <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bm-orange);color:white;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px">POPULAR</div>
               <div style="font-size:12px;opacity:0.8;font-weight:600;text-transform:uppercase">Full Day</div>
               <div style="font-size:24px;font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
-            </label>
+            </div>
           </div>
           <div class="col-4">
-            <input type="radio" name="time_slot" value="overnight" id="tierOvernight" class="btn-check" form="inlineBookingForm">
-            <label class="d-block" for="tierOvernight" style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent;cursor:pointer;transition:all 0.2s" id="tierLabelOvernight">
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
               <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">Overnight</div>
               <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
-            </label>
+            </div>
           </div>
         </div>
-
-        <!-- Morning/Afternoon sub-choice (appears when 4hr selected) -->
-        <div id="timeSlotChoice" class="row g-2 mt-2 mb-3" style="display:none">
-          <div class="col-6">
-            <input type="radio" name="time_window" value="morning" id="winMorning" class="btn-check" form="inlineBookingForm" checked>
-            <label class="btn btn-outline-secondary w-100 text-center" for="winMorning" style="padding:10px;border-radius:12px">
-              <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
-              <div class="small text-muted">9 AM - 1 PM</div>
-            </label>
-          </div>
-          <div class="col-6">
-            <input type="radio" name="time_window" value="afternoon" id="winAfternoon" class="btn-check" form="inlineBookingForm">
-            <label class="btn btn-outline-secondary w-100 text-center" for="winAfternoon" style="padding:10px;border-radius:12px">
-              <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
-              <div class="small text-muted">3 PM - 7 PM</div>
-            </label>
-          </div>
-        </div>
-        <div id="tierSpacer" class="mb-3"></div>
 
         <!-- Specs Grid -->
         <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
@@ -133,54 +111,66 @@
           </div>
         </div>
 
-        <!-- Inline Booking Flow -->
-        <form id="inlineBookingForm" action="/booking/details" method="GET">
-          <input type="hidden" name="items" value="${item.id}">
-          <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
-          <input type="hidden" name="event_start_time" id="hiddenStart" value="09:00">
-          <input type="hidden" name="event_end_time" id="hiddenEnd" value="19:00">
+        <!-- Book This Item -->
+        <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+          <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-calendar-alt me-2"></i>Book This Item</h6>
 
-          <!-- Pick Date -->
-          <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
-            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-calendar-alt me-2"></i>Pick Your Date</h6>
-            <div class="input-group">
-              <input type="text" id="availDate" name="event_date" class="form-control" placeholder="Select a date..." readonly style="border-radius:12px 0 0 12px" required>
-              <button type="button" id="checkAvailBtn" class="btn" style="background:var(--bm-blue);color:white;border-radius:0 12px 12px 0;font-weight:600">
-                <i class="fas fa-search me-1"></i>Check
-              </button>
+          <!-- Date Picker -->
+          <div class="mb-3">
+            <label class="form-label fw-bold small">Event Date</label>
+            <input type="text" id="availDate" class="form-control" placeholder="Select a date..." readonly style="border-radius:12px">
+          </div>
+          <div id="availResult" class="mb-3" style="display:none"></div>
+
+          <!-- Rental Duration -->
+          <div class="mb-3" id="durationSection" style="display:none">
+            <label class="form-label fw-bold small">Rental Duration</label>
+            <div class="row g-2">
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="4hr" id="detDur4hr" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDur4hr">
+                  <div class="fw-bold small">4 Hours</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="daily" id="detDurDaily" class="btn-check" checked>
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurDaily">
+                  <div class="fw-bold small">Full Day</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurOvernight">
+                  <div class="fw-bold small">Overnight</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
+                </label>
+              </div>
             </div>
-            <div id="availResult" class="mt-3" style="display:none"></div>
           </div>
 
-          <!-- Step 3: Add-Ons (shown after date is checked) -->
-          ${(typeof addons !== 'undefined' && addons.length > 0) ? `
-          <div class="bg-white rounded-4 p-4 shadow-sm mb-4" id="addonSection" style="display:none">
-            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-plus-circle me-2"></i>Add Extras</h6>
-            ${addons.map(addon => `
-            <div class="d-flex align-items-center gap-3 p-3 rounded-3" style="background:#f8f9fa">
-              <i class="fas fa-music" style="font-size:20px;color:var(--bm-orange)"></i>
-              <div style="flex:1">
-                <div class="fw-bold">${addon.name}</div>
-                <div class="text-muted small">Make it a party — rent the world's loudest Bluetooth speaker!</div>
+          <!-- Time Selection -->
+          <div class="mb-3" id="timeSection" style="display:none">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label fw-bold small">Start Time</label>
+                <select id="detStartTime" class="form-select form-select-sm" style="border-radius:12px"></select>
               </div>
-              <div class="text-end me-2">
-                <span class="fw-bold addon-price" style="color:var(--bm-orange)" data-price-4hr="${parseFloat(addon.price_4hr).toFixed(0)}" data-price-daily="${parseFloat(addon.price_daily).toFixed(0)}" data-price-overnight="${parseFloat(addon.price_overnight || addon.price_daily).toFixed(0)}">+${parseFloat(addon.price_4hr).toFixed(0)}</span>
+              <div class="col-6">
+                <label class="form-label fw-bold small">End Time</label>
+                <select id="detEndTime" class="form-select form-select-sm" style="border-radius:12px"></select>
               </div>
-              <input type="checkbox" name="addon_ids" value="${addon.id}" class="form-check-input" style="width:22px;height:22px;cursor:pointer">
             </div>
-            `).join('')}
           </div>
-          ` : ''}
 
-          <!-- Book Button -->
-          <button type="submit" class="btn btn-book-now btn-lg w-100 mb-3" id="bookBtn">
-            <i class="fas fa-calendar-check me-2"></i>Continue to Details
+          <!-- Book Now Button -->
+          <button id="bookNowBtn" class="btn btn-book-now btn-lg w-100" disabled onclick="goToBooking()">
+            <i class="fas fa-calendar-check me-2"></i>Book Now
           </button>
-        </form>
 
-        ${item.deposit_amount ? `
-        <p class="text-center text-muted small"><i class="fas fa-info-circle me-1"></i>A ${parseFloat(item.deposit_amount).toFixed(0)} deposit is required to reserve.</p>
-        ` : ''}
+          ${item.deposit_amount ? '<p class="text-center text-muted small mt-2 mb-0"><i class="fas fa-info-circle me-1"></i>A $' + parseFloat(item.deposit_amount).toFixed(0) + ' deposit is required to reserve.</p>' : ''}
+        </div>
       </div>
 
     </div>
@@ -229,7 +219,7 @@
               <span class="badge-category mb-2">${(r.category || '').replace(/_/g, ' ')}</span>
               <h5 class="card-title mt-2">${r.name}</h5>
               <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="price-tag">4hr: $${parseFloat(r.price_4hr || r.price_daily * 0.65).toFixed(0)} | Full Day: $${parseFloat(r.price_daily).toFixed(0)}</span>
+                <span class="price-tag">From $${parseFloat(r.price_4hr || r.price_daily * 0.65).toFixed(0)}</span>
                 <a href="/equipment/${r.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
               </div>
             </div>
@@ -259,256 +249,89 @@
     });
   });
 
-  // Flatpickr date picker
+  // Build time options
+  (function() {
+    var startSel = document.getElementById('detStartTime');
+    var endSel = document.getElementById('detEndTime');
+    for (var h = 7; h <= 22; h++) {
+      for (var m = 0; m < 60; m += 30) {
+        if (h === 22 && m === 30) break;
+        var hour12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        var label = hour12 + ':' + (m < 10 ? '0' + m : m) + ' ' + ampm;
+        var val = (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
+        startSel.innerHTML += '<option value="' + val + '">' + label + '</option>';
+        endSel.innerHTML += '<option value="' + val + '">' + label + '</option>';
+      }
+    }
+    startSel.value = '09:00';
+    endSel.value = '17:00';
+  })();
+
+  var dateAvailable = false;
+
+  // Flatpickr date picker with auto availability check
   flatpickr('#availDate', {
     minDate: 'today',
     dateFormat: 'Y-m-d',
-    disableMobile: true
-  });
-
-
-  // Update addon prices based on selected duration
-  function updateAddonPrices() {
-    var slot = document.querySelector('input[name="time_slot"]:checked');
-    var dur = slot ? slot.value : 'fullday';
-    var priceKey = dur === '4hr' ? '4hr' : (dur === 'overnight' ? 'overnight' : 'daily');
-    document.querySelectorAll('.addon-price').forEach(function(el) {
-      var price = el.getAttribute('data-price-' + priceKey);
-      el.textContent = '+\x24' + price;
-    });
-  }
-
-  function updateTierStyles() {
-    var selected = document.querySelector('input[name="time_slot"]:checked');
-    // Reset all tiers
-    document.getElementById('tierLabel4hr').style.background = '#f8f9fa';
-    document.getElementById('tierLabel4hr').style.border = '2px solid transparent';
-    document.getElementById('tierLabel4hr').style.color = '';
-    document.getElementById('tierLabelFullDay').style.background = '#f8f9fa';
-    document.getElementById('tierLabelFullDay').style.border = '2px solid transparent';
-    document.getElementById('tierLabelFullDay').style.color = '';
-    document.getElementById('tierLabelOvernight').style.background = '#f8f9fa';
-    document.getElementById('tierLabelOvernight').style.border = '2px solid transparent';
-    document.getElementById('tierLabelOvernight').style.color = '';
-
-    if (selected) {
-      var label = document.getElementById('tierLabel' + {
-        '4hr': '4hr',
-        'fullday': 'FullDay',
-        'overnight': 'Overnight'
-      }[selected.value]);
-      if (label) {
-        label.style.background = 'var(--bm-blue)';
-        label.style.border = '2px solid var(--bm-blue)';
-        label.style.color = 'white';
-      }
-    }
-  }
-
-  // Time slot config
-  var slotConfig = {
-    '4hr-morning':   { duration: '4hr',       start: '09:00', end: '13:00' },
-    '4hr-afternoon': { duration: '4hr',       start: '15:00', end: '19:00' },
-    fullday:         { duration: 'daily',     start: '09:00', end: '19:00' },
-    overnight:       { duration: 'overnight', start: '15:00', end: '10:00' }
-  };
-
-  function updateHiddenFields() {
-    var slot = document.querySelector('input[name="time_slot"]:checked');
-    if (!slot) return;
-    var key = slot.value;
-    if (key === '4hr') {
-      var win = document.querySelector('input[name="time_window"]:checked');
-      key = '4hr-' + (win ? win.value : 'morning');
-    }
-    var config = slotConfig[key];
-    if (config) {
-      document.getElementById('hiddenDuration').value = config.duration;
-      document.getElementById('hiddenStart').value = config.start;
-      document.getElementById('hiddenEnd').value = config.end;
-    }
-  }
-
-  // Show/hide 4hr sub-choice
-  document.querySelectorAll('input[name="time_slot"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-      var subChoice = document.getElementById('timeSlotChoice');
-      if (this.value === '4hr') {
-        subChoice.style.display = 'block';
-      } else {
-        subChoice.style.display = 'none';
-      }
-      updateHiddenFields();
-      updateTierStyles();
-      updateAddonPrices();
-    });
-  });
-
-  // Initialize tier styles
-  updateTierStyles();
-
-  document.querySelectorAll('input[name="time_window"]').forEach(function(radio) {
-    radio.addEventListener('change', updateHiddenFields);
-  });
-
-  // Availability check
-  document.getElementById('checkAvailBtn').addEventListener('click', function() {
-    var date = document.getElementById('availDate').value;
-    var resultDiv = document.getElementById('availResult');
-    if (!date) {
+    disableMobile: true,
+    onChange: function(selectedDates, dateStr) {
+      dateAvailable = false;
+      document.getElementById('bookNowBtn').disabled = true;
+      var resultDiv = document.getElementById('availResult');
       resultDiv.style.display = 'block';
-      resultDiv.innerHTML = '<div class="alert alert-warning mb-0 py-2"><i class="fas fa-exclamation-triangle me-1"></i>Please select a date first.</div>';
-      return;
-    }
-    resultDiv.style.display = 'block';
-    resultDiv.innerHTML = '<div class="text-center text-muted py-2"><i class="fas fa-spinner fa-spin me-1"></i>Checking...</div>';
+      resultDiv.innerHTML = '<div class="text-center text-muted py-1"><i class="fas fa-spinner fa-spin me-1"></i>Checking availability...</div>';
 
-    fetch('/check-availability?item_id=${item.id}&date=' + encodeURIComponent(date))
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data.available) {
-          resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2"><i class="fas fa-check-circle me-1"></i>Available on ' + date + '!</div>';
-          // Show add-ons section
-          var addonSection = document.getElementById('addonSection');
-          if (addonSection) addonSection.style.display = 'block';
-        } else {
-          resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-times-circle me-1"></i>Sorry, not available on ' + date + '. Try another date.</div>';
-          var addonSection = document.getElementById('addonSection');
-          if (addonSection) addonSection.style.display = 'none';
-        }
-      })
-      .catch(function() {
-        resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-exclamation-circle me-1"></i>Could not check availability. Please try again.</div>';
-      });
+      fetch('/check-availability?equipment_id=${item.id}&date=' + encodeURIComponent(dateStr))
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.available) {
+            dateAvailable = true;
+            resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2 small"><i class="fas fa-check-circle me-1"></i>Available on ' + dateStr + '!</div>';
+            document.getElementById('durationSection').style.display = '';
+            document.getElementById('timeSection').style.display = '';
+            document.getElementById('bookNowBtn').disabled = false;
+          } else {
+            resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2 small"><i class="fas fa-times-circle me-1"></i>Not available on ' + dateStr + '. Try another date.</div>';
+            document.getElementById('durationSection').style.display = 'none';
+            document.getElementById('timeSection').style.display = 'none';
+          }
+        })
+        .catch(function() {
+          dateAvailable = true;
+          resultDiv.innerHTML = '<div class="alert alert-info mb-0 py-2 small"><i class="fas fa-info-circle me-1"></i>Could not verify online. You may proceed.</div>';
+          document.getElementById('durationSection').style.display = '';
+          document.getElementById('timeSection').style.display = '';
+          document.getElementById('bookNowBtn').disabled = false;
+        });
+    }
   });
 
-  // Form validation
-  document.getElementById('inlineBookingForm').addEventListener('submit', function(e) {
-    if (!document.getElementById('availDate').value) {
-      e.preventDefault();
-      alert('Please select a date first.');
-      return;
-    }
-    updateHiddenFields();
-  });
-</script>
-` }) %>
- + price;
-    });
-  }
-
-  // Tier visual styling
-  function updateTierStyles() {
-    var selected = document.querySelector('input[name="time_slot"]:checked');
-    // Reset all tiers
-    document.getElementById('tierLabel4hr').style.background = '#f8f9fa';
-    document.getElementById('tierLabel4hr').style.border = '2px solid transparent';
-    document.getElementById('tierLabel4hr').style.color = '';
-    document.getElementById('tierLabelFullDay').style.background = '#f8f9fa';
-    document.getElementById('tierLabelFullDay').style.border = '2px solid transparent';
-    document.getElementById('tierLabelFullDay').style.color = '';
-    document.getElementById('tierLabelOvernight').style.background = '#f8f9fa';
-    document.getElementById('tierLabelOvernight').style.border = '2px solid transparent';
-    document.getElementById('tierLabelOvernight').style.color = '';
-
-    if (selected) {
-      var label = document.getElementById('tierLabel' + {
-        '4hr': '4hr',
-        'fullday': 'FullDay',
-        'overnight': 'Overnight'
-      }[selected.value]);
-      if (label) {
-        label.style.background = 'var(--bm-blue)';
-        label.style.border = '2px solid var(--bm-blue)';
-        label.style.color = 'white';
-      }
-    }
-  }
-
-  // Time slot config
-  var slotConfig = {
-    '4hr-morning':   { duration: '4hr',       start: '09:00', end: '13:00' },
-    '4hr-afternoon': { duration: '4hr',       start: '15:00', end: '19:00' },
-    fullday:         { duration: 'daily',     start: '09:00', end: '19:00' },
-    overnight:       { duration: 'overnight', start: '15:00', end: '10:00' }
-  };
-
-  function updateHiddenFields() {
-    var slot = document.querySelector('input[name="time_slot"]:checked');
-    if (!slot) return;
-    var key = slot.value;
-    if (key === '4hr') {
-      var win = document.querySelector('input[name="time_window"]:checked');
-      key = '4hr-' + (win ? win.value : 'morning');
-    }
-    var config = slotConfig[key];
-    if (config) {
-      document.getElementById('hiddenDuration').value = config.duration;
-      document.getElementById('hiddenStart').value = config.start;
-      document.getElementById('hiddenEnd').value = config.end;
-    }
-  }
-
-  // Show/hide 4hr sub-choice
-  document.querySelectorAll('input[name="time_slot"]').forEach(function(radio) {
+  // Duration change updates times
+  document.querySelectorAll('input[name="detail_duration"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
-      var subChoice = document.getElementById('timeSlotChoice');
-      if (this.value === '4hr') {
-        subChoice.style.display = 'block';
-      } else {
-        subChoice.style.display = 'none';
-      }
-      updateHiddenFields();
-      updateTierStyles();
+      var dur = this.value;
+      var startSel = document.getElementById('detStartTime');
+      var endSel = document.getElementById('detEndTime');
+      if (dur === '4hr') { startSel.value = '10:00'; endSel.value = '14:00'; }
+      else if (dur === 'daily') { startSel.value = '09:00'; endSel.value = '17:00'; }
+      else if (dur === 'overnight') { startSel.value = '09:00'; endSel.value = '09:00'; }
     });
   });
 
-  // Initialize tier styles
-  updateTierStyles();
-
-  document.querySelectorAll('input[name="time_window"]').forEach(function(radio) {
-    radio.addEventListener('change', updateHiddenFields);
-  });
-
-  // Availability check
-  document.getElementById('checkAvailBtn').addEventListener('click', function() {
+  // Book Now — skip steps 1 & 2, go directly to customer details
+  function goToBooking() {
     var date = document.getElementById('availDate').value;
-    var resultDiv = document.getElementById('availResult');
-    if (!date) {
-      resultDiv.style.display = 'block';
-      resultDiv.innerHTML = '<div class="alert alert-warning mb-0 py-2"><i class="fas fa-exclamation-triangle me-1"></i>Please select a date first.</div>';
-      return;
-    }
-    resultDiv.style.display = 'block';
-    resultDiv.innerHTML = '<div class="text-center text-muted py-2"><i class="fas fa-spinner fa-spin me-1"></i>Checking...</div>';
-
-    fetch('/check-availability?item_id=${item.id}&date=' + encodeURIComponent(date))
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data.available) {
-          resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2"><i class="fas fa-check-circle me-1"></i>Available on ' + date + '!</div>';
-          // Show add-ons section
-          var addonSection = document.getElementById('addonSection');
-          if (addonSection) addonSection.style.display = 'block';
-        } else {
-          resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-times-circle me-1"></i>Sorry, not available on ' + date + '. Try another date.</div>';
-          var addonSection = document.getElementById('addonSection');
-          if (addonSection) addonSection.style.display = 'none';
-        }
-      })
-      .catch(function() {
-        resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2"><i class="fas fa-exclamation-circle me-1"></i>Could not check availability. Please try again.</div>';
-      });
-  });
-
-  // Form validation
-  document.getElementById('inlineBookingForm').addEventListener('submit', function(e) {
-    if (!document.getElementById('availDate').value) {
-      e.preventDefault();
-      alert('Please select a date first.');
-      return;
-    }
-    updateHiddenFields();
-  });
+    if (!date || !dateAvailable) return;
+    var dur = document.querySelector('input[name="detail_duration"]:checked');
+    var duration = dur ? dur.value : 'daily';
+    var start = document.getElementById('detStartTime').value;
+    var end = document.getElementById('detEndTime').value;
+    var params = 'items=${item.id}&event_date=' + encodeURIComponent(date) +
+      '&rental_duration=' + duration +
+      '&event_start_time=' + encodeURIComponent(start) +
+      '&event_end_time=' + encodeURIComponent(end);
+    window.location.href = '/booking/details?' + params;
+  }
 </script>
 ` }) %>
