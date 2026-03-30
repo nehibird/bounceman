@@ -89,15 +89,15 @@
             <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
             <div class="review-row">
               <span class="label">Date</span>
-              <span class="value">${event.event_date}</span>
+              <span class="value">${(() => { var d = new Date(event.event_date + 'T12:00:00'); return d.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}); })()}</span>
             </div>
             <div class="review-row">
               <span class="label">Duration</span>
-              <span class="value">${rental_duration === '4hr' ? '4 Hours' : rental_duration === 'overnight' ? 'Overnight' : 'Full Day'}</span>
+              <span class="value">${rental_duration === '4hr' ? (event.event_start_time === '09:00' ? '4 Hours (Morning)' : '4 Hours (Afternoon)') : rental_duration === 'overnight' ? 'Overnight' : 'Full Day'}</span>
             </div>
             <div class="review-row">
               <span class="label">Time</span>
-              <span class="value">${event.event_start_time} - ${event.event_end_time}${rental_duration === 'overnight' ? ' (next-day pickup)' : ''}</span>
+              <span class="value">${(() => { function fmt(t){var p=t.split(':'),h=parseInt(p[0]),m=p[1],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m+' '+ap;} return fmt(event.event_start_time)+' - '+fmt(event.event_end_time)+(rental_duration==='overnight'?' (next-day pickup)':''); })()}</span>
             </div>
             <div class="review-row">
               <span class="label">Event Type</span>

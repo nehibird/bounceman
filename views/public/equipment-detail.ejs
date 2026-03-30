@@ -84,6 +84,22 @@
           </div>
         </div>
 
+        <!-- Morning/Afternoon for 4hr -->
+        <div id="timeWindowChoice" class="row g-2 mt-2 mb-3" style="display:none">
+          <div class="col-6">
+            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('morning',this)" id="winMorningLabel">
+              <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
+              <div class="small text-muted">9 AM - 1 PM</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('afternoon',this)" id="winAfternoonLabel">
+              <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
+              <div class="small text-muted">3 PM - 7 PM</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Specs Grid -->
         <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
           <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-clipboard-list me-2"></i>Specifications</h6>
@@ -146,6 +162,10 @@
             <select id="detStartTime"><option value="09:00">9 AM</option></select>
             <select id="detEndTime"><option value="19:00">7 PM</option></select>
           </div>
+
+          <!-- Add-Ons shown after date confirmed -->
+          <div id="addonSection" class="mb-3" style="display:none"></div>
+          <div id="addonData" style="display:none">${typeof addons !== 'undefined' ? JSON.stringify(addons.map(function(a){return {id:a.id,name:a.name,desc:a.short_description||'',image:a.image||'',p4:a.price_4hr,pd:a.price_daily,po:a.price_overnight}})) : '[]'}</div>
 
           <!-- Book Now Button -->
           <button id="bookNowBtn" class="btn btn-book-now btn-lg w-100" disabled onclick="goToBooking()">
@@ -310,7 +330,9 @@
     var duration = dur ? dur.value : 'daily';
     var start = document.getElementById('detStartTime').value;
     var end = document.getElementById('detEndTime').value;
-    var params = 'items=${item.id}&event_date=' + encodeURIComponent(date) +
+    var addonChecks = document.querySelectorAll('.addon-check:checked');
+    var addonIds = Array.from(addonChecks).map(function(c){return c.value}).join(',');
+    var params = 'items=${item.id}' + (addonIds ? ',' + addonIds : '') + '&event_date=' + encodeURIComponent(date) +
       '&rental_duration=' + duration +
       '&event_start_time=' + encodeURIComponent(start) +
       '&event_end_time=' + encodeURIComponent(end);
@@ -368,6 +390,54 @@
     document.getElementById('winAfternoonLabel').style.color = '';
     el.style.background = 'var(--bm-blue)';
     el.style.color = 'white';
+  }
+
+  function selectTier(value) {
+    var ids = {'4hr':'detDur4hr','daily':'detDurDaily','overnight':'detDurOvernight'};
+    var r = document.getElementById(ids[value]);
+    if (r) r.checked = true;
+    var labels = {'4hr':document.getElementById('tierLabel4hr'),'daily':document.getElementById('tierLabelDaily'),'overnight':document.getElementById('tierLabelOvernight')};
+    Object.keys(labels).forEach(function(k){
+      var l=labels[k]; if(!l)return;
+      if(k===value){l.style.background='var(--bm-blue)';l.style.border='2px solid var(--bm-blue)';l.style.color='white';}
+      else{l.style.background='#f8f9fa';l.style.border='2px solid transparent';l.style.color='';}
+    });
+    var twc=document.getElementById('timeWindowChoice');
+    if(twc)twc.style.display=(value==='4hr')?'':'none';
+    var s=document.getElementById('detStartTime'),e=document.getElementById('detEndTime');
+    if(value==='4hr'){s.value='09:00';e.value='13:00';}
+    else if(value==='daily'){s.value='09:00';e.value='19:00';}
+    else{s.value='15:00';e.value='10:00';}
+    showAddons();
+  }
+  function selectWindow(value,el) {
+    var s=document.getElementById('detStartTime'),e=document.getElementById('detEndTime');
+    if(value==='afternoon'){s.value='15:00';e.value='19:00';}else{s.value='09:00';e.value='13:00';}
+    document.getElementById('winMorningLabel').style.background='';document.getElementById('winMorningLabel').style.color='';
+    document.getElementById('winAfternoonLabel').style.background='';document.getElementById('winAfternoonLabel').style.color='';
+    el.style.background='var(--bm-blue)';el.style.color='white';
+  }
+  function showAddons() {
+    var section=document.getElementById('addonSection');
+    var dataEl=document.getElementById('addonData');
+    if(!section||!dataEl)return;
+    var items;try{items=JSON.parse(dataEl.textContent);}catch(e){return;}
+    if(!items.length)return;
+    var dur=document.querySelector('input[name="detail_duration"]:checked');
+    var durVal=dur?dur.value:'daily';
+    var html='<label class="form-label fw-bold small">Add extras to your event</label>';
+    items.forEach(function(a){
+      var price=durVal==='4hr'?a.p4:(durVal==='overnight'?a.po:a.pd);
+      html+='<div class="d-flex align-items-center gap-2 p-2 mb-2 rounded-3" style="background:#f8f9fa">'+
+        '<img src="'+(a.image||'/assets/images/placeholder-bounce.svg')+'" style="width:40px;height:40px;object-fit:contain;border-radius:8px">'+
+        '<div style="flex:1"><div class="fw-bold small">'+a.name+'</div>'+
+        '<div class="text-muted" style="font-size:11px">'+a.desc+'</div></div>'+
+        '<span class="fw-bold small" style="color:var(--bm-orange)">+\x24'+price+'</span>'+
+        '<input type="checkbox" class="form-check-input addon-check" value="'+a.id+'" style="width:20px;height:20px;cursor:pointer">'+
+        '</div>';
+    });
+    section.innerHTML=html;
+    section.style.display='';
   }
 </script>
 ` }) %>
