@@ -38,12 +38,22 @@ router.get('/', (req, res) => {
 
 // Step 2 — date & time
 router.get('/date', (req, res) => {
+  const db = getDb();
   const settings = getSettings();
   const items = req.query.items ? req.query.items.split(',') : [];
 
+  // Get add-on items
+  const addons = db.prepare(`
+    SELECT e.*,
+      (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
+    FROM equipment e
+    WHERE e.category = 'add_ons' AND e.status = 'available'
+    ORDER BY e.sort_order
+  `).all();
+
   res.render('public/booking/step2-date', {
     title: 'Choose Date & Time - Bounce Man',
-    settings, selectedItems: items,
+    settings, selectedItems: items, addons,
     page: 'booking'
   });
 });
