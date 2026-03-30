@@ -27,10 +27,10 @@
             <div class="small text-muted mb-3">
               ${item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : ''}
               ${item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : ''}
-              &bull; <i class="fas fa-clock me-1"></i>4hr: ${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)} &bull; Full Day: ${parseFloat(item.price_daily).toFixed(0)}
+              &bull; <i class="fas fa-clock me-1"></i>4hr: $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)} &bull; Full Day: $${parseFloat(item.price_daily).toFixed(0)}
             </div>
             <div class="d-flex justify-content-between align-items-center">
-              <span class="price-tag">From ${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
               <div>
                 <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill me-1">Details</a>
                 <a href="/booking?items=${item.id}" class="btn btn-sm btn-bm rounded-pill">Book</a>
