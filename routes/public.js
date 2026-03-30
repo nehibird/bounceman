@@ -108,6 +108,15 @@ router.get('/equipment/:slug', (req, res) => {
     ORDER BY r.created_at DESC LIMIT 5
   `).all(item.id);
 
+  // Get add-ons
+  const addons = db.prepare(`
+    SELECT e.*,
+      (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
+    FROM equipment e
+    WHERE e.category = 'add_ons' AND e.status = 'available'
+    ORDER BY e.sort_order
+  `).all();
+
   res.render('public/equipment-detail', {
     title: `${item.name} - Bounce Man Rentals`,
     settings,
@@ -115,6 +124,7 @@ router.get('/equipment/:slug', (req, res) => {
     images,
     related,
     reviews,
+    addons,
     page: 'equipment'
   });
 });
