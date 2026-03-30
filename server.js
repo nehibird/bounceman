@@ -71,6 +71,11 @@ app.use((err, req, res, next) => {
 
 // Initialize DB and start
 db.initialize();
+
+// Start notification scheduler
+const scheduler = require('./services/scheduler');
+scheduler.start();
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Server running on port ${PORT}`);
   console.log(`[BounceMan] Admin: http://localhost:${PORT}/admin`);

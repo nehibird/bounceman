@@ -191,16 +191,114 @@ router.post('/review', (req, res) => {
   });
 });
 
-// Submit booking
+// Submit booking — redirect to Stripe Checkout for deposit payment
 router.post('/submit', async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const data = req.body;
 
   try {
+    const stripeService = require('../services/stripe');
+
+    const depositAmount = parseFloat(data.deposit_amount);
+    const equipmentIds = Array.isArray(data.equipment_ids)
+      ? data.equipment_ids
+      : (data.equipment_ids ? data.equipment_ids.split(',').filter(Boolean) : []);
+
+    const itemNames = equipmentIds
+      .map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name)
+      .filter(Boolean);
+    const description = itemNames.join(', ') + ' — ' + data.event_date;
+
+    // Ensure temp table exists for storing pending booking data
+    db.exec(`CREATE TABLE IF NOT EXISTS stripe_pending (
+      session_id TEXT PRIMARY KEY,
+      form_data  TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+
+    const formDataJson = JSON.stringify(data);
+    const baseUrl = process.env.BASE_URL || ('http://' + req.headers.host);
+
+    const session = await stripeService.createCheckoutSession({
+      depositAmount,
+      customerEmail: data.email,
+      bookingNumber: '(pending)',
+      bookingId: '',
+      description,
+      successUrl: baseUrl + '/booking/success?session_id={CHECKOUT_SESSION_ID}',
+      cancelUrl:  baseUrl + '/booking/cancel',
+    });
+
+    // Store full form data server-side keyed by Stripe session ID
+    db.prepare('INSERT OR REPLACE INTO stripe_pending (session_id, form_data) VALUES (?, ?)')
+      .run(session.id, formDataJson);
+
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error('[BOOKING STRIPE ERROR]', err);
+    res.status(500).render('error', {
+      title: 'Booking Error',
+      message: 'Payment setup failed. Please try again or call us at (580) 308-9288.',
+      status: 500
+    });
+  }
+});
+
+// Stripe success callback — verify payment, save booking, send notifications
+router.get('/success', async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const { session_id } = req.query;
+
+  if (!session_id) return res.redirect('/booking');
+
+  try {
+    const stripeService = require('../services/stripe');
+    const emailService  = require('../services/email');
+    const smsService    = require('../services/sms');
+
+    // Verify payment actually completed
+    const session = await stripeService.retrieveSession(session_id);
+    if (session.payment_status !== 'paid') {
+      return res.render('error', {
+        title: 'Payment Incomplete',
+        message: 'Your payment was not completed. Please try again.',
+        status: 400
+      });
+    }
+
+    // Check if already processed (idempotency)
+    try { db.exec('ALTER TABLE bookings ADD COLUMN stripe_session_id TEXT'); } catch(e) {}
+    const existingBooking = db.prepare('SELECT * FROM bookings WHERE stripe_session_id = ?').get(session_id);
+    if (existingBooking) {
+      return res.render('public/booking/confirmation', {
+        title: 'Booking Confirmed! - Bounce Man', settings,
+        bookingNumber: existingBooking.booking_number,
+        bookingId: existingBooking.id, page: 'booking'
+      });
+    }
+
+    // Retrieve pending form data
+    db.exec(`CREATE TABLE IF NOT EXISTS stripe_pending (
+      session_id TEXT PRIMARY KEY,
+      form_data  TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+    const pending = db.prepare('SELECT form_data FROM stripe_pending WHERE session_id = ?').get(session_id);
+    if (!pending) {
+      return res.render('error', {
+        title: 'Session Expired',
+        message: 'Booking session not found. Please call us at (580) 308-9288 to confirm your payment.',
+        status: 400
+      });
+    }
+
+    const data = JSON.parse(pending.form_data);
+
     // Create or find customer
     let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
-    const customerId = customer?.id || uuid();
+    const customerId = customer ? customer.id : uuid();
 
     if (!customer) {
       db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, address, city, state, zip, source)
@@ -208,9 +306,10 @@ router.post('/submit', async (req, res) => {
         customerId, data.first_name, data.last_name, data.email, data.phone,
         data.delivery_address, data.delivery_city, data.delivery_zip
       );
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     }
 
-    const bookingId = uuid();
+    const bookingId     = uuid();
     const bookingNumber = generateBookingNumber();
 
     db.prepare(`INSERT INTO bookings (
@@ -218,8 +317,9 @@ router.post('/submit', async (req, res) => {
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
       delivery_notes, surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount, discount_code,
-      damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      damage_waiver_fee, total, deposit_amount, balance_due, payment_status,
+      deposit_paid, stripe_session_id
+    ) VALUES (?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'partial', 1, ?)`).run(
       bookingId, bookingNumber, customerId,
       data.event_date, data.event_start_time, data.event_end_time,
       data.event_type, data.venue_type,
@@ -230,16 +330,19 @@ router.post('/submit', async (req, res) => {
       parseFloat(data.discount_amount || 0), data.discount_code || null,
       parseFloat(data.damage_waiver_fee || 0),
       parseFloat(data.total), parseFloat(data.deposit_amount),
-      parseFloat(data.total), 'unpaid'
+      parseFloat(data.total) - parseFloat(data.deposit_amount),
+      session_id
     );
 
     // Add line items
-    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? data.equipment_ids.split(',').filter(Boolean) : []);
+    const equipmentIds    = Array.isArray(data.equipment_ids)
+      ? data.equipment_ids
+      : (data.equipment_ids ? data.equipment_ids.split(',').filter(Boolean) : []);
     const bookingDuration = data.rental_duration || 'daily';
+
     for (const eqId of equipmentIds) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
       if (!eq) continue;
-
       let unitPrice;
       if (bookingDuration === '4hr') {
         unitPrice = eq.price_4hr || Math.round(eq.price_daily * 0.65 * 100) / 100;
@@ -248,39 +351,69 @@ router.post('/submit', async (req, res) => {
       } else {
         unitPrice = eq.price_daily;
       }
-
       db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
         VALUES (?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, eq.name, unitPrice, unitPrice, bookingDuration);
     }
 
+    // Record the deposit payment
+    db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method,
+      stripe_payment_id, status)
+      VALUES (?, ?, ?, ?, 'charge', 'stripe', ?, 'completed')`).run(
+      uuid(), bookingId, customerId,
+      parseFloat(data.deposit_amount),
+      (session.payment_intent && session.payment_intent.id) ? session.payment_intent.id : session_id
+    );
+
     // Update customer stats
-    db.prepare('UPDATE customers SET total_bookings = total_bookings + 1 WHERE id = ?').run(customerId);
+    db.prepare('UPDATE customers SET total_bookings = total_bookings + 1, total_revenue = total_revenue + ? WHERE id = ?')
+      .run(parseFloat(data.deposit_amount), customerId);
 
     // Create contract
     const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
     if (template) {
       const contractId = uuid();
+      const itemsList  = equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id) && db.prepare('SELECT name FROM equipment WHERE id = ?').get(id).name).filter(Boolean).join(', ');
       let content = template.content
         .replace(/\{\{booking_number\}\}/g, bookingNumber)
         .replace(/\{\{event_date\}\}/g, data.event_date)
         .replace(/\{\{event_start_time\}\}/g, data.event_start_time)
         .replace(/\{\{event_end_time\}\}/g, data.event_end_time)
-        .replace(/\{\{delivery_address\}\}/g, `${data.delivery_address}, ${data.delivery_city}, OK ${data.delivery_zip}`)
-        .replace(/\{\{items_list\}\}/g, equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', '))
+        .replace(/\{\{delivery_address\}\}/g, data.delivery_address + ', ' + data.delivery_city + ', OK ' + data.delivery_zip)
+        .replace(/\{\{items_list\}\}/g, itemsList)
         .replace(/\{\{total\}\}/g, parseFloat(data.total).toFixed(2))
         .replace(/\{\{deposit_amount\}\}/g, parseFloat(data.deposit_amount).toFixed(2))
-        .replace(/\{\{customer_name\}\}/g, `${data.first_name} ${data.last_name}`)
+        .replace(/\{\{customer_name\}\}/g, data.first_name + ' ' + data.last_name)
         .replace(/\{\{cancellation_hours\}\}/g, settings.cancellation_hours || '48');
-
-      db.prepare(`INSERT INTO contracts (id, booking_id, customer_id, template_id, content)
-        VALUES (?, ?, ?, ?, ?)`).run(contractId, bookingId, customerId, template.id, content);
+      db.prepare('INSERT INTO contracts (id, booking_id, customer_id, template_id, content) VALUES (?, ?, ?, ?, ?)')
+        .run(contractId, bookingId, customerId, template.id, content);
     }
 
-    // Log activity
+    // Activity log
     db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
       VALUES (?, 'booking_created', 'booking', ?, ?, ?)`).run(
-      uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${data.first_name} ${data.last_name}` }), req.ip
+      uuid(), bookingId,
+      JSON.stringify({ booking_number: bookingNumber, customer: data.first_name + ' ' + data.last_name, stripe_session: session_id }),
+      req.ip
     );
+
+    // Clean up pending record
+    db.prepare('DELETE FROM stripe_pending WHERE session_id = ?').run(session_id);
+
+    // Send notifications (non-blocking)
+    const bookingRow = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+    const items      = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
+
+    emailService.sendBookingConfirmation(bookingRow, customer, items).catch(e =>
+      console.error('[EMAIL] Confirmation failed:', e.message)
+    );
+    emailService.sendPaymentReceipt(bookingRow, customer, parseFloat(data.deposit_amount)).catch(e =>
+      console.error('[EMAIL] Receipt failed:', e.message)
+    );
+    if (customer.phone) {
+      smsService.sendBookingConfirmation(customer.phone, bookingNumber, data.event_date).catch(e =>
+        console.error('[SMS] Confirmation failed:', e.message)
+      );
+    }
 
     res.render('public/booking/confirmation', {
       title: 'Booking Confirmed! - Bounce Man',
@@ -290,10 +423,25 @@ router.post('/submit', async (req, res) => {
       page: 'booking'
     });
   } catch (err) {
-    console.error('[BOOKING ERROR]', err);
-    res.status(500).render('error', { title: 'Booking Error', message: 'Something went wrong. Please try again or call us.', status: 500 });
+    console.error('[BOOKING SUCCESS ERROR]', err);
+    res.status(500).render('error', {
+      title: 'Booking Error',
+      message: 'Something went wrong saving your booking. Your payment was received — please call (580) 308-9288 with your Stripe confirmation.',
+      status: 500
+    });
   }
 });
+
+// Cancel callback — customer clicked "Back" on Stripe Checkout
+router.get('/cancel', (req, res) => {
+  const settings = getSettings();
+  res.render('public/booking/cancel', {
+    title: 'Booking Not Completed - Bounce Man',
+    settings,
+    page: 'booking'
+  });
+});
+
 
 // Booking lookup
 router.get('/lookup', (req, res) => {
