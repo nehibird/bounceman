@@ -304,20 +304,20 @@
           if (data.available) {
             dateAvailable = true;
             resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2 small"><i class="fas fa-check-circle me-1"></i>Available on ' + dateStr + '!</div>';
-            document.getElementById('durationSection').style.display = '';
-            document.getElementById('timeSection').style.display = '';
+            // duration handled by top tiers
+            // time handled by top tiers
             document.getElementById('bookNowBtn').disabled = false;
           } else {
             resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2 small"><i class="fas fa-times-circle me-1"></i>Not available on ' + dateStr + '. Try another date.</div>';
-            document.getElementById('durationSection').style.display = 'none';
-            document.getElementById('timeSection').style.display = 'none';
+            // duration handled by top tiers
+            // time handled by top tiers
           }
         })
         .catch(function() {
           dateAvailable = true;
           resultDiv.innerHTML = '<div class="alert alert-info mb-0 py-2 small"><i class="fas fa-info-circle me-1"></i>Could not verify online. You may proceed.</div>';
-          document.getElementById('durationSection').style.display = '';
-          document.getElementById('timeSection').style.display = '';
+          // duration handled by top tiers
+          // time handled by top tiers
           document.getElementById('bookNowBtn').disabled = false;
         });
     }
