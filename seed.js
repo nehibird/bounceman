@@ -22,11 +22,9 @@ const catInsert = db.prepare(
 );
 
 const categories = [
-  ['Bounce Houses', 'bounce-houses', 'Classic and themed bounce houses for all ages', 1],
-  ['Water Slides', 'water-slides', 'Water slides and wet/dry combos for summer fun', 2],
-  ['Obstacle Courses', 'obstacle-courses', 'Inflatable obstacle courses for competitive fun', 3],
-  ['Interactive Games', 'interactive-games', 'Interactive inflatable games and challenges', 4],
-  ['Concessions', 'concessions', 'Snow cones, cotton candy, and party extras', 5],
+  ['Bounce Houses', 'bounce_houses', 'Classic bounce houses for all ages', 1],
+  ['Combo Units',   'combo_units',   'Bounce and slide combo units', 2],
+  ['Water Slides',  'water_slides',  'Water slides for summer fun', 3],
 ];
 
 for (const [name, slug, desc, order] of categories) {
@@ -39,57 +37,53 @@ console.log('[SEED] Categories seeded');
 // ---------------------------------------------------------------------------
 const equipInsert = db.prepare(`
   INSERT OR IGNORE INTO equipment
-    (id, name, slug, category, short_description, dimensions, capacity_kids,
+    (id, name, slug, category, short_description, capacity_kids,
      age_range, setup_time_min, power_required, price_4hr, price_daily, price_overnight,
      deposit_amount, status, featured, sort_order, condition)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, 'excellent')
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
 `);
 
+// [name, slug, category, short_description, capacity_kids, age_range, setup_min,
+//  power, price_4hr, price_daily, price_overnight, deposit, featured, sort_order, condition]
 const equipment = [
-  // [name, slug, category, short_description, dimensions, capacity_kids, age_range, setup_min, power, price_4hr, price_daily, price_overnight, deposit, featured, sort_order]
-  ['Classic Castle Bounce House', 'classic-castle-bounce-house', 'bounce_houses',
-    'A timeless castle bounce house perfect for any backyard party.',
-    "15'L x 15'W x 13'H", 8, '3-12', 15, '1 standard outlet (20 amp)', 100, 150, 175, 50, 1, 1],
+  ['Tropical Water Slide', 'tropical-water-slide', 'water_slides',
+    'Cool off with this towering tropical water slide — perfect for beating the Oklahoma heat at your next party or event.',
+    8, '3-12', 25, '1 standard outlet (20 amp)', 300, 375, 400, 75, 1, 1, 'good'],
 
-  ['Tropical Combo Bounce House w/ Slide', 'tropical-combo-bounce-house', 'bounce_houses',
-    'Bounce house and slide combo with a tropical island theme.',
-    "20'L x 15'W x 14'H", 10, '3-12', 20, '1 standard outlet (20 amp)', 125, 200, 225, 50, 1, 2],
+  ['Blue Crush Water Slide', 'blue-crush-water-slide', 'water_slides',
+    "A massive blue water slide that's a hit at birthday parties, church events, and family reunions.",
+    8, '3-12', 25, '1 standard outlet (20 amp)', 300, 375, 400, 75, 1, 2, 'good'],
 
-  ['Princess Castle', 'princess-castle', 'bounce_houses',
-    'A pink and purple princess-themed bounce house — fit for royalty!',
-    "15'L x 15'W x 14'H", 8, '3-10', 15, '1 standard outlet (20 amp)', 110, 175, 200, 50, 1, 3],
+  ['Tropical Combo Bounce & Slide', 'tropical-combo-bounce-slide', 'combo_units',
+    'The best of both worlds — a spacious bounce area with an attached slide. Kids love it.',
+    10, '3-12', 20, '1 standard outlet (20 amp)', 250, 325, 350, 75, 1, 3, 'good'],
 
-  ['18ft Tropical Water Slide', '18ft-tropical-water-slide', 'water_slides',
-    'Beat the Oklahoma heat with this towering tropical water slide.',
-    "30'L x 12'W x 18'H", 6, '5-14', 25, '1 standard outlet (20 amp)', 150, 250, 275, 75, 1, 4],
-
-  ['Dual Lane Water Slide', 'dual-lane-water-slide', 'water_slides',
-    'Race your friends down two lanes on this massive water slide!',
-    "35'L x 15'W x 20'H", 8, '6-14', 30, '1 standard outlet (20 amp)', 150, 300, 325, 75, 0, 5],
-
-  ['40ft Obstacle Course', '40ft-obstacle-course', 'obstacle_courses',
-    'A 40-foot inflatable obstacle course — great for competitions and field days.',
-    "40'L x 12'W x 15'H", 10, '5-15', 30, '2 standard outlets (20 amp)', 150, 275, 300, 75, 0, 6],
-
-  ['Wrecking Ball Game', 'wrecking-ball-game', 'interactive_games',
-    'Knock your opponents off the pedestal with the wrecking ball!',
-    "20'L x 20'W x 10'H", 4, '6-14', 20, '1 standard outlet (20 amp)', 125, 200, 225, 50, 0, 7],
-
-  ['Jousting Arena', 'jousting-arena', 'interactive_games',
-    'Two players battle head-to-head on inflatable pedestals with jousting poles.',
-    "20'L x 20'W x 8'H", 2, '6-14', 15, '1 standard outlet (20 amp)', 125, 175, 200, 50, 0, 8],
-
-  ['Snow Cone Machine', 'snow-cone-machine', 'concessions',
-    'Includes machine, 50 cups, and 3 syrup flavors. Tabletop unit.',
-    'Tabletop', null, 'All ages', 5, 'Standard outlet', 50, 75, 85, 25, 0, 9],
-
-  ['Cotton Candy Machine', 'cotton-candy-machine', 'concessions',
-    'Spin up fluffy cotton candy for your guests! Includes 50 cones and sugar.',
-    'Tabletop', null, 'All ages', 5, 'Standard outlet', 50, 75, 85, 25, 0, 10],
+  ['Classic Bounce House', 'classic-bounce-house', 'bounce_houses',
+    'A classic bounce house that never gets old. Great for younger kids and backyard birthday parties.',
+    8, '3-12', 15, '1 standard outlet (20 amp)', 150, 200, 225, 50, 1, 4, 'fair'],
 ];
 
-for (const [name, slug, category, desc, dims, cap, age, setup, power, price_4hr, price_daily, price_overnight, deposit, featured, sort] of equipment) {
-  equipInsert.run(uuid(), name, slug, category, desc, dims, cap, age, setup, power, price_4hr, price_daily, price_overnight, deposit, featured, sort);
+// Placeholder images per unit (Unsplash)
+const seedImages = {
+  'tropical-water-slide':        'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=800',
+  'blue-crush-water-slide':      'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=800',
+  'tropical-combo-bounce-slide': 'https://images.unsplash.com/photo-1573225342350-16731dd9bf83?w=800',
+  'classic-bounce-house':        'https://images.unsplash.com/photo-1558618047-3c8c76bb987d?w=800',
+};
+
+const imgInsert = db.prepare(`
+  INSERT OR IGNORE INTO equipment_images (id, equipment_id, image_path, is_primary, sort_order)
+  VALUES (?, ?, ?, 1, 1)
+`);
+
+for (const [name, slug, category, desc, cap, age, setup, power, price_4hr, price_daily, price_overnight, deposit, featured, sort, cond] of equipment) {
+  const equipId = uuid();
+  equipInsert.run(equipId, name, slug, category, desc, cap, age, setup, power, price_4hr, price_daily, price_overnight, deposit, featured, sort, cond);
+  // Insert primary image if the equipment row was actually inserted (not already present)
+  const row = db.prepare('SELECT id FROM equipment WHERE slug = ?').get(slug);
+  if (row) {
+    imgInsert.run(uuid(), row.id, seedImages[slug]);
+  }
 }
 console.log('[SEED] Equipment seeded (' + equipment.length + ' items)');
 
@@ -113,7 +107,7 @@ const settingInsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VA
 const extraSettings = {
   company_name: 'Bounce Man LLC',
   company_email: 'info@bouncemanrentals.com',
-  company_phone: '(580) 555-JUMP',
+  company_phone: '(580) 308-9288',
   company_address: 'Tonkawa, OK 74653',
   tax_rate: '0.085',
   deposit_percent: '25',
