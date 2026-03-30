@@ -29,7 +29,7 @@
               ${item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : ''}
             </div>
             <div class="d-flex justify-content-between align-items-center">
-              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+              <span class="price-tag">4hr: ${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)} | Full Day: ${parseFloat(item.price_daily).toFixed(0)}</span>
               <div>
                 <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill me-1">Details</a>
                 <a href="/booking?items=${item.id}" class="btn btn-sm btn-bm rounded-pill">Book</a>

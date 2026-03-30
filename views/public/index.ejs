@@ -83,7 +83,7 @@ ${featured.length > 0 ? featured.map(item => `
             <h5 class="card-title mt-2">${item.name}</h5>
             <p class="text-muted small">${item.short_description || ''}</p>
             <div class="d-flex justify-content-between align-items-center mt-3">
-              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+              <span class="price-tag">4hr: ${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)} | Full Day: ${parseFloat(item.price_daily).toFixed(0)}</span>
               <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
             </div>
           </div>
