@@ -45,28 +45,50 @@
         <h1 style="color:var(--bm-blue);font-size:32px;font-weight:700;margin-bottom:12px">${item.name}</h1>
         <p class="text-muted" style="font-size:16px;line-height:1.6">${item.short_description || ''}</p>
 
-        <!-- Price Tiers -->
-        <div class="row g-3 mb-3">
+        <!-- Price Tiers (clickable duration selector) -->
+        <div class="row g-3 mb-0">
           <div class="col-4">
-            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+            <input type="radio" name="time_slot" value="4hr" id="tier4hr" class="btn-check" form="inlineBookingForm">
+            <label class="d-block" for="tier4hr" style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent;cursor:pointer;transition:all 0.2s" id="tierLabel4hr">
               <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">4 Hours</div>
-              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
-            </div>
+              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
+            </label>
           </div>
           <div class="col-4">
-            <div style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative">
+            <input type="radio" name="time_slot" value="fullday" id="tierFullDay" class="btn-check" form="inlineBookingForm" checked>
+            <label class="d-block" for="tierFullDay" style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative;cursor:pointer;transition:all 0.2s" id="tierLabelFullDay">
               <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bm-orange);color:white;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px">POPULAR</div>
               <div style="font-size:12px;opacity:0.8;font-weight:600;text-transform:uppercase">Full Day</div>
-              <div style="font-size:24px;font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
-            </div>
+              <div style="font-size:24px;font-weight:700">${parseFloat(item.price_daily).toFixed(0)}</div>
+            </label>
           </div>
           <div class="col-4">
-            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+            <input type="radio" name="time_slot" value="overnight" id="tierOvernight" class="btn-check" form="inlineBookingForm">
+            <label class="d-block" for="tierOvernight" style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent;cursor:pointer;transition:all 0.2s" id="tierLabelOvernight">
               <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">Overnight</div>
-              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
-            </div>
+              <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
+            </label>
           </div>
         </div>
+
+        <!-- Morning/Afternoon sub-choice (appears when 4hr selected) -->
+        <div id="timeSlotChoice" class="row g-2 mt-2 mb-3" style="display:none">
+          <div class="col-6">
+            <input type="radio" name="time_window" value="morning" id="winMorning" class="btn-check" form="inlineBookingForm" checked>
+            <label class="btn btn-outline-secondary w-100 text-center" for="winMorning" style="padding:10px;border-radius:12px">
+              <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
+              <div class="small text-muted">9 AM - 1 PM</div>
+            </label>
+          </div>
+          <div class="col-6">
+            <input type="radio" name="time_window" value="afternoon" id="winAfternoon" class="btn-check" form="inlineBookingForm">
+            <label class="btn btn-outline-secondary w-100 text-center" for="winAfternoon" style="padding:10px;border-radius:12px">
+              <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
+              <div class="small text-muted">3 PM - 7 PM</div>
+            </label>
+          </div>
+        </div>
+        <div id="tierSpacer" class="mb-3"></div>
 
         <!-- Specs Grid -->
         <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
@@ -168,7 +190,7 @@
 
           <!-- Step 2: Pick Date -->
           <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
-            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-calendar-alt me-2"></i>2. Pick Your Date</h6>
+            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-calendar-alt me-2"></i>Pick Your Date</h6>
             <div class="input-group">
               <input type="text" id="availDate" name="event_date" class="form-control" placeholder="Select a date..." readonly style="border-radius:12px 0 0 12px" required>
               <button type="button" id="checkAvailBtn" class="btn" style="background:var(--bm-blue);color:white;border-radius:0 12px 12px 0;font-weight:600">
@@ -181,7 +203,7 @@
           <!-- Step 3: Add-Ons (shown after date is checked) -->
           ${(typeof addons !== 'undefined' && addons.length > 0) ? `
           <div class="bg-white rounded-4 p-4 shadow-sm mb-4" id="addonSection" style="display:none">
-            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-plus-circle me-2"></i>3. Add Extras</h6>
+            <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-plus-circle me-2"></i>Add Extras</h6>
             ${addons.map(addon => `
             <div class="d-flex align-items-center gap-3 p-3 rounded-3" style="background:#f8f9fa">
               <i class="fas fa-music" style="font-size:20px;color:var(--bm-orange)"></i>
@@ -292,6 +314,34 @@
     disableMobile: true
   });
 
+  // Tier visual styling
+  function updateTierStyles() {
+    var selected = document.querySelector('input[name="time_slot"]:checked');
+    // Reset all tiers
+    document.getElementById('tierLabel4hr').style.background = '#f8f9fa';
+    document.getElementById('tierLabel4hr').style.border = '2px solid transparent';
+    document.getElementById('tierLabel4hr').style.color = '';
+    document.getElementById('tierLabelFullDay').style.background = '#f8f9fa';
+    document.getElementById('tierLabelFullDay').style.border = '2px solid transparent';
+    document.getElementById('tierLabelFullDay').style.color = '';
+    document.getElementById('tierLabelOvernight').style.background = '#f8f9fa';
+    document.getElementById('tierLabelOvernight').style.border = '2px solid transparent';
+    document.getElementById('tierLabelOvernight').style.color = '';
+
+    if (selected) {
+      var label = document.getElementById('tierLabel' + {
+        '4hr': '4hr',
+        'fullday': 'FullDay',
+        'overnight': 'Overnight'
+      }[selected.value]);
+      if (label) {
+        label.style.background = 'var(--bm-blue)';
+        label.style.border = '2px solid var(--bm-blue)';
+        label.style.color = 'white';
+      }
+    }
+  }
+
   // Time slot config
   var slotConfig = {
     '4hr-morning':   { duration: '4hr',       start: '09:00', end: '13:00' },
@@ -326,8 +376,12 @@
         subChoice.style.display = 'none';
       }
       updateHiddenFields();
+      updateTierStyles();
     });
   });
+
+  // Initialize tier styles
+  updateTierStyles();
 
   document.querySelectorAll('input[name="time_window"]').forEach(function(radio) {
     radio.addEventListener('change', updateHiddenFields);
