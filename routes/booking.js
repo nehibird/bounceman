@@ -117,7 +117,7 @@ router.post('/review', (req, res) => {
     delivery_notes, discount_code, rental_duration
   } = req.body;
 
-  const items = Array.isArray(equipment_ids) ? equipment_ids : [equipment_ids];
+  const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids ? equipment_ids.split(',').filter(Boolean) : []);
   const duration = rental_duration || 'daily';
 
   // Calculate pricing based on rental duration
@@ -176,7 +176,7 @@ router.post('/review', (req, res) => {
   const damage_waiver_fee = parseFloat(settings.damage_waiver_fee || '15');
 
   const total = subtotal + delivery_fee + tax_amount + damage_waiver_fee - discount_amount;
-  const deposit_amount = Math.round(total * parseFloat(settings.deposit_percent || '0.25') * 100) / 100;
+  const deposit_amount = Math.round(total * (parseFloat(settings.deposit_percent || '25') / 100) * 100) / 100;
 
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',
@@ -234,7 +234,7 @@ router.post('/submit', async (req, res) => {
     );
 
     // Add line items
-    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : [data.equipment_ids];
+    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? data.equipment_ids.split(',').filter(Boolean) : []);
     const bookingDuration = data.rental_duration || 'daily';
     for (const eqId of equipmentIds) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
