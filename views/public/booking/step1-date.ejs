@@ -10,11 +10,12 @@
   .booking-progress .step.completed .step-num { background: var(--bm-green); color: white; }
   .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
   .date-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+  .date-card-calendar { width: fit-content; margin: 0 auto; }
   
   
   
-  #datePicker { display: flex; justify-content: center; }
-  .date-card:first-of-type { max-width: 420px; margin: 0 auto; }
+  
+  
   .dur-btn { padding:16px; border-radius:12px; cursor:pointer; transition: all 0.2s; }
   .dur-btn.selected { background: var(--bm-blue,#004E89) !important; color: white !important; border-color: var(--bm-blue,#004E89) !important; }
 </style>
@@ -54,7 +55,7 @@
 
           <div class="date-card mb-4">
             <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
-            <div id="datePicker"></div>
+            <div class="date-card-calendar"><div id="datePicker"></div></div>
             <input type="hidden" name="event_date" id="eventDateInput" required>
           </div>
 
