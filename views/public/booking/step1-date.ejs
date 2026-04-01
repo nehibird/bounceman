@@ -1,0 +1,167 @@
+<%- include('../../layouts/public', { body: `
+
+<style>
+  .booking-progress { display: flex; justify-content: center; gap: 0; margin-bottom: 40px; }
+  .booking-progress .step { display: flex; align-items: center; gap: 8px; padding: 12px 20px; color: #aaa; font-weight: 600; font-size: 14px; }
+  .booking-progress .step.active { color: var(--bm-orange); }
+  .booking-progress .step.completed { color: var(--bm-green); }
+  .booking-progress .step .step-num { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: #e9ecef; color: #aaa; }
+  .booking-progress .step.active .step-num { background: var(--bm-gradient); color: white; }
+  .booking-progress .step.completed .step-num { background: var(--bm-green); color: white; }
+  .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
+  .date-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+  .dur-btn { padding:16px; border-radius:12px; cursor:pointer; transition: all 0.2s; }
+  .dur-btn.selected { background: var(--bm-blue,#004E89) !important; color: white !important; border-color: var(--bm-blue,#004E89) !important; }
+</style>
+
+<section class="py-5">
+  <div class="container">
+    <div class="booking-progress">
+      <div class="step active">
+        <span class="step-num">1</span>
+        <span class="d-none d-md-inline">Pick Date</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <span class="step-num">2</span>
+        <span class="d-none d-md-inline">Select Items</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <span class="step-num">3</span>
+        <span class="d-none d-md-inline">Your Details</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <span class="d-none d-md-inline">Review</span>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>When is Your Event?</h2>
+      <p>Pick a date and time to see what's available</p>
+    </div>
+
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <form id="dateForm" action="/booking/select" method="GET">
+
+          <div class="date-card mb-4">
+            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
+            <div id="datePicker"></div>
+            <input type="hidden" name="event_date" id="eventDateInput" required>
+          </div>
+
+          <div class="date-card mb-4">
+            <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
+            <div class="row g-3">
+              <div class="col-4">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('halfday',this)" id="durHalfDay">
+                  <div class="fw-bold">Half Day</div>
+                  <div class="small">4 hours</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn selected" onclick="selectDuration('fullday',this)" id="durFullDay">
+                  <div class="fw-bold">Full Day</div>
+                  <div class="small">10 hours</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('overnight',this)" id="durOvernight">
+                  <div class="fw-bold">Overnight</div>
+                  <div class="small">Next-day pickup</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Morning/Afternoon sub-choice (only for half day) -->
+            <div id="halfDayChoice" class="row g-3 mt-3" style="display:none">
+              <div class="col-6">
+                <div class="btn btn-outline-secondary w-100 text-center dur-btn selected" onclick="selectHalf('morning',this)" id="halfMorning">
+                  <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
+                  <div class="small text-muted">9 AM - 1 PM</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="btn btn-outline-secondary w-100 text-center dur-btn" onclick="selectHalf('afternoon',this)" id="halfAfternoon">
+                  <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
+                  <div class="small text-muted">3 PM - 7 PM</div>
+                </div>
+              </div>
+            </div>
+
+            <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
+            <input type="hidden" name="event_start_time" id="hiddenStart" value="09:00">
+            <input type="hidden" name="event_end_time" id="hiddenEnd" value="19:00">
+          </div>
+
+          <div class="text-center">
+            <button type="submit" class="btn btn-book-now px-5 py-3">
+              See Available Equipment <i class="fas fa-arrow-right ms-2"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+`, scripts: `
+<script>
+  flatpickr('#datePicker', {
+    inline: true,
+    minDate: 'today',
+    dateFormat: 'Y-m-d',
+    onChange: function(sel, dateStr) {
+      document.getElementById('eventDateInput').value = dateStr;
+    }
+  });
+
+  function selectDuration(type, el) {
+    // Reset all duration buttons
+    document.querySelectorAll('#durHalfDay,#durFullDay,#durOvernight').forEach(function(b) { b.classList.remove('selected'); });
+    el.classList.add('selected');
+
+    var halfChoice = document.getElementById('halfDayChoice');
+
+    if (type === 'halfday') {
+      halfChoice.style.display = '';
+      // Default to morning
+      selectHalf('morning', document.getElementById('halfMorning'));
+    } else if (type === 'fullday') {
+      halfChoice.style.display = 'none';
+      document.getElementById('hiddenDuration').value = 'daily';
+      document.getElementById('hiddenStart').value = '09:00';
+      document.getElementById('hiddenEnd').value = '19:00';
+    } else if (type === 'overnight') {
+      halfChoice.style.display = 'none';
+      document.getElementById('hiddenDuration').value = 'overnight';
+      document.getElementById('hiddenStart').value = '15:00';
+      document.getElementById('hiddenEnd').value = '10:00';
+    }
+  }
+
+  function selectHalf(time, el) {
+    document.getElementById('halfMorning').classList.remove('selected');
+    document.getElementById('halfAfternoon').classList.remove('selected');
+    el.classList.add('selected');
+    document.getElementById('hiddenDuration').value = '4hr';
+    if (time === 'morning') {
+      document.getElementById('hiddenStart').value = '09:00';
+      document.getElementById('hiddenEnd').value = '13:00';
+    } else {
+      document.getElementById('hiddenStart').value = '15:00';
+      document.getElementById('hiddenEnd').value = '19:00';
+    }
+  }
+
+  document.getElementById('dateForm').addEventListener('submit', function(e) {
+    if (!document.getElementById('eventDateInput').value) {
+      e.preventDefault();
+      alert('Please select an event date.');
+    }
+  });
+</script>
+` }) %>

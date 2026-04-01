@@ -17,42 +17,65 @@ function generateBookingNumber() {
   return `${prefix}-${ts}-${rand}`;
 }
 
-// Booking start — select equipment
+// Booking start — pick date & time first
 router.get('/', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const equipment = db.prepare(`
-    SELECT e.*,
-      (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons' ORDER BY e.sort_order
-  `).all();
-  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
-  const packages = db.prepare('SELECT * FROM packages WHERE active = 1').all();
 
-  res.render('public/booking/step1-select', {
-    title: 'Book Your Rental - Bounce Man',
-    settings, equipment, categories, packages,
+  res.render('public/booking/step1-date', {
+    title: 'Pick Your Date - Bounce Man',
+    settings,
     page: 'booking'
   });
 });
 
-// Step 2 — date & time
-router.get('/date', (req, res) => {
+// Step 2 — select equipment (filtered by date availability)
+router.get('/select', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const items = req.query.items ? req.query.items.split(',') : [];
+  const eventDate = req.query.event_date || '';
+  const rentalDuration = req.query.rental_duration || 'daily';
+  const startTime = req.query.event_start_time || '09:00';
+  const endTime = req.query.event_end_time || '19:00';
+
+  let equipment = db.prepare(`
+    SELECT e.*,
+      (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
+    FROM equipment e WHERE e.status = 'available' AND e.category != 'add_ons' ORDER BY e.sort_order
+  `).all();
+
+  // Filter out booked items for the selected date
+  if (eventDate) {
+    const bookedIds = db.prepare(`
+      SELECT DISTINCT bi.equipment_id FROM bookings b
+      JOIN booking_items bi ON bi.booking_id = b.id
+      WHERE b.event_date = ? AND b.status NOT IN ('cancelled', 'declined')
+    `).all(eventDate).map(r => r.equipment_id);
+    const blockedIds = db.prepare('SELECT equipment_id FROM blocked_dates WHERE date = ? AND equipment_id IS NOT NULL')
+      .all(eventDate).map(r => r.equipment_id);
+    const unavailableIds = new Set([...bookedIds, ...blockedIds]);
+    equipment = equipment.filter(item => !unavailableIds.has(item.id));
+  }
 
   const addons = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
+    FROM equipment e WHERE e.status = 'available' AND e.category = 'add_ons' ORDER BY e.sort_order
   `).all();
 
-  res.render('public/booking/step2-date', {
-    title: 'Choose Date & Time - Bounce Man',
-    settings, selectedItems: items, addons,
+  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add_ons' ORDER BY sort_order").all();
+
+  res.render('public/booking/step2-select', {
+    title: 'Select Your Equipment - Bounce Man',
+    settings, equipment, categories, addons,
+    eventDate, rentalDuration, startTime, endTime,
     page: 'booking'
   });
+});
+
+// Legacy date route (redirect to root)
+router.get('/date', (req, res) => {
+  res.redirect('/booking');
 });
 
 // Check availability for multiple items on a date
