@@ -114,7 +114,7 @@ router.post('/review', (req, res) => {
     first_name, last_name, email, phone,
     delivery_address, delivery_city, delivery_zip,
     event_type, venue_type, surface_type, power_available,
-    delivery_notes, discount_code, rental_duration
+    delivery_notes, discount_code, rental_duration, wet_option
   } = req.body;
 
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids ? equipment_ids.split(',').filter(Boolean) : []);
@@ -146,6 +146,10 @@ router.post('/review', (req, res) => {
     });
     subtotal += unitPrice;
   }
+
+  // Wet option surcharge
+  const wetSurcharge = (wet_option === "1" || wet_option === "true") ? 20 : 0;
+  subtotal += wetSurcharge;
 
   // Delivery fee by zip
   let delivery_fee = 0;
@@ -185,7 +189,8 @@ router.post('/review', (req, res) => {
     customer: { first_name, last_name, email, phone },
     delivery: { delivery_address, delivery_city, delivery_zip, delivery_notes, venue_type, surface_type, power_available },
     event: { event_date, event_start_time, event_end_time, event_type },
-    pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount },
+    pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount, wetSurcharge },
+    wet_option: wet_option || '0',
     rental_duration: duration,
     page: 'booking'
   });

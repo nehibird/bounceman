@@ -160,7 +160,8 @@
                 <span>$${parseFloat(pricing.subtotal).toFixed(2)}</span>
               </div>
               <div class="price-line">
-                <span>Delivery Fee</span>
+                <span>${pricing.wetSurcharge > 0 ? '<div class="price-line"><span>Wet Slide Option</span><span>\x2420.00</span></div>' : ''}
+              Delivery Fee</span>
                 <span>${parseFloat(pricing.delivery_fee) === 0 ? '<span class="text-success fw-bold">FREE</span>' : '$' + parseFloat(pricing.delivery_fee).toFixed(2)}</span>
               </div>
               ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
@@ -207,6 +208,7 @@
             <input type="hidden" name="discount_amount" value="${pricing.discount_amount || 0}">
             
             <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+            <input type="hidden" name="wet_option" value="${wet_option || '0'}">
             <input type="hidden" name="damage_waiver_fee" value="${pricing.damage_waiver_fee || 0}">
             <input type="hidden" name="total" value="${pricing.total}">
             <input type="hidden" name="deposit_amount" value="${pricing.deposit_amount}">

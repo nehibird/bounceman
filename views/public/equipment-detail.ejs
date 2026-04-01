@@ -100,6 +100,9 @@
           </div>
         </div>
 
+        <!-- Wet/Dry Option (water slides only) -->
+        ${item.category === 'water_slides' ? '<div id="wetDryChoice" class="row g-2 mb-3"><div class="col-6"><div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer;background:var(--bm-blue);color:white" onclick="selectWetDry(false,this)" id="dryLabel"><div class="fw-bold"><i class="fas fa-sun me-1"></i>Dry</div><div class="small">Standard setup</div></div></div><div class="col-6"><div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWetDry(true,this)" id="wetLabel"><div class="fw-bold"><i class="fas fa-tint me-1" style="color:#3b82f6"></i>Wet (+\x2420)</div><div class="small">Water hookup included</div></div></div></div>' : ''}
+
         <!-- Specs Grid -->
         <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
           <h6 style="color:var(--bm-blue);font-weight:700;margin-bottom:16px"><i class="fas fa-clipboard-list me-2"></i>Specifications</h6>
@@ -159,6 +162,7 @@
             <input type="radio" name="detail_duration" value="4hr" id="detDur4hr">
             <input type="radio" name="detail_duration" value="daily" id="detDurDaily" checked>
             <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight">
+            <input type="hidden" name="wet_option" id="wetOptionInput" value="0">
             <select id="detStartTime"><option value="09:00">9 AM</option></select>
             <select id="detEndTime"><option value="19:00">7 PM</option></select>
           </div>
@@ -332,9 +336,10 @@
     var end = document.getElementById('detEndTime').value;
     var addonChecks = document.querySelectorAll('.addon-check:checked');
     var addonIds = Array.from(addonChecks).map(function(c){return c.value}).join(',');
+    var wetOpt = document.getElementById('wetOptionInput') ? document.getElementById('wetOptionInput').value : '0';
     var params = 'items=${item.id}' + (addonIds ? ',' + addonIds : '') + '&event_date=' + encodeURIComponent(date) +
       '&rental_duration=' + duration +
-      '&event_start_time=' + encodeURIComponent(start) +
+      '&event_start_time=' + encodeURIComponent(start) + '&wet_option=' + wetOpt +
       '&event_end_time=' + encodeURIComponent(end);
     window.location.href = '/booking/details?' + params;
   }
@@ -438,6 +443,15 @@
     });
     section.innerHTML=html;
     section.style.display='';
+  }
+
+  // Wet/Dry selection
+  function selectWetDry(isWet, el) {
+    document.getElementById('wetOptionInput').value = isWet ? '1' : '0';
+    document.getElementById('dryLabel').style.background = isWet ? '' : 'var(--bm-blue)';
+    document.getElementById('dryLabel').style.color = isWet ? '' : 'white';
+    document.getElementById('wetLabel').style.background = isWet ? 'var(--bm-blue)' : '';
+    document.getElementById('wetLabel').style.color = isWet ? 'white' : '';
   }
 </script>
 ` }) %>

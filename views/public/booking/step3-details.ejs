@@ -57,6 +57,7 @@
       <input type="hidden" name="event_start_time" id="hiddenStart">
       <input type="hidden" name="event_end_time" id="hiddenEnd">
       <input type="hidden" name="rental_duration" id="hiddenDuration">
+      <input type="hidden" name="wet_option" id="hiddenWet">
 
       <div class="row justify-content-center">
         <div class="col-lg-8">
@@ -208,6 +209,7 @@
     document.getElementById('hiddenStart').value = start;
     document.getElementById('hiddenEnd').value = end;
     document.getElementById('hiddenDuration').value = duration;
+    document.getElementById('hiddenWet').value = params.get('wet_option') || '0';
 
     // Build back link
     document.getElementById('backBtn').href = '/booking/date?items=' + items;
