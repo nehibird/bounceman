@@ -64,7 +64,7 @@
 
     <div class="row">
       <!-- Equipment Grid -->
-      <div class="col-lg-8">
+      <div class="col-lg-12">
         <div class="row g-4" id="equipmentGrid">
           ${equipment.map(function(item) { return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + ('${rentalDuration}' === '4hr' ? (item.price_4hr || item.price_daily * 0.65) : '${rentalDuration}' === 'overnight' ? (item.price_overnight || item.price_daily * 1.15) : item.price_daily) + '">' +
             '<div class="equipment-card select-card" onclick="toggleItem(this, &quot;' + item.id + '&quot;, &quot;' + (item.name || '').replace(/"/g, '') + '&quot;, ' + item.price_daily + ')">' +
@@ -110,9 +110,12 @@
         ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
       </div>
 
-      <!-- Selection Summary Sidebar -->
-      <div class="col-lg-4">
-        <div class="selection-summary sticky-summary" id="selectionSummary" style="position:sticky;top:100px;">
+    </div>
+
+    <!-- Selection Summary (below all options) -->
+    <div class="row mt-4">
+      <div class="col-lg-6 mx-auto">
+        <div class="selection-summary" id="selectionSummary" style="border-radius:16px;padding:24px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
           <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-shopping-cart me-2"></i>Your Selection</h5>
           <hr>
           <div id="selectedList">
