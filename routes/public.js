@@ -236,6 +236,18 @@ router.get('/service-areas', (req, res) => {
   res.render('public/service-areas', { title: 'Service Areas - Bounce Man Rentals', settings, zones, page: 'service-areas' });
 });
 
+// Privacy Policy
+router.get('/privacy', (req, res) => {
+  const settings = getSettings();
+  res.render('public/privacy', { title: 'Privacy Policy - Bounce Man Rentals', settings, page: 'privacy' });
+});
+
+// Terms and Conditions
+router.get('/terms', (req, res) => {
+  const settings = getSettings();
+  res.render('public/terms', { title: 'Terms & Conditions - Bounce Man Rentals', settings, page: 'terms' });
+});
+
 // Digital contract signing
 router.get('/contract/:id', (req, res) => {
   const db = getDb();
