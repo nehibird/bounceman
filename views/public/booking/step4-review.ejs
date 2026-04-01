@@ -89,15 +89,15 @@
             <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
             <div class="review-row">
               <span class="label">Date</span>
-              <span class="value">${(() => { var d = new Date(event.event_date + 'T12:00:00'); return d.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}); })()}</span>
+              <span class="value">${event.event_date}</span>
             </div>
             <div class="review-row">
               <span class="label">Duration</span>
-              <span class="value">${rental_duration === '4hr' ? (event.event_start_time === '09:00' ? '4 Hours (Morning)' : '4 Hours (Afternoon)') : rental_duration === 'overnight' ? 'Overnight' : 'Full Day'}</span>
+              <span class="value">${rental_duration === '4hr' ? '4 Hours' : rental_duration === 'overnight' ? 'Overnight' : 'Full Day'}</span>
             </div>
             <div class="review-row">
               <span class="label">Time</span>
-              <span class="value">${(() => { function fmt(t){var p=t.split(':'),h=parseInt(p[0]),m=p[1],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m+' '+ap;} return fmt(event.event_start_time)+' - '+fmt(event.event_end_time)+(rental_duration==='overnight'?' (next-day pickup)':''); })()}</span>
+              <span class="value">${event.event_start_time} - ${event.event_end_time}${rental_duration === 'overnight' ? ' (next-day pickup)' : ''}</span>
             </div>
             <div class="review-row">
               <span class="label">Event Type</span>
@@ -160,8 +160,7 @@
                 <span>$${parseFloat(pricing.subtotal).toFixed(2)}</span>
               </div>
               <div class="price-line">
-                <span>${pricing.wetSurcharge > 0 ? '<div class="price-line"><span>Wet Slide Option</span><span>\x2420.00</span></div>' : ''}
-              Delivery Fee</span>
+                <span>Delivery Fee</span>
                 <span>${parseFloat(pricing.delivery_fee) === 0 ? '<span class="text-success fw-bold">FREE</span>' : '$' + parseFloat(pricing.delivery_fee).toFixed(2)}</span>
               </div>
               ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
@@ -206,9 +205,7 @@
             <input type="hidden" name="tax_amount" value="${pricing.tax_amount}">
             <input type="hidden" name="tax_rate" value="${pricing.tax_rate}">
             <input type="hidden" name="discount_amount" value="${pricing.discount_amount || 0}">
-            
             <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
-            <input type="hidden" name="wet_option" value="${wet_option || '0'}">
             <input type="hidden" name="damage_waiver_fee" value="${pricing.damage_waiver_fee || 0}">
             <input type="hidden" name="total" value="${pricing.total}">
             <input type="hidden" name="deposit_amount" value="${pricing.deposit_amount}">
@@ -223,7 +220,7 @@
             <input type="hidden" name="venue_type" value="${delivery.venue_type}">
             <input type="hidden" name="surface_type" value="${delivery.surface_type}">
             <input type="hidden" name="power_available" value="${delivery.power_available || false}">
-            
+            <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
 
             <button type="submit" class="btn btn-book-now w-100 mt-3" id="submitBtn" disabled style="font-size:16px;padding:14px;">
               <i class="fas fa-lock me-2"></i>Complete Booking &mdash; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit

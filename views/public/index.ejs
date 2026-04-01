@@ -4,9 +4,9 @@
 <section class="hero-section">
   <div class="container">
     <div class="row align-items-center">
-      <div class="col-lg-6">
+      <div class="col-lg-7">
         <h1>Let's Make Your Party <span>Unforgettable!</span></h1>
-        <p>Bounce houses, water slides, and party equipment rental for Tonkawa, Ponca City, Blackwell, and surrounding Oklahoma areas.</p>
+        <p>Bounce houses, water slides, and party equipment rental for Tonkawa, Ponca City, Stillwater, and surrounding Oklahoma areas.</p>
         <div class="mt-4 d-flex gap-3 flex-wrap">
           <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
           <a href="/equipment" class="btn btn-outline-light btn-lg rounded-pill px-4">View Equipment <i class="fas fa-arrow-right ms-2"></i></a>
@@ -17,8 +17,8 @@
           <div><strong style="font-size:24px">Free</strong><br><small style="opacity:0.7">Local Delivery</small></div>
         </div>
       </div>
-      <div class="col-lg-6 d-none d-lg-flex align-items-center justify-content-center">
-        <img src="/assets/images/logo.svg" alt="Bounce Man Party Rentals" style="width:100%;filter:drop-shadow(0 0 8px rgba(255,255,255,0.6)) drop-shadow(0 0 20px rgba(215,124,66,0.4));">
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div style="font-size:180px;opacity:0.3">🏰</div>
       </div>
     </div>
   </div>
@@ -76,7 +76,7 @@
     <div class="row g-4">
 ${featured.length > 0 ? featured.map(item => `
       <div class="col-md-6 col-lg-4">
-        <a href="/equipment/${item.slug}" style="text-decoration:none;color:inherit;display:block"><div class="equipment-card" style="cursor:pointer">
+        <div class="equipment-card">
           <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
           <div class="card-body">
             <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>
@@ -87,7 +87,7 @@ ${featured.length > 0 ? featured.map(item => `
               <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
             </div>
           </div>
-        </div></a>
+        </div>
       </div>
 `).join('') : `
       <div class="col-12 text-center py-5">
@@ -137,6 +137,7 @@ ${reviews.length > 0 ? `
     <div class="row g-3 justify-content-center">
       <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Tonkawa</strong> <span class="badge bg-success">FREE Delivery</span></div></div>
       <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Ponca City</strong></div></div>
+      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Stillwater</strong></div></div>
       <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Blackwell</strong></div></div>
       <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Newkirk</strong></div></div>
       <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Enid</strong></div></div>

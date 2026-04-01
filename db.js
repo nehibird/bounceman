@@ -358,6 +358,41 @@ function initialize() {
       ip_address TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Walk-up events (per-kid pricing at tournaments, festivals, etc.)
+    CREATE TABLE IF NOT EXISTS walk_up_events (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      location TEXT,
+      price_per_kid REAL NOT NULL DEFAULT 15.00,
+      active INTEGER DEFAULT 1,
+      wristband_counter INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Walk-up registrations (parent signs waiver + pays per kid)
+    CREATE TABLE IF NOT EXISTS walk_up_registrations (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES walk_up_events(id),
+      parent_name TEXT NOT NULL,
+      parent_phone TEXT,
+      kid_count INTEGER NOT NULL DEFAULT 1,
+      kid_names TEXT,
+      waiver_signed INTEGER DEFAULT 0,
+      waiver_signature TEXT,
+      waiver_signed_at TEXT,
+      signer_ip TEXT,
+      wristband_start INTEGER,
+      wristband_end INTEGER,
+      stripe_session_id TEXT,
+      stripe_payment_intent TEXT,
+      amount_paid REAL,
+      payment_status TEXT DEFAULT 'pending',
+      slack_notified INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Seed default settings
@@ -393,7 +428,9 @@ function initialize() {
     'primary_color': '#FF6B35',
     'secondary_color': '#004E89',
     'meta_title': 'Bounce Man Rentals - Party Equipment Rental in Tonkawa, OK',
-    'meta_description': 'Bounce house rentals, water slides, and party equipment for Tonkawa, Ponca City, Stillwater and surrounding Oklahoma areas.'
+    'meta_description': 'Bounce house rentals, water slides, and party equipment for Tonkawa, Ponca City, Stillwater and surrounding Oklahoma areas.',
+    'pricing_info': 'Bounce Man Party Rentals - Tonkawa, OK\n\nBounce House: $150 (4hr) / $200 (full day) / $225 (overnight)\nCombo (bounce + slide): $250 (4hr) / $325 (full day) / $350 (overnight)\nWater Slide: $300 (4hr) / $375 (full day) / $400 (overnight)\nBluetooth Party Speaker: $50 (4hr) / $75 (full day)\n\nFREE delivery in Tonkawa! Nearby areas $35-65.\n\nBook at bouncemanrentals.com or call (580) 308-9288',
+    'event_base_url': 'https://bouncemanrentals.com/event'
   };
 
   for (const [key, value] of Object.entries(defaults)) {
@@ -415,10 +452,12 @@ function initialize() {
   const catInsert = d.prepare('INSERT OR IGNORE INTO categories (id, name, slug, description, sort_order) VALUES (?, ?, ?, ?, ?)');
   const { v4: uuid } = require('uuid');
   const cats = [
-    ['Bounce Houses', 'bounce_houses', 'Standard and themed bounce houses for all ages', 1],
-    ['Combo Units', 'combo_units', 'Bounce house and slide combo units', 2],
-    ['Water Slides', 'water_slides', 'Water slides and wet/dry combos for summer fun', 3],
-    ['Add-Ons', 'add_ons', 'Party extras to make your event even better', 4],
+    ['Bounce Houses', 'bounce-houses', 'Standard and themed bounce houses for all ages', 1],
+    ['Combo Units', 'combo-units', 'Bounce house and slide combo units', 2],
+    ['Water Slides', 'water-slides', 'Water slides and wet/dry combos for summer fun', 3],
+    ['Obstacle Courses', 'obstacle-courses', 'Inflatable obstacle courses for competitive fun', 4],
+    ['Interactive Games', 'interactive-games', 'Interactive inflatable games and challenges', 5],
+    ['Add-Ons', 'add-ons', 'Tables, chairs, generators, and accessories', 6]
   ];
   for (const [name, slug, desc, order] of cats) {
     catInsert.run(uuid(), name, slug, desc, order);

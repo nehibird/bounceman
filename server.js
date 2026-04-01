@@ -12,6 +12,8 @@ const publicRoutes = require('./routes/public');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/booking');
 const webhookRoutes = require('./routes/webhooks');
+const eventRoutes = require('./routes/event');
+const sarahRoutes = require('./routes/sarah');
 
 const cookieParser = require('cookie-parser');
 const app = express();
@@ -35,6 +37,7 @@ app.use('/api/', limiter);
 
 // Body parsing — webhooks need raw body
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+app.use('/event/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -52,8 +55,10 @@ app.use('/', publicRoutes);
 app.use('/auth', authRoutes);
 app.use('/booking', bookingRoutes);
 app.use('/admin', adminRoutes);
-app.use('/api', apiRoutes);
+app.use('/api/sarah', sarahRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api', apiRoutes);
+app.use('/event', eventRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {
@@ -71,11 +76,6 @@ app.use((err, req, res, next) => {
 
 // Initialize DB and start
 db.initialize();
-
-// Start notification scheduler
-const scheduler = require('./services/scheduler');
-scheduler.start();
-
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Server running on port ${PORT}`);
   console.log(`[BounceMan] Admin: http://localhost:${PORT}/admin`);

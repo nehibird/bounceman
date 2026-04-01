@@ -1,0 +1,217 @@
+const express = require('express');
+const router = express.Router();
+const { getDb } = require('../db');
+const { v4: uuid } = require('uuid');
+
+function getSettings() {
+  const db = getDb();
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+function getStripe() {
+  return require('stripe')(process.env.STRIPE_SECRET_KEY);
+}
+
+// Atomic wristband assignment (transaction)
+function assignWristbands(eventId, kidCount) {
+  const db = getDb();
+  const assign = db.transaction((eid, count) => {
+    const event = db.prepare('SELECT wristband_counter FROM walk_up_events WHERE id = ?').get(eid);
+    if (!event) throw new Error('Event not found');
+    const start = event.wristband_counter + 1;
+    const end = start + count - 1;
+    db.prepare('UPDATE walk_up_events SET wristband_counter = ? WHERE id = ?').run(end, eid);
+    return { start, end };
+  });
+  return assign(eventId, kidCount);
+}
+
+// Slack notification helper
+async function notifySlack(reg, event) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  const channel = process.env.SLACK_CHANNEL_ID;
+  if (!token || !channel) return;
+  const wristbands = reg.wristband_start === reg.wristband_end
+    ? `#${reg.wristband_start}`
+    : `#${reg.wristband_start}-#${reg.wristband_end}`;
+  const text = `${reg.parent_name} paid $${reg.amount_paid.toFixed(2)} for ${reg.kid_count} kid${reg.kid_count > 1 ? 's' : ''} at *${event.name}* -- waiver signed -- wristband ${wristbands}`;
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, text })
+    });
+  } catch (err) {
+    console.error('[EVENT] Slack notification failed:', err.message);
+  }
+}
+
+// GET /event — Walk-up registration page
+router.get('/', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const eventId = req.query.event;
+  const kiosk = req.query.kiosk === '1';
+  const events = db.prepare("SELECT * FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC").all();
+  const selectedEvent = eventId
+    ? db.prepare('SELECT * FROM walk_up_events WHERE id = ? AND active = 1').get(eventId)
+    : null;
+
+  res.render('public/event/walkin', {
+    title: 'Walk-Up Registration - Bounce Man',
+    settings, events, selectedEvent, kiosk,
+    stripeKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    page: 'event'
+  });
+});
+
+// POST /event/pay — Create Stripe Checkout Session
+router.post('/pay', async (req, res) => {
+  const db = getDb();
+  const stripe = getStripe();
+  const { event_id, parent_name, parent_phone, kid_count, kid_names, waiver_signature } = req.body;
+
+  if (!event_id || !parent_name || !kid_count || kid_count < 1 || !waiver_signature) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ? AND active = 1').get(event_id);
+  if (!event) return res.status(404).json({ error: 'Event not found or inactive' });
+
+  const regId = uuid();
+  const amount = event.price_per_kid * kid_count;
+
+  // Create pending registration with waiver
+  db.prepare(`INSERT INTO walk_up_registrations
+    (id, event_id, parent_name, parent_phone, kid_count, kid_names,
+     waiver_signed, waiver_signature, waiver_signed_at, signer_ip, amount_paid, payment_status)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), ?, ?, 'pending')`).run(
+    regId, event_id, parent_name, parent_phone || null, parseInt(kid_count),
+    JSON.stringify(kid_names || []),
+    waiver_signature, req.ip, amount
+  );
+
+  try {
+    const baseUrl = process.env.EVENT_BASE_URL || `${req.protocol}://${req.get('host')}/event`;
+    const kiosk = req.body.kiosk ? '&kiosk=1' : '';
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `${event.name} - Bounce Man`,
+            description: `${kid_count} kid${kid_count > 1 ? 's' : ''} - includes waiver`
+          },
+          unit_amount: Math.round(event.price_per_kid * 100)
+        },
+        quantity: parseInt(kid_count)
+      }],
+      mode: 'payment',
+      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}${kiosk}`,
+      cancel_url: `${baseUrl}?event=${event_id}${kiosk}`,
+      metadata: {
+        registration_id: regId,
+        event_id: event_id
+      }
+    });
+
+    db.prepare('UPDATE walk_up_registrations SET stripe_session_id = ? WHERE id = ?').run(session.id, regId);
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[EVENT] Stripe session error:', err.message);
+    res.status(500).json({ error: 'Payment setup failed. Please try again.' });
+  }
+});
+
+// GET /event/success — Post-payment confirmation
+router.get('/success', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const sessionId = req.query.session_id;
+  const kiosk = req.query.kiosk === '1';
+
+  if (!sessionId) return res.redirect('/event');
+
+  const reg = db.prepare('SELECT r.*, e.name as event_name, e.id as ev_id FROM walk_up_registrations r JOIN walk_up_events e ON e.id = r.event_id WHERE r.stripe_session_id = ?').get(sessionId);
+
+  if (!reg) return res.redirect('/event');
+
+  res.render('public/event/success', {
+    title: 'All Set! - Bounce Man',
+    settings, reg, kiosk, sessionId,
+    page: 'event'
+  });
+});
+
+// GET /event/status — JSON polling for payment status
+router.get('/status', (req, res) => {
+  const db = getDb();
+  const reg = db.prepare('SELECT payment_status, wristband_start, wristband_end FROM walk_up_registrations WHERE stripe_session_id = ?').get(req.query.session_id);
+  if (!reg) return res.json({ status: 'not_found' });
+  res.json({ status: reg.payment_status, wristband_start: reg.wristband_start, wristband_end: reg.wristband_end });
+});
+
+// POST /event/webhook — Stripe webhook for event payments
+router.post('/webhook', async (req, res) => {
+  const stripe = getStripe();
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
+
+  let stripeEvent;
+  try {
+    stripeEvent = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[EVENT WEBHOOK] Signature verification failed:', err.message);
+    return res.status(400).send('Webhook signature failed');
+  }
+
+  if (stripeEvent.type === 'checkout.session.completed') {
+    const session = stripeEvent.data.object;
+    const regId = session.metadata?.registration_id;
+    const eventId = session.metadata?.event_id;
+
+    if (!regId) {
+      console.error('[EVENT WEBHOOK] No registration_id in metadata');
+      return res.json({ received: true });
+    }
+
+    const db = getDb();
+    const reg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+    if (!reg) {
+      console.error('[EVENT WEBHOOK] Registration not found:', regId);
+      return res.json({ received: true });
+    }
+
+    try {
+      // Assign wristbands atomically
+      const { start, end } = assignWristbands(eventId, reg.kid_count);
+
+      // Update registration
+      db.prepare(`UPDATE walk_up_registrations SET
+        payment_status = 'completed',
+        stripe_payment_intent = ?,
+        wristband_start = ?,
+        wristband_end = ?
+        WHERE id = ?`).run(session.payment_intent, start, end, regId);
+
+      // Slack notification
+      const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(eventId);
+      const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+      await notifySlack(updatedReg, event);
+
+      db.prepare('UPDATE walk_up_registrations SET slack_notified = 1 WHERE id = ?').run(regId);
+
+      console.log(`[EVENT WEBHOOK] Payment completed: ${reg.parent_name}, ${reg.kid_count} kids, wristbands ${start}-${end}`);
+    } catch (err) {
+      console.error('[EVENT WEBHOOK] Processing error:', err.message);
+    }
+  }
+
+  res.json({ received: true });
+});
+
+module.exports = router;

@@ -56,7 +56,8 @@
         <form id="dateForm" action="/booking/details" method="GET">
           <!-- Carry forward selected items -->
           <input type="hidden" name="items" value="${selectedItems.join(',')}">
-                    <div id="addonItemsContainer"></div>
+          <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
+          <div id="addonItemsContainer"></div>
 
           <div class="date-card mb-4">
             <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
@@ -64,38 +65,51 @@
             <input type="hidden" name="event_date" id="eventDateInput" required>
           </div>
 
-          <!-- Time Slot Selection -->
+          <!-- Rental Duration Selector -->
           <div class="date-card mb-4">
-            <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>Choose Your Time Slot</h6>
+            <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>Rental Duration</h6>
             <div class="row g-3">
-              <div class="col-md-6">
-                <div class="btn btn-outline-primary w-100 text-start" style="padding:16px;border-radius:12px;cursor:pointer" onclick="selectSlot('morning',this)" id="slotMorning">
-                  <div class="fw-bold"><i class="fas fa-sun me-2" style="color:#f59e0b"></i>Morning</div>
-                  <div class="text-muted small">9:00 AM - 1:00 PM (4 hours)</div>
-                </div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="4hr" id="dur4hr" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="dur4hr" style="padding:12px">
+                  <div class="fw-bold">4 Hours</div>
+                  <div class="small">Quick party</div>
+                </label>
               </div>
-              <div class="col-md-6">
-                <div class="btn btn-outline-primary w-100 text-start" style="padding:16px;border-radius:12px;cursor:pointer" onclick="selectSlot('afternoon',this)" id="slotAfternoon">
-                  <div class="fw-bold"><i class="fas fa-cloud-sun me-2" style="color:#f97316"></i>Afternoon</div>
-                  <div class="text-muted small">3:00 PM - 7:00 PM (4 hours)</div>
-                </div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="daily" id="durDaily" class="btn-check" checked>
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="durDaily" style="padding:12px">
+                  <div class="fw-bold">Full Day</div>
+                  <div class="small">8 hours</div>
+                </label>
               </div>
-              <div class="col-md-6">
-                <div class="btn btn-outline-primary w-100 text-start" style="padding:16px;border-radius:12px;cursor:pointer;background:var(--bm-blue,#004E89);color:white" onclick="selectSlot('fullday',this)" id="slotFullDay">
-                  <div class="fw-bold"><i class="fas fa-calendar-day me-2"></i>Full Day</div>
-                  <div class="small" style="opacity:0.8">9:00 AM - 7:00 PM (10 hours)</div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="btn btn-outline-primary w-100 text-start" style="padding:16px;border-radius:12px;cursor:pointer" onclick="selectSlot('overnight',this)" id="slotOvernight">
-                  <div class="fw-bold"><i class="fas fa-moon me-2" style="color:#6366f1"></i>Overnight</div>
-                  <div class="text-muted small">3:00 PM - 10:00 AM next day</div>
-                </div>
+              <div class="col-4">
+                <input type="radio" name="rental_duration" value="overnight" id="durOvernight" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill" for="durOvernight" style="padding:12px">
+                  <div class="fw-bold">Overnight</div>
+                  <div class="small">Next-day pickup</div>
+                </label>
               </div>
             </div>
-            <input type="hidden" name="rental_duration" id="hiddenDuration2" value="daily">
-            <input type="hidden" name="event_start_time" id="startTime" value="09:00">
-            <input type="hidden" name="event_end_time" id="endTime" value="19:00">
+          </div>
+
+          <div class="date-card mb-4">
+            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-clock me-2"></i>Event Time</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Start Time</label>
+                <select name="event_start_time" id="startTime" class="time-select" required>
+                  <option value="">Select start time...</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold">End Time</label>
+                <select name="event_end_time" id="endTime" class="time-select" required>
+                  <option value="">Select end time...</option>
+                </select>
+              </div>
+            </div>
+            <p class="text-muted small mt-2 mb-0" id="timeHint"><i class="fas fa-info-circle me-1"></i>Times auto-set based on rental duration. You can adjust if needed.</p>
           </div>
 
           <!-- Availability Check -->

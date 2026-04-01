@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title><%= title %></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bm-orange: #FF6B35; --bm-blue: #004E89; --bm-green: #2ECC71; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Nunito', sans-serif; background: linear-gradient(135deg, #FF6B35 0%, #FF8F65 100%); min-height: 100vh; margin: 0; padding: 16px; }
+    .walkin-container { max-width: 480px; margin: 0 auto; }
+    .walkin-header { text-align: center; color: white; margin-bottom: 20px; padding-top: 10px; }
+    .walkin-header h1 { font-size: 28px; font-weight: 800; margin: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .walkin-header .event-name { font-size: 18px; opacity: 0.9; margin-top: 4px; }
+    .walkin-header .price-badge { display: inline-block; background: white; color: var(--bm-orange); padding: 6px 20px; border-radius: 30px; font-weight: 800; font-size: 20px; margin-top: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+    .walkin-card { background: white; border-radius: 20px; padding: 24px; margin-bottom: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); }
+    .walkin-card h6 { color: var(--bm-blue); font-weight: 700; margin-bottom: 16px; font-size: 15px; }
+    .form-control, .form-select { border: 2px solid #e9ecef; border-radius: 12px; padding: 12px 16px; font-size: 16px; }
+    .form-control:focus, .form-select:focus { border-color: var(--bm-orange); box-shadow: 0 0 0 3px rgba(255,107,53,0.15); }
+    .form-label { font-weight: 600; color: #555; font-size: 14px; }
+    .kid-stepper { display: flex; align-items: center; gap: 16px; }
+    .kid-stepper button { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--bm-blue); background: white; color: var(--bm-blue); font-size: 24px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .kid-stepper button:active { background: var(--bm-blue); color: white; }
+    .kid-stepper .count { font-size: 36px; font-weight: 800; color: var(--bm-blue); min-width: 50px; text-align: center; }
+    .kid-name-input { margin-top: 8px; }
+    .waiver-box { max-height: 180px; overflow-y: auto; background: #f8f9fa; border-radius: 12px; padding: 16px; font-size: 12px; line-height: 1.6; color: #666; border: 1px solid #e9ecef; margin-bottom: 12px; }
+    .sig-wrap { border: 2px dashed #ccc; border-radius: 12px; background: #fafafa; position: relative; margin-bottom: 12px; }
+    .sig-wrap canvas { width: 100%; height: 150px; display: block; cursor: crosshair; touch-action: none; }
+    .sig-placeholder { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #bbb; font-size: 15px; pointer-events: none; }
+    .total-bar { background: var(--bm-blue); color: white; border-radius: 16px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(0,78,137,0.3); }
+    .total-bar .label { font-size: 16px; font-weight: 600; }
+    .total-bar .amount { font-size: 28px; font-weight: 800; }
+    .btn-pay { background: linear-gradient(135deg, #2ECC71, #27AE60); color: white; border: none; border-radius: 16px; padding: 18px; font-size: 18px; font-weight: 700; width: 100%; box-shadow: 0 6px 20px rgba(46,204,113,0.4); transition: all 0.2s; }
+    .btn-pay:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(46,204,113,0.5); color: white; }
+    .btn-pay:disabled { background: #ccc; box-shadow: none; transform: none; }
+    .error-msg { background: #fee2e2; color: #991b1b; border-radius: 12px; padding: 12px 16px; font-size: 14px; display: none; margin-bottom: 12px; }
+    .loading { display: none; text-align: center; padding: 20px; color: white; font-size: 16px; }
+    @media (max-width: 380px) { body { padding: 10px; } .walkin-card { padding: 18px; } }
+  </style>
+</head>
+<body>
+
+<div class="walkin-container">
+
+  <!-- Header -->
+  <div class="walkin-header">
+    <h1><i class="fas fa-castle"></i> BOUNCE MAN</h1>
+    <% if (selectedEvent) { %>
+      <div class="event-name"><%= selectedEvent.name %></div>
+      <div class="price-badge">$<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+    <% } else { %>
+      <div class="event-name">Walk-Up Registration</div>
+    <% } %>
+  </div>
+
+  <% if (!selectedEvent && events.length > 0) { %>
+  <!-- Event Selector (iPad kiosk mode) -->
+  <div class="walkin-card">
+    <h6><i class="fas fa-calendar-alt me-2"></i>Select Event</h6>
+    <select id="eventSelect" class="form-select" onchange="selectEvent(this.value)">
+      <option value="">Choose an event...</option>
+      <% events.forEach(function(e) { %>
+        <option value="<%= e.id %>" data-price="<%= e.price_per_kid %>"><%= e.name %> (<%= e.event_date %>) - $<%= parseFloat(e.price_per_kid).toFixed(0) %>/kid</option>
+      <% }); %>
+    </select>
+  </div>
+  <% } %>
+
+  <% if (events.length === 0 && !selectedEvent) { %>
+  <div class="walkin-card text-center">
+    <i class="fas fa-calendar-times" style="font-size:48px;color:#ccc;margin-bottom:12px"></i>
+    <h6>No Active Events</h6>
+    <p class="text-muted small mb-0">Check back later or contact us at (580) 308-9288</p>
+  </div>
+  <% } %>
+
+  <div id="formSection" style="<%= (selectedEvent || events.length === 0) ? '' : 'display:none' %>">
+
+    <!-- Parent Info -->
+    <div class="walkin-card">
+      <h6><i class="fas fa-user me-2"></i>Parent / Guardian</h6>
+      <div class="mb-3">
+        <label class="form-label">Your Name *</label>
+        <input type="text" id="parentName" class="form-control" placeholder="Full name" required>
+      </div>
+      <div>
+        <label class="form-label">Phone Number <span class="text-muted">(optional)</span></label>
+        <input type="tel" id="parentPhone" class="form-control" placeholder="(580) 555-0123">
+      </div>
+    </div>
+
+    <!-- Kids -->
+    <div class="walkin-card">
+      <h6><i class="fas fa-child me-2"></i>Kids</h6>
+      <div class="text-center mb-3">
+        <div class="kid-stepper justify-content-center">
+          <button type="button" onclick="changeKidCount(-1)">-</button>
+          <div class="count" id="kidCount">1</div>
+          <button type="button" onclick="changeKidCount(1)">+</button>
+        </div>
+      </div>
+      <div id="kidNamesList">
+        <div class="kid-name-input">
+          <input type="text" class="form-control form-control-sm" placeholder="Kid 1 name" data-kid="1">
+        </div>
+      </div>
+    </div>
+
+    <!-- Waiver -->
+    <div class="walkin-card">
+      <h6><i class="fas fa-file-contract me-2"></i>Liability Waiver</h6>
+      <div class="waiver-box">
+        <strong>BOUNCE MAN LLC - LIABILITY WAIVER & ASSUMPTION OF RISK</strong><br><br>
+        By signing below, I acknowledge and agree to the following:<br><br>
+        1. <strong>ASSUMPTION OF RISK:</strong> I understand that the use of inflatable equipment involves inherent risks including but not limited to falls, collisions, sprains, fractures, and other injuries. I voluntarily assume all risks associated with participation.<br><br>
+        2. <strong>RELEASE OF LIABILITY:</strong> I hereby release, waive, and discharge Bounce Man LLC, its owners, employees, agents, and representatives from any and all liability, claims, demands, or causes of action arising out of or related to any injury, damage, or loss sustained while using the equipment.<br><br>
+        3. <strong>INDEMNIFICATION:</strong> I agree to indemnify and hold harmless Bounce Man LLC from any claims, damages, or expenses arising from my child's participation.<br><br>
+        4. <strong>SUPERVISION:</strong> I understand that Bounce Man LLC provides equipment only and does not supervise children. I am responsible for supervising my child(ren) at all times.<br><br>
+        5. <strong>RULES:</strong> I agree that my child(ren) will follow all safety rules including: no shoes, no food/drinks, no sharp objects, no rough play, and observe maximum capacity limits.<br><br>
+        6. <strong>MEDICAL AUTHORIZATION:</strong> In the event of an emergency, I authorize medical treatment for my child(ren) if I am not available to give consent.<br><br>
+        7. <strong>PHOTO/VIDEO:</strong> I consent to photos and videos being taken during the event for promotional purposes.<br><br>
+        This waiver is binding on myself, my heirs, and legal representatives.
+      </div>
+
+      <!-- Signature Canvas -->
+      <div class="sig-wrap">
+        <canvas id="sigCanvas" width="720" height="150"></canvas>
+        <div class="sig-placeholder" id="sigPlaceholder"><i class="fas fa-pen me-1"></i>Sign here</div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="agreeCheck">
+          <label class="form-check-label small" for="agreeCheck">I have read and agree</label>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" onclick="clearSig()">
+          <i class="fas fa-eraser me-1"></i>Clear
+        </button>
+      </div>
+    </div>
+
+    <!-- Total & Pay -->
+    <div class="total-bar">
+      <div class="label">Total</div>
+      <div class="amount" id="totalAmount">$0</div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Setting up payment...</div>
+
+    <button class="btn-pay" id="payBtn" disabled onclick="submitAndPay()">
+      <i class="fas fa-lock me-2"></i>Pay & Register
+    </button>
+
+    <p class="text-center text-white small mt-3" style="opacity:0.7">
+      <i class="fas fa-shield-alt me-1"></i>Secure payment via Stripe
+    </p>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  var kidCount = 1;
+  var pricePerKid = <%= selectedEvent ? selectedEvent.price_per_kid : 0 %>;
+  var eventId = '<%= selectedEvent ? selectedEvent.id : '' %>';
+  var isKiosk = <%= kiosk ? 'true' : 'false' %>;
+  var hasSigned = false;
+
+  // Event selector (iPad kiosk)
+  window.selectEvent = function(id) {
+    if (!id) { document.getElementById('formSection').style.display = 'none'; return; }
+    var opt = document.querySelector('#eventSelect option[value="' + id + '"]');
+    pricePerKid = parseFloat(opt.dataset.price);
+    eventId = id;
+    document.getElementById('formSection').style.display = '';
+    updateTotal();
+  };
+
+  // Kid count stepper
+  window.changeKidCount = function(delta) {
+    kidCount = Math.max(1, Math.min(20, kidCount + delta));
+    document.getElementById('kidCount').textContent = kidCount;
+    var list = document.getElementById('kidNamesList');
+    list.innerHTML = '';
+    for (var i = 1; i <= kidCount; i++) {
+      var div = document.createElement('div');
+      div.className = 'kid-name-input';
+      div.innerHTML = '<input type="text" class="form-control form-control-sm" placeholder="Kid ' + i + ' name" data-kid="' + i + '">';
+      list.appendChild(div);
+    }
+    updateTotal();
+  };
+
+  function updateTotal() {
+    var total = kidCount * pricePerKid;
+    document.getElementById('totalAmount').textContent = '$' + total.toFixed(0);
+    updatePayBtn();
+  }
+
+  // Signature canvas (copied from contract.ejs)
+  var canvas = document.getElementById('sigCanvas');
+  var ctx = canvas.getContext('2d');
+  var drawing = false;
+  var placeholder = document.getElementById('sigPlaceholder');
+
+  function resizeCanvas() {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#333';
+  }
+  resizeCanvas();
+  window.addEventListener('resize', function() { if (!hasSigned) resizeCanvas(); });
+
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    var cx, cy;
+    if (e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+    else { cx = e.clientX; cy = e.clientY; }
+    return { x: cx - rect.left, y: cy - rect.top };
+  }
+  function startDraw(e) { e.preventDefault(); drawing = true; var p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function draw(e) { if (!drawing) return; e.preventDefault(); var p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSigned = true; placeholder.style.display = 'none'; updatePayBtn(); }
+  function stopDraw(e) { if (drawing) { e.preventDefault(); drawing = false; } }
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mouseup', stopDraw);
+  canvas.addEventListener('mouseleave', stopDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove', draw, { passive: false });
+  canvas.addEventListener('touchend', stopDraw, { passive: false });
+  canvas.addEventListener('touchcancel', stopDraw, { passive: false });
+
+  window.clearSig = function() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasSigned = false;
+    placeholder.style.display = 'block';
+    updatePayBtn();
+  };
+
+  // Pay button state
+  var agreeCheck = document.getElementById('agreeCheck');
+  agreeCheck.addEventListener('change', updatePayBtn);
+
+  function updatePayBtn() {
+    var btn = document.getElementById('payBtn');
+    var name = document.getElementById('parentName').value.trim();
+    btn.disabled = !(hasSigned && agreeCheck.checked && name && eventId && pricePerKid > 0);
+  }
+  document.getElementById('parentName').addEventListener('input', updatePayBtn);
+
+  // Submit
+  window.submitAndPay = function() {
+    var name = document.getElementById('parentName').value.trim();
+    if (!name) { showError('Please enter your name.'); return; }
+    if (!hasSigned) { showError('Please sign the waiver.'); return; }
+    if (!agreeCheck.checked) { showError('Please agree to the waiver.'); return; }
+    if (!eventId) { showError('Please select an event.'); return; }
+
+    var kidNames = [];
+    document.querySelectorAll('#kidNamesList input').forEach(function(inp) {
+      kidNames.push(inp.value.trim() || ('Kid ' + inp.dataset.kid));
+    });
+
+    var btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    document.getElementById('loadingMsg').style.display = 'block';
+    document.getElementById('errorMsg').style.display = 'none';
+
+    var sigData = canvas.toDataURL('image/png');
+
+    fetch('/event/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_id: eventId,
+        parent_name: name,
+        parent_phone: document.getElementById('parentPhone').value.trim(),
+        kid_count: kidCount,
+        kid_names: kidNames,
+        waiver_signature: sigData,
+        kiosk: isKiosk
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'Payment setup failed');
+      }
+    })
+    .catch(function(err) {
+      showError(err.message);
+      btn.disabled = false;
+      document.getElementById('loadingMsg').style.display = 'none';
+    });
+  };
+
+  function showError(msg) {
+    var el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // Phone formatting
+  document.getElementById('parentPhone').addEventListener('input', function(e) {
+    var val = e.target.value.replace(/\D/g, '');
+    if (val.length >= 6) { e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3,6) + '-' + val.substring(6,10); }
+    else if (val.length >= 3) { e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3); }
+  });
+
+  // Init
+  updateTotal();
+})();
+</script>
+</body>
+</html>

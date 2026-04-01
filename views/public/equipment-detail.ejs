@@ -25,7 +25,7 @@
             <img id="mainImage"
               src="${images.length > 0 ? images.find(i => i.is_primary)?.image_path || images[0].image_path : '/assets/images/placeholder-bounce.svg'}"
               alt="${item.name}"
-              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${item.category === 'add_ons' ? 'contain;background:#f8f9fa;padding:30px' : 'cover'}">
+              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover">
           </div>
           ${images.length > 1 ? `
           <div class="d-flex gap-2 p-3 flex-wrap" id="thumbRow">
@@ -48,60 +48,25 @@
         <!-- Price Tiers -->
         <div class="row g-3 mb-3">
           <div class="col-4">
-            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" price-tier-card" onclick="selectTier('4hr')" id="tierLabel4hr" style="cursor:pointer">
-              <div style="font-size:12px;font-weight:600;text-transform:uppercase">4 Hours</div>
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+              <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">4 Hours</div>
               <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
             </div>
           </div>
           <div class="col-4">
-            <div style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative;cursor:pointer" onclick="selectTier('daily')" id="tierLabelDaily">
+            <div style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative">
               <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bm-orange);color:white;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px">POPULAR</div>
               <div style="font-size:12px;opacity:0.8;font-weight:600;text-transform:uppercase">Full Day</div>
               <div style="font-size:24px;font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
             </div>
           </div>
           <div class="col-4">
-            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" price-tier-card" onclick="selectTier('overnight')" id="tierLabelOvernight" style="cursor:pointer">
-              <div style="font-size:12px;font-weight:600;text-transform:uppercase">Overnight</div>
+            <div style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent" class="price-tier-card">
+              <div style="font-size:12px;color:#888;font-weight:600;text-transform:uppercase">Overnight</div>
               <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
             </div>
           </div>
         </div>
-
-        <!-- Morning/Afternoon sub-choice for 4hr -->
-        <div id="timeWindowChoice" class="row g-2 mt-2 mb-3" style="display:none">
-          <div class="col-6">
-            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('morning', this)" id="winMorningLabel">
-              <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
-              <div class="small text-muted">9 AM - 1 PM</div>
-            </div>
-          </div>
-          <div class="col-6">
-            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('afternoon', this)" id="winAfternoonLabel">
-              <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
-              <div class="small text-muted">3 PM - 7 PM</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Morning/Afternoon for 4hr -->
-        <div id="timeWindowChoice" class="row g-2 mt-2 mb-3" style="display:none">
-          <div class="col-6">
-            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('morning',this)" id="winMorningLabel">
-              <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
-              <div class="small text-muted">9 AM - 1 PM</div>
-            </div>
-          </div>
-          <div class="col-6">
-            <div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWindow('afternoon',this)" id="winAfternoonLabel">
-              <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
-              <div class="small text-muted">3 PM - 7 PM</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Wet/Dry Option (water slides only) -->
-        ${item.category === 'water_slides' ? '<div id="wetDryChoice" class="row g-2 mb-3"><div class="col-6"><div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer;background:var(--bm-blue);color:white" onclick="selectWetDry(false,this)" id="dryLabel"><div class="fw-bold"><i class="fas fa-sun me-1"></i>Dry</div><div class="small">Standard setup</div></div></div><div class="col-6"><div class="btn btn-outline-secondary w-100 text-center" style="padding:10px;border-radius:12px;cursor:pointer" onclick="selectWetDry(true,this)" id="wetLabel"><div class="fw-bold"><i class="fas fa-tint me-1" style="color:#3b82f6"></i>Wet (+\x2420)</div><div class="small">Water hookup included</div></div></div></div>' : ''}
 
         <!-- Specs Grid -->
         <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
@@ -157,19 +122,47 @@
           </div>
           <div id="availResult" class="mb-3" style="display:none"></div>
 
-          <!-- Hidden inputs for goToBooking() - duration/time controlled by top tier cards -->
-          <div style="display:none">
-            <input type="radio" name="detail_duration" value="4hr" id="detDur4hr">
-            <input type="radio" name="detail_duration" value="daily" id="detDurDaily" checked>
-            <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight">
-            <input type="hidden" name="wet_option" id="wetOptionInput" value="0">
-            <select id="detStartTime"><option value="09:00">9 AM</option></select>
-            <select id="detEndTime"><option value="19:00">7 PM</option></select>
+          <!-- Rental Duration -->
+          <div class="mb-3" id="durationSection" style="display:none">
+            <label class="form-label fw-bold small">Rental Duration</label>
+            <div class="row g-2">
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="4hr" id="detDur4hr" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDur4hr">
+                  <div class="fw-bold small">4 Hours</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="daily" id="detDurDaily" class="btn-check" checked>
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurDaily">
+                  <div class="fw-bold small">Full Day</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_daily).toFixed(0)}</div>
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" name="detail_duration" value="overnight" id="detDurOvernight" class="btn-check">
+                <label class="btn btn-outline-primary w-100 rounded-pill btn-sm" for="detDurOvernight">
+                  <div class="fw-bold small">Overnight</div>
+                  <div class="small" style="color:var(--bm-orange);font-weight:700">$${parseFloat(item.price_overnight || item.price_daily * 1.15).toFixed(0)}</div>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <!-- Add-Ons shown after date confirmed -->
-          <div id="addonSection" class="mb-3" style="display:none"></div>
-          <div id="addonData" style="display:none">${typeof addons !== 'undefined' ? JSON.stringify(addons.map(function(a){return {id:a.id,name:a.name,desc:a.short_description||'',image:a.image||'',p4:a.price_4hr,pd:a.price_daily,po:a.price_overnight}})) : '[]'}</div>
+          <!-- Time Selection -->
+          <div class="mb-3" id="timeSection" style="display:none">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label fw-bold small">Start Time</label>
+                <select id="detStartTime" class="form-select form-select-sm" style="border-radius:12px"></select>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-bold small">End Time</label>
+                <select id="detEndTime" class="form-select form-select-sm" style="border-radius:12px"></select>
+              </div>
+            </div>
+          </div>
 
           <!-- Book Now Button -->
           <button id="bookNowBtn" class="btn btn-book-now btn-lg w-100" disabled onclick="goToBooking()">
@@ -295,20 +288,20 @@
           if (data.available) {
             dateAvailable = true;
             resultDiv.innerHTML = '<div class="alert alert-success mb-0 py-2 small"><i class="fas fa-check-circle me-1"></i>Available on ' + dateStr + '!</div>';
-            // duration handled by top tiers
-            // time handled by top tiers
+            document.getElementById('durationSection').style.display = '';
+            document.getElementById('timeSection').style.display = '';
             document.getElementById('bookNowBtn').disabled = false;
           } else {
             resultDiv.innerHTML = '<div class="alert alert-danger mb-0 py-2 small"><i class="fas fa-times-circle me-1"></i>Not available on ' + dateStr + '. Try another date.</div>';
-            // duration handled by top tiers
-            // time handled by top tiers
+            document.getElementById('durationSection').style.display = 'none';
+            document.getElementById('timeSection').style.display = 'none';
           }
         })
         .catch(function() {
           dateAvailable = true;
           resultDiv.innerHTML = '<div class="alert alert-info mb-0 py-2 small"><i class="fas fa-info-circle me-1"></i>Could not verify online. You may proceed.</div>';
-          // duration handled by top tiers
-          // time handled by top tiers
+          document.getElementById('durationSection').style.display = '';
+          document.getElementById('timeSection').style.display = '';
           document.getElementById('bookNowBtn').disabled = false;
         });
     }
@@ -334,124 +327,11 @@
     var duration = dur ? dur.value : 'daily';
     var start = document.getElementById('detStartTime').value;
     var end = document.getElementById('detEndTime').value;
-    var addonChecks = document.querySelectorAll('.addon-check:checked');
-    var addonIds = Array.from(addonChecks).map(function(c){return c.value}).join(',');
-    var wetOpt = document.getElementById('wetOptionInput') ? document.getElementById('wetOptionInput').value : '0';
-    var params = 'items=${item.id}' + (addonIds ? ',' + addonIds : '') + '&event_date=' + encodeURIComponent(date) +
+    var params = 'items=${item.id}&event_date=' + encodeURIComponent(date) +
       '&rental_duration=' + duration +
-      '&event_start_time=' + encodeURIComponent(start) + '&wet_option=' + wetOpt +
+      '&event_start_time=' + encodeURIComponent(start) +
       '&event_end_time=' + encodeURIComponent(end);
     window.location.href = '/booking/details?' + params;
-  }
-
-  // Tier click handler
-  function selectTier(value) {
-    var ids = {'4hr':'detDur4hr','daily':'detDurDaily','overnight':'detDurOvernight'};
-    var radio = document.getElementById(ids[value]);
-    if (radio) { radio.checked = true; }
-
-    // Update styles
-    var labels = {
-      '4hr': document.getElementById('tierLabel4hr'),
-      'daily': document.getElementById('tierLabelDaily'),
-      'overnight': document.getElementById('tierLabelOvernight')
-    };
-    Object.keys(labels).forEach(function(k) {
-      var l = labels[k];
-      if (!l) return;
-      if (k === value) {
-        l.style.background = 'var(--bm-blue)';
-        l.style.border = '2px solid var(--bm-blue)';
-        l.style.color = 'white';
-      } else {
-        l.style.background = '#f8f9fa';
-        l.style.border = '2px solid transparent';
-        l.style.color = '';
-      }
-    });
-
-    // Show/hide morning/afternoon
-    var twc = document.getElementById('timeWindowChoice');
-    if (twc) twc.style.display = (value === '4hr') ? '' : 'none';
-
-    // Update hidden times
-    var s = document.getElementById('detStartTime');
-    var e = document.getElementById('detEndTime');
-    if (value === '4hr') { s.value = '09:00'; e.value = '13:00'; }
-    else if (value === 'daily') { s.value = '09:00'; e.value = '19:00'; }
-    else if (value === 'overnight') { s.value = '15:00'; e.value = '10:00'; }
-  }
-
-  // Morning/afternoon click handler
-  function selectWindow(value, el) {
-    var s = document.getElementById('detStartTime');
-    var e = document.getElementById('detEndTime');
-    if (value === 'afternoon') { s.value = '15:00'; e.value = '19:00'; }
-    else { s.value = '09:00'; e.value = '13:00'; }
-    // Style
-    document.getElementById('winMorningLabel').style.background = '';
-    document.getElementById('winMorningLabel').style.color = '';
-    document.getElementById('winAfternoonLabel').style.background = '';
-    document.getElementById('winAfternoonLabel').style.color = '';
-    el.style.background = 'var(--bm-blue)';
-    el.style.color = 'white';
-  }
-
-  function selectTier(value) {
-    var ids = {'4hr':'detDur4hr','daily':'detDurDaily','overnight':'detDurOvernight'};
-    var r = document.getElementById(ids[value]);
-    if (r) r.checked = true;
-    var labels = {'4hr':document.getElementById('tierLabel4hr'),'daily':document.getElementById('tierLabelDaily'),'overnight':document.getElementById('tierLabelOvernight')};
-    Object.keys(labels).forEach(function(k){
-      var l=labels[k]; if(!l)return;
-      if(k===value){l.style.background='var(--bm-blue)';l.style.border='2px solid var(--bm-blue)';l.style.color='white';}
-      else{l.style.background='#f8f9fa';l.style.border='2px solid transparent';l.style.color='';}
-    });
-    var twc=document.getElementById('timeWindowChoice');
-    if(twc)twc.style.display=(value==='4hr')?'':'none';
-    var s=document.getElementById('detStartTime'),e=document.getElementById('detEndTime');
-    if(value==='4hr'){s.value='09:00';e.value='13:00';}
-    else if(value==='daily'){s.value='09:00';e.value='19:00';}
-    else{s.value='15:00';e.value='10:00';}
-    showAddons();
-  }
-  function selectWindow(value,el) {
-    var s=document.getElementById('detStartTime'),e=document.getElementById('detEndTime');
-    if(value==='afternoon'){s.value='15:00';e.value='19:00';}else{s.value='09:00';e.value='13:00';}
-    document.getElementById('winMorningLabel').style.background='';document.getElementById('winMorningLabel').style.color='';
-    document.getElementById('winAfternoonLabel').style.background='';document.getElementById('winAfternoonLabel').style.color='';
-    el.style.background='var(--bm-blue)';el.style.color='white';
-  }
-  function showAddons() {
-    var section=document.getElementById('addonSection');
-    var dataEl=document.getElementById('addonData');
-    if(!section||!dataEl)return;
-    var items;try{items=JSON.parse(dataEl.textContent);}catch(e){return;}
-    if(!items.length)return;
-    var dur=document.querySelector('input[name="detail_duration"]:checked');
-    var durVal=dur?dur.value:'daily';
-    var html='<label class="form-label fw-bold small">Add extras to your event</label>';
-    items.forEach(function(a){
-      var price=durVal==='4hr'?a.p4:(durVal==='overnight'?a.po:a.pd);
-      html+='<div class="d-flex align-items-center gap-2 p-2 mb-2 rounded-3" style="background:#f8f9fa">'+
-        '<img src="'+(a.image||'/assets/images/placeholder-bounce.svg')+'" style="width:40px;height:40px;object-fit:contain;border-radius:8px">'+
-        '<div style="flex:1"><div class="fw-bold small">'+a.name+'</div>'+
-        '<div class="text-muted" style="font-size:11px">'+a.desc+'</div></div>'+
-        '<span class="fw-bold small" style="color:var(--bm-orange)">+\x24'+price+'</span>'+
-        '<input type="checkbox" class="form-check-input addon-check" value="'+a.id+'" style="width:20px;height:20px;cursor:pointer">'+
-        '</div>';
-    });
-    section.innerHTML=html;
-    section.style.display='';
-  }
-
-  // Wet/Dry selection
-  function selectWetDry(isWet, el) {
-    document.getElementById('wetOptionInput').value = isWet ? '1' : '0';
-    document.getElementById('dryLabel').style.background = isWet ? '' : 'var(--bm-blue)';
-    document.getElementById('dryLabel').style.color = isWet ? '' : 'white';
-    document.getElementById('wetLabel').style.background = isWet ? 'var(--bm-blue)' : '';
-    document.getElementById('wetLabel').style.color = isWet ? 'white' : '';
   }
 </script>
 ` }) %>

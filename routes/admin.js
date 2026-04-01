@@ -410,11 +410,6 @@ router.post('/reviews/:id/approve', (req, res) => {
   res.redirect('/admin/reviews');
 });
 
-router.post("/reviews/:id/delete", (req, res) => {
-  getDb().prepare("DELETE FROM reviews WHERE id = ?").run(req.params.id);
-  res.redirect("/admin/reviews");
-});
-
 router.post('/reviews/:id/respond', (req, res) => {
   getDb().prepare('UPDATE reviews SET response = ? WHERE id = ?').run(req.body.response, req.params.id);
   res.redirect('/admin/reviews');
@@ -591,6 +586,60 @@ router.post('/settings/users/:id/delete', requireAdmin, (req, res) => {
   // Deactivate instead of hard delete to preserve audit trail
   getDb().prepare("UPDATE users SET active = 0, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   res.redirect('/admin/settings');
+});
+
+// ==================== WALK-UP EVENTS ====================
+
+// List all events
+router.get('/events', requireAuth, (req, res) => {
+  const db = getDb();
+  const settings = Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value]));
+  const events = db.prepare(`SELECT e.*,
+    (SELECT COUNT(*) FROM walk_up_registrations r WHERE r.event_id = e.id AND r.payment_status = 'completed') as reg_count,
+    (SELECT COALESCE(SUM(r.kid_count), 0) FROM walk_up_registrations r WHERE r.event_id = e.id AND r.payment_status = 'completed') as total_kids,
+    (SELECT COALESCE(SUM(r.amount_paid), 0) FROM walk_up_registrations r WHERE r.event_id = e.id AND r.payment_status = 'completed') as total_revenue
+    FROM walk_up_events e ORDER BY e.event_date DESC`).all();
+
+  res.render('admin/events', { title: 'Walk-Up Events', settings, events, page: 'events', user: req.user });
+});
+
+// Create event
+router.post('/events', requireAuth, (req, res) => {
+  const { name, event_date, location, price_per_kid } = req.body;
+  const db = getDb();
+  db.prepare('INSERT INTO walk_up_events (id, name, event_date, location, price_per_kid, active) VALUES (?, ?, ?, ?, ?, 1)')
+    .run(uuid(), name, event_date, location || '', parseFloat(price_per_kid || 15));
+  res.redirect('/admin/events');
+});
+
+// Toggle event active/inactive
+router.post('/events/:id/toggle', requireAuth, (req, res) => {
+  const db = getDb();
+  const event = db.prepare('SELECT active FROM walk_up_events WHERE id = ?').get(req.params.id);
+  if (event) {
+    db.prepare('UPDATE walk_up_events SET active = ? WHERE id = ?').run(event.active ? 0 : 1, req.params.id);
+  }
+  res.redirect('/admin/events');
+});
+
+// Event detail with registrations
+router.get('/events/:id', requireAuth, (req, res) => {
+  const db = getDb();
+  const settings = Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value]));
+  const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(req.params.id);
+  if (!event) return res.redirect('/admin/events');
+
+  const registrations = db.prepare(`SELECT * FROM walk_up_registrations
+    WHERE event_id = ? ORDER BY created_at DESC`).all(req.params.id);
+
+  const stats = db.prepare(`SELECT
+    COUNT(*) as registrations,
+    COALESCE(SUM(kid_count), 0) as kids,
+    COALESCE(SUM(amount_paid), 0) as revenue
+    FROM walk_up_registrations
+    WHERE event_id = ? AND payment_status = 'completed'`).get(req.params.id);
+
+  res.render('admin/event-detail', { title: event.name, settings, event, registrations, stats, page: 'events', user: req.user });
 });
 
 module.exports = router;

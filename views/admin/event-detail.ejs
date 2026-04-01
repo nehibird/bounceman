@@ -1,0 +1,115 @@
+<%- include('../layouts/admin', { body: `
+
+<!-- Event Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <a href="/admin/events" class="text-muted small text-decoration-none"><i class="fas fa-arrow-left me-1"></i>Back to Events</a>
+    <h3 class="mt-2 mb-0" style="font-weight:700;color:var(--bm-dark)">${event.name}</h3>
+    <span class="text-muted">${event.event_date} ${event.location ? '&bull; ' + event.location : ''}</span>
+  </div>
+  <div>
+    <span class="badge-status ${event.active ? 'badge-confirmed' : 'badge-cancelled'} me-2">${event.active ? 'Active' : 'Inactive'}</span>
+    <span class="badge" style="background:var(--bm-primary);color:white;padding:8px 16px;border-radius:20px;font-size:16px">$${parseFloat(event.price_per_kid).toFixed(0)}/kid</span>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-4 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-child"></i></div>
+        <div>
+          <div class="stat-value">${stats.kids}</div>
+          <div class="stat-label">Kids Registered</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:var(--bm-secondary)"><i class="fas fa-users"></i></div>
+        <div>
+          <div class="stat-value">${stats.registrations}</div>
+          <div class="stat-label">Families</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-dollar-sign"></i></div>
+        <div>
+          <div class="stat-value">$${stats.revenue.toFixed(2)}</div>
+          <div class="stat-label">Revenue</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Walk-Up Link -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <strong><i class="fas fa-link me-2" style="color:var(--bm-primary)"></i>Walk-Up Link</strong>
+        <div class="text-muted small mt-1" id="eventLink">${settings.event_base_url || '/event'}?event=${event.id}</div>
+      </div>
+      <div>
+        <button class="btn btn-sm btn-outline-primary rounded-pill me-2" onclick="navigator.clipboard.writeText(document.getElementById('eventLink').textContent)">
+          <i class="fas fa-copy me-1"></i>Copy
+        </button>
+        <a href="${settings.event_base_url || '/event'}?event=${event.id}&kiosk=1" target="_blank" class="btn btn-sm btn-bm rounded-pill">
+          <i class="fas fa-tablet-alt me-1"></i>Kiosk Mode
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Registrations Table -->
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-list me-2"></i>Registrations (${registrations.length})</span>
+    <span class="text-muted small">Wristbands issued: ${event.wristband_counter}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr style="background:#f8f9fa">
+          <th style="padding:12px 20px">Wristband</th>
+          <th>Parent</th>
+          <th>Phone</th>
+          <th>Kids</th>
+          <th>Paid</th>
+          <th>Waiver</th>
+          <th>Status</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${registrations.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-4">No registrations yet</td></tr>' : ''}
+        ${registrations.map(function(r) {
+          var kids = [];
+          try { kids = JSON.parse(r.kid_names || '[]'); } catch(e) {}
+          var wristband = r.wristband_start ? (r.wristband_start === r.wristband_end ? '#' + r.wristband_start : '#' + r.wristband_start + '-#' + r.wristband_end) : '-';
+          return '<tr>' +
+            '<td style="padding:12px 20px"><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
+            '<td>' + r.parent_name + '</td>' +
+            '<td>' + (r.parent_phone || '-') + '</td>' +
+            '<td>' + r.kid_count + ' <span class="text-muted small">(' + kids.join(', ') + ')</span></td>' +
+            '<td><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
+            '<td>' + (r.waiver_signed ? '<i class="fas fa-check-circle text-success"></i>' : '<i class="fas fa-times-circle text-danger"></i>') + '</td>' +
+            '<td><span class="badge-status ' + (r.payment_status === 'completed' ? 'badge-confirmed' : 'badge-pending') + '">' + r.payment_status + '</span></td>' +
+            '<td class="text-muted small">' + (r.created_at || '') + '</td>' +
+          '</tr>';
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+`, scripts: '' }) %>

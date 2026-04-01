@@ -17,7 +17,7 @@ router.get('/', (req, res) => {
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
     FROM equipment e
-    WHERE e.status = 'available' AND e.featured = 1 AND e.category != 'add_ons'
+    WHERE e.status = 'available' AND e.featured = 1
     ORDER BY e.sort_order
   `).all();
 
@@ -54,12 +54,12 @@ router.get('/equipment', (req, res) => {
       SELECT e.*,
         (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
       FROM equipment e
-      WHERE e.status = 'available' AND e.category != 'add_ons'
+      WHERE e.status = 'available' AND e.category != 'add-ons'
       ORDER BY e.sort_order
     `).all();
   }
 
-  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 ORDER BY sort_order").all();
+  const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
 
   res.render('public/equipment', {
     title: 'Our Equipment - Bounce Man Rentals',
@@ -95,12 +95,6 @@ router.get('/equipment/:slug', (req, res) => {
     ORDER BY r.created_at DESC LIMIT 5
   `).all(item.id);
 
-  // Get add-ons for upsell
-  const addons = db.prepare(`
-    SELECT e.*, (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.category = 'add_ons' AND e.status = 'available' ORDER BY e.sort_order
-  `).all();
-
   res.render('public/equipment-detail', {
     title: `${item.name} - Bounce Man Rentals`,
     settings,
@@ -108,7 +102,6 @@ router.get('/equipment/:slug', (req, res) => {
     images,
     related,
     reviews,
-    addons,
     page: 'equipment'
   });
 });
@@ -152,8 +145,6 @@ router.post('/contact', (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
   const { name, email, phone, message, event_date } = req.body;
-  // Honeypot spam check
-  if (req.body.website) return res.render("public/contact", { title: "Contact Us - Bounce Man Rentals", settings, page: "contact", success: true });
 
   // Save as lead/communication
   db.prepare(`INSERT INTO communications (id, type, direction, subject, body, recipient, metadata)

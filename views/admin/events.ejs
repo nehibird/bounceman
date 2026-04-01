@@ -1,0 +1,136 @@
+<%- include('../layouts/admin', { body: `
+
+<!-- Stats Row -->
+<div class="row g-4 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:var(--bm-primary)"><i class="fas fa-calendar-alt"></i></div>
+        <div>
+          <div class="stat-value">${events.length}</div>
+          <div class="stat-label">Total Events</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-child"></i></div>
+        <div>
+          <div class="stat-value">${events.reduce((s, e) => s + (e.total_kids || 0), 0)}</div>
+          <div class="stat-label">Total Kids</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:var(--bm-secondary)"><i class="fas fa-users"></i></div>
+        <div>
+          <div class="stat-value">${events.reduce((s, e) => s + (e.reg_count || 0), 0)}</div>
+          <div class="stat-label">Registrations</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-dollar-sign"></i></div>
+        <div>
+          <div class="stat-value">$${events.reduce((s, e) => s + (e.total_revenue || 0), 0).toFixed(0)}</div>
+          <div class="stat-label">Total Revenue</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Actions -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0" style="font-weight:700;color:var(--bm-dark)"><i class="fas fa-ticket-alt me-2"></i>Walk-Up Events</h4>
+  <button class="btn btn-bm rounded-pill" data-bs-toggle="modal" data-bs-target="#createEventModal">
+    <i class="fas fa-plus me-1"></i>Create Event
+  </button>
+</div>
+
+<!-- Events Table -->
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr style="background:#f8f9fa">
+          <th style="padding:14px 20px">Event</th>
+          <th>Date</th>
+          <th>Location</th>
+          <th>Price/Kid</th>
+          <th>Kids</th>
+          <th>Revenue</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${events.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-calendar-times me-2"></i>No events yet</td></tr>' : ''}
+        ${events.map(function(e) {
+          return '<tr>' +
+            '<td style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + e.name + '</a></td>' +
+            '<td>' + e.event_date + '</td>' +
+            '<td>' + (e.location || '-') + '</td>' +
+            '<td><strong>$' + parseFloat(e.price_per_kid).toFixed(0) + '</strong></td>' +
+            '<td>' + (e.total_kids || 0) + '</td>' +
+            '<td><strong>$' + (e.total_revenue || 0).toFixed(2) + '</strong></td>' +
+            '<td><span class="badge-status ' + (e.active ? 'badge-confirmed' : 'badge-cancelled') + '">' + (e.active ? 'Active' : 'Inactive') + '</span></td>' +
+            '<td>' +
+              '<form method="POST" action="/admin/events/' + e.id + '/toggle" style="display:inline">' +
+                '<button class="btn btn-sm btn-outline-secondary rounded-pill" title="' + (e.active ? 'Deactivate' : 'Activate') + '">' +
+                  '<i class="fas fa-' + (e.active ? 'pause' : 'play') + '"></i>' +
+                '</button>' +
+              '</form>' +
+            '</td>' +
+          '</tr>';
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create Event Modal -->
+<div class="modal fade" id="createEventModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:16px">
+      <div class="modal-header" style="border-bottom:1px solid #eee">
+        <h5 class="modal-title" style="font-weight:700"><i class="fas fa-plus-circle me-2" style="color:var(--bm-primary)"></i>Create Walk-Up Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="/admin/events">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Event Name *</label>
+            <input type="text" class="form-control" name="name" placeholder="Baseball Tournament" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Event Date *</label>
+            <input type="date" class="form-control" name="event_date" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Location</label>
+            <input type="text" class="form-control" name="location" placeholder="Tonkawa City Park">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Price Per Kid ($) *</label>
+            <input type="number" class="form-control" name="price_per_kid" value="15" min="1" step="1" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-bm rounded-pill"><i class="fas fa-check me-1"></i>Create Event</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+`, scripts: '' }) %>

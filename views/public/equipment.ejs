@@ -18,8 +18,8 @@
     <div class="row g-4">
       ${equipment.length > 0 ? equipment.map(item => `
       <div class="col-md-6 col-lg-4">
-        <a href="/equipment/${item.slug}" style="text-decoration:none;color:inherit;display:block"><div class="equipment-card" style="cursor:pointer">
-          <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${item.category === 'add_ons' ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
+        <div class="equipment-card">
+          <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
           <div class="card-body">
             <span class="badge-category mb-2">${(item.category || '').replace(/_/g, ' ')}</span>
             <h5 class="card-title mt-2">${item.name}</h5>
@@ -36,7 +36,7 @@
               </div>
             </div>
           </div>
-        </div></a>
+        </div>
       </div>
       `).join('') : `
       <div class="col-12 text-center py-5">
