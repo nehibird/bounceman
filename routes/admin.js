@@ -410,6 +410,11 @@ router.post('/reviews/:id/approve', (req, res) => {
   res.redirect('/admin/reviews');
 });
 
+router.post("/reviews/:id/delete", (req, res) => {
+  getDb().prepare("DELETE FROM reviews WHERE id = ?").run(req.params.id);
+  res.redirect("/admin/reviews");
+});
+
 router.post('/reviews/:id/respond', (req, res) => {
   getDb().prepare('UPDATE reviews SET response = ? WHERE id = ?').run(req.body.response, req.params.id);
   res.redirect('/admin/reviews');
