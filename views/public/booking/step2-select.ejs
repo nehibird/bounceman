@@ -53,7 +53,7 @@
 
     <div class="section-title">
       <h2>Choose Your Rentals</h2>
-      <p>Select the equipment you'd like for your event</p>
+      <p>Available for <strong>${eventDate ? (() => { var d = new Date(eventDate + 'T12:00:00'); return d.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}); })() : 'your selected date'}</strong></p>
     </div>
 
     <!-- Category Filter Pills -->
@@ -66,7 +66,7 @@
       <!-- Equipment Grid -->
       <div class="col-lg-8">
         <div class="row g-4" id="equipmentGrid">
-          ${equipment.map(function(item) { return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + item.price_daily + '">' +
+          ${equipment.map(function(item) { return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + ('${rentalDuration}' === '4hr' ? (item.price_4hr || item.price_daily * 0.65) : '${rentalDuration}' === 'overnight' ? (item.price_overnight || item.price_daily * 1.15) : item.price_daily) + '">' +
             '<div class="equipment-card select-card" onclick="toggleItem(this, &quot;' + item.id + '&quot;, &quot;' + (item.name || '').replace(/"/g, '') + '&quot;, ' + item.price_daily + ')">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '">' +
@@ -82,6 +82,29 @@
               '</div>' +
             '</div>' +
           '</div>'; }).join('')}
+        </div>
+
+        
+        <!-- Add-Ons Section -->
+        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = rentalDuration === '4hr' ? addon.price_4hr : (rentalDuration === 'overnight' ? (addon.price_overnight || addon.price_daily) : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0" onclick="toggleItem(this, &quot;' + addon.id + '&quot;, &quot;' + addon.name.replace(/"/g, '') + '&quot;, ' + addonPrice + ')"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
+
+        <!-- Wet/Dry Option (shown when water slide selected) -->
+        <div id="wetDrySection" class="mt-4" style="display:none">
+          <h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-tint me-2" style="color:#3b82f6"></i>Wet or Dry?</h5>
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="btn btn-outline-secondary w-100 text-center" style="padding:12px;border-radius:12px;cursor:pointer;background:var(--bm-blue,#004E89);color:white" onclick="selectWetDry(false,this)" id="dryBtn">
+                <div class="fw-bold"><i class="fas fa-sun me-1"></i>Dry</div>
+                <div class="small">Standard setup</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="btn btn-outline-secondary w-100 text-center" style="padding:12px;border-radius:12px;cursor:pointer" onclick="selectWetDry(true,this)" id="wetBtn">
+                <div class="fw-bold"><i class="fas fa-tint me-1" style="color:#3b82f6"></i>Wet (+\x2420)</div>
+                <div class="small">Water hookup included</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
@@ -114,6 +137,30 @@
 `, scripts: `
 <script>
   var selectedItems = {};
+
+  var wetOption = false;
+
+  function selectWetDry(isWet, el) {
+    wetOption = isWet;
+    document.getElementById('dryBtn').style.background = isWet ? '' : 'var(--bm-blue,#004E89)';
+    document.getElementById('dryBtn').style.color = isWet ? '' : 'white';
+    document.getElementById('wetBtn').style.background = isWet ? 'var(--bm-blue,#004E89)' : '';
+    document.getElementById('wetBtn').style.color = isWet ? 'white' : '';
+    updateSummary();
+  }
+
+  // Check if any selected item is a water slide
+  function checkWetDry() {
+    var hasWaterSlide = false;
+    var waterSlideCategories = document.querySelectorAll('.equipment-item');
+    Object.keys(selectedItems).forEach(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (el && el.dataset.category === 'water_slides') hasWaterSlide = true;
+    });
+    var section = document.getElementById('wetDrySection');
+    if (section) section.style.display = hasWaterSlide ? '' : 'none';
+  }
+
 
   // Pre-select items from query params if returning
   (function() {
@@ -159,6 +206,7 @@
       listEl.innerHTML = '<p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>';
       subtotalEl.textContent = '$0';
       countEl.textContent = '0 items selected';
+      checkWetDry();
       continueBtn.classList.add('disabled');
       continueBtn.style.opacity = '0.5';
       continueBtn.style.pointerEvents = 'none';
@@ -176,6 +224,8 @@
 
     subtotalEl.textContent = '$' + subtotal.toFixed(0);
     countEl.textContent = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' selected';
+    if (wetOption) { subtotal += 20; subtotalEl.textContent = '\x24' + subtotal.toFixed(0); }
+    checkWetDry();
     continueBtn.classList.remove('disabled');
     continueBtn.style.opacity = '1';
     continueBtn.style.pointerEvents = 'auto';
@@ -186,7 +236,7 @@
     var ids = Object.keys(selectedItems);
     if (ids.length === 0) return;
     var params = new URLSearchParams(window.location.search);
-    window.location.href = '/booking/details?items=' + ids.join(',') + '&event_date=' + (params.get('event_date')||'') + '&rental_duration=' + (params.get('rental_duration')||'daily') + '&event_start_time=' + (params.get('event_start_time')||'09:00') + '&event_end_time=' + (params.get('event_end_time')||'19:00');
+    window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_option=' + (wetOption ? '1' : '0') + '&event_date=' + (params.get('event_date')||'') + '&rental_duration=' + (params.get('rental_duration')||'daily') + '&event_start_time=' + (params.get('event_start_time')||'09:00') + '&event_end_time=' + (params.get('event_end_time')||'19:00');
   }
 
   // Category filtering
