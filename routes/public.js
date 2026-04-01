@@ -152,6 +152,8 @@ router.post('/contact', (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
   const { name, email, phone, message, event_date } = req.body;
+  // Honeypot spam check
+  if (req.body.website) return res.render("public/contact", { title: "Contact Us - Bounce Man Rentals", settings, page: "contact", success: true });
 
   // Save as lead/communication
   db.prepare(`INSERT INTO communications (id, type, direction, subject, body, recipient, metadata)
