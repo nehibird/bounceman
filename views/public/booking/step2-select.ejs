@@ -92,7 +92,7 @@
               return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '">' +
                 '<div class="equipment-card" style="opacity:0.45;pointer-events:none;position:relative">' +
                   '<div style="position:absolute;top:12px;right:12px;z-index:5;background:var(--bm-pink,#EF476F);color:white;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"><i class="fas fa-ban me-1"></i>Booked</div>' +
-                  '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '" style="filter:grayscale(100%)">' +
+                  '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '" style="filter:grayscale(100%)' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ';object-fit:contain;padding:20px;background:#f8f8f8' : '') + '">' +
                   '<div class="card-body">' +
                     '<span class="badge-category mb-2">' + (item.category || '').replace(/_/g, ' ') + '</span>' +
                     '<h5 class="card-title mt-2">' + item.name + '</h5>' +
@@ -106,7 +106,7 @@
             return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '">' +
             '<div class="equipment-card select-card" onclick="toggleItem(this, &quot;' + item.id + '&quot;, &quot;' + (item.name || '').replace(/"/g, '') + '&quot;, ' + itemPrice + ')">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
-              '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '">' +
+              '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
               '<div class="card-body">' +
                 '<span class="badge-category mb-2">' + (item.category || '').replace(/_/g, ' ') + '</span>' +
                 '<h5 class="card-title mt-2">' + item.name + '</h5>' +
