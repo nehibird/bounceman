@@ -141,10 +141,37 @@ router.get('/contact', (req, res) => {
 });
 
 // Contact form POST
+// Contact form rate limiting (per IP)
+const contactRateMap = {};
+
 router.post('/contact', (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
-  const { name, email, phone, message, event_date } = req.body;
+  const { name, email, phone, message, event_date, website_url, _ts } = req.body;
+
+  // Spam check 1: Honeypot — bots fill hidden "website_url" field
+  if (website_url) {
+    console.log('[SPAM] Honeypot triggered from', req.ip);
+    return res.render('public/contact', { title: 'Contact Us - Bounce Man Rentals', settings: getSettings(), page: 'contact', success: 'Thanks for reaching out! We\'ll get back to you within 24 hours.' });
+  }
+
+  // Spam check 2: Timing — reject if submitted in under 3 seconds
+  const formTime = parseInt(_ts || '0');
+  if (formTime && (Date.now() - formTime) < 3000) {
+    console.log('[SPAM] Too fast from', req.ip);
+    return res.render('public/contact', { title: 'Contact Us - Bounce Man Rentals', settings: getSettings(), page: 'contact', success: 'Thanks for reaching out! We\'ll get back to you within 24 hours.' });
+  }
+
+  // Spam check 3: Rate limit — max 3 per IP per hour
+  const ip = req.ip;
+  const now = Date.now();
+  if (!contactRateMap[ip]) contactRateMap[ip] = [];
+  contactRateMap[ip] = contactRateMap[ip].filter(t => now - t < 3600000);
+  if (contactRateMap[ip].length >= 3) {
+    console.log('[SPAM] Rate limit hit from', ip);
+    return res.render('public/contact', { title: 'Contact Us - Bounce Man Rentals', settings: getSettings(), page: 'contact', success: 'Thanks for reaching out! We\'ll get back to you within 24 hours.' });
+  }
+  contactRateMap[ip].push(now);
 
   // Save as lead/communication
   db.prepare(`INSERT INTO communications (id, type, direction, subject, body, recipient, metadata)
@@ -152,6 +179,8 @@ router.post('/contact', (req, res) => {
     uuid(), `Contact from ${name}`, message, email,
     JSON.stringify({ name, email, phone, event_date })
   );
+
+  console.log('[CONTACT] Form submission from', name, email);
 
   res.render('public/contact', {
     title: 'Contact Us - Bounce Man Rentals',

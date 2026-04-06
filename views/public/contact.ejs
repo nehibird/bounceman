@@ -29,6 +29,12 @@
           <p style="color:#666;margin-bottom:30px">Fill out the form below and we will get back to you within 24 hours.</p>
 
           <form action="/contact" method="POST">
+            <!-- Honeypot + timing (spam protection) -->
+            <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+              <input type="text" name="website_url" tabindex="-1" autocomplete="off">
+            </div>
+            <input type="hidden" name="_ts" value="">
+            <script>document.querySelector('input[name="_ts"]').value=Date.now();</script>
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label fw-bold" style="color:var(--bm-blue)">Your Name <span style="color:var(--bm-pink)">*</span></label>
