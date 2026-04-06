@@ -99,7 +99,8 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">ZIP Code *</label>
-                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput">
+                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput" oninput="checkZip(this.value)">
+                <div id="zipResult" style="margin-top:6px;font-size:13px;display:none"></div>
               </div>
               <div class="col-12">
                 <label class="form-label">Delivery Notes</label>
@@ -261,6 +262,42 @@
         return;
       }
     }
+    // ZIP must be in service area
+    if (!zipValid) {
+      e.preventDefault();
+      alert('Your ZIP code is outside our delivery area. Please call (580) 308-9288 to discuss delivery options.');
+      document.getElementById('zipInput').focus();
+      return;
+    }
   });
+
+  // ZIP code validation
+  var zipValid = false;
+  var zipTimer = null;
+  function checkZip(val) {
+    val = val.replace(/\D/g, '');
+    if (val.length < 5) {
+      document.getElementById('zipResult').style.display = 'none';
+      zipValid = false;
+      return;
+    }
+    clearTimeout(zipTimer);
+    zipTimer = setTimeout(function() {
+      fetch('/booking/check-zip?zip=' + val)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('zipResult');
+          el.style.display = 'block';
+          if (data.valid) {
+            zipValid = true;
+            el.innerHTML = '<span style="color:#2e7d32"><i class="fas fa-check-circle me-1"></i>' + data.message + '</span>';
+          } else {
+            zipValid = false;
+            el.innerHTML = '<span style="color:#c62828"><i class="fas fa-times-circle me-1"></i>' + data.message + '</span>';
+          }
+        })
+        .catch(function() { zipValid = true; }); // allow on error
+    }, 400);
+  }
 </script>
 ` }) %>

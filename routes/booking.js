@@ -3,7 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, calcPricing } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 
@@ -89,6 +89,23 @@ router.post('/check-date', (req, res) => {
   res.json({ available: true, message: 'All items available!' });
 });
 
+// Check ZIP code against delivery zones
+router.get('/check-zip', async (req, res) => {
+  const db = getDb();
+  const zip = req.query.zip;
+  if (!zip) return res.json({ valid: false, message: 'ZIP code required' });
+  const { fee, zone } = getDeliveryFee(db, zip);
+  if (fee >= 0) {
+    return res.json({ valid: true, fee, zone, message: fee === 0 ? 'Free delivery!' : 'Delivery fee: $' + fee.toFixed(0) });
+  }
+  // Out of zone — calculate by distance
+  const dist = await getDistanceFee(zip);
+  if (!dist) {
+    return res.json({ valid: false, fee: 0, message: 'We couldn\'t verify that ZIP code. Please call (580) 308-9288.' });
+  }
+  res.json({ valid: true, fee: dist.fee, zone: 'Extended (' + dist.miles + ' mi)', message: dist.city + ', ' + dist.state + ' is ' + dist.miles + ' miles away. Delivery fee: $' + dist.fee + ' ($1.50/mile round trip)' });
+});
+
 // Step 3 — customer details & delivery
 router.get('/details', (req, res) => {
   const settings = getSettings();
@@ -102,7 +119,7 @@ router.get('/details', (req, res) => {
 });
 
 // Step 4 — review & pay
-router.post('/review', (req, res) => {
+router.post('/review', async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const {
@@ -137,7 +154,11 @@ router.post('/review', (req, res) => {
     subtotal += unitPrice;
   }
 
-  const { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
+  let { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
+  if (delivery_fee < 0) {
+    const dist = await getDistanceFee(delivery_zip);
+    delivery_fee = dist ? dist.fee : 100;
+  }
 
   let discount_amount = 0;
   if (discount_code) {
