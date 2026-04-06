@@ -6,6 +6,7 @@ const dayjs = require('dayjs');
 const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
+const { notifyNewBooking } = require('../services/notifications');
 
 // Step 1 — pick date & duration first
 router.get('/', (req, res) => {
@@ -343,7 +344,7 @@ router.get('/confirmation', async (req, res) => {
           .run(booking.deposit_amount, booking.id);
         console.log('[STRIPE] Deposit confirmed for', bookingNumber);
 
-        // Send confirmation email now that payment is confirmed
+        // Send confirmation email + Slack notification now that payment is confirmed
         const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
         const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id);
         if (customer?.email) {
@@ -353,6 +354,9 @@ router.get('/confirmation', async (req, res) => {
             customer, items, contract?.id
           ).catch(err => console.error('[EMAIL ERROR]', err.message));
         }
+        // Slack notification — payment confirmed
+        notifyNewBooking({ ...booking, payment_status: 'deposit_paid' }, customer, items)
+          .catch(err => console.error('[NOTIFY ERROR]', err.message));
       }
     } catch (err) {
       console.error('[STRIPE CHECK ERROR]', err.message);

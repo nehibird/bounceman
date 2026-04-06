@@ -94,6 +94,22 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Server running on port ${PORT}`);
   console.log(`[BounceMan] Admin: http://localhost:${PORT}/admin`);
   console.log(`[BounceMan] Public: http://localhost:${PORT}`);
+
+  // Daily delivery reminder check — runs at 8 AM CT (14:00 UTC)
+  const { checkDeliveryReminders } = require('./services/notifications');
+  function scheduleReminders() {
+    const now = new Date();
+    const target = new Date(now);
+    target.setUTCHours(14, 0, 0, 0); // 8 AM CT
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const ms = target - now;
+    setTimeout(() => {
+      checkDeliveryReminders();
+      setInterval(checkDeliveryReminders, 24 * 60 * 60 * 1000);
+    }, ms);
+    console.log(`[BounceMan] Delivery reminders scheduled for ${target.toISOString()}`);
+  }
+  scheduleReminders();
 });
 
 module.exports = app;
