@@ -56,7 +56,7 @@
         <form id="dateForm" action="/booking/details" method="GET">
           <!-- Carry forward selected items -->
           <input type="hidden" name="items" value="${selectedItems.join(',')}">
-          <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
+          <input type="hidden" name="rental_duration" id="hiddenDuration" value="${preselectedDuration}">
           <div id="addonItemsContainer"></div>
 
           <div class="date-card mb-4">
@@ -70,21 +70,21 @@
             <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>Rental Duration</h6>
             <div class="row g-3">
               <div class="col-4">
-                <input type="radio" name="rental_duration" value="4hr" id="dur4hr" class="btn-check">
+                <input type="radio" name="rental_duration" value="4hr" id="dur4hr" class="btn-check" ${preselectedDuration === '4hr' ? 'checked' : ''}>
                 <label class="btn btn-outline-primary w-100 rounded-pill" for="dur4hr" style="padding:12px">
                   <div class="fw-bold">4 Hours</div>
                   <div class="small">Quick party</div>
                 </label>
               </div>
               <div class="col-4">
-                <input type="radio" name="rental_duration" value="daily" id="durDaily" class="btn-check" checked>
+                <input type="radio" name="rental_duration" value="daily" id="durDaily" class="btn-check" ${preselectedDuration === 'daily' ? 'checked' : ''}>
                 <label class="btn btn-outline-primary w-100 rounded-pill" for="durDaily" style="padding:12px">
                   <div class="fw-bold">Full Day</div>
                   <div class="small">8 hours</div>
                 </label>
               </div>
               <div class="col-4">
-                <input type="radio" name="rental_duration" value="overnight" id="durOvernight" class="btn-check">
+                <input type="radio" name="rental_duration" value="overnight" id="durOvernight" class="btn-check" ${preselectedDuration === 'overnight' ? 'checked' : ''}>
                 <label class="btn btn-outline-primary w-100 rounded-pill" for="durOvernight" style="padding:12px">
                   <div class="fw-bold">Overnight</div>
                   <div class="small">Next-day pickup</div>
@@ -176,9 +176,18 @@
         endSel.innerHTML += '<option value="' + val + '">' + label + '</option>';
       }
     }
-    // Defaults: 9 AM start, 5 PM end (Full Day)
-    startSel.value = '09:00';
-    endSel.value = '17:00';
+    // Set defaults based on preselected duration
+    var preselected = '${preselectedDuration}';
+    if (preselected === '4hr') {
+      startSel.value = '10:00';
+      endSel.value = '14:00';
+    } else if (preselected === 'overnight') {
+      startSel.value = '09:00';
+      endSel.value = '09:00';
+    } else {
+      startSel.value = '09:00';
+      endSel.value = '17:00';
+    }
   })();
 
   // Duration radio change handler

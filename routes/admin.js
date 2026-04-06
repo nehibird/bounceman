@@ -12,7 +12,7 @@ const bcrypt = require('bcryptjs');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, '..', 'uploads', 'equipment');
-    require('fs').mkdirSync(dir, { recursive: true });
+    require('fs').mkdirSync(dir, { recursive: true, mode: 0o755 });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -229,13 +229,54 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
   );
 
   if (req.files?.length) {
+    const existingCount = db.prepare('SELECT COUNT(*) as c FROM equipment_images WHERE equipment_id = ?').get(req.params.id).c;
     req.files.forEach((file, i) => {
+      // Fix permissions so nginx/Docker can serve the file
+      try { require('fs').chmodSync(file.path, 0o644); } catch(e) {}
+      const isPrimary = (existingCount === 0 && i === 0) ? 1 : 0;
       db.prepare('INSERT INTO equipment_images (id, equipment_id, image_path, is_primary, sort_order) VALUES (?, ?, ?, ?, ?)')
-        .run(uuid(), req.params.id, `/uploads/equipment/${file.filename}`, 0, 99 + i);
+        .run(uuid(), req.params.id, `/uploads/equipment/${file.filename}`, isPrimary, existingCount + i);
     });
   }
 
-  res.redirect('/admin/equipment');
+  res.redirect('/admin/equipment/' + req.params.id + '/edit');
+});
+
+// Set image as primary/featured
+router.get('/equipment/image/:imgId/set-primary', (req, res) => {
+  const db = getDb();
+  const img = db.prepare('SELECT * FROM equipment_images WHERE id = ?').get(req.params.imgId);
+  if (!img) return res.redirect('/admin/equipment');
+
+  // Clear all primary flags for this equipment, then set the selected one
+  db.prepare('UPDATE equipment_images SET is_primary = 0 WHERE equipment_id = ?').run(img.equipment_id);
+  db.prepare('UPDATE equipment_images SET is_primary = 1 WHERE id = ?').run(req.params.imgId);
+
+  res.redirect('/admin/equipment/' + img.equipment_id + '/edit');
+});
+
+// Delete image
+router.get('/equipment/image/:imgId/delete', (req, res) => {
+  const db = getDb();
+  const img = db.prepare('SELECT * FROM equipment_images WHERE id = ?').get(req.params.imgId);
+  if (!img) return res.redirect('/admin/equipment');
+
+  const equipmentId = img.equipment_id;
+  db.prepare('DELETE FROM equipment_images WHERE id = ?').run(req.params.imgId);
+
+  // If we deleted the primary, make the first remaining image primary
+  if (img.is_primary) {
+    const next = db.prepare('SELECT id FROM equipment_images WHERE equipment_id = ? ORDER BY sort_order LIMIT 1').get(equipmentId);
+    if (next) db.prepare('UPDATE equipment_images SET is_primary = 1 WHERE id = ?').run(next.id);
+  }
+
+  // Try to delete the file from disk
+  try {
+    const filePath = path.join(__dirname, '..', img.image_path.startsWith('/uploads') ? img.image_path : 'public' + img.image_path);
+    require('fs').unlinkSync(filePath);
+  } catch(e) { /* file may not exist or be in Docker volume */ }
+
+  res.redirect('/admin/equipment/' + equipmentId + '/edit');
 });
 
 // === CUSTOMERS ===

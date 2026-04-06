@@ -79,6 +79,10 @@
       overflow: hidden;
       color: white;
     }
+    .hero-logo {
+      width: 420px; height: auto;
+      filter: drop-shadow(2px 4px 8px rgba(0,0,0,0.2));
+    }
     .hero-section::before {
       content: '';
       position: absolute; top: -50px; right: -50px;
@@ -86,6 +90,7 @@
       background: var(--bm-yellow);
       border-radius: 50%;
       opacity: 0.1;
+      pointer-events: none;
     }
     .hero-section::after {
       content: '';
@@ -94,6 +99,7 @@
       background: var(--bm-pink);
       border-radius: 50%;
       opacity: 0.1;
+      pointer-events: none;
     }
     .hero-section h1 {
       font-size: 52px; font-weight: 700; margin-bottom: 20px;
@@ -128,7 +134,7 @@
       box-shadow: 0 16px 40px rgba(0,0,0,0.15);
     }
     .equipment-card .card-img-top {
-      height: 240px; object-fit: cover;
+      height: 240px; object-fit: cover; background: #f0f0f0;
     }
     .equipment-card .card-body { padding: 24px; }
     .equipment-card .card-title {
@@ -152,6 +158,7 @@
       position: absolute;
       border-radius: 50%;
       opacity: 0.06;
+      pointer-events: none;
     }
     .fun-bg .shape-1 { width: 200px; height: 200px; background: var(--bm-orange); top: 10%; right: 5%; }
     .fun-bg .shape-2 { width: 150px; height: 150px; background: var(--bm-pink); bottom: 15%; left: 3%; }
@@ -240,7 +247,7 @@
       /* === HERO STATS ROW === */
       .hero-section .d-flex.gap-4 { gap: 1rem !important; justify-content: flex-start; }
       .hero-section .d-flex.gap-4 > div strong { font-size: 20px !important; }
-      .hero-section .d-flex.gap-4 > div small { font-size: 11px; }
+      .hero-section .d-flex.gap-4 > div small { font-size: 12px; }
 
       /* === HERO BUTTONS === */
       .hero-section .d-flex.gap-3 { flex-direction: column; gap: 0.75rem !important; }
@@ -259,7 +266,7 @@
       .equipment-card .card-body { padding: 16px; }
       .equipment-card .card-title { font-size: 17px; }
       .equipment-card .price-tag { font-size: 16px; padding: 5px 14px; }
-      .equipment-card .card-body .btn { min-height: 38px; min-width: 70px; font-size: 13px; }
+      .equipment-card .card-body .btn { min-height: 44px; min-width: 70px; font-size: 13px; }
 
       /* === HOW IT WORKS === */
       .how-it-works-step { padding: 16px 8px; }
@@ -281,12 +288,13 @@
       .main-footer .container { padding-left: 20px; padding-right: 20px; }
       .main-footer h5 { font-size: 16px; margin-bottom: 12px; }
       .main-footer .col-md-4, .main-footer .col-md-2, .main-footer .col-md-3 { margin-bottom: 8px !important; }
-      .main-footer p, .main-footer li { font-size: 14px; }
+      .main-footer p, .main-footer li { font-size: 14px; line-height: 2.2; }
+      .main-footer a { min-height: 44px; display: inline-block; }
       .main-footer .footer-bottom { margin-top: 16px; padding-top: 16px; }
 
       /* === MOBILE NAV MENU === */
       .navbar-collapse { background: white; border-radius: 0 0 16px 16px; padding: 16px 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); margin-top: 8px; }
-      .navbar-collapse .nav-link { padding: 12px 8px !important; font-size: 16px; border-bottom: 1px solid #f0f0f0; }
+      .navbar-collapse .nav-link { padding: 14px 8px !important; font-size: 16px; border-bottom: 1px solid #f0f0f0; min-height: 44px; }
       .navbar-collapse .nav-link:last-child { border-bottom: none; }
       .navbar-collapse .btn-book-now { width: 100%; text-align: center; margin-top: 8px; padding: 14px 20px; font-size: 16px; }
 
@@ -295,6 +303,10 @@
 
       /* === TOUCH TARGETS (44px minimum) === */
       .btn, .nav-link, a.btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+      .form-control, .form-select { min-height: 44px; font-size: 16px; }
+      .form-check { min-height: 44px; display: flex; align-items: center; }
+      .form-check-input { width: 22px; height: 22px; }
+      .navbar-toggler { min-height: 44px; min-width: 44px; }
 
       /* === CATEGORY FILTER PILLS (horizontal scroll) === */
       .text-center.mb-4:has(.rounded-pill), #categoryFilters {
@@ -342,7 +354,7 @@
   <!-- Header -->
   <header class="main-header">
     <nav class="navbar navbar-expand-lg container">
-      <a class="navbar-brand" href="/">BOUNCE<span>MAN</span></a>
+      <a class="navbar-brand" href="/"><img src="/assets/images/navbar-wordmark.svg" alt="Bounce Man" style="height:40px"></a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -379,7 +391,7 @@
     <div class="container">
       <div class="row">
         <div class="col-md-4 mb-4">
-          <h5>BOUNCE MAN</h5>
+          <h5><img src="/assets/images/navbar-wordmark.svg" alt="Bounce Man" style="height:30px"></h5>
           <p style="opacity:0.7">Making your events unforgettable with safe, clean, and fun party equipment rentals in Tonkawa, OK and surrounding areas.</p>
           <% if (settings.facebook_url || settings.instagram_url) { %>
           <div class="social-links">
@@ -399,13 +411,13 @@
           </ul>
         </div>
         <div class="col-md-3 mb-4">
-          <h5>Service Areas</h5>
+          <h5><a href="/service-areas" style="color:var(--bm-yellow);text-decoration:none">Service Areas</a></h5>
           <ul class="list-unstyled" style="opacity:0.7">
-            <li class="mb-1">Tonkawa, OK (FREE delivery)</li>
-            <li class="mb-1">Ponca City, OK</li>
-            <li class="mb-1">Stillwater, OK</li>
-            <li class="mb-1">Blackwell, OK</li>
-            <li class="mb-1">Enid, OK</li>
+            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Tonkawa, OK (FREE delivery)</a></li>
+            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Ponca City, OK</a></li>
+            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Stillwater, OK</a></li>
+            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Blackwell, OK</a></li>
+            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Enid, OK</a></li>
           </ul>
         </div>
         <div class="col-md-3 mb-4">
@@ -417,6 +429,7 @@
             <li class="mb-2"><i class="fas fa-envelope me-2"></i><%= settings.company_email %></li>
             <li class="mb-2"><i class="fas fa-map-marker-alt me-2"></i>Tonkawa, OK 74653</li>
             <li class="mb-2"><i class="fas fa-clock me-2"></i>Season: April–November</li>
+            <li class="mb-2"><i class="fas fa-cross me-2"></i>Closed Sundays</li>
           </ul>
         </div>
       </div>

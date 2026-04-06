@@ -60,6 +60,19 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api', apiRoutes);
 app.use('/event', eventRoutes);
 
+// 404 catch-all (must be after all routes, before error handler)
+app.use((req, res) => {
+  const settings = require('./lib/helpers').getSettings();
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.status(404).render('public/404', {
+    title: 'Page Not Found - Bounce Man',
+    settings,
+    page: '404'
+  });
+});
+
 // Error handler
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.message);
@@ -67,10 +80,11 @@ app.use((err, req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(status).json({ error: err.message });
   }
-  res.status(status).render('error', {
-    title: 'Error',
-    message: err.message,
-    status
+  const settings = require('./lib/helpers').getSettings();
+  res.status(status).render('public/404', {
+    title: 'Error - Bounce Man',
+    settings,
+    page: 'error'
   });
 });
 

@@ -186,7 +186,7 @@
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="agreeTerms" required>
                 <label class="form-check-label small" for="agreeTerms">
-                  By completing this booking, I agree to the <a href="/rental-terms" target="_blank">rental terms and conditions</a>, including the cancellation policy and liability waiver requirements.
+                  By completing this booking, I agree to the <a href="/terms" target="_blank" style="color:var(--bm-orange);font-weight:600">rental terms and conditions</a>, including the cancellation policy and liability waiver requirements. I understand that <strong>my deposit is non-refundable</strong> but may be applied to a future rental date.
                 </label>
               </div>
             </div>
@@ -200,6 +200,7 @@
             <input type="hidden" name="event_end_time" value="${event.event_end_time}">
             <input type="hidden" name="event_type" value="${event.event_type}">
             <input type="hidden" name="rental_duration" value="${rental_duration || 'daily'}">
+            <input type="hidden" name="wet_items" value="${wet_items || ''}">
             <input type="hidden" name="subtotal" value="${pricing.subtotal}">
             <input type="hidden" name="delivery_fee" value="${pricing.delivery_fee}">
             <input type="hidden" name="tax_amount" value="${pricing.tax_amount}">
@@ -220,10 +221,14 @@
             <input type="hidden" name="venue_type" value="${delivery.venue_type}">
             <input type="hidden" name="surface_type" value="${delivery.surface_type}">
             <input type="hidden" name="power_available" value="${delivery.power_available || false}">
-            <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+
+            <div style="background:#fff3cd;border-radius:10px;padding:10px 14px;margin-top:16px;font-size:13px;color:#856404;text-align:center">
+              <i class="fas fa-exclamation-triangle me-1"></i>
+              <strong>Non-refundable deposit.</strong> Your deposit may be applied to a future date but cannot be refunded. Weather cancellations by Bounce Man are fully refundable.
+            </div>
 
             <button type="submit" class="btn btn-book-now w-100 mt-3" id="submitBtn" disabled style="font-size:16px;padding:14px;">
-              <i class="fas fa-lock me-2"></i>Complete Booking &mdash; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit
+              <i class="fas fa-lock me-2"></i>Complete Booking &mdash; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Non-Refundable Deposit
             </button>
 
             <p class="text-muted text-center small mt-2 mb-0">
@@ -232,7 +237,7 @@
           </div>
 
           <!-- Back Button -->
-          <div class="mt-3">
+          <div class="mt-3 mb-4">
             <a href="javascript:history.back()" class="btn btn-outline-secondary rounded-pill w-100">
               <i class="fas fa-arrow-left me-2"></i>Go Back and Edit
             </a>

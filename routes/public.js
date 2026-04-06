@@ -261,8 +261,8 @@ router.get('/contract/:id', (req, res) => {
     WHERE c.id = ?
   `).get(req.params.id);
 
-  if (!contract) return res.status(404).render('public/404', { title: 'Not Found', settings });
-  if (contract.signed) return res.render('public/contract-signed', { title: 'Contract Already Signed', settings, contract });
+  if (!contract) return res.status(404).render('public/404', { title: 'Not Found', settings, page: '404' });
+  if (contract.signed) return res.render('public/contract-signed', { title: 'Rental Agreement Signed', settings, contract, page: 'contract' });
 
   res.render('public/contract', { title: 'Sign Rental Agreement', settings, contract, page: 'contract' });
 });
@@ -270,11 +270,17 @@ router.get('/contract/:id', (req, res) => {
 // Sign contract POST
 router.post('/contract/:id/sign', (req, res) => {
   const db = getDb();
+  const settings = getSettings();
   const { signature_data, signer_name } = req.body;
   const ip = req.ip;
 
   const contract = db.prepare('SELECT * FROM contracts WHERE id = ? AND signed = 0').get(req.params.id);
-  if (!contract) return res.status(404).json({ error: 'Contract not found or already signed' });
+  if (!contract) {
+    if (req.headers['content-type']?.includes('json')) {
+      return res.status(404).json({ error: 'Contract not found or already signed' });
+    }
+    return res.redirect('/contract/' + req.params.id);
+  }
 
   db.prepare(`UPDATE contracts SET signed = 1, signature_data = ?, signed_at = datetime('now'),
     signer_ip = ?, signer_name = ? WHERE id = ?`).run(signature_data, ip, signer_name, req.params.id);
@@ -282,7 +288,10 @@ router.post('/contract/:id/sign', (req, res) => {
   db.prepare(`UPDATE bookings SET contract_signed = 1, contract_signed_at = datetime('now'),
     contract_signature = ? WHERE id = ?`).run(signature_data, contract.booking_id);
 
-  res.json({ success: true, message: 'Contract signed successfully!' });
+  if (req.headers['content-type']?.includes('json')) {
+    return res.json({ success: true, message: 'Contract signed successfully!' });
+  }
+  res.redirect('/contract/' + req.params.id);
 });
 
 module.exports = router;

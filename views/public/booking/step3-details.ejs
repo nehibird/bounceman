@@ -57,6 +57,7 @@
       <input type="hidden" name="event_start_time" id="hiddenStart">
       <input type="hidden" name="event_end_time" id="hiddenEnd">
       <input type="hidden" name="rental_duration" id="hiddenDuration">
+      <input type="hidden" name="wet_items" id="hiddenWetItems">
 
       <div class="row justify-content-center">
         <div class="col-lg-8">
@@ -99,13 +100,6 @@
               <div class="col-md-6">
                 <label class="form-label">ZIP Code *</label>
                 <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput">
-              </div>
-              <div class="col-12">
-                <div class="delivery-note">
-                  <i class="fas fa-info-circle me-1"></i>
-                  <strong>Delivery fees</strong> vary by location. Tonkawa addresses enjoy FREE delivery!
-                  ${zones.map(function(z) { return '<br><span class="small">' + z.name + ' (' + z.zip_codes + '): ' + (z.delivery_fee == 0 ? 'FREE' : '$' + parseFloat(z.delivery_fee).toFixed(0)) + '</span>'; }).join('')}
-                </div>
               </div>
               <div class="col-12">
                 <label class="form-label">Delivery Notes</label>
@@ -159,6 +153,14 @@
                   </label>
                 </div>
               </div>
+              <div class="col-md-6 d-flex align-items-end" id="waterCheckWrap" style="display:none">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="water_available" value="true" id="waterCheck">
+                  <label class="form-check-label fw-bold" for="waterCheck">
+                    <i class="fas fa-tint me-1" style="color:#3b82f6"></i>Water hookup available nearby
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -209,8 +211,16 @@
     document.getElementById('hiddenEnd').value = end;
     document.getElementById('hiddenDuration').value = duration;
 
+    var wetItems = params.get('wet_items') || '';
+    document.getElementById('hiddenWetItems').value = wetItems;
+
+    // Show water checkbox if any wet items selected
+    if (wetItems && wetItems.length > 0) {
+      document.getElementById('waterCheckWrap').style.display = '';
+    }
+
     // Build back link
-    document.getElementById('backBtn').href = '/booking/date?items=' + items;
+    document.getElementById('backBtn').href = '/booking/select?event_date=' + date + '&rental_duration=' + duration + '&preselect=' + items;
   })();
 
   // Phone formatting
@@ -220,6 +230,36 @@
       e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3,6) + '-' + val.substring(6,10);
     } else if (val.length >= 3) {
       e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3);
+    }
+  });
+
+  // Form validation
+  document.getElementById('detailsForm').addEventListener('submit', function(e) {
+    var params = new URLSearchParams(window.location.search);
+    var wetItems = params.get('wet_items') || '';
+    var items = params.get('items') || '';
+
+    // Wet units require water hookup
+    if (wetItems.length > 0) {
+      var waterCheck = document.getElementById('waterCheck');
+      if (!waterCheck.checked) {
+        e.preventDefault();
+        alert('You selected a wet setup, which requires a water hookup within 100 feet. Please confirm water is available or go back and select the dry option.');
+        waterCheck.focus();
+        return;
+      }
+    }
+
+    // No power = must have generator
+    var powerCheck = document.getElementById('powerCheck');
+    if (!powerCheck.checked) {
+      var hasGenerator = items.indexOf('fff4986b-1b23-4202-9bcb-ddc8775c5410') !== -1;
+      if (!hasGenerator) {
+        e.preventDefault();
+        alert('Inflatables require power to run. Please confirm a power outlet is available nearby, or go back and add a Portable Generator to your rental.');
+        powerCheck.focus();
+        return;
+      }
     }
   });
 </script>

@@ -18,25 +18,21 @@
     <div class="row g-4">
       ${equipment.length > 0 ? equipment.map(item => `
       <div class="col-md-6 col-lg-4">
-        <div class="equipment-card">
-          <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}">
-          <div class="card-body">
-            <span class="badge-category mb-2">${(item.category || '').replace(/_/g, ' ')}</span>
-            <h5 class="card-title mt-2">${item.name}</h5>
-            <p class="text-muted small mb-2">${item.short_description || ''}</p>
-            <div class="small text-muted mb-3">
-              ${item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : ''}
-              ${item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : ''}
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
-              <div>
-                <a href="/equipment/${item.slug}" class="btn btn-sm btn-outline-primary rounded-pill me-1">Details</a>
-                <a href="/booking?items=${item.id}" class="btn btn-sm btn-bm rounded-pill">Book</a>
+        <a href="/equipment/${item.slug}" style="text-decoration:none;color:inherit;display:block">
+          <div class="equipment-card">
+            <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.category === 'add_ons' || item.category === 'add-ons') ? 'object-fit:contain;padding:20px;background:#f8f8f8' : ''}">
+            <div class="card-body">
+              <span class="badge-category mb-2">${(item.category || '').replace(/_/g, ' ')}</span>
+              <h5 class="card-title mt-2">${item.name}</h5>
+              <p class="text-muted small mb-2">${item.short_description || ''}</p>
+              ${item.dimensions ? '<div class="small text-muted mb-3"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : ''}
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+                <span class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></span>
               </div>
             </div>
           </div>
-        </div>
+        </a>
       </div>
       `).join('') : `
       <div class="col-12 text-center py-5">

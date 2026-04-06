@@ -204,15 +204,25 @@
       ${item && images && images.length > 0 ? `
         <div class="mb-3">
           <label class="form-label text-muted">Current Images</label>
-          <div class="d-flex flex-wrap gap-2">
-            ${images.map(img => '<div style="position:relative"><img src="' + img.url + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:2px solid #eee"></div>').join('')}
+          <div class="d-flex flex-wrap gap-3">
+            ${images.map(function(img) {
+              return '<div style="position:relative;text-align:center">' +
+                '<img src="' + img.image_path + '" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:3px solid ' + (img.is_primary ? 'var(--bm-orange,#FF6B35)' : '#eee') + '">' +
+                '<div style="margin-top:6px;display:flex;gap:4px;justify-content:center">' +
+                  (img.is_primary
+                    ? '<span class="badge bg-warning text-dark" style="font-size:10px"><i class="fas fa-star me-1"></i>Featured</span>'
+                    : '<a href="/admin/equipment/image/' + img.id + '/set-primary" class="btn btn-sm btn-outline-warning" style="font-size:10px;padding:2px 6px" title="Set as featured"><i class="fas fa-star"></i></a>') +
+                  '<a href="/admin/equipment/image/' + img.id + '/delete" class="btn btn-sm btn-outline-danger" style="font-size:10px;padding:2px 6px" title="Delete" onclick="return confirm(\'Delete this image?\')"><i class="fas fa-trash"></i></a>' +
+                '</div>' +
+              '</div>';
+            }).join('')}
           </div>
         </div>
-      ` : ''}
+      ` : '<p class="text-muted mb-3">No images yet.</p>'}
       <div>
         <label class="form-label">Upload Images</label>
         <input type="file" name="images" class="form-control" multiple accept="image/*">
-        <small class="text-muted">Select one or more images. JPG, PNG, or WebP recommended.</small>
+        <small class="text-muted">Select one or more images. JPG, PNG, or WebP recommended. First uploaded image will be set as featured if none exists.</small>
       </div>
     </div>
   </div>

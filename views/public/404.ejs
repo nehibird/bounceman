@@ -1,11 +1,14 @@
 <%- include('../layouts/public', { body: `
 <section class="py-5 text-center">
   <div class="container py-5">
-    <div style="font-size:120px;opacity:0.3">🎈</div>
-    <h1 style="color:var(--bm-orange);font-size:80px;font-weight:800">404</h1>
-    <h3>Oops! This page floated away</h3>
-    <p class="text-muted">The page you're looking for doesn't exist.</p>
-    <a href="/" class="btn btn-bm btn-lg rounded-pill mt-3">Back to Home</a>
+    <div style="font-size:100px;margin-bottom:10px">🎈</div>
+    <h1 style="color:var(--bm-blue);font-size:64px;font-weight:800;font-family:'Fredoka',sans-serif">Oops!</h1>
+    <h3 style="color:#555;margin-bottom:8px">This page floated away</h3>
+    <p class="text-muted" style="max-width:400px;margin:0 auto 30px">The page you're looking for doesn't exist. Maybe it bounced off somewhere else!</p>
+    <div class="d-flex gap-3 justify-content-center flex-wrap">
+      <a href="/" class="btn btn-book-now btn-lg"><i class="fas fa-home me-2"></i>Back to Home</a>
+      <a href="/equipment" class="btn btn-outline-primary btn-lg rounded-pill px-4">Browse Equipment <i class="fas fa-arrow-right ms-1"></i></a>
+    </div>
   </div>
 </section>
 `, scripts: '' }) %>

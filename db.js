@@ -410,7 +410,13 @@ function initialize() {
     'operating_season_start': '04-01',
     'operating_season_end': '11-30',
     'damage_waiver_fee': '15',
-    'deposit_percent': '25',
+    'deposit_percent': '50',
+    'halfday_hours': '4',
+    'halfday_morning_start': '09:00',
+    'halfday_morning_end': '13:00',
+    'halfday_afternoon_start': '15:00',
+    'halfday_afternoon_end': '19:00',
+    'blocked_weekdays': '0',
     'cancellation_hours': '48',
     'auto_confirm_bookings': '0',
     'review_request_delay_hours': '24',
@@ -452,12 +458,12 @@ function initialize() {
   const catInsert = d.prepare('INSERT OR IGNORE INTO categories (id, name, slug, description, sort_order) VALUES (?, ?, ?, ?, ?)');
   const { v4: uuid } = require('uuid');
   const cats = [
-    ['Bounce Houses', 'bounce-houses', 'Standard and themed bounce houses for all ages', 1],
-    ['Combo Units', 'combo-units', 'Bounce house and slide combo units', 2],
-    ['Water Slides', 'water-slides', 'Water slides and wet/dry combos for summer fun', 3],
-    ['Obstacle Courses', 'obstacle-courses', 'Inflatable obstacle courses for competitive fun', 4],
-    ['Interactive Games', 'interactive-games', 'Interactive inflatable games and challenges', 5],
-    ['Add-Ons', 'add-ons', 'Tables, chairs, generators, and accessories', 6]
+    ['Bounce Houses', 'bounce_houses', 'Standard and themed bounce houses for all ages', 1],
+    ['Combo Units', 'combo_units', 'Bounce house and slide combo units', 2],
+    ['Water Slides', 'water_slides', 'Water slides and wet/dry combos for summer fun', 3],
+    ['Obstacle Courses', 'obstacle_courses', 'Inflatable obstacle courses for competitive fun', 4],
+    ['Interactive Games', 'interactive_games', 'Interactive inflatable games and challenges', 5],
+    ['Add-Ons', 'add_ons', 'Tables, chairs, generators, and accessories', 6]
   ];
   for (const [name, slug, desc, order] of cats) {
     catInsert.run(uuid(), name, slug, desc, order);
@@ -522,13 +528,13 @@ function initialize() {
       '',
       '6. DAMAGE/LOSS: Renter is responsible for damage beyond normal wear. Replacement costs billed at current value.',
       '',
-      '7. CANCELLATION: Cancellations must be made at least {{cancellation_hours}} hours before the event. Late cancellations forfeit deposit.',
+      '7. CANCELLATION: All deposits are non-refundable but may be applied toward a future rental date. If Bounce Man LLC cancels due to weather or safety concerns, Renter will receive a full refund or free reschedule.',
       '',
       '8. LIABILITY WAIVER: Renter assumes all risk. Renter holds Bounce Man LLC harmless from any claims or injuries.',
       '',
       '9. INDEMNIFICATION: Renter indemnifies Bounce Man LLC, its owners, employees, and agents from any liability.',
       '',
-      '10. PAYMENT: Total rental amount is due as agreed. Deposit is non-refundable for late cancellations.',
+      '10. PAYMENT: Total rental amount is due as agreed. A 50% non-refundable deposit is required at booking. Remaining balance is due on delivery day.',
       '',
       'TOTAL: ${{total}}',
       'DEPOSIT: ${{deposit_amount}}',

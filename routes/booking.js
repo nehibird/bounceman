@@ -3,44 +3,35 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
+const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, calcPricing } = require('../lib/helpers');
+const emailService = require('../services/email');
+const stripeService = require('../services/stripe');
 
-function getSettings() {
-  const db = getDb();
-  const rows = db.prepare('SELECT key, value FROM settings').all();
-  return Object.fromEntries(rows.map(r => [r.key, r.value]));
-}
-
-function generateBookingNumber() {
-  const prefix = 'BM';
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
-  return `${prefix}-${ts}-${rand}`;
-}
-
-// Booking start — select equipment
+// Step 1 — pick date & duration first
 router.get('/', (req, res) => {
+  const settings = getSettings();
+  res.render('public/booking/step1-date', {
+    title: 'Book Your Rental - Bounce Man',
+    settings,
+    page: 'booking'
+  });
+});
+
+// Step 2 — select equipment (filtered by date availability)
+router.get('/select', (req, res) => {
   const db = getDb();
   const settings = getSettings();
+  const eventDate = req.query.event_date || '';
+  const rentalDuration = req.query.rental_duration || 'daily';
+  const eventStartTime = req.query.event_start_time || '09:00';
+  const eventEndTime = req.query.event_end_time || '19:00';
+
   const equipment = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
     FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons' ORDER BY e.sort_order
   `).all();
   const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
-  const packages = db.prepare('SELECT * FROM packages WHERE active = 1').all();
-
-  res.render('public/booking/step1-select', {
-    title: 'Book Your Rental - Bounce Man',
-    settings, equipment, categories, packages,
-    page: 'booking'
-  });
-});
-
-// Step 2 — date & time
-router.get('/date', (req, res) => {
-  const db = getDb();
-  const settings = getSettings();
-  const items = req.query.items ? req.query.items.split(',') : [];
 
   const addons = db.prepare(`
     SELECT e.*,
@@ -48,9 +39,14 @@ router.get('/date', (req, res) => {
     FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
   `).all();
 
-  res.render('public/booking/step2-date', {
-    title: 'Choose Date & Time - Bounce Man',
-    settings, selectedItems: items, addons,
+  const bookedIds = getBookedEquipmentIds(db, eventDate);
+  equipment.forEach(item => { item.booked = bookedIds.has(item.id); });
+  addons.forEach(item => { item.booked = bookedIds.has(item.id); });
+
+  res.render('public/booking/step2-select', {
+    title: 'Choose Your Rentals - Bounce Man',
+    settings, equipment, categories, addons,
+    eventDate, rentalDuration, eventStartTime, eventEndTime,
     page: 'booking'
   });
 });
@@ -114,69 +110,48 @@ router.post('/review', (req, res) => {
     first_name, last_name, email, phone,
     delivery_address, delivery_city, delivery_zip,
     event_type, venue_type, surface_type, power_available,
-    delivery_notes, discount_code, rental_duration
+    delivery_notes, discount_code, rental_duration, wet_items
   } = req.body;
 
-  const items = Array.isArray(equipment_ids) ? equipment_ids : [equipment_ids];
+  const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
+  const wetItemIds = new Set((wet_items || '').split(',').filter(Boolean));
   const duration = rental_duration || 'daily';
 
-  // Calculate pricing based on rental duration
   let subtotal = 0;
   const lineItems = [];
   for (const eqId of items) {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
     if (!eq) continue;
-
-    let unitPrice;
-    if (duration === '4hr') {
-      unitPrice = eq.price_4hr || Math.round(eq.price_daily * 0.65 * 100) / 100;
-    } else if (duration === 'overnight') {
-      unitPrice = eq.price_overnight || Math.round(eq.price_daily * 1.15 * 100) / 100;
-    } else {
-      unitPrice = eq.price_daily;
-    }
-
+    const isWet = wetItemIds.has(eqId);
+    const basePrice = getPrice(eq, duration);
+    const unitPrice = isWet ? basePrice + 20 : basePrice;
     lineItems.push({
       equipment_id: eqId,
-      item_name: eq.name,
+      item_name: isWet ? eq.name + ' (Wet)' : eq.name,
       unit_price: unitPrice,
       total_price: unitPrice,
       duration_type: duration,
+      wet_option: isWet ? 1 : 0,
       image: db.prepare('SELECT image_path FROM equipment_images WHERE equipment_id = ? AND is_primary = 1 LIMIT 1').get(eqId)?.image_path
     });
     subtotal += unitPrice;
   }
 
-  // Delivery fee by zip
-  let delivery_fee = 0;
-  if (delivery_zip) {
-    const zone = db.prepare("SELECT * FROM delivery_zones WHERE active = 1 AND (',' || zip_codes || ',') LIKE ?")
-      .get(`%,${delivery_zip},%`);
-    delivery_fee = zone ? zone.delivery_fee : parseFloat(settings.default_delivery_fee || '0');
-  }
+  const { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
 
-  // Tax
-  const tax_rate = parseFloat(settings.tax_rate || '0.085');
-  const tax_amount = Math.round(subtotal * tax_rate * 100) / 100;
-
-  // Discount
   let discount_amount = 0;
   if (discount_code) {
     const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(discount_code.toUpperCase());
     if (code) {
-      if (code.type === 'percent') {
-        discount_amount = Math.round(subtotal * (code.value / 100) * 100) / 100;
-      } else {
-        discount_amount = code.value;
-      }
+      discount_amount = code.type === 'percent'
+        ? Math.round(subtotal * (code.value / 100) * 100) / 100
+        : code.value;
     }
   }
 
-  // Damage waiver
-  const damage_waiver_fee = parseFloat(settings.damage_waiver_fee || '15');
-
-  const total = subtotal + delivery_fee + tax_amount + damage_waiver_fee - discount_amount;
-  const deposit_amount = Math.round(total * parseFloat(settings.deposit_percent || '0.25') * 100) / 100;
+  const pricing = calcPricing(settings, subtotal, delivery_fee);
+  const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount } = pricing;
+  const total = rawTotal - discount_amount;
 
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',
@@ -186,6 +161,7 @@ router.post('/review', (req, res) => {
     delivery: { delivery_address, delivery_city, delivery_zip, delivery_notes, venue_type, surface_type, power_available },
     event: { event_date, event_start_time, event_end_time, event_type },
     pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount },
+    wet_items: wet_items || '',
     rental_duration: duration,
     page: 'booking'
   });
@@ -230,36 +206,32 @@ router.post('/submit', async (req, res) => {
       parseFloat(data.discount_amount || 0), data.discount_code || null,
       parseFloat(data.damage_waiver_fee || 0),
       parseFloat(data.total), parseFloat(data.deposit_amount),
-      parseFloat(data.total), 'unpaid'
+      parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid'
     );
 
     // Add line items
-    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : [data.equipment_ids];
+    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
+    const submitWetIds = new Set((data.wet_items || '').split(',').filter(Boolean));
     const bookingDuration = data.rental_duration || 'daily';
     for (const eqId of equipmentIds) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
       if (!eq) continue;
-
-      let unitPrice;
-      if (bookingDuration === '4hr') {
-        unitPrice = eq.price_4hr || Math.round(eq.price_daily * 0.65 * 100) / 100;
-      } else if (bookingDuration === 'overnight') {
-        unitPrice = eq.price_overnight || Math.round(eq.price_daily * 1.15 * 100) / 100;
-      } else {
-        unitPrice = eq.price_daily;
-      }
-
-      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, eq.name, unitPrice, unitPrice, bookingDuration);
+      const isWet = submitWetIds.has(eqId);
+      const basePrice = getPrice(eq, bookingDuration);
+      const unitPrice = isWet ? basePrice + 20 : basePrice;
+      const itemName = isWet ? eq.name + ' (Wet)' : eq.name;
+      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, itemName, unitPrice, unitPrice, bookingDuration, isWet ? 1 : 0);
     }
 
     // Update customer stats
     db.prepare('UPDATE customers SET total_bookings = total_bookings + 1 WHERE id = ?').run(customerId);
 
     // Create contract
+    let contractId = null;
     const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
     if (template) {
-      const contractId = uuid();
+      contractId = uuid();
       let content = template.content
         .replace(/\{\{booking_number\}\}/g, bookingNumber)
         .replace(/\{\{event_date\}\}/g, data.event_date)
@@ -282,17 +254,97 @@ router.post('/submit', async (req, res) => {
       uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${data.first_name} ${data.last_name}` }), req.ip
     );
 
-    res.render('public/booking/confirmation', {
-      title: 'Booking Confirmed! - Bounce Man',
-      settings,
-      bookingNumber,
-      bookingId,
-      page: 'booking'
-    });
+    // Create Stripe checkout session for deposit
+    const depositAmount = parseFloat(data.deposit_amount);
+    const itemNames = equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', ');
+    const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+
+    try {
+      const session = await stripeService.createCheckoutSession({
+        bookingId,
+        bookingNumber,
+        depositAmount,
+        customerEmail: data.email,
+        description: `${itemNames} — Deposit for ${bookingNumber}`,
+        successUrl: `${baseUrl}/booking/confirmation?booking_number=${bookingNumber}`,
+        cancelUrl: `${baseUrl}/booking/lookup?booking_number=${bookingNumber}`
+      });
+
+      db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
+        .run(`stripe_session:${session.id}`, bookingId);
+
+      console.log('[BOOKING] Created', bookingNumber, '-> Stripe session', session.id);
+      return res.redirect(303, session.url);
+    } catch (stripeErr) {
+      console.error('[STRIPE ERROR]', stripeErr.message);
+      // Stripe failed but booking was created — show confirmation without payment
+      if (data.email) {
+        const bookingForEmail = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+        const itemsForEmail = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
+        emailService.sendBookingConfirmation(bookingForEmail, { first_name: data.first_name, last_name: data.last_name, email: data.email }, itemsForEmail, contractId)
+          .catch(err => console.error('[EMAIL ERROR]', err.message));
+      }
+      res.render('public/booking/confirmation', {
+        title: 'Booking Confirmed! - Bounce Man',
+        settings, bookingNumber, bookingId,
+        page: 'booking'
+      });
+    }
   } catch (err) {
     console.error('[BOOKING ERROR]', err);
     res.status(500).render('error', { title: 'Booking Error', message: 'Something went wrong. Please try again or call us.', status: 500 });
   }
+});
+
+// Confirmation page (after Stripe success redirect)
+router.get('/confirmation', async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const bookingNumber = req.query.booking_number;
+
+  if (!bookingNumber) {
+    return res.redirect('/');
+  }
+
+  const booking = db.prepare('SELECT * FROM bookings WHERE booking_number = ?').get(bookingNumber);
+  if (!booking) {
+    return res.redirect('/');
+  }
+
+  // Mark deposit as paid if Stripe session completed
+  const notes = booking.internal_notes || '';
+  const sessionMatch = notes.match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
+  if (sessionMatch && booking.deposit_paid !== 1) {
+    try {
+      const session = await stripeService.retrieveSession(sessionMatch[1]);
+      if (session.payment_status === 'paid') {
+        db.prepare("UPDATE bookings SET payment_status = 'deposit_paid', deposit_paid = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
+          .run(booking.deposit_amount, booking.id);
+        console.log('[STRIPE] Deposit confirmed for', bookingNumber);
+
+        // Send confirmation email now that payment is confirmed
+        const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+        const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id);
+        if (customer?.email) {
+          const contract = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(booking.id);
+          emailService.sendBookingConfirmation(
+            { ...booking, payment_status: 'deposit_paid', deposit_paid: 1 },
+            customer, items, contract?.id
+          ).catch(err => console.error('[EMAIL ERROR]', err.message));
+        }
+      }
+    } catch (err) {
+      console.error('[STRIPE CHECK ERROR]', err.message);
+    }
+  }
+
+  res.render('public/booking/confirmation', {
+    title: 'Booking Confirmed! - Bounce Man',
+    settings,
+    bookingNumber,
+    bookingId: booking.id,
+    page: 'booking'
+  });
 });
 
 // Booking lookup

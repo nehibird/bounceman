@@ -16,8 +16,29 @@
   
   
   
-  .dur-btn { padding:16px; border-radius:12px; cursor:pointer; transition: all 0.2s; }
-  .dur-btn.selected { background: var(--bm-blue,#004E89) !important; color: white !important; border-color: var(--bm-blue,#004E89) !important; }
+  .dur-btn {
+    padding: 16px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 80px;
+  }
+  .dur-btn .dur-label { font-weight: 700; font-size: 15px; line-height: 1.2; }
+  .dur-btn .dur-sub { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  .dur-btn.selected {
+    background: var(--bm-blue, #004E89) !important;
+    color: white !important;
+    border-color: var(--bm-blue, #004E89) !important;
+  }
+  .dur-btn.selected .dur-sub,
+  .dur-btn.selected .dur-label,
+  .dur-btn.selected .small,
+  .dur-btn.selected .text-muted,
+  .dur-btn.selected i { color: white !important; opacity: 1 !important; }
 </style>
 
 <section class="py-5">
@@ -64,20 +85,20 @@
             <div class="row g-3">
               <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('halfday',this)" id="durHalfDay">
-                  <div class="fw-bold">Half Day</div>
-                  <div class="small">4 hours</div>
+                  <span class="dur-label">Half Day</span>
+                  <span class="dur-sub">4 hours</span>
                 </div>
               </div>
               <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn selected" onclick="selectDuration('fullday',this)" id="durFullDay">
-                  <div class="fw-bold">Full Day</div>
-                  <div class="small">10 hours</div>
+                  <span class="dur-label">Full Day</span>
+                  <span class="dur-sub">10 hours</span>
                 </div>
               </div>
               <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('overnight',this)" id="durOvernight">
-                  <div class="fw-bold">Overnight</div>
-                  <div class="small">Next-day pickup</div>
+                  <span class="dur-label">Overnight</span>
+                  <span class="dur-sub">Next day</span>
                 </div>
               </div>
             </div>
@@ -86,16 +107,20 @@
             <div id="halfDayChoice" class="row g-3 mt-3" style="display:none">
               <div class="col-6">
                 <div class="btn btn-outline-secondary w-100 text-center dur-btn selected" onclick="selectHalf('morning',this)" id="halfMorning">
-                  <div class="fw-bold"><i class="fas fa-sun me-1" style="color:#f59e0b"></i>Morning</div>
-                  <div class="small text-muted">9 AM - 1 PM</div>
+                  <span class="dur-label"><i class="fas fa-sun me-1" style="color:#f59e0b"></i> Morning</span>
+                  <span class="dur-sub" id="morningTimeLabel"></span>
                 </div>
               </div>
               <div class="col-6">
                 <div class="btn btn-outline-secondary w-100 text-center dur-btn" onclick="selectHalf('afternoon',this)" id="halfAfternoon">
-                  <div class="fw-bold"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i>Afternoon</div>
-                  <div class="small text-muted">3 PM - 7 PM</div>
+                  <span class="dur-label"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i> Afternoon</span>
+                  <span class="dur-sub" id="afternoonTimeLabel"></span>
                 </div>
               </div>
+            </div>
+
+            <div id="saturdayNote" style="display:none;margin-top:12px;background:#e8f5e9;border-radius:10px;padding:12px;font-size:14px;color:#2e7d32">
+              <i class="fas fa-gift me-1"></i> <strong>Bonus!</strong> We don't pick up on Sundays, so your unit stays through the weekend and we'll pick up Monday. Enjoy the extra day!
             </div>
 
             <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
@@ -116,25 +141,52 @@
 
 `, scripts: `
 <script>
+  // Settings from server
+  var HALFDAY_MORNING_START = '${settings.halfday_morning_start || '09:00'}';
+  var HALFDAY_MORNING_END = '${settings.halfday_morning_end || '13:00'}';
+  var HALFDAY_AFTERNOON_START = '${settings.halfday_afternoon_start || '15:00'}';
+  var HALFDAY_AFTERNOON_END = '${settings.halfday_afternoon_end || '19:00'}';
+  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || '0'}'.split(',').map(Number).filter(function(n) { return !isNaN(n); });
+
+  function fmt12(t) {
+    var parts = t.split(':'); var h = parseInt(parts[0]); var m = parts[1] || '00';
+    var ampm = h >= 12 ? 'PM' : 'AM'; h = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    return m === '00' ? h + ' ' + ampm : h + ':' + m + ' ' + ampm;
+  }
+
+  document.getElementById('morningTimeLabel').textContent = fmt12(HALFDAY_MORNING_START) + ' \\u2013 ' + fmt12(HALFDAY_MORNING_END);
+  document.getElementById('afternoonTimeLabel').textContent = fmt12(HALFDAY_AFTERNOON_START) + ' \\u2013 ' + fmt12(HALFDAY_AFTERNOON_END);
+
   flatpickr('#datePicker', {
     inline: true,
     minDate: 'today',
     dateFormat: 'Y-m-d',
+    disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
     onChange: function(sel, dateStr) {
       document.getElementById('eventDateInput').value = dateStr;
+      checkSaturdayOvernight();
     }
   });
 
+  function checkSaturdayOvernight() {
+    var dateStr = document.getElementById('eventDateInput').value;
+    var dur = document.getElementById('hiddenDuration').value;
+    var note = document.getElementById('saturdayNote');
+    if (dateStr && dur === 'overnight') {
+      var d = new Date(dateStr + 'T12:00:00');
+      note.style.display = d.getDay() === 6 ? '' : 'none';
+    } else {
+      note.style.display = 'none';
+    }
+  }
+
   function selectDuration(type, el) {
-    // Reset all duration buttons
     document.querySelectorAll('#durHalfDay,#durFullDay,#durOvernight').forEach(function(b) { b.classList.remove('selected'); });
     el.classList.add('selected');
-
     var halfChoice = document.getElementById('halfDayChoice');
 
     if (type === 'halfday') {
       halfChoice.style.display = '';
-      // Default to morning
       selectHalf('morning', document.getElementById('halfMorning'));
     } else if (type === 'fullday') {
       halfChoice.style.display = 'none';
@@ -147,6 +199,7 @@
       document.getElementById('hiddenStart').value = '15:00';
       document.getElementById('hiddenEnd').value = '10:00';
     }
+    checkSaturdayOvernight();
   }
 
   function selectHalf(time, el) {
@@ -155,13 +208,33 @@
     el.classList.add('selected');
     document.getElementById('hiddenDuration').value = '4hr';
     if (time === 'morning') {
-      document.getElementById('hiddenStart').value = '09:00';
-      document.getElementById('hiddenEnd').value = '13:00';
+      document.getElementById('hiddenStart').value = HALFDAY_MORNING_START;
+      document.getElementById('hiddenEnd').value = HALFDAY_MORNING_END;
     } else {
-      document.getElementById('hiddenStart').value = '15:00';
-      document.getElementById('hiddenEnd').value = '19:00';
+      document.getElementById('hiddenStart').value = HALFDAY_AFTERNOON_START;
+      document.getElementById('hiddenEnd').value = HALFDAY_AFTERNOON_END;
     }
   }
+
+  // Carry forward preselect item ID from equipment detail page
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var preselect = params.get('preselect');
+    if (preselect) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'preselect';
+      input.value = preselect;
+      document.getElementById('dateForm').appendChild(input);
+    }
+    // If rental_duration was passed, pre-select it
+    var dur = params.get('rental_duration');
+    if (dur === '4hr') {
+      selectDuration('halfday', document.getElementById('durHalfDay'));
+    } else if (dur === 'overnight') {
+      selectDuration('overnight', document.getElementById('durOvernight'));
+    }
+  })();
 
   document.getElementById('dateForm').addEventListener('submit', function(e) {
     if (!document.getElementById('eventDateInput').value) {

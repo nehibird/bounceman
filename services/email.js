@@ -73,7 +73,7 @@ function fmtDate(d) {
 
 function fmtMoney(a) { return parseFloat(a||0).toFixed(2); }
 
-function bookingConfirmationBody(booking, customer, items) {
+function bookingConfirmationBody(booking, customer, items, contractId) {
   var rows = items.map(function(i) {
     return '<tr><td style="padding:8px 12px;font-size:14px;border-bottom:1px solid #f0f0f0;">' + i.item_name + '</td><td style="padding:8px 12px;font-size:14px;text-align:right;border-bottom:1px solid #f0f0f0;">$' + fmtMoney(i.unit_price) + '</td></tr>';
   }).join('');
@@ -110,9 +110,16 @@ ${rows}
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:13px;color:#666;background:#FFFDE7;border-radius:6px;padding:12px;">
-<strong>Balance due on delivery day.</strong> Our crew accepts cash or card. Cancel at least 48 hours before for a full refund.
+<strong>Balance due on delivery day.</strong> Our crew accepts cash or card. Deposits are non-refundable but may be applied to a future date. If we cancel due to weather, you'll receive a full refund or we'll reschedule at no extra cost.
 </td></tr>
 </table>
+
+${contractId ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td align="center" style="padding:8px 0;">
+<a href="https://bouncemanrentals.com/contract/${contractId}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:12px 28px;border-radius:8px;">Sign Rental Agreement</a>
+</td></tr>
+<tr><td style="text-align:center;font-size:12px;color:#999;padding-top:4px;">Please sign before your event date</td></tr>
+</table>` : ''}
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:14px;color:#333;">Questions? Call <strong>${PHONE}</strong></td></tr>
@@ -189,12 +196,12 @@ Remaining balance of <strong>$${fmtMoney(booking.balance_due)}</strong> is due o
 </table>`;
 }
 
-async function sendBookingConfirmation(booking, customer, items) {
+async function sendBookingConfirmation(booking, customer, items, contractId) {
   await getTransporter().sendMail({
     from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
     to: customer.email,
     subject: 'Booking Confirmed! #' + booking.booking_number,
-    html: wrap('Booking Confirmed', bookingConfirmationBody(booking, customer, items)),
+    html: wrap('Booking Confirmed', bookingConfirmationBody(booking, customer, items, contractId)),
   });
   console.log('[EMAIL] Booking confirmation sent to ' + customer.email);
 }
