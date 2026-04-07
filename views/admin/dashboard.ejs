@@ -65,7 +65,7 @@
               <tr>
                 <td><strong>${b.event_date}</strong></td>
                 <td>${b.first_name} ${b.last_name}</td>
-                <td>${b.event_start_time} - ${b.event_end_time}</td>
+                <td>${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>
                 <td><span class="badge-status badge-${b.status}">${b.status}</span></td>
                 <td><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
               </tr>
