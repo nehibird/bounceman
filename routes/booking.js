@@ -340,7 +340,7 @@ router.get('/confirmation', async (req, res) => {
     try {
       const session = await stripeService.retrieveSession(sessionMatch[1]);
       if (session.payment_status === 'paid') {
-        db.prepare("UPDATE bookings SET payment_status = 'deposit_paid', deposit_paid = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
+        db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
           .run(booking.deposit_amount, booking.id);
         console.log('[STRIPE] Deposit confirmed for', bookingNumber);
 
