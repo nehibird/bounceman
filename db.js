@@ -393,6 +393,57 @@ function initialize() {
       slack_notified INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    -- Ad platform configuration
+    CREATE TABLE IF NOT EXISTS ad_config (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Ad campaigns
+    CREATE TABLE IF NOT EXISTS ad_campaigns (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      platform_campaign_id TEXT,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'paused',
+      daily_budget REAL DEFAULT 5.00,
+      target_keywords TEXT,
+      target_audience TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Ad performance data
+    CREATE TABLE IF NOT EXISTS ad_performance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id TEXT REFERENCES ad_campaigns(id),
+      date TEXT NOT NULL,
+      impressions INTEGER DEFAULT 0,
+      clicks INTEGER DEFAULT 0,
+      spend REAL DEFAULT 0,
+      conversions INTEGER DEFAULT 0,
+      cost_per_click REAL DEFAULT 0,
+      cost_per_conversion REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Ad automation rules
+    CREATE TABLE IF NOT EXISTS ad_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      rule_type TEXT NOT NULL,
+      conditions TEXT,
+      actions TEXT,
+      enabled INTEGER DEFAULT 1,
+      last_triggered TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Seed default settings
@@ -443,11 +494,21 @@ function initialize() {
     insertSetting.run(key, value);
   }
 
+  // Sync env-based settings (overwrite DB value if env is set)
+  const updateSetting = d.prepare('UPDATE settings SET value = ? WHERE key = ?');
+  if (process.env.FB_PIXEL_ID) updateSetting.run(process.env.FB_PIXEL_ID, 'facebook_pixel_id');
+
   // Seed default admin user
   const adminExists = d.prepare('SELECT id FROM users WHERE role = ?').get('admin');
   if (!adminExists) {
     const { v4: uuid } = require('uuid');
-    const hash = bcrypt.hashSync('bounceman2026!', 10);
+    // MED-2: Use env var for initial admin password — never hardcode credentials
+    const defaultPassword = process.env.ADMIN_INITIAL_PASSWORD || require('crypto').randomBytes(16).toString('hex');
+    if (!process.env.ADMIN_INITIAL_PASSWORD) {
+      console.log('[SECURITY] Generated random admin password:', defaultPassword);
+      console.log('[SECURITY] Set ADMIN_INITIAL_PASSWORD in .env to control this');
+    }
+    const hash = bcrypt.hashSync(defaultPassword, 10);
     d.prepare('INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)').run(
       uuid(), 'nehi@birdherd.media', hash, 'Nehemiah Reese', 'admin'
     );
@@ -557,6 +618,16 @@ function initialize() {
     zoneInsert.run(uuid(), 'Local (FREE Delivery)', '74653,74601,74602,74604,74631,74647,74632,74641', 0, 1);
     zoneInsert.run(uuid(), 'Nearby ($35)', '74073,74644,74646,74651,74630', 35, 1);
     zoneInsert.run(uuid(), 'Extended ($65)', '74074,74075,74076,74078,74058,74056', 65, 1);
+  }
+
+  // Seed default ad rules (all disabled)
+  const adRulesCount = d.prepare('SELECT COUNT(*) as c FROM ad_rules').get().c;
+  if (adRulesCount === 0) {
+    const ruleInsert = d.prepare('INSERT OR IGNORE INTO ad_rules (id, name, description, rule_type, conditions, actions, enabled) VALUES (?, ?, ?, ?, ?, ?, 0)');
+    ruleInsert.run(uuid(), 'Auto-Pause on Full Weekends', 'When all equipment is booked for Saturday, pause ads for that week', 'availability', JSON.stringify({condition:'all_equipment_booked',day:'saturday'}), JSON.stringify({action:'pause_all_campaigns'}));
+    ruleInsert.run(uuid(), 'Weekend Budget Boost', 'Increase budget 50% on Thursday and Friday', 'schedule', JSON.stringify({days:['thursday','friday']}), JSON.stringify({action:'increase_budget',percent:50}));
+    ruleInsert.run(uuid(), 'Seasonal Scaling', 'Full budget May-Sep, 50% Oct-Apr', 'schedule', JSON.stringify({full_months:[5,6,7,8,9],half_months:[1,2,3,4,10,11,12]}), JSON.stringify({action:'scale_budget',full:1.0,half:0.5}));
+    ruleInsert.run(uuid(), 'Low Inventory Alert', 'Reduce budget when fewer than 2 units available', 'inventory', JSON.stringify({condition:'available_units_lt',threshold:2}), JSON.stringify({action:'reduce_budget',percent:50}));
   }
 
   console.log('[DB] Database initialized successfully');

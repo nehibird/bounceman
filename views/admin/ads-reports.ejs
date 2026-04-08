@@ -1,0 +1,137 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Ad Reports</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+</div>
+
+<!-- Date Range & Filters -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small text-muted">From Date</label>
+        <input type="date" class="form-control form-control-sm" id="fromDate">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">To Date</label>
+        <input type="date" class="form-control form-control-sm" id="toDate">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">Channel</label>
+        <select class="form-select form-select-sm" id="channelFilter">
+          <option value="all">All Channels</option>
+          <option value="google">Google</option>
+          <option value="facebook">Facebook / Instagram</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-sm btn-bm w-100" onclick="applyFilters()">
+          <i class="fas fa-filter me-1"></i>Apply Filters
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Channel Tabs -->
+<ul class="nav nav-tabs mb-4" id="channelTabs">
+  <li class="nav-item"><button class="nav-link active" data-channel="all">All</button></li>
+  <li class="nav-item"><button class="nav-link" data-channel="google"><i class="fab fa-google me-1"></i>Google</button></li>
+  <li class="nav-item"><button class="nav-link" data-channel="facebook"><i class="fab fa-facebook me-1"></i>Facebook</button></li>
+</ul>
+
+${rows.length === 0 ? `
+<!-- Empty State -->
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="fas fa-chart-line fa-4x mb-4" style="opacity:0.15"></i>
+    <h5>No Ad Data Yet</h5>
+    <p>Reports will appear once campaigns are active and syncing data.</p>
+    <a href="/admin/ads" class="btn btn-bm btn-sm mt-2">Set Up Campaigns</a>
+  </div>
+</div>
+` : `
+<!-- Chart Placeholder -->
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-chart-area me-2"></i>Spend Over Time</div>
+  <div class="card-body text-center text-muted py-4">
+    <i class="fas fa-chart-area fa-3x mb-3" style="opacity:0.2"></i>
+    <p class="mb-0">Chart visualization coming soon.</p>
+  </div>
+</div>
+
+<!-- Data Table -->
+<div class="card">
+  <div class="card-header"><i class="fas fa-table me-2"></i>Performance Data</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0" id="perfTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Channel</th>
+            <th>Campaign</th>
+            <th class="text-end">Impressions</th>
+            <th class="text-end">Clicks</th>
+            <th class="text-end">Spend</th>
+            <th class="text-end">Conversions</th>
+            <th class="text-end">CPC</th>
+            <th class="text-end">Cost/Booking</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+          <tr class="channel-row" data-channel="${r.platform || 'unknown'}">
+            <td>${r.date}</td>
+            <td>
+              ${r.platform === 'google'
+                ? '<i class="fab fa-google text-primary me-1"></i>Google'
+                : r.platform === 'facebook'
+                ? '<i class="fab fa-facebook" style="color:#1877F2"></i> Facebook'
+                : r.platform || '—'
+              }
+            </td>
+            <td class="text-muted small">${r.campaign_name || '—'}</td>
+            <td class="text-end">${(r.impressions||0).toLocaleString()}</td>
+            <td class="text-end">${(r.clicks||0).toLocaleString()}</td>
+            <td class="text-end">$${parseFloat(r.spend||0).toFixed(2)}</td>
+            <td class="text-end">${r.conversions||0}</td>
+            <td class="text-end">$${parseFloat(r.cost_per_click||0).toFixed(2)}</td>
+            <td class="text-end">${r.cost_per_conversion > 0 ? '$'+parseFloat(r.cost_per_conversion).toFixed(2) : '—'}</td>
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+`}
+
+`, scripts: `
+<script>
+// Tab switching
+document.querySelectorAll('#channelTabs .nav-link').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#channelTabs .nav-link').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    const ch = this.dataset.channel;
+    document.querySelectorAll('.channel-row').forEach(row => {
+      row.style.display = (ch === 'all' || row.dataset.channel === ch) ? '' : 'none';
+    });
+  });
+});
+
+function applyFilters() {
+  const from = document.getElementById('fromDate').value;
+  const to = document.getElementById('toDate').value;
+  const ch = document.getElementById('channelFilter').value;
+  let url = '/admin/api/ads/performance?';
+  if (from) url += 'from=' + from + '&';
+  if (to) url += 'to=' + to + '&';
+  if (ch !== 'all') url += 'platform=' + ch;
+  // Reload with new data (simple approach)
+  window.location.href = '/admin/ads/reports';
+}
+</script>
+` }) %>

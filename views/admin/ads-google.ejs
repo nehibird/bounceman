@@ -1,0 +1,210 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fab fa-google me-2" style="color:#4285F4"></i>Google Ads Manager</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+</div>
+
+<!-- Flash messages -->
+${typeof query !== 'undefined' && query.connected ? `
+<div class="alert alert-success alert-dismissible"><i class="fas fa-check-circle me-2"></i>Google Ads connected successfully! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+` : ''}
+${typeof query !== 'undefined' && query.error ? `
+<div class="alert alert-danger alert-dismissible"><i class="fas fa-exclamation-circle me-2"></i><strong>Connection error:</strong> ${query.error} <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+` : ''}
+
+<!-- Connection Status -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        <h6 class="mb-1">Connection Status</h6>
+        <div id="googleStatus">
+          <span class="badge bg-secondary fs-6 px-3 py-2"><i class="fas fa-spinner fa-spin me-2"></i>Checking...</span>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Customer ID: 897-105-5474 &mdash; MCC: 331-885-1335</p>
+      </div>
+      <div class="col-md-6 text-md-end">
+        <a href="/admin/ads/google/connect" class="btn btn-outline-primary" id="googleConnectBtn" style="display:none">
+          <i class="fab fa-google me-2"></i>Connect Google Ads Account
+        </a>
+        <div id="googleConnectedInfo" style="display:none">
+          <span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724"><i class="fas fa-check-circle me-2"></i>Connected</span>
+          <a href="/admin/ads/google/connect" class="btn btn-sm btn-outline-secondary ms-2">Re-authorize</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Campaigns from API -->
+<div class="card mb-4" id="googleApiCampaignsCard" style="display:none">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-bullhorn me-2"></i>Live Campaigns (Google Ads API)</span>
+    <span class="badge bg-success">Live Data</span>
+  </div>
+  <div class="card-body p-0" id="googleApiCampaignsList">
+    <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading...</div>
+  </div>
+</div>
+
+<!-- Local Campaigns List -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-database me-2"></i>Local Campaign Records</span>
+    <button class="btn btn-sm btn-bm" data-bs-toggle="modal" data-bs-target="#newCampaignModal">
+      <i class="fas fa-plus me-1"></i>Add Record
+    </button>
+  </div>
+  <div class="card-body p-0">
+    ${campaigns.length > 0 ? `
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th>Keywords</th><th></th></tr></thead>
+      <tbody>
+        ${campaigns.map(c => `
+        <tr>
+          <td><strong>${c.name}</strong></td>
+          <td><span class="badge bg-secondary">${c.status}</span></td>
+          <td>$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
+          <td class="text-muted small">${c.target_keywords ? c.target_keywords.substring(0,60)+'...' : '—'}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-secondary" onclick="deleteCampaign('${c.id}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ` : `
+    <div class="text-center py-5 text-muted">
+      <i class="fas fa-bullhorn fa-3x mb-3" style="opacity:0.2"></i>
+      <p>No local campaign records yet.</p>
+    </div>
+    `}
+  </div>
+</div>
+
+<!-- New Campaign Modal -->
+<div class="modal fade" id="newCampaignModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fab fa-google me-2"></i>New Google Search Campaign</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="campaignForm">
+          <input type="hidden" id="campPlatform" value="google">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Campaign Name</label>
+              <input type="text" class="form-control" id="campName" value="BounceMan Local Search" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Daily Budget ($)</label>
+              <input type="number" class="form-control" id="campBudget" min="1" max="50" step="0.50" value="5.00">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Target Keywords <span class="text-muted small">(comma-separated)</span></label>
+              <textarea class="form-control" id="campKeywords" rows="3">bounce house rental near me, bounce house rental tonkawa, bounce house rental ponca city, water slide rental oklahoma, inflatable rental kay county</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Location Radius (miles from Tonkawa)</label>
+              <input type="number" class="form-control" id="campRadius" value="50" min="10" max="100">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Landing Page URL</label>
+              <input type="text" class="form-control" id="campLanding" value="https://bouncemanrentals.com/booking">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-bm" onclick="saveCampaign()">
+          <i class="fas fa-save me-1"></i>Save Record
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+// Check connection status on load
+async function checkGoogleStatus() {
+  try {
+    const r = await fetch('/admin/api/ads/google/status');
+    const d = await r.json();
+    const statusEl = document.getElementById('googleStatus');
+    const connectBtn = document.getElementById('googleConnectBtn');
+    const connectedInfo = document.getElementById('googleConnectedInfo');
+    const apiCard = document.getElementById('googleApiCampaignsCard');
+
+    if (d.connected) {
+      statusEl.innerHTML = '<span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724"><i class="fas fa-check-circle me-2"></i>Connected</span>';
+      connectedInfo.style.display = 'inline-block';
+      connectBtn.style.display = 'none';
+      apiCard.style.display = '';
+      loadGoogleCampaigns();
+    } else {
+      statusEl.innerHTML = '<span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="fas fa-unlink me-2"></i>Not Connected</span>';
+      connectBtn.style.display = 'inline-block';
+      connectedInfo.style.display = 'none';
+    }
+  } catch(e) {
+    console.error('Status check failed', e);
+  }
+}
+
+async function loadGoogleCampaigns() {
+  try {
+    const r = await fetch('/admin/api/ads/google/campaigns');
+    const d = await r.json();
+    const el = document.getElementById('googleApiCampaignsList');
+    if (d.error) { el.innerHTML = '<div class="p-3 text-danger"><i class="fas fa-exclamation-circle me-2"></i>' + d.error + '</div>'; return; }
+    if (!d.campaigns || d.campaigns.length === 0) {
+      el.innerHTML = '<div class="text-center py-4 text-muted">No campaigns found in Google Ads account.</div>';
+      return;
+    }
+    el.innerHTML = '<table class="table table-hover mb-0"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th>Type</th></tr></thead><tbody>' +
+      d.campaigns.map(c => '<tr>' +
+        '<td class="text-muted small">' + c.id + '</td>' +
+        '<td><strong>' + c.name + '</strong></td>' +
+        '<td><span class="badge ' + (c.status === 'ENABLED' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
+        '<td>' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
+        '<td class="text-muted small">' + (c.type || '—') + '</td>' +
+      '</tr>').join('') +
+      '</tbody></table>';
+  } catch(e) {
+    document.getElementById('googleApiCampaignsList').innerHTML = '<div class="p-3 text-danger">Failed to load campaigns: ' + e.message + '</div>';
+  }
+}
+
+function saveCampaign() {
+  const body = {
+    platform: 'google',
+    name: document.getElementById('campName').value,
+    daily_budget: document.getElementById('campBudget').value,
+    target_keywords: document.getElementById('campKeywords').value,
+    target_audience: null
+  };
+  fetch('/admin/api/ads/campaigns', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  }).then(r => r.json()).then(d => {
+    if (d.success) { location.reload(); }
+    else { alert('Error saving campaign: ' + (d.error || 'unknown')); }
+  });
+}
+function deleteCampaign(id) {
+  if (!confirm('Delete this local record?')) return;
+  fetch('/admin/api/ads/campaigns/' + id, { method: 'DELETE' })
+    .then(() => location.reload());
+}
+
+checkGoogleStatus();
+</script>
+` }) %>

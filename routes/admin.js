@@ -7,6 +7,9 @@ const path = require('path');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
 const bcrypt = require('bcryptjs');
+const googleAds = require('../services/google-ads');
+const facebookAds = require('../services/facebook-ads');
+
 
 // File upload config
 const storage = multer.diskStorage({
@@ -20,9 +23,12 @@ const storage = multer.diskStorage({
     cb(null, `${uuid()}${ext}`);
   }
 });
+// MED-6: Validate both file extension and MIME type for uploads
+const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
-  const allowed = /jpeg|jpg|png|webp|gif/;
-  cb(null, allowed.test(path.extname(file.originalname).toLowerCase()));
+  const extOk = /jpeg|jpg|png|webp|gif/.test(path.extname(file.originalname).toLowerCase());
+  const mimeOk = allowedMimes.includes(file.mimetype);
+  cb(null, extOk && mimeOk);
 }});
 
 // Cookie parser for auth
@@ -682,5 +688,284 @@ router.get('/events/:id', requireAuth, (req, res) => {
 
   res.render('admin/event-detail', { title: event.name, settings, event, registrations, stats, page: 'events', user: req.user });
 });
+
+
+// ==================== AD MANAGEMENT ====================
+
+// GET /admin/ads — Main ad dashboard
+router.get('/ads', requireAdmin, (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+
+  const campaigns = db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all();
+  const totalSpend = db.prepare("SELECT COALESCE(SUM(spend), 0) as s FROM ad_performance").get().s;
+  const totalConversions = db.prepare("SELECT COALESCE(SUM(conversions), 0) as c FROM ad_performance").get().c;
+  const rules = db.prepare("SELECT * FROM ad_rules ORDER BY created_at ASC").all();
+
+  res.render('admin/ads-dashboard', {
+    title: 'Ad Management',
+    settings,
+    campaigns,
+    rules,
+    stats: {
+      totalSpend: parseFloat(totalSpend).toFixed(2),
+      totalConversions,
+      costPerBooking: totalConversions > 0 ? (totalSpend / totalConversions).toFixed(2) : null
+    },
+    page: 'ads',
+    user: req.user
+  });
+});
+
+// GET /admin/ads/google
+router.get('/ads/google', requireAdmin, (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const campaigns = db.prepare("SELECT * FROM ad_campaigns WHERE platform = 'google' ORDER BY created_at DESC").all();
+  const config = Object.fromEntries(
+    db.prepare("SELECT key, value FROM ad_config WHERE platform = 'google'").all().map(r => [r.key, r.value])
+  );
+  res.render('admin/ads-google', { title: 'Google Ads Manager', settings, campaigns, config, page: 'ads', user: req.user });
+});
+
+// GET /admin/ads/facebook
+router.get('/ads/facebook', requireAdmin, (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const campaigns = db.prepare("SELECT * FROM ad_campaigns WHERE platform = 'facebook' ORDER BY created_at DESC").all();
+  const config = Object.fromEntries(
+    db.prepare("SELECT key, value FROM ad_config WHERE platform = 'facebook'").all().map(r => [r.key, r.value])
+  );
+  res.render('admin/ads-facebook', { title: 'Facebook Ads Manager', settings, campaigns, config, page: 'ads', user: req.user });
+});
+
+// GET /admin/ads/rules
+router.get('/ads/rules', requireAdmin, (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const rules = db.prepare("SELECT * FROM ad_rules ORDER BY created_at ASC").all();
+  res.render('admin/ads-rules', { title: 'Ad Rules', settings, rules, page: 'ads', user: req.user });
+});
+
+// GET /admin/ads/reports
+router.get('/ads/reports', requireAdmin, (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const rows = db.prepare(`
+    SELECT p.*, c.name as campaign_name, c.platform
+    FROM ad_performance p
+    LEFT JOIN ad_campaigns c ON c.id = p.campaign_id
+    ORDER BY p.date DESC LIMIT 200
+  `).all();
+  res.render('admin/ads-reports', { title: 'Ad Reports', settings, rows, page: 'ads', user: req.user });
+});
+
+// --- JSON API ---
+
+// GET /admin/api/ads/dashboard
+router.get('/api/ads/dashboard', requireAdmin, (req, res) => {
+  const db = getDb();
+  const campaigns = db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all();
+  const perf = db.prepare("SELECT COALESCE(SUM(spend),0) as spend, COALESCE(SUM(conversions),0) as conversions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(impressions),0) as impressions FROM ad_performance").get();
+  res.json({ campaigns, stats: perf });
+});
+
+// GET /admin/api/ads/campaigns
+router.get('/api/ads/campaigns', requireAdmin, (req, res) => {
+  const db = getDb();
+  res.json(db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all());
+});
+
+// POST /admin/api/ads/campaigns
+router.post('/api/ads/campaigns', requireAdmin, (req, res) => {
+  const db = getDb();
+  const id = uuid();
+  const { platform, name, daily_budget, target_keywords, target_audience, start_date, end_date } = req.body;
+  if (!platform || !name) return res.status(400).json({ error: 'platform and name required' });
+  db.prepare(`INSERT INTO ad_campaigns (id, platform, name, daily_budget, target_keywords, target_audience, start_date, end_date, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paused')`)
+    .run(id, platform, name, parseFloat(daily_budget || 5), target_keywords || null, target_audience || null, start_date || null, end_date || null);
+  res.json({ success: true, id });
+});
+
+// PATCH /admin/api/ads/campaigns/:id
+router.patch('/api/ads/campaigns/:id', requireAdmin, (req, res) => {
+  const db = getDb();
+  const { name, status, daily_budget, target_keywords, target_audience, start_date, end_date } = req.body;
+  db.prepare(`UPDATE ad_campaigns SET name=COALESCE(?,name), status=COALESCE(?,status), daily_budget=COALESCE(?,daily_budget),
+    target_keywords=COALESCE(?,target_keywords), target_audience=COALESCE(?,target_audience),
+    start_date=COALESCE(?,start_date), end_date=COALESCE(?,end_date), updated_at=datetime('now')
+    WHERE id=?`)
+    .run(name||null, status||null, daily_budget ? parseFloat(daily_budget) : null,
+      target_keywords||null, target_audience||null, start_date||null, end_date||null, req.params.id);
+  res.json({ success: true });
+});
+
+// DELETE /admin/api/ads/campaigns/:id
+router.delete('/api/ads/campaigns/:id', requireAdmin, (req, res) => {
+  getDb().prepare("DELETE FROM ad_campaigns WHERE id = ?").run(req.params.id);
+  res.json({ success: true });
+});
+
+// GET /admin/api/ads/performance
+router.get('/api/ads/performance', requireAdmin, (req, res) => {
+  const db = getDb();
+  const { campaign_id, from, to } = req.query;
+  let q = "SELECT p.*, c.name as campaign_name, c.platform FROM ad_performance p LEFT JOIN ad_campaigns c ON c.id = p.campaign_id WHERE 1=1";
+  const params = [];
+  if (campaign_id) { q += " AND p.campaign_id = ?"; params.push(campaign_id); }
+  if (from) { q += " AND p.date >= ?"; params.push(from); }
+  if (to) { q += " AND p.date <= ?"; params.push(to); }
+  q += " ORDER BY p.date DESC LIMIT 500";
+  res.json(db.prepare(q).all(...params));
+});
+
+// PATCH /admin/api/ads/rules/:id — toggle enabled
+router.patch('/api/ads/rules/:id', requireAdmin, (req, res) => {
+  const db = getDb();
+  const rule = db.prepare("SELECT id, enabled FROM ad_rules WHERE id = ?").get(req.params.id);
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+  const newEnabled = req.body.enabled !== undefined ? (req.body.enabled ? 1 : 0) : (rule.enabled ? 0 : 1);
+  db.prepare("UPDATE ad_rules SET enabled = ? WHERE id = ?").run(newEnabled, req.params.id);
+  res.json({ success: true, enabled: newEnabled });
+});
+
+
+// ── Google OAuth ─────────────────────────────────────────────────────────────
+
+// GET /admin/ads/google/connect — start OAuth flow
+router.get('/ads/google/connect', requireAdmin, (req, res) => {
+  try {
+    const url = googleAds.getAuthUrl();
+    res.redirect(url);
+  } catch (e) {
+    console.error('[GOOGLE ADS] getAuthUrl error:', e.message);
+    res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
+  }
+});
+
+// GET /api/ads/google/callback — OAuth callback (registered redirect URI, no /admin prefix)
+router.get('/api/ads/google/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.redirect('/admin/ads/google?error=' + encodeURIComponent(error));
+  if (!code)  return res.redirect('/admin/ads/google?error=no_code');
+  try {
+    await googleAds.handleCallback(code);
+    res.redirect('/admin/ads/google?connected=1');
+  } catch (e) {
+    console.error('[GOOGLE ADS] callback error:', e.message);
+    res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
+  }
+});
+
+// ── Google API routes ─────────────────────────────────────────────────────────
+
+// GET /admin/api/ads/google/status
+router.get('/api/ads/google/status', requireAdmin, async (req, res) => {
+  try {
+    const connected = googleAds.isConnected();
+    res.json({ connected });
+  } catch (e) {
+    res.json({ connected: false, error: e.message });
+  }
+});
+
+// GET /admin/api/ads/google/campaigns
+router.get('/api/ads/google/campaigns', requireAdmin, async (req, res) => {
+  try {
+    if (!googleAds.isConnected()) return res.json({ campaigns: [], connected: false });
+    const campaigns = await googleAds.getCampaigns();
+    res.json({ campaigns, connected: true });
+  } catch (e) {
+    console.error('[GOOGLE ADS] getCampaigns error:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// POST /admin/api/ads/google/campaigns
+router.post('/api/ads/google/campaigns', requireAdmin, async (req, res) => {
+  try {
+    const result = await googleAds.createCampaign(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// PATCH /admin/api/ads/google/campaigns/:id
+router.patch('/api/ads/google/campaigns/:id', requireAdmin, async (req, res) => {
+  try {
+    const { status, budget } = req.body;
+    const results = {};
+    if (status) results.status = await googleAds.updateCampaignStatus(req.params.id, status);
+    if (budget) results.budget = await googleAds.updateCampaignBudget(req.params.id, budget);
+    res.json({ success: true, results });
+  } catch (e) {
+    console.error('[GOOGLE ADS] update campaign error:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// ── Facebook API routes ───────────────────────────────────────────────────────
+
+// GET /admin/api/ads/facebook/status
+router.get('/api/ads/facebook/status', requireAdmin, async (req, res) => {
+  try {
+    const [connected, tokenInfo] = await Promise.all([facebookAds.isConnected(), facebookAds.getTokenInfo()]);
+    res.json({ connected, token_info: tokenInfo });
+  } catch (e) {
+    res.json({ connected: false, error: e.message });
+  }
+});
+
+// GET /admin/api/ads/facebook/campaigns
+router.get('/api/ads/facebook/campaigns', requireAdmin, async (req, res) => {
+  try {
+    const campaigns = await facebookAds.getCampaigns();
+    res.json({ campaigns, connected: true });
+  } catch (e) {
+    console.error('[FB ADS] getCampaigns error:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// POST /admin/api/ads/facebook/campaigns
+router.post('/api/ads/facebook/campaigns', requireAdmin, async (req, res) => {
+  try {
+    const result = await facebookAds.createCampaign(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('[FB ADS] createCampaign error:', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// PATCH /admin/api/ads/facebook/campaigns/:id
+router.patch('/api/ads/facebook/campaigns/:id', requireAdmin, async (req, res) => {
+  try {
+    const { status, budget } = req.body;
+    const results = {};
+    if (status) results.status = await facebookAds.updateCampaignStatus(req.params.id, status);
+    if (budget) results.budget = await facebookAds.updateCampaignBudget(req.params.id, budget);
+    res.json({ success: true, results });
+  } catch (e) {
+    console.error('[FB ADS] update campaign error:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// POST /admin/api/ads/facebook/pixel/event
+router.post('/api/ads/facebook/pixel/event', requireAdmin, async (req, res) => {
+  try {
+    const { event_name, event_data, user_data } = req.body;
+    if (!event_name) return res.status(400).json({ error: 'event_name required' });
+    const result = await facebookAds.sendPixelEvent(event_name, event_data || {}, user_data || {});
+    res.json({ success: true, result });
+  } catch (e) {
+    console.error('[FB PIXEL] manual event error:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
 
 module.exports = router;

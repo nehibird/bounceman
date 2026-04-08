@@ -288,16 +288,27 @@
         .then(function(data) {
           var el = document.getElementById('zipResult');
           el.style.display = 'block';
+          // MED-1: Use textContent to avoid DOM XSS — message comes from API response
+          var icon = document.createElement('i');
+          var span = document.createElement('span');
+          var msg = document.createTextNode(data.message || '');
           if (data.valid) {
             zipValid = true;
-            el.innerHTML = '<span style="color:#2e7d32"><i class="fas fa-check-circle me-1"></i>' + data.message + '</span>';
+            span.style.color = '#2e7d32';
+            icon.className = 'fas fa-check-circle me-1';
           } else {
             zipValid = false;
-            el.innerHTML = '<span style="color:#c62828"><i class="fas fa-times-circle me-1"></i>' + data.message + '</span>';
+            span.style.color = '#c62828';
+            icon.className = 'fas fa-times-circle me-1';
           }
+          span.appendChild(icon);
+          span.appendChild(msg);
+          el.textContent = '';
+          el.appendChild(span);
         })
         .catch(function() { zipValid = true; }); // allow on error
     }, 400);
   }
 </script>
+<script>if(typeof fbq!=='undefined')fbq('track','InitiateCheckout');</script>
 ` }) %>

@@ -2,10 +2,23 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bounceman-secret-change-me';
+// LOW-1: Require JWT_SECRET from environment — no insecure default
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('[SECURITY] JWT_SECRET environment variable is required');
 const JWT_EXPIRY = '24h';
+
+// HIGH-5: Rate limiter for login endpoint
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per 15 min
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false
+});
 
 // Middleware to check auth
 function requireAuth(req, res, next) {
@@ -36,8 +49,8 @@ router.get('/login', (req, res) => {
   res.render('admin/login', { title: 'Admin Login', error: null });
 });
 
-// Login POST
-router.post('/login', (req, res) => {
+// Login POST — HIGH-5: rate limited
+router.post('/login', loginLimiter, (req, res) => {
   const { email, password } = req.body;
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(email);
@@ -52,9 +65,10 @@ router.post('/login', (req, res) => {
     { expiresIn: JWT_EXPIRY }
   );
 
+  // HIGH-1: secure cookie in production
   res.cookie('token', token, {
     httpOnly: true,
-    secure: false, // Enable when HTTPS is configured
+    secure: process.env.NODE_ENV === 'production' || false,
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   });

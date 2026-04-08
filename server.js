@@ -19,12 +19,27 @@ const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 3200;
 
-// Security
+// Security — HIGH-3: Real CSP, MED-7: HSTS max-age
 app.use(helmet({
-  contentSecurityPolicy: false, // Allow inline styles from template
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com", "https://www.googletagmanager.com", "https://connect.facebook.net", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "https://api.stripe.com", "https://www.google-analytics.com", "https://api.zippopotam.us", "https://vapi.ai"],
+      frameSrc: ["'self'", "https://js.stripe.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'", "https://checkout.stripe.com"],
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   crossOriginEmbedderPolicy: false
 }));
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+// HIGH-2: Restrict CORS origin — no wildcard in production
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://bouncemanrentals.com' }));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -55,6 +70,13 @@ app.use('/', publicRoutes);
 app.use('/auth', authRoutes);
 app.use('/booking', bookingRoutes);
 app.use('/admin', adminRoutes);
+
+// Google Ads OAuth callback — registered redirect URI is /api/ads/google/callback (no /admin prefix)
+// Forward to the admin router's handler via a simple redirect-proxy
+app.get('/api/ads/google/callback', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect('/admin/api/ads/google/callback' + (qs ? '?' + qs : ''));
+});
 app.use('/api/sarah', sarahRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api', apiRoutes);

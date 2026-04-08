@@ -1,0 +1,268 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fab fa-facebook me-2" style="color:#1877F2"></i>Facebook / Instagram Ads Manager</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+</div>
+
+<!-- Connection Status -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        <h6 class="mb-1">Connection Status</h6>
+        <div id="fbStatusBadge"><span class="badge bg-secondary fs-6 px-3 py-2"><i class="fas fa-spinner fa-spin me-2"></i>Checking...</span></div>
+        <p class="text-muted small mt-2 mb-0" id="fbTokenExpiry"></p>
+      </div>
+      <div class="col-md-6">
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="text-muted small">Ad Account</div>
+            <code class="small">${process.env.FB_AD_ACCOUNT_ID || 'not set'}</code>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Pixel ID</div>
+            <code class="small">${process.env.FB_PIXEL_ID || 'not set'}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Facebook Pixel Status -->
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-dot-circle me-2"></i>Facebook Pixel</div>
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        ${process.env.FB_PIXEL_ID ? `
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724">
+            <i class="fas fa-check-circle me-1"></i>Pixel Active
+          </span>
+          <code class="text-muted">${process.env.FB_PIXEL_ID}</code>
+        </div>
+        ` : `
+        <span class="badge bg-secondary fs-6 px-3 py-2"><i class="fas fa-pause-circle me-1"></i>No Pixel Configured</span>
+        `}
+      </div>
+      <div class="col-md-6">
+        <p class="text-muted small mb-0">
+          <strong>Tracked Events:</strong> PageView (all pages), Purchase (booking confirmation via server-side Conversions API)
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Campaigns from API -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-bullhorn me-2"></i>Campaigns</span>
+    <div>
+      <span class="badge bg-success me-2">Live Data</span>
+      <button class="btn btn-sm btn-bm" data-bs-toggle="modal" data-bs-target="#newFbCampaignModal">
+        <i class="fas fa-plus me-1"></i>Create Campaign
+      </button>
+    </div>
+  </div>
+  <div class="card-body p-0" id="fbCampaignsList">
+    <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading campaigns...</div>
+  </div>
+</div>
+
+<!-- Local DB Campaigns -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-database me-2"></i>Local Campaign Records</span>
+  </div>
+  <div class="card-body p-0">
+    ${campaigns.length > 0 ? `
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th>Audience</th><th></th></tr></thead>
+      <tbody>
+        ${campaigns.map(c => `
+        <tr>
+          <td><strong>${c.name}</strong></td>
+          <td><span class="badge bg-secondary">${c.status}</span></td>
+          <td>$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
+          <td class="text-muted small">${c.target_audience ? c.target_audience.substring(0,60) : '—'}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteCampaign('${c.id}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ` : `
+    <div class="text-center py-4 text-muted">
+      <i class="fab fa-facebook fa-3x mb-3" style="opacity:0.2"></i>
+      <p>No local Facebook campaign records yet.</p>
+    </div>
+    `}
+  </div>
+</div>
+
+<!-- New FB Campaign Modal -->
+<div class="modal fade" id="newFbCampaignModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fab fa-facebook me-2"></i>New Facebook/Instagram Campaign</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small"><i class="fas fa-info-circle me-2"></i>Campaign will be created via Facebook Marketing API and saved as PAUSED.</div>
+        <form id="fbCampaignForm">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Campaign Name</label>
+              <input type="text" class="form-control" id="fbCampName" value="BounceMan Parents" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Daily Budget ($)</label>
+              <input type="number" class="form-control" id="fbCampBudget" min="1" max="50" step="0.50" value="5.00">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Age Range (Min)</label>
+              <input type="number" class="form-control" id="fbAgeMin" value="25" min="18" max="65">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Age Range (Max)</label>
+              <input type="number" class="form-control" id="fbAgeMax" value="45" min="18" max="65">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Location Radius (miles)</label>
+              <input type="number" class="form-control" id="fbRadius" value="30" min="10" max="100">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Ad Copy</label>
+              <textarea class="form-control" id="fbAdCopy" rows="3">Make your next party unforgettable! Bounce houses, water slides &amp; combo units delivered to your door. Family-owned &amp; operated in Kay County, OK.</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Landing Page URL</label>
+              <input type="text" class="form-control" id="fbLanding" value="https://bouncemanrentals.com/booking">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-bm" onclick="saveFbCampaign()">
+          <i class="fas fa-save me-1"></i>Create Campaign (Paused)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+async function checkFbStatus() {
+  try {
+    const r = await fetch('/admin/api/ads/facebook/status');
+    const d = await r.json();
+    const badge = document.getElementById('fbStatusBadge');
+    const expiry = document.getElementById('fbTokenExpiry');
+
+    if (d.connected) {
+      const info = d.token_info || {};
+      let expiryText = '';
+      if (info.expires_at) {
+        const exp = new Date(info.expires_at);
+        const daysLeft = Math.round((exp - Date.now()) / 86400000);
+        const cls = daysLeft > 30 ? 'text-success' : daysLeft > 7 ? 'text-warning' : 'text-danger';
+        expiryText = '<span class="' + cls + '">Token expires: ' + exp.toLocaleDateString() + ' (' + daysLeft + ' days)</span>';
+      } else if (info.valid) {
+        expiryText = '<span class="text-success">Long-lived token (no expiry)</span>';
+      }
+      badge.innerHTML = '<span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724"><i class="fas fa-check-circle me-2"></i>Connected</span>';
+      expiry.innerHTML = expiryText;
+    } else {
+      badge.innerHTML = '<span class="badge bg-danger fs-6 px-3 py-2"><i class="fas fa-times-circle me-2"></i>Disconnected — token invalid or expired</span>';
+      expiry.innerHTML = '<span class="text-danger small">Update FB_ACCESS_TOKEN in .env with a new long-lived token.</span>';
+    }
+  } catch(e) { console.error('FB status check failed', e); }
+}
+
+async function loadFbCampaigns() {
+  try {
+    const r = await fetch('/admin/api/ads/facebook/campaigns');
+    const d = await r.json();
+    const el = document.getElementById('fbCampaignsList');
+    if (d.error) { el.innerHTML = '<div class="p-3 text-danger"><i class="fas fa-exclamation-circle me-2"></i>' + d.error + '</div>'; return; }
+    if (!d.campaigns || d.campaigns.length === 0) {
+      el.innerHTML = '<div class="text-center py-4 text-muted">No campaigns in Facebook ad account.</div>';
+      return;
+    }
+    el.innerHTML = '<table class="table table-hover mb-0"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th>Objective</th></tr></thead><tbody>' +
+      d.campaigns.map(c => '<tr>' +
+        '<td class="text-muted small">' + c.id + '</td>' +
+        '<td><strong>' + c.name + '</strong></td>' +
+        '<td><span class="badge ' + (c.status === 'ACTIVE' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
+        '<td>' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
+        '<td class="text-muted small">' + (c.objective || '—') + '</td>' +
+      '</tr>').join('') +
+      '</tbody></table>';
+  } catch(e) {
+    document.getElementById('fbCampaignsList').innerHTML = '<div class="p-3 text-danger">Failed to load campaigns: ' + e.message + '</div>';
+  }
+}
+
+async function saveFbCampaign() {
+  const body = {
+    name: document.getElementById('fbCampName').value,
+    daily_budget: document.getElementById('fbCampBudget').value,
+    age_min: document.getElementById('fbAgeMin').value,
+    age_max: document.getElementById('fbAgeMax').value,
+    radius_miles: document.getElementById('fbRadius').value,
+  };
+
+  // Also save to local DB
+  const localBody = {
+    platform: 'facebook',
+    name: body.name,
+    daily_budget: body.daily_budget,
+    target_keywords: document.getElementById('fbAdCopy').value,
+    target_audience: JSON.stringify({ age_min: body.age_min, age_max: body.age_max, radius_miles: body.radius_miles })
+  };
+
+  try {
+    // Try live API first
+    const apiRes = await fetch('/admin/api/ads/facebook/campaigns', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const apiData = await apiRes.json();
+    if (apiData.error) {
+      alert('Facebook API error: ' + apiData.error + '\n\nSaving locally only.');
+    }
+  } catch(e) {
+    console.warn('Facebook API campaign creation failed:', e.message);
+  }
+
+  // Always save locally
+  const r = await fetch('/admin/api/ads/campaigns', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(localBody)
+  });
+  const d = await r.json();
+  if (d.success) { location.reload(); }
+  else { alert('Error saving local record: ' + (d.error || 'unknown')); }
+}
+
+function deleteCampaign(id) {
+  if (!confirm('Delete this local record?')) return;
+  fetch('/admin/api/ads/campaigns/' + id, { method: 'DELETE' })
+    .then(() => location.reload());
+}
+
+checkFbStatus();
+loadFbCampaigns();
+</script>
+` }) %>

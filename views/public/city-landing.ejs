@@ -1,0 +1,181 @@
+<%- include('../layouts/public', { body: `
+
+<section class="hero-section" style="padding:60px 0">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1 style="font-size:42px;font-weight:700;margin-bottom:16px">${cityData.h1}</h1>
+        <p style="font-size:19px;opacity:0.9;margin-bottom:28px">${cityData.subheading}</p>
+        <div class="d-flex gap-3 flex-wrap">
+          <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Book Online Now</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light btn-lg"><i class="fas fa-phone me-2"></i>(580) 308-9288</a>
+        </div>
+        <div class="d-flex gap-4 mt-4">
+          <div><strong style="font-size:24px;display:block">${cityData.freeDelivery ? 'FREE' : cityData.deliveryFee}</strong><small>Delivery${cityData.freeDelivery ? ' to ' + cityData.name : ' fee'}</small></div>
+          <div><strong style="font-size:24px;display:block">4</strong><small>Units Available</small></div>
+          <div><strong style="font-size:24px;display:block">5&#9733;</strong><small>Rated Service</small></div>
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <img src="/assets/images/equipment/blue-crush-1.jpg" alt="Bounce house rental ${cityData.name} OK" class="img-fluid rounded-4" style="max-height:320px;object-fit:cover;width:100%">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- City Content -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8">
+        <h2 style="color:var(--bm-blue);font-size:30px;margin-bottom:20px">Bounce House Rentals in ${cityData.name}, Oklahoma</h2>
+        ${cityData.bodyHtml}
+      </div>
+      <div class="col-lg-4">
+        <!-- Delivery Info Card -->
+        <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
+          <h4 style="color:var(--bm-blue)"><i class="fas fa-truck me-2" style="color:var(--bm-orange)"></i>Delivery to ${cityData.name}</h4>
+          ${cityData.freeDelivery ? `
+            <div class="alert alert-success border-0 rounded-3 py-2 mb-3">
+              <strong><i class="fas fa-check-circle me-1"></i>FREE Delivery!</strong>
+            </div>
+            <p class="mb-0" style="font-size:15px">Bounce Man delivers and sets up your rental at no extra charge to ${cityData.name} and surrounding areas.</p>
+          ` : `
+            <div class="alert alert-info border-0 rounded-3 py-2 mb-3">
+              <strong>Delivery Fee: ${cityData.deliveryFee}</strong>
+            </div>
+            <p class="mb-0" style="font-size:15px">${cityData.deliveryNote}</p>
+          `}
+        </div>
+        <!-- CTA Card -->
+        <div class="card border-0 rounded-4 p-4" style="background:var(--bm-gradient);color:white">
+          <h4>Ready to Book?</h4>
+          <p style="opacity:0.9;font-size:15px">Check availability for your date and lock in your rental today.</p>
+          <a href="/booking" class="btn btn-light fw-bold w-100" style="color:var(--bm-orange)"><i class="fas fa-calendar-check me-2"></i>Check Availability</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light mt-2 w-100"><i class="fas fa-phone me-2"></i>Call (580) 308-9288</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Equipment Section -->
+<section class="py-5 fun-bg" style="background:var(--bm-light-bg)">
+  <div class="shape-circle shape-1"></div>
+  <div class="shape-circle shape-2"></div>
+  <div class="container">
+    <div class="section-title">
+      <h2>Equipment Available in ${cityData.name}</h2>
+      <p>All rentals include professional delivery, setup, and takedown</p>
+    </div>
+    <div class="row g-4">
+      <div class="col-md-6 col-lg-3">
+        <div class="equipment-card">
+          <img src="/assets/images/equipment/blue-crush-1.jpg" alt="Blue Crush Water Slide rental ${cityData.name} OK" class="card-img-top">
+          <div class="card-body">
+            <span class="badge-category mb-2 d-inline-block">Water Slide</span>
+            <h5 class="card-title">Blue Crush Slide</h5>
+            <p class="text-muted small">Giant water slide &mdash; perfect for summer parties. Ages 5+.</p>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <span class="price-tag">$375/day</span>
+              <a href="/booking" class="btn btn-outline-primary btn-sm rounded-pill">Book</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="equipment-card">
+          <img src="/assets/images/equipment/tropical-combo-1.jpg" alt="Tropical Combo Bounce House rental ${cityData.name}" class="card-img-top" onerror="this.src='/assets/images/equipment/blue-crush-1.jpg'">
+          <div class="card-body">
+            <span class="badge-category mb-2 d-inline-block">Combo</span>
+            <h5 class="card-title">Tropical Combo</h5>
+            <p class="text-muted small">Bounce house + slide combo. Best value for mixed-age groups.</p>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <span class="price-tag">$325/day</span>
+              <a href="/booking" class="btn btn-outline-primary btn-sm rounded-pill">Book</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="equipment-card">
+          <img src="/assets/images/equipment/monkey-jumper-1.jpg" alt="Monkey Jumper Bounce House rental ${cityData.name}" class="card-img-top" onerror="this.src='/assets/images/equipment/blue-crush-1.jpg'">
+          <div class="card-body">
+            <span class="badge-category mb-2 d-inline-block">Bounce House</span>
+            <h5 class="card-title">Monkey Jumper</h5>
+            <p class="text-muted small">Classic bounce house fun. Great for toddlers and younger kids.</p>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <span class="price-tag">$200/day</span>
+              <a href="/booking" class="btn btn-outline-primary btn-sm rounded-pill">Book</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="equipment-card">
+          <div class="card-img-top d-flex align-items-center justify-content-center" style="height:240px;background:linear-gradient(135deg,var(--bm-blue),var(--bm-purple))">
+            <i class="fas fa-music" style="font-size:60px;color:white;opacity:0.7"></i>
+          </div>
+          <div class="card-body">
+            <span class="badge-category mb-2 d-inline-block">Add-On</span>
+            <h5 class="card-title">Bluetooth Speaker</h5>
+            <p class="text-muted small">Waterproof party speaker. Connect your phone and play your playlist.</p>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <span class="price-tag">$75/day</span>
+              <a href="/booking" class="btn btn-outline-primary btn-sm rounded-pill">Book</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="text-center mt-4">
+      <a href="/equipment" class="btn btn-outline-primary rounded-pill px-4">View All Equipment</a>
+    </div>
+  </div>
+</section>
+
+<!-- Why Choose Us -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="section-title">
+      <h2>Why ${cityData.name} Families Choose Bounce Man</h2>
+      <p>Trusted party rental service across Kay County, Oklahoma</p>
+    </div>
+    <div class="row g-4">
+      <div class="col-md-4 text-center">
+        <div class="how-it-works-step">
+          <div class="step-number"><i class="fas fa-truck" style="font-size:28px;line-height:80px"></i></div>
+          <h4>We Deliver &amp; Set Up</h4>
+          <p>No hauling required. We deliver, inflate, and take down everything. You focus on the fun.</p>
+        </div>
+      </div>
+      <div class="col-md-4 text-center">
+        <div class="how-it-works-step">
+          <div class="step-number"><i class="fas fa-shield-alt" style="font-size:28px;line-height:80px"></i></div>
+          <h4>Safe &amp; Fully Cleaned</h4>
+          <p>All equipment is sanitized between every rental and inspected for safety before delivery.</p>
+        </div>
+      </div>
+      <div class="col-md-4 text-center">
+        <div class="how-it-works-step">
+          <div class="step-number"><i class="fas fa-heart" style="font-size:28px;line-height:80px"></i></div>
+          <h4>Family-Owned &amp; Local</h4>
+          <p>We're your neighbors right here in Tonkawa, OK. Christ-centered values, exceptional service.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Nearby Cities -->
+<section class="py-4" style="background:var(--bm-light-bg)">
+  <div class="container text-center">
+    <h3 style="color:var(--bm-blue);margin-bottom:16px">Also Serving Nearby Communities</h3>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      ${cityData.nearbyCities.map(c => `<a href="${c.url}" class="btn btn-outline-secondary rounded-pill px-3 py-2" style="font-size:14px">${c.name}</a>`).join('')}
+      <a href="/service-areas" class="btn btn-outline-primary rounded-pill px-3 py-2" style="font-size:14px">View All Service Areas</a>
+    </div>
+  </div>
+</section>
+
+`, scripts: '' }) %>

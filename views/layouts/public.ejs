@@ -4,7 +4,70 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %></title>
-  <meta name="description" content="<%= settings.meta_description || '' %>">
+  <meta name="description" content="<%= typeof metaDescription !== 'undefined' ? metaDescription : (settings.meta_description || 'Family-owned bounce house and inflatable rental company serving Tonkawa, Ponca City, Blackwell, Stillwater, and surrounding areas in Kay County, Oklahoma.') %>">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Bounce Man Rentals">
+  <meta property="og:title" content="<%= title %>">
+  <meta property="og:description" content="<%= typeof metaDescription !== 'undefined' ? metaDescription : (settings.meta_description || 'Family-owned bounce house and inflatable rental company serving Tonkawa, Ponca City, Blackwell, Stillwater, and surrounding areas in Kay County, Oklahoma.') %>">
+  <meta property="og:image" content="https://bouncemanrentals.com/assets/images/equipment/blue-crush-1.jpg">
+  <meta property="og:url" content="https://bouncemanrentals.com<%= typeof canonicalPath !== 'undefined' ? canonicalPath : '' %>">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="<%= title %>">
+  <meta name="twitter:description" content="<%= typeof metaDescription !== 'undefined' ? metaDescription : (settings.meta_description || 'Family-owned bounce house and inflatable rental company serving Tonkawa, Ponca City, Blackwell, Stillwater, and surrounding areas in Kay County, Oklahoma.') %>">
+  <meta name="twitter:image" content="https://bouncemanrentals.com/assets/images/equipment/blue-crush-1.jpg">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="https://bouncemanrentals.com<%= typeof canonicalPath !== 'undefined' ? canonicalPath : '' %>">
+
+  <!-- Schema.org JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "name": "Bounce Man LLC",
+    "description": "Family-owned bounce house and inflatable rental company serving Kay County, Oklahoma",
+    "url": "https://bouncemanrentals.com",
+    "telephone": "(580) 308-9288",
+    "email": "info@bouncemanrentals.com",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "113 North Barrick Way",
+      "addressLocality": "Tonkawa",
+      "addressRegion": "OK",
+      "postalCode": "74653",
+      "addressCountry": "US"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 36.6781,
+      "longitude": -97.3103
+    },
+    "openingHoursSpecification": [
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+        "opens": "08:00",
+        "closes": "19:00"
+      }
+    ],
+    "areaServed": [
+      {"@type": "City", "name": "Tonkawa", "containedInPlace": {"@type": "State", "name": "Oklahoma"}},
+      {"@type": "City", "name": "Ponca City", "containedInPlace": {"@type": "State", "name": "Oklahoma"}},
+      {"@type": "City", "name": "Blackwell", "containedInPlace": {"@type": "State", "name": "Oklahoma"}},
+      {"@type": "City", "name": "Stillwater", "containedInPlace": {"@type": "State", "name": "Oklahoma"}},
+      {"@type": "City", "name": "Newkirk", "containedInPlace": {"@type": "State", "name": "Oklahoma"}},
+      {"@type": "City", "name": "Kaw City", "containedInPlace": {"@type": "State", "name": "Oklahoma"}}
+    ],
+    "priceRange": "\-",
+    "image": "https://bouncemanrentals.com/assets/images/equipment/blue-crush-1.jpg",
+    "sameAs": ["https://www.facebook.com/profile.php?id=61576480285099"]
+  }
+  </script>
   <% if (settings.google_analytics_id) { %>
   <script async src="https://www.googletagmanager.com/gtag/js?id=<%= settings.google_analytics_id %>"></script>
   <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','<%= settings.google_analytics_id %>');</script>

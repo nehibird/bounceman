@@ -25,7 +25,9 @@ router.get('/', (req, res) => {
   const reviews = db.prepare('SELECT * FROM reviews WHERE approved = 1 ORDER BY created_at DESC LIMIT 6').all();
 
   res.render('public/index', {
-    title: settings.meta_title,
+    title: "Bounce House & Water Slide Rentals in Tonkawa, Ponca City & Kay County OK | Bounce Man",
+    metaDescription: 'Bounce Man rents bounce houses, water slides & combos in Tonkawa, Ponca City, Blackwell & Stillwater OK. Free delivery to Kay County. Book online today!',
+    canonicalPath: '/',
     settings,
     featured,
     categories,
@@ -62,7 +64,9 @@ router.get('/equipment', (req, res) => {
   const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
 
   res.render('public/equipment', {
-    title: 'Our Equipment - Bounce Man Rentals',
+    title: 'Rental Equipment - Water Slides, Bounce Houses & Combos | Bounce Man | Kay County OK',
+    metaDescription: "Browse Bounce Man's rental equipment: Blue Crush water slides, Tropical Combo bounce & slide, Monkey Jumper bounce house. Serving Kay County, OK. Prices from $200/day.",
+    canonicalPath: '/equipment',
     settings,
     equipment,
     categories,
@@ -121,7 +125,9 @@ router.get('/packages', (req, res) => {
   `).all();
 
   res.render('public/packages', {
-    title: 'Rental Packages - Bounce Man Rentals',
+    title: 'Rental Packages & Pricing | Bounce Man | Tonkawa OK',
+    metaDescription: 'Save on party rentals with Bounce Man packages! Bundle bounce houses, water slides & add-ons for your event in Kay County, Oklahoma. View all packages and pricing.',
+    canonicalPath: '/packages',
     settings,
     packages,
     page: 'packages'
@@ -131,13 +137,13 @@ router.get('/packages', (req, res) => {
 // About
 router.get('/about', (req, res) => {
   const settings = getSettings();
-  res.render('public/about', { title: 'About Us - Bounce Man Rentals', settings, page: 'about' });
+  res.render('public/about', { title: 'About Bounce Man | Family-Owned Party Rentals | Tonkawa OK', metaDescription: 'Meet the Bounce Man family! We are a Christ-centered, family-owned bounce house rental company in Tonkawa, Oklahoma serving Kay County and surrounding communities.', canonicalPath: '/about', settings, page: 'about' });
 });
 
 // Contact
 router.get('/contact', (req, res) => {
   const settings = getSettings();
-  res.render('public/contact', { title: 'Contact Us - Bounce Man Rentals', settings, page: 'contact' });
+  res.render('public/contact', { title: 'Contact Bounce Man | Party Equipment Rental | Tonkawa OK', metaDescription: 'Contact Bounce Man for bounce house and water slide rentals in Tonkawa, OK. Call (580) 308-9288 or send us a message. Serving Kay County and surrounding areas.', canonicalPath: '/contact', settings, page: 'contact' });
 });
 
 // Contact form POST
@@ -193,7 +199,7 @@ router.post('/contact', (req, res) => {
 // How it works
 router.get('/how-it-works', (req, res) => {
   const settings = getSettings();
-  res.render('public/how-it-works', { title: 'How It Works - Bounce Man Rentals', settings, page: 'how-it-works' });
+  res.render('public/how-it-works', { title: 'How It Works - Easy Bounce House Rental | Bounce Man | Kay County OK', metaDescription: 'Renting a bounce house from Bounce Man is easy! Pick your date, choose your equipment, confirm your booking, and we deliver to your door in Tonkawa, Ponca City & Kay County OK.', canonicalPath: '/how-it-works', settings, page: 'how-it-works' });
 });
 
 // Reviews page
@@ -254,7 +260,7 @@ router.get('/check-availability', (req, res) => {
 // FAQ
 router.get('/faq', (req, res) => {
   const settings = getSettings();
-  res.render('public/faq', { title: 'FAQ - Bounce Man Rentals', settings, page: 'faq' });
+  res.render('public/faq', { title: 'FAQ - Bounce House Rental Questions | Bounce Man | Kay County OK', metaDescription: 'Common questions about renting bounce houses and water slides in Kay County, OK. Learn about delivery, setup, safety, payment, and cancellation policies at Bounce Man.', canonicalPath: '/faq', settings, page: 'faq' });
 });
 
 // Service areas
@@ -262,7 +268,7 @@ router.get('/service-areas', (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const zones = db.prepare('SELECT * FROM delivery_zones WHERE active = 1 ORDER BY delivery_fee').all();
-  res.render('public/service-areas', { title: 'Service Areas - Bounce Man Rentals', settings, zones, page: 'service-areas' });
+  res.render('public/service-areas', { title: 'Service Areas | Bounce Man | Tonkawa, Ponca City, Blackwell, Stillwater OK', metaDescription: 'Bounce Man delivers bounce houses and water slides across Kay County, Oklahoma including Tonkawa, Ponca City, Blackwell, Newkirk, Kaw City & Stillwater. Check delivery fees.', canonicalPath: '/service-areas', settings, zones, page: 'service-areas' });
 });
 
 // Privacy Policy
@@ -321,6 +327,170 @@ router.post('/contract/:id/sign', (req, res) => {
     return res.json({ success: true, message: 'Contract signed successfully!' });
   }
   res.redirect('/contract/' + req.params.id);
+});
+
+// ===== CITY LANDING PAGES =====
+
+const CITY_DATA = {
+  tonkawa: {
+    name: 'Tonkawa',
+    h1: 'Bounce House Rentals in Tonkawa, Oklahoma',
+    subheading: "Your local bounce house & water slide rental company — right here in Tonkawa, Kay County.",
+    freeDelivery: true,
+    deliveryFee: null,
+    deliveryNote: null,
+    title: 'Bounce House & Water Slide Rentals in Tonkawa OK | Bounce Man',
+    metaDescription: 'Bounce Man is your local bounce house rental company in Tonkawa, OK. FREE delivery in town. Water slides, bounce houses & combos from $200/day. Book online!',
+    bodyHtml: '<p>Looking for a bounce house rental in <strong>Tonkawa, Oklahoma</strong>? You\'ve found your local source! Bounce Man LLC is based right here in Tonkawa at 113 North Barrick Way, making us the most convenient and affordable party equipment rental option in town.</p><p>We carry water slides, bounce houses, and combo units — everything you need to make your birthday party, church event, school carnival, or backyard bash truly unforgettable. As a locally owned and operated business, we take pride in serving our Tonkawa neighbors with top-quality, sanitized equipment and friendly service every time.</p><h3 style="color:var(--bm-blue);margin-top:24px">Delivery Right to Your Door in Tonkawa</h3><p><strong>Delivery is always FREE within Tonkawa.</strong> We haul, set up, inflate, and take everything down when the party is over. You don\'t lift a finger. Our units arrive clean, inspected, and ready to use.</p><h3 style="color:var(--bm-blue);margin-top:24px">Perfect for Any Tonkawa Event</h3><ul><li>Birthday parties (ages 2–18)</li><li>School &amp; church events</li><li>Community fundraisers</li><li>Neighborhood block parties</li><li>Sports team celebrations</li></ul><p>We operate Monday through Saturday, 8 AM to 7 PM (closed Sundays). Book online or call us at <strong>(580) 308-9288</strong>.</p>',
+    nearbyCities: [
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Blackwell', url: '/bounce-house-rental-blackwell-ok' },
+      { name: 'Stillwater', url: '/bounce-house-rental-stillwater-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  poncaCity: {
+    name: 'Ponca City',
+    h1: 'Bounce House Rentals in Ponca City, Oklahoma',
+    subheading: 'Serving Ponca City with FREE delivery on bounce houses, water slides & combo rentals.',
+    freeDelivery: true,
+    deliveryFee: null,
+    deliveryNote: null,
+    title: 'Bounce House Rentals in Ponca City OK | Bounce Man | Free Delivery',
+    metaDescription: 'Bounce Man delivers bounce houses & water slides to Ponca City, OK — FREE. Serving Kay County families. From $200/day. Call (580) 308-9288.',
+    bodyHtml: '<p>Planning a party in <strong>Ponca City, Oklahoma</strong>? Bounce Man delivers bounce houses and water slides directly to your home, backyard, or venue — <strong>free of charge</strong>. We\'re just a short drive from Tonkawa, making us your most affordable rental partner in the Ponca City area.</p><p>Ponca City is one of our busiest service areas with a vibrant community of families, schools, and churches. Whether you\'re hosting a birthday bash for 20 kids or a company picnic for 200 people, we have the right equipment for your event.</p><h3 style="color:var(--bm-blue);margin-top:24px">Top Picks for Ponca City Events</h3><p>Our <strong>Blue Crush Water Slide</strong> is always a hit at summer events in Ponca City — kids love it and parents love the smiles. The <strong>Tropical Combo</strong> is perfect for mixed-age birthday parties. And the <strong>Monkey Jumper</strong> keeps the little ones entertained for hours.</p><h3 style="color:var(--bm-blue);margin-top:24px">Easy Online Booking</h3><p>Book your Ponca City rental in minutes at BounceManRentals.com. Pick your date, choose your equipment, confirm your details, and we handle the rest. Questions? Call us at <strong>(580) 308-9288</strong>, Mon–Sat 8 AM–7 PM.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Blackwell', url: '/bounce-house-rental-blackwell-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  blackwell: {
+    name: 'Blackwell',
+    h1: 'Bounce House Rentals in Blackwell, Oklahoma',
+    subheading: 'Free delivery bounce house and water slide rentals for Blackwell, OK and surrounding Kay County areas.',
+    freeDelivery: true,
+    deliveryFee: null,
+    deliveryNote: null,
+    title: 'Bounce House Rentals in Blackwell OK | Bounce Man | Kay County',
+    metaDescription: 'Rent bounce houses & water slides in Blackwell, OK with FREE delivery from Bounce Man. Perfect for birthday parties, church events & more. Book online today!',
+    bodyHtml: '<p>Bounce Man is proud to serve the <strong>Blackwell, Oklahoma</strong> community with top-quality bounce house and inflatable water slide rentals. Our Blackwell deliveries are always free — we set up and take down at no extra cost to you.</p><p>Blackwell families have trusted us for birthday parties, school carnivals, church events, and more. With just a short drive from our Tonkawa base, we bring the fun straight to you.</p><h3 style="color:var(--bm-blue);margin-top:24px">What We Offer in Blackwell</h3><ul><li><strong>Blue Crush Water Slide</strong> — $375/day (2 units available)</li><li><strong>Tropical Combo Bounce &amp; Slide</strong> — $325/day</li><li><strong>Monkey Jumper Bounce House</strong> — $200/day</li><li><strong>Bluetooth Speaker Add-On</strong> — $75/day</li><li><strong>Portable Generator</strong> — $50/day</li></ul><h3 style="color:var(--bm-blue);margin-top:24px">Book Your Blackwell Rental</h3><p>Ready to book? Use our easy online booking system or call <strong>(580) 308-9288</strong>. We\'re available Monday through Saturday, 8 AM–7 PM. Early booking is recommended for summer weekends!</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  stillwater: {
+    name: 'Stillwater',
+    h1: 'Bounce House Rentals in Stillwater, Oklahoma',
+    subheading: 'Serving OSU families, Greek life, and Stillwater events with water slides & bounce houses.',
+    freeDelivery: false,
+    deliveryFee: '$100',
+    deliveryNote: 'Stillwater is about 60 miles from our Tonkawa base. A $100 delivery fee applies for extended travel. Still the best value for premium inflatables in Stillwater!',
+    title: 'Bounce House & Water Slide Rentals in Stillwater OK | Bounce Man',
+    metaDescription: 'Bounce Man delivers bounce houses & water slides to Stillwater OK, home of OSU. Perfect for Greek events, birthday parties & campus fairs. Call (580) 308-9288.',
+    bodyHtml: '<p>Bounce Man serves <strong>Stillwater, Oklahoma</strong> — home of Oklahoma State University — with premium bounce house and inflatable water slide rentals. Stillwater is about 60 miles from our Tonkawa base, so a $100 extended delivery fee applies, but you still get the same professional setup, clean equipment, and friendly service.</p><p>Stillwater\'s diverse community of OSU students, faculty, families, and businesses creates a huge demand for unique event entertainment. Our inflatables have been a hit at Greek life events, graduation parties, tailgates, neighborhood gatherings, and kids\' birthday parties throughout Stillwater.</p><h3 style="color:var(--bm-blue);margin-top:24px">Great for Stillwater\'s Busy Event Season</h3><ul><li>OSU campus and Greek chapter events</li><li>Residential neighborhood parties</li><li>Church and community fundraisers</li><li>School field day &amp; carnival events</li><li>Corporate team-building and picnics</li></ul><h3 style="color:var(--bm-blue);margin-top:24px">Book in Advance — Stillwater Dates Fill Fast</h3><p>Stillwater events are popular and our schedule fills up quickly, especially in spring and fall. We recommend booking 2–4 weeks in advance. Call <strong>(580) 308-9288</strong> or book online today.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  kayCounty: {
+    name: 'Kay County',
+    h1: 'Water Slide & Bounce House Rentals in Kay County, Oklahoma',
+    subheading: "Bounce Man is Kay County's #1 party equipment rental company serving 40,000+ residents.",
+    freeDelivery: true,
+    deliveryFee: null,
+    deliveryNote: null,
+    title: 'Water Slide & Bounce House Rentals Kay County OK | Bounce Man',
+    metaDescription: "Kay County's top bounce house & water slide rental. Bounce Man serves Tonkawa, Ponca City, Blackwell, Newkirk & all Kay County OK. FREE delivery. Book now!",
+    bodyHtml: '<p><strong>Bounce Man LLC</strong> is proud to be Kay County\'s premier party equipment rental company. Based in Tonkawa, we serve the entire county including Ponca City, Blackwell, Newkirk, Kaw City, and surrounding communities. With <strong>free delivery throughout Kay County</strong>, we make it easy and affordable to add real excitement to any event.</p><p>Kay County, Oklahoma is a vibrant community of approximately 43,000 residents. We understand the unique needs of Kay County families — from large Ponca City birthday parties to intimate rural backyard celebrations near Kaw City. No location is too remote for Bounce Man!</p><h3 style="color:var(--bm-blue);margin-top:24px">Serving All of Kay County</h3><ul><li><strong>Tonkawa</strong> — Our home base, always free delivery</li><li><strong>Ponca City</strong> — Kay County\'s largest city, free delivery</li><li><strong>Blackwell</strong> — Southern Kay County, free delivery</li><li><strong>Newkirk</strong> — County seat, free delivery</li><li><strong>Kaw City</strong> — Eastern Kay County, free delivery</li></ul><h3 style="color:var(--bm-blue);margin-top:24px">Book Your Kay County Rental</h3><p>Call us at <strong>(580) 308-9288</strong>, Mon–Sat 8 AM–7 PM, or book instantly at BounceManRentals.com. We accept all major credit cards and Stripe-secured online payments.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Blackwell', url: '/bounce-house-rental-blackwell-ok' },
+      { name: 'Stillwater', url: '/bounce-house-rental-stillwater-ok' }
+    ]
+  }
+};
+
+// City landing page routes
+router.get('/bounce-house-rental-tonkawa-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.tonkawa;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-tonkawa-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/bounce-house-rental-ponca-city-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.poncaCity;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-ponca-city-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/bounce-house-rental-blackwell-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.blackwell;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-blackwell-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/bounce-house-rental-stillwater-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.stillwater;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-stillwater-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/water-slide-rental-kay-county-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.kayCounty;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/water-slide-rental-kay-county-ok', settings, cityData, page: 'city-landing' });
+});
+
+// ===== SITEMAP.XML =====
+router.get('/sitemap.xml', (req, res) => {
+  const baseUrl = 'https://bouncemanrentals.com';
+  const today = new Date().toISOString().split('T')[0];
+
+  const staticPages = [
+    { loc: '/', priority: '1.0', changefreq: 'weekly' },
+    { loc: '/equipment', priority: '0.9', changefreq: 'weekly' },
+    { loc: '/packages', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/booking', priority: '0.9', changefreq: 'weekly' },
+    { loc: '/how-it-works', priority: '0.7', changefreq: 'monthly' },
+    { loc: '/about', priority: '0.6', changefreq: 'monthly' },
+    { loc: '/contact', priority: '0.7', changefreq: 'monthly' },
+    { loc: '/faq', priority: '0.6', changefreq: 'monthly' },
+    { loc: '/reviews', priority: '0.5', changefreq: 'weekly' },
+    { loc: '/service-areas', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-tonkawa-ok', priority: '0.9', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-ponca-city-ok', priority: '0.9', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-blackwell-ok', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-stillwater-ok', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/water-slide-rental-kay-county-ok', priority: '0.9', changefreq: 'monthly' }
+  ];
+
+  const db = getDb();
+  const equipment = db.prepare("SELECT slug FROM equipment WHERE status = 'available'").all();
+
+  let urlEntries = staticPages.map(p =>
+    `  <url>\n    <loc>${baseUrl}${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
+  ).join('\n');
+
+  equipment.forEach(e => {
+    urlEntries += `\n  <url>\n    <loc>${baseUrl}/equipment/${e.slug}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.7</priority>\n  </url>`;
+  });
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlEntries}\n</urlset>`;
+
+  res.set('Content-Type', 'application/xml');
+  res.send(xml);
+});
+
+// ===== ROBOTS.TXT =====
+router.get('/robots.txt', (req, res) => {
+  res.set('Content-Type', 'text/plain');
+  res.send('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin/\nDisallow: /api/\nDisallow: /booking/lookup\nDisallow: /contract/\nDisallow: /event/\n\nSitemap: https://bouncemanrentals.com/sitemap.xml\n');
 });
 
 module.exports = router;

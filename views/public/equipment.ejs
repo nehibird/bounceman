@@ -45,4 +45,10 @@
   </div>
 </section>
 
-`, scripts: '' }) %>
+`, scripts: `
+<script>
+if (typeof fbq !== "undefined" && document.querySelector("script[src*=fbevents]")) {
+  fbq('track', 'ViewContent', { content_name: 'Equipment', content_type: 'product' });
+}
+</script>
+` }) %>

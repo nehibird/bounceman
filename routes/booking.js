@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
@@ -7,12 +8,25 @@ const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, get
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
+const facebookAds = require('../services/facebook-ads');
+
+// HIGH-6: Rate limiter for booking endpoints
+const bookingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 booking attempts per hour per IP
+  message: 'Too many booking attempts. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false
+});
 
 // Step 1 — pick date & duration first
 router.get('/', (req, res) => {
   const settings = getSettings();
   res.render('public/booking/step1-date', {
-    title: 'Book Your Rental - Bounce Man',
+    title: 'Book Your Rental Online | Bounce Man | Tonkawa OK',
+    metaDescription: 'Book your bounce house or water slide rental online with Bounce Man. Easy 4-step process, instant confirmation, and free delivery to Tonkawa, Ponca City & Blackwell OK.',
+    canonicalPath: '/booking',
     settings,
     page: 'booking'
   });
@@ -40,9 +54,17 @@ router.get('/select', (req, res) => {
     FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
   `).all();
 
-  const bookedIds = getBookedEquipmentIds(db, eventDate);
-  equipment.forEach(item => { item.booked = bookedIds.has(item.id); });
-  addons.forEach(item => { item.booked = bookedIds.has(item.id); });
+  const bookedCounts = getBookedEquipmentIds(db, eventDate);
+  equipment.forEach(item => {
+    const booked = bookedCounts.get(item.id) || 0;
+    const qty = item.quantity || 1;
+    item.booked = booked >= qty;
+    item.availableQty = qty - booked;
+  });
+  addons.forEach(item => {
+    const booked = bookedCounts.get(item.id) || 0;
+    item.booked = booked >= (item.quantity || 1);
+  });
 
   res.render('public/booking/step2-select', {
     title: 'Choose Your Rentals - Bounce Man',
@@ -68,13 +90,13 @@ router.post('/check-date', (req, res) => {
   // Check each item
   const unavailable = [];
   for (const eqId of equipment_ids) {
-    const booked = db.prepare(`
-      SELECT e.name FROM bookings b
+    const bookedCount = db.prepare(`
+      SELECT COUNT(*) as cnt FROM bookings b
       JOIN booking_items bi ON bi.booking_id = b.id
-      JOIN equipment e ON e.id = bi.equipment_id
       WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
     `).get(date, eqId);
-    if (booked) unavailable.push(booked.name);
+    const eqInfo = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(eqId);
+    if (bookedCount && bookedCount.cnt >= (eqInfo?.quantity || 1)) unavailable.push(eqInfo?.name || 'Item');
 
     const blockedItem = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id = ?').get(date, eqId);
     if (blockedItem) {
@@ -120,7 +142,7 @@ router.get('/details', (req, res) => {
 });
 
 // Step 4 — review & pay
-router.post('/review', async (req, res) => {
+router.post('/review', bookingLimiter, async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const {
@@ -190,12 +212,63 @@ router.post('/review', async (req, res) => {
 });
 
 // Submit booking
-router.post('/submit', async (req, res) => {
+router.post('/submit', bookingLimiter, async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const data = req.body;
 
+  // MED-5: Sanitize and validate customer fields
+  const sanitize = (s, maxLen = 200) => (s || '').toString().trim().substring(0, maxLen);
+  data.first_name = sanitize(data.first_name, 100);
+  data.last_name = sanitize(data.last_name, 100);
+  data.email = sanitize(data.email, 254);
+  data.phone = sanitize(data.phone, 20);
+  data.delivery_address = sanitize(data.delivery_address, 300);
+  data.delivery_city = sanitize(data.delivery_city, 100);
+  data.delivery_zip = sanitize(data.delivery_zip, 10);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+    return res.status(400).send('Invalid email address');
+  }
+
   try {
+    // CRIT-1: Recalculate all pricing server-side — never trust form-submitted totals
+    const submitItems = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
+    const submitWetIdsSet = new Set((data.wet_items || '').split(',').filter(Boolean));
+    const submitDuration = data.rental_duration || 'daily';
+    let recalcSubtotal = 0;
+    for (const eqId of submitItems) {
+      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+      if (!eq) continue;
+      const isWet = submitWetIdsSet.has(eqId);
+      const basePrice = getPrice(eq, submitDuration);
+      recalcSubtotal += isWet ? basePrice + 20 : basePrice;
+    }
+    let { fee: recalcDeliveryFee } = getDeliveryFee(db, data.delivery_zip);
+    if (recalcDeliveryFee < 0) {
+      const dist = await getDistanceFee(data.delivery_zip);
+      recalcDeliveryFee = dist ? dist.fee : 100;
+    }
+    let recalcDiscountAmount = 0;
+    if (data.discount_code) {
+      const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(data.discount_code.toUpperCase());
+      if (code) {
+        recalcDiscountAmount = code.type === 'percent'
+          ? Math.round(recalcSubtotal * (code.value / 100) * 100) / 100
+          : code.value;
+      }
+    }
+    const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee);
+    const recalcTotal = recalcPricing.total - recalcDiscountAmount;
+    // Override form data with server-calculated values
+    data.subtotal = recalcSubtotal;
+    data.delivery_fee = recalcDeliveryFee;
+    data.tax_rate = recalcPricing.taxRate;
+    data.tax_amount = recalcPricing.taxAmount;
+    data.damage_waiver_fee = recalcPricing.damageWaiverFee;
+    data.total = recalcTotal;
+    data.deposit_amount = recalcPricing.depositAmount;
+    data.discount_amount = recalcDiscountAmount;
+
     // Create or find customer
     let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
     const customerId = customer?.id || uuid();
@@ -357,6 +430,22 @@ router.get('/confirmation', async (req, res) => {
         // Slack notification — payment confirmed
         notifyNewBooking({ ...booking, payment_status: 'deposit_paid' }, customer, items)
           .catch(err => console.error('[NOTIFY ERROR]', err.message));
+
+        // Server-side Facebook Pixel — Purchase event
+        const fbBooking = { ...booking, payment_status: 'deposit_paid', deposit_paid: 1 };
+        facebookAds.sendPixelEvent('Purchase', {
+          value: booking.deposit_amount,
+          currency: 'USD',
+          content_name: 'Bounce House Rental Deposit',
+          content_type: 'product',
+          order_id: bookingNumber,
+          event_source_url: 'https://bouncemanrentals.com/booking/confirmation',
+        }, {
+          email: customer?.email,
+          phone: customer?.phone,
+          first_name: customer?.first_name,
+          last_name: customer?.last_name,
+        }).catch(err => console.error('[FB PIXEL ERROR]', err.message));
       }
     } catch (err) {
       console.error('[STRIPE CHECK ERROR]', err.message);
