@@ -60,7 +60,7 @@
   <!-- Event Selector (iPad kiosk mode) -->
   <div class="walkin-card">
     <h6><i class="fas fa-calendar-alt me-2"></i>Select Event</h6>
-    <select id="eventSelect" class="form-select" onchange="selectEvent(this.value)">
+    <select id="eventSelect" class="form-select" >
       <option value="">Choose an event...</option>
       <% events.forEach(function(e) { %>
         <option value="<%= e.id %>" data-price="<%= e.price_per_kid %>"><%= e.name %> (<%= e.event_date %>) - $<%= parseFloat(e.price_per_kid).toFixed(0) %>/kid</option>
@@ -332,6 +332,10 @@
 
   // Init
   updateTotal();
+
+  // CSP-safe: replace onchange="selectEvent" with addEventListener
+  var evtSel = document.getElementById("eventSelect");
+  if (evtSel) { evtSel.addEventListener("change", function() { window.selectEvent(this.value); }); }
 
   // addEventListener replacements for inline onclick
   document.getElementById('kidMinus').addEventListener('click', function() { window.changeKidCount(-1); });

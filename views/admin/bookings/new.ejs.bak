@@ -109,7 +109,7 @@
         <div class="card-body">
           ${equipment.map((e, i) => `
           <div class="form-check mb-3 p-3 border rounded">
-            <input class="form-check-input" type="checkbox" name="equipment_ids" value="${e.id}" id="equip-${i}">
+            <input class="form-check-input" type="checkbox" name="equipment_ids" value="${e.id}" id="equip-${i}" onchange="updateTotal()">
             <label class="form-check-label d-flex justify-content-between w-100 ms-2" for="equip-${i}">
               <span>
                 <strong>${e.name}</strong>
@@ -121,7 +121,7 @@
                 <small class="text-muted">O/N: $${e.price_overnight}</small>
               </span>
             </label>
-            <select name="duration_${e.id}" class="form-select form-select-sm mt-2" style="width:auto">
+            <select name="duration_${e.id}" class="form-select form-select-sm mt-2" style="width:auto" onchange="updateTotal()">
               <option value="4hr" data-price="${e.price_4hr}">4 Hour ($${e.price_4hr})</option>
               <option value="daily" data-price="${e.price_daily}">Full Day ($${e.price_daily})</option>
               <option value="overnight" data-price="${e.price_overnight}">Overnight ($${e.price_overnight})</option>
@@ -150,11 +150,11 @@
         <div class="card-body">
           <div class="mb-3">
             <label class="form-label">Delivery Fee</label>
-            <input type="number" name="delivery_fee" class="form-control" value="0" step="0.01">
+            <input type="number" name="delivery_fee" class="form-control" value="0" step="0.01" onchange="updateTotal()">
           </div>
           <div class="mb-3">
             <label class="form-label">Discount</label>
-            <input type="number" name="discount_amount" class="form-control" value="0" step="0.01">
+            <input type="number" name="discount_amount" class="form-control" value="0" step="0.01" onchange="updateTotal()">
           </div>
           <hr>
           <div class="d-flex justify-content-between mb-2">
@@ -213,21 +213,6 @@
 
 `, scripts: `
 <script>
-// CSP-safe: event delegation for updateTotal triggers
-document.addEventListener('change', function(e) {
-  var el = e.target;
-  if (el.name === 'equipment_ids' || (el.name && el.name.startsWith('duration_')) ||
-      el.name === 'delivery_fee' || el.name === 'discount_amount') {
-    updateTotal();
-  }
-});
-document.addEventListener('input', function(e) {
-  var el = e.target;
-  if (el.name === 'delivery_fee' || el.name === 'discount_amount') {
-    updateTotal();
-  }
-});
-
 var equipData = ${JSON.stringify(equipment.map(e => ({ id: e.id, price_4hr: e.price_4hr, price_daily: e.price_daily, price_overnight: e.price_overnight })))};
 
 function updateTotal() {

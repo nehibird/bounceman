@@ -19,7 +19,7 @@
       <a href="/admin/bookings?status=cancelled${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'cancelled' ? 'btn-bm' : 'btn-bm-outline'}">Cancelled</a>
     </div>
     <div class="ms-auto">
-      <input type="date" class="form-control form-control-sm" value="${activeDate || ''}" id="dateFilter" data-status="${activeStatus || ''}">
+      <input type="date" class="form-control form-control-sm" value="${activeDate || ''}" onchange="window.location='/admin/bookings?${activeStatus ? 'status=' + activeStatus + '&' : ''}date='+this.value">
     </div>
   </div>
 </div>
@@ -76,16 +76,6 @@
 
 `, scripts: `
 <script>
-  // CSP-safe: date filter navigation
-  (function() {
-    var df = document.getElementById('dateFilter');
-    if (df) {
-      df.addEventListener('change', function() {
-        var statusParam = df.dataset.status ? 'status=' + df.dataset.status + '&' : '';
-        window.location = '/admin/bookings?' + statusParam + 'date=' + this.value;
-      });
-    }
-  })();
   // Event delegation: row click to navigate to booking detail
   document.querySelector('table tbody') && document.querySelector('table tbody').addEventListener('click', function(e) {
     // Don't navigate if clicking a link or button

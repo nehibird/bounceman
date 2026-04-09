@@ -47,7 +47,7 @@
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="toggle-${r.id}"
                 ${r.enabled ? 'checked' : ''}
-                data-rule-id="${r.id}">
+                onchange="toggleRule('${r.id}', this.checked)">
             </div>
           </td>
         </tr>
@@ -88,14 +88,6 @@
 
 `, scripts: `
 <script>
-// CSP-safe: event delegation for rule toggle checkboxes
-document.addEventListener('change', function(e) {
-  var el = e.target;
-  if (el.type === 'checkbox' && el.dataset.ruleId) {
-    toggleRule(el.dataset.ruleId, el.checked);
-  }
-});
-
 function toggleRule(id, enabled) {
   fetch('/admin/api/ads/rules/' + id, {
     method: 'PATCH',

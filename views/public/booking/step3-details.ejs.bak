@@ -99,7 +99,7 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">ZIP Code *</label>
-                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput">
+                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput" oninput="checkZip(this.value)">
                 <div id="zipResult" style="margin-top:6px;font-size:13px;display:none"></div>
               </div>
               <div class="col-12">
@@ -320,9 +320,6 @@
         .catch(function() { zipValid = true; }); // allow on error
     }, 400);
   }
-
-  // CSP-safe: replace oninput="checkZip" with addEventListener
-  document.getElementById("zipInput").addEventListener("input", function() { checkZip(this.value); });
 </script>
 <script>if(typeof fbq!=='undefined')fbq('track','InitiateCheckout');</script>
 ` }) %>

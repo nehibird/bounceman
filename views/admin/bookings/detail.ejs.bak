@@ -9,7 +9,7 @@
     Booking #${booking.booking_number}
     <span class="badge-status badge-${booking.status} ms-2">${booking.status}</span>
   </h4>
-  <form method="POST" action="/admin/bookings/${booking.id}/delete" class="confirm-delete" data-confirm="Delete this booking and all related data? This cannot be undone.">
+  <form method="POST" action="/admin/bookings/${booking.id}/delete" onsubmit="return confirm('Delete this booking and all related data? This cannot be undone.');">
     <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i> Delete Booking</button>
   </form>
 </div>

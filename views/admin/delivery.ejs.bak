@@ -6,7 +6,7 @@
     <p class="text-muted mb-0">${deliveries.length} deliver${deliveries.length !== 1 ? 'ies' : 'y'} scheduled for ${date || 'today'}</p>
   </div>
   <div>
-    <input type="date" class="form-control" value="${date || new Date().toISOString().split('T')[0]}" id="deliveryDateFilter">
+    <input type="date" class="form-control" value="${date || new Date().toISOString().split('T')[0]}" onchange="window.location='/admin/delivery?date='+this.value">
   </div>
 </div>
 
@@ -63,15 +63,4 @@ ${deliveries.length > 0 ? deliveries.map((d, i) => `
 </div>
 `}
 
-`, scripts: `
-<script>
-(function() {
-  var df = document.getElementById('deliveryDateFilter');
-  if (df) {
-    df.addEventListener('change', function() {
-      window.location='/admin/delivery?date='+this.value;
-    });
-  }
-})();
-</script>
-` }) %>
+`, scripts: '' }) %>

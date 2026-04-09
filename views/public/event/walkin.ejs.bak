@@ -97,9 +97,9 @@
       <h6><i class="fas fa-child me-2"></i>Kids</h6>
       <div class="text-center mb-3">
         <div class="kid-stepper justify-content-center">
-          <button type="button" onclick="changeKidCount(-1)">-</button>
+          <button type="button" id="kidMinus">-</button>
           <div class="count" id="kidCount">1</div>
-          <button type="button" onclick="changeKidCount(1)">+</button>
+          <button type="button" id="kidPlus">+</button>
         </div>
       </div>
       <div id="kidNamesList">
@@ -135,7 +135,7 @@
           <input class="form-check-input" type="checkbox" id="agreeCheck">
           <label class="form-check-label small" for="agreeCheck">I have read and agree</label>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" onclick="clearSig()">
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" id="clearSigBtn">
           <i class="fas fa-eraser me-1"></i>Clear
         </button>
       </div>
@@ -161,7 +161,7 @@
     <div class="error-msg" id="errorMsg"></div>
     <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Setting up payment...</div>
 
-    <button class="btn-pay" id="payBtn" disabled onclick="submitAndPay()">
+    <button class="btn-pay" id="payBtn" disabled>
       <i class="fas fa-lock me-2"></i>Pay & Register
     </button>
 
@@ -332,6 +332,13 @@
 
   // Init
   updateTotal();
+
+  // addEventListener replacements for inline onclick
+  document.getElementById('kidMinus').addEventListener('click', function() { window.changeKidCount(-1); });
+  document.getElementById('kidPlus').addEventListener('click', function() { window.changeKidCount(1); });
+  document.getElementById('clearSigBtn').addEventListener('click', function() { window.clearSig(); });
+  document.getElementById('payBtn').addEventListener('click', function() { window.submitAndPay(); });
+
 })();
 </script>
 </body>
