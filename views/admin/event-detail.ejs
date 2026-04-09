@@ -59,7 +59,7 @@
         <div class="text-muted small mt-1" id="eventLink">${settings.event_base_url || '/event'}?event=${event.id}</div>
       </div>
       <div>
-        <button class="btn btn-sm btn-outline-primary rounded-pill me-2" onclick="navigator.clipboard.writeText(document.getElementById('eventLink').textContent)">
+        <button class="btn btn-sm btn-outline-primary rounded-pill me-2" id="copyLinkBtn">
           <i class="fas fa-copy me-1"></i>Copy
         </button>
         <a href="${settings.event_base_url || '/event'}?event=${event.id}&kiosk=1" target="_blank" class="btn btn-sm btn-bm rounded-pill">
@@ -112,4 +112,14 @@
   </div>
 </div>
 
-`, scripts: '' }) %>
+`, scripts: `
+<script>
+  // addEventListener replacement for inline onclick
+  var copyBtn = document.getElementById('copyLinkBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function() {
+      navigator.clipboard.writeText(document.getElementById('eventLink').textContent);
+    });
+  }
+</script>
+` }) %>

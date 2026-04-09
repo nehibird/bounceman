@@ -68,7 +68,7 @@ ${typeof query !== 'undefined' && query.error ? `
           <td>$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
           <td class="text-muted small">${c.target_keywords ? c.target_keywords.substring(0,60)+'...' : '—'}</td>
           <td>
-            <button class="btn btn-sm btn-outline-secondary" onclick="deleteCampaign('${c.id}')">
+            <button class="btn btn-sm btn-outline-secondary" data-delete-campaign="${c.id}">
               <i class="fas fa-trash"></i>
             </button>
           </td>
@@ -122,7 +122,7 @@ ${typeof query !== 'undefined' && query.error ? `
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-bm" onclick="saveCampaign()">
+        <button type="button" class="btn btn-bm" id="saveCampaignBtn">
           <i class="fas fa-save me-1"></i>Save Record
         </button>
       </div>
@@ -132,6 +132,17 @@ ${typeof query !== 'undefined' && query.error ? `
 
 `, scripts: `
 <script>
+
+  // addEventListener replacements for inline onclick
+  document.getElementById('saveCampaignBtn').addEventListener('click', function() { saveCampaign(); });
+  // Event delegation for delete buttons (rendered via template literal)
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-delete-campaign]')) {
+      var btn = e.target.closest('[data-delete-campaign]');
+      deleteCampaign(btn.dataset.deleteCampaign);
+    }
+  });
+
 // Check connection status on load
 async function checkGoogleStatus() {
   try {

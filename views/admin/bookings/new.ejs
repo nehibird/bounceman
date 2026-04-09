@@ -1,0 +1,239 @@
+<%- include('../../layouts/admin', { body: `
+
+<a href="/admin/bookings" class="text-decoration-none mb-3 d-inline-block">
+  <i class="fas fa-arrow-left me-1"></i> Back to Bookings
+</a>
+
+<h4 class="mb-4">New Booking</h4>
+
+<form method="POST" action="/admin/bookings/create">
+  <div class="row g-4">
+    <!-- Left: Customer & Event -->
+    <div class="col-lg-8">
+
+      <!-- Customer Info -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-user me-2"></i>Customer</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">First Name <span class="text-danger">*</span></label>
+              <input type="text" name="first_name" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Last Name <span class="text-danger">*</span></label>
+              <input type="text" name="last_name" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Phone</label>
+              <input type="tel" name="phone" class="form-control">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Details -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-calendar me-2"></i>Event Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Event Date <span class="text-danger">*</span></label>
+              <input type="date" name="event_date" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Start Time</label>
+              <input type="time" name="event_start_time" class="form-control" value="09:00">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">End Time</label>
+              <input type="time" name="event_end_time" class="form-control" value="13:00">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Event Type</label>
+              <select name="event_type" class="form-select">
+                <option value="birthday">Birthday Party</option>
+                <option value="church">Church Event</option>
+                <option value="school">School Event</option>
+                <option value="corporate">Corporate</option>
+                <option value="community">Community Event</option>
+                <option value="family">Family Gathering</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Surface Type</label>
+              <select name="surface_type" class="form-select">
+                <option value="grass">Grass</option>
+                <option value="concrete">Concrete/Asphalt</option>
+                <option value="dirt">Dirt</option>
+                <option value="indoor">Indoor</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delivery -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-truck me-2"></i>Delivery Address</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Street Address</label>
+              <input type="text" name="delivery_address" class="form-control">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">City</label>
+              <input type="text" name="delivery_city" class="form-control" value="Tonkawa">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">State</label>
+              <input type="text" name="delivery_state" class="form-control" value="OK" readonly>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">ZIP</label>
+              <input type="text" name="delivery_zip" class="form-control">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Equipment Selection -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-castle me-2"></i>Equipment</div>
+        <div class="card-body">
+          ${equipment.map((e, i) => `
+          <div class="form-check mb-3 p-3 border rounded">
+            <input class="form-check-input" type="checkbox" name="equipment_ids" value="${e.id}" id="equip-${i}" onchange="updateTotal()">
+            <label class="form-check-label d-flex justify-content-between w-100 ms-2" for="equip-${i}">
+              <span>
+                <strong>${e.name}</strong>
+                <small class="text-muted d-block">${(e.category || '').replace(/_/g, ' ')}</small>
+              </span>
+              <span class="text-end">
+                <small class="text-muted">4hr: $${e.price_4hr}</small> &middot;
+                <small class="text-muted">Day: $${e.price_daily}</small> &middot;
+                <small class="text-muted">O/N: $${e.price_overnight}</small>
+              </span>
+            </label>
+            <select name="duration_${e.id}" class="form-select form-select-sm mt-2" style="width:auto" onchange="updateTotal()">
+              <option value="4hr" data-price="${e.price_4hr}">4 Hour ($${e.price_4hr})</option>
+              <option value="daily" data-price="${e.price_daily}">Full Day ($${e.price_daily})</option>
+              <option value="overnight" data-price="${e.price_overnight}">Overnight ($${e.price_overnight})</option>
+            </select>
+          </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Internal Notes</div>
+        <div class="card-body">
+          <textarea name="internal_notes" class="form-control" rows="3" placeholder="Any notes about this booking..."></textarea>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: Pricing & Submit -->
+    <div class="col-lg-4">
+
+      <!-- Pricing -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-dollar-sign me-2"></i>Pricing</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Delivery Fee</label>
+            <input type="number" name="delivery_fee" class="form-control" value="0" step="0.01" onchange="updateTotal()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Discount</label>
+            <input type="number" name="discount_amount" class="form-control" value="0" step="0.01" onchange="updateTotal()">
+          </div>
+          <hr>
+          <div class="d-flex justify-content-between mb-2">
+            <span>Subtotal:</span>
+            <strong id="calc-subtotal">$0.00</strong>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span>Delivery:</span>
+            <span id="calc-delivery">$0.00</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span>Discount:</span>
+            <span id="calc-discount">-$0.00</span>
+          </div>
+          <hr>
+          <div class="d-flex justify-content-between mb-2">
+            <strong>Total:</strong>
+            <strong id="calc-total" style="font-size:1.2em;color:var(--bm-orange)">$0.00</strong>
+          </div>
+          <input type="hidden" name="subtotal" id="input-subtotal" value="0">
+          <input type="hidden" name="total" id="input-total" value="0">
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-info-circle me-2"></i>Status</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Booking Status</label>
+            <select name="status" class="form-select">
+              <option value="confirmed">Confirmed</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Payment Status</label>
+            <select name="payment_status" class="form-select">
+              <option value="unpaid">Unpaid</option>
+              <option value="deposit_paid">Deposit Paid</option>
+              <option value="paid">Paid in Full</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button type="submit" class="btn btn-bm btn-lg w-100">
+        <i class="fas fa-plus me-2"></i>Create Booking
+      </button>
+
+    </div>
+  </div>
+</form>
+
+`, scripts: `
+<script>
+var equipData = ${JSON.stringify(equipment.map(e => ({ id: e.id, price_4hr: e.price_4hr, price_daily: e.price_daily, price_overnight: e.price_overnight })))};
+
+function updateTotal() {
+  var subtotal = 0;
+  var checks = document.querySelectorAll('input[name="equipment_ids"]:checked');
+  checks.forEach(function(cb) {
+    var sel = document.querySelector('select[name="duration_' + cb.value + '"]');
+    var opt = sel.options[sel.selectedIndex];
+    subtotal += parseFloat(opt.getAttribute('data-price') || 0);
+  });
+
+  var delivery = parseFloat(document.querySelector('input[name="delivery_fee"]').value || 0);
+  var discount = parseFloat(document.querySelector('input[name="discount_amount"]').value || 0);
+  var total = Math.max(0, subtotal + delivery - discount);
+
+  document.getElementById('calc-subtotal').textContent = '$' + subtotal.toFixed(2);
+  document.getElementById('calc-delivery').textContent = '$' + delivery.toFixed(2);
+  document.getElementById('calc-discount').textContent = '-$' + discount.toFixed(2);
+  document.getElementById('calc-total').textContent = '$' + total.toFixed(2);
+  document.getElementById('input-subtotal').value = subtotal.toFixed(2);
+  document.getElementById('input-total').value = total.toFixed(2);
+}
+</script>
+` }) %>

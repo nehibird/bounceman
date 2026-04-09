@@ -153,7 +153,13 @@ const contactRateMap = {};
 router.post('/contact', (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
-  const { name, email, phone, message, event_date, website_url, _ts } = req.body;
+  const { name, email, phone, message, event_date, website_url, _ts, captcha, _captcha_answer } = req.body;
+
+  // Spam check 0: CAPTCHA — math challenge
+  if (!captcha || !_captcha_answer || String(captcha).trim() !== String(_captcha_answer).trim()) {
+    console.log('[SPAM] CAPTCHA failed from', req.ip);
+    return res.render('public/contact', { title: 'Contact Us - Bounce Man Rentals', settings: getSettings(), page: 'contact', success: 'Thanks for reaching out! We\'ll get back to you within 24 hours.' });
+  }
 
   // Spam check 1: Honeypot — bots fill hidden "website_url" field
   if (website_url) {
@@ -180,13 +186,38 @@ router.post('/contact', (req, res) => {
   contactRateMap[ip].push(now);
 
   // Save as lead/communication
+  const commId = uuid();
   db.prepare(`INSERT INTO communications (id, type, direction, subject, body, recipient, metadata)
     VALUES (?, 'contact_form', 'inbound', ?, ?, ?, ?)`).run(
-    uuid(), `Contact from ${name}`, message, email,
+    commId, `Contact from ${name}`, message, email,
     JSON.stringify({ name, email, phone, event_date })
   );
 
   console.log('[CONTACT] Form submission from', name, email);
+
+  // Send Slack notification
+  try {
+    const { notifyContactForm } = require('../services/notifications');
+    notifyContactForm({ name, email, phone, message, event_date }).catch(e => console.error('[CONTACT] Slack notification error:', e.message));
+  } catch (e) { console.error('[CONTACT] Slack require error:', e.message); }
+
+  // Forward to info@ so owner can reply from email
+  try {
+    const { forwardContactForm } = require('../services/email');
+    forwardContactForm({ name, email, phone, message, event_date }).catch(e => console.error('[CONTACT] Email forward error:', e.message));
+  } catch (e) { console.error('[CONTACT] Email require error:', e.message); }
+
+  // Trigger n8n AI auto-reply workflow
+  try {
+    const N8N_WEBHOOK = process.env.N8N_CONTACT_WEBHOOK;
+    if (N8N_WEBHOOK) {
+      fetch(N8N_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commId, name, email, phone, message, event_date })
+      }).catch(e => console.error('[CONTACT] n8n webhook error:', e.message));
+    }
+  } catch (e) { console.error('[CONTACT] n8n trigger error:', e.message); }
 
   res.render('public/contact', {
     title: 'Contact Us - Bounce Man Rentals',

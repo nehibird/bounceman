@@ -132,4 +132,35 @@ async function checkDeliveryReminders() {
   }
 }
 
-module.exports = { notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders };
+async function notifyContactForm(data) {
+  const blocks = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'New Contact Form Message' }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Name:*\n' + data.name },
+        { type: 'mrkdwn', text: '*Email:*\n' + data.email },
+        { type: 'mrkdwn', text: '*Phone:*\n' + (data.phone || 'N/A') },
+        { type: 'mrkdwn', text: '*Event Date:*\n' + (data.event_date || 'Not specified') }
+      ]
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*Message:*\n' + data.message }
+    },
+    {
+      type: 'context',
+      elements: [
+        { type: 'mrkdwn', text: 'Reply to: ' + data.email + ' | <https://bouncemanrentals.com/admin/communications|View in Admin>' }
+      ]
+    }
+  ];
+
+  await postToSlack(BOOKINGS_CHANNEL, blocks, 'New contact form from ' + data.name);
+  console.log('[SLACK] Contact form notification sent for', data.name);
+}
+
+module.exports = { notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm };

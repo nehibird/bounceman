@@ -68,6 +68,40 @@ router.post('/validate-discount', (req, res) => {
   res.json({ valid: true, type: discount.type, value: discount.value, discount_amount: amount });
 });
 
+// === N8N INTEGRATION ENDPOINTS (key-based auth, before requireAuth) ===
+function requireN8nKey(req, res, next) {
+  const key = req.headers['x-n8n-key'];
+  if (!key || key !== process.env.N8N_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+router.delete('/communications/:id', requireN8nKey, (req, res) => {
+  getDb().prepare('DELETE FROM communications WHERE id = ?').run(req.params.id);
+  console.log('[API] Communication deleted:', req.params.id);
+  res.json({ success: true });
+});
+
+router.get('/communications/bot-status/:email', requireN8nKey, (req, res) => {
+  const row = getDb().prepare(
+    "SELECT bot_paused FROM communications WHERE recipient = ? AND type = 'contact_form' ORDER BY rowid DESC LIMIT 1"
+  ).get(req.params.email);
+  res.json({ bot_paused: row ? !!row.bot_paused : false });
+});
+
+router.post('/communications', requireN8nKey, (req, res) => {
+  const { recipient, subject, body, metadata } = req.body;
+  const id = uuid();
+  getDb().prepare(`INSERT INTO communications (id, type, direction, subject, body, recipient, metadata)
+    VALUES (?, 'email', 'outbound', ?, ?, ?, ?)`).run(
+    id, subject || 'AI Auto-Reply', body || '', recipient || '',
+    JSON.stringify(metadata || {})
+  );
+  console.log('[API] Outbound communication saved:', id);
+  res.json({ success: true, id });
+});
+
 // === PROTECTED API ROUTES ===
 router.use(requireAuth);
 

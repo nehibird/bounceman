@@ -287,15 +287,16 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     db.prepare(`INSERT INTO bookings (
       id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
-      delivery_notes, surface_type, power_available,
+      delivery_notes, surface_type, power_available, sms_consent,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount, discount_code,
       damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       bookingId, bookingNumber, customerId,
       data.event_date, data.event_start_time, data.event_end_time,
       data.event_type, data.venue_type,
       data.delivery_address, data.delivery_city, data.delivery_zip,
       data.delivery_notes, data.surface_type, data.power_available ? 1 : 0,
+      data.sms_consent ? 1 : 0,
       parseFloat(data.subtotal), parseFloat(data.delivery_fee),
       parseFloat(data.tax_amount), parseFloat(data.tax_rate),
       parseFloat(data.discount_amount || 0), data.discount_code || null,

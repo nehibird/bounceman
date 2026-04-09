@@ -84,19 +84,19 @@
             <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
             <div class="row g-3">
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('halfday',this)" id="durHalfDay">
                   <span class="dur-label">Half Day</span>
                   <span class="dur-sub">4 hours</span>
                 </div>
               </div>
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn selected" onclick="selectDuration('fullday',this)" id="durFullDay">
                   <span class="dur-label">Full Day</span>
                   <span class="dur-sub">10 hours</span>
                 </div>
               </div>
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durOvernight">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn" onclick="selectDuration('overnight',this)" id="durOvernight">
                   <span class="dur-label">Overnight</span>
                   <span class="dur-sub">Next day</span>
                 </div>
@@ -106,13 +106,13 @@
             <!-- Morning/Afternoon sub-choice (only for half day) -->
             <div id="halfDayChoice" class="row g-3 mt-3" style="display:none">
               <div class="col-6">
-                <div class="btn btn-outline-secondary w-100 text-center dur-btn selected" id="halfMorning">
+                <div class="btn btn-outline-secondary w-100 text-center dur-btn selected" onclick="selectHalf('morning',this)" id="halfMorning">
                   <span class="dur-label"><i class="fas fa-sun me-1" style="color:#f59e0b"></i> Morning</span>
                   <span class="dur-sub" id="morningTimeLabel"></span>
                 </div>
               </div>
               <div class="col-6">
-                <div class="btn btn-outline-secondary w-100 text-center dur-btn" id="halfAfternoon">
+                <div class="btn btn-outline-secondary w-100 text-center dur-btn" onclick="selectHalf('afternoon',this)" id="halfAfternoon">
                   <span class="dur-label"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i> Afternoon</span>
                   <span class="dur-sub" id="afternoonTimeLabel"></span>
                 </div>
@@ -242,12 +242,5 @@
       alert('Please select an event date.');
     }
   });
-
-  // addEventListener replacements for inline onclick
-  document.getElementById('durHalfDay').addEventListener('click', function() { selectDuration('halfday', this); });
-  document.getElementById('durFullDay').addEventListener('click', function() { selectDuration('fullday', this); });
-  document.getElementById('durOvernight').addEventListener('click', function() { selectDuration('overnight', this); });
-  document.getElementById('halfMorning').addEventListener('click', function() { selectHalf('morning', this); });
-  document.getElementById('halfAfternoon').addEventListener('click', function() { selectHalf('afternoon', this); });
 </script>
 ` }) %>

@@ -19,6 +19,7 @@
             <th>Subject</th>
             <th>Customer</th>
             <th>Recipient</th>
+            <th>Bot</th>
             <th></th>
           </tr>
         </thead>
@@ -43,20 +44,32 @@
             <td>${c.first_name || c.last_name ? (c.first_name || '') + ' ' + (c.last_name || '') : ''}</td>
             <td><small>${c.recipient || ''}</small></td>
             <td>
+              ${c.type === 'contact_form' ? (
+                c.bot_paused
+                  ? '<form method="POST" action="/admin/communications/' + c.id + '/bot-resume" style="display:inline"><button class="btn btn-sm btn-outline-success" type="submit" title="Resume bot"><i class="fas fa-robot me-1"></i>Off</button></form>'
+                  : '<form method="POST" action="/admin/communications/' + c.id + '/bot-pause" style="display:inline"><button class="btn btn-sm btn-success" type="submit" title="Pause bot — take over manually"><i class="fas fa-robot me-1"></i>On</button></form>'
+              ) : ''}
+            </td>
+            <td class="text-nowrap">
               <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comm-body-${c.id}">
                 <i class="fas fa-eye"></i>
               </button>
+              <form method="POST" action="/admin/communications/${c.id}/delete" style="display:inline" onsubmit="return confirm('Delete this message?');">
+                <button class="btn btn-sm btn-outline-danger ms-1" type="submit">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </form>
             </td>
           </tr>
           <tr class="collapse" id="comm-body-${c.id}">
-            <td colspan="7" class="bg-light">
+            <td colspan="8" class="bg-light">
               <div class="p-3">
                 <small class="text-muted d-block mb-1">Message Body</small>
                 <div style="white-space:pre-wrap">${c.body || 'No content'}</div>
               </div>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">No communications found</td></tr>'}
+          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No communications found</td></tr>'}
         </tbody>
       </table>
     </div>

@@ -244,4 +244,43 @@ async function sendTestEmail(to) {
   console.log('[EMAIL] Test sent to ' + to);
 }
 
-module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendTestEmail };
+function contactFormBody(data) {
+  return `
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">New message from your website</td></tr>
+<tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:20px;">Contact Form Submission</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;">
+<tr><td style="padding:20px;">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Name:</strong> ${data.name}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Email:</strong> <a href="mailto:${data.email}" style="color:${ORANGE};">${data.email}</a></td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Phone:</strong> ${data.phone || 'Not provided'}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Event Date:</strong> ${data.event_date || 'Not specified'}</td></tr>
+</table>
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+<tr><td style="font-size:11px;letter-spacing:1px;color:#999;font-weight:bold;padding-bottom:8px;">MESSAGE</td></tr>
+<tr><td style="font-size:14px;color:#333;background:#f8f8f8;border-radius:6px;padding:16px;white-space:pre-wrap;line-height:1.6;">${data.message}</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td style="font-size:13px;color:#666;background:#FFFDE7;border-radius:6px;padding:12px;">
+<strong>Reply directly to this email</strong> to respond to the customer. Their email address is set as the reply-to.
+</td></tr>
+</table>`;
+}
+
+async function forwardContactForm(data) {
+  await getTransporter().sendMail({
+    from: '"Bounce Man Website" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
+    to: process.env.SMTP_FROM || 'info@bouncemanrentals.com',
+    replyTo: data.email,
+    subject: 'New Contact: ' + data.name + (data.event_date ? ' - Event ' + data.event_date : ''),
+    html: wrap('Contact Form', contactFormBody(data)),
+  });
+  console.log('[EMAIL] Contact form forwarded for ' + data.name);
+}
+
+module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendTestEmail, forwardContactForm };

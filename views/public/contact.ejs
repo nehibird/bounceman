@@ -69,6 +69,15 @@
                 <textarea name="message" class="form-control" rows="5" placeholder="Tell us about your event — date, location, number of guests, what you are looking for..." required style="border-radius:8px"></textarea>
               </div>
               <div class="col-12">
+                <label class="form-label fw-bold" style="color:var(--bm-blue)">Are you a human? <span style="color:var(--bm-pink)">*</span></label>
+                <div class="d-flex align-items-center gap-3">
+                  <span id="captcha-q" style="font-size:18px;font-weight:700;color:var(--bm-blue);white-space:nowrap"></span>
+                  <input type="hidden" name="_captcha_answer" id="captcha-a">
+                  <input type="number" name="captcha" class="form-control" placeholder="Your answer" required style="border-radius:8px;max-width:140px">
+                </div>
+                <small class="text-muted">Solve the math problem to prove you are not a robot</small>
+              </div>
+              <div class="col-12">
                 <button type="submit" class="btn btn-book-now btn-lg w-100" style="padding:14px">
                   <i class="fas fa-paper-plane me-2"></i>Send Message
                 </button>
@@ -145,4 +154,4 @@
   </div>
 </section>
 
-`, scripts: '<script>flatpickr("#eventDatePicker", { minDate: "today", dateFormat: "Y-m-d", disableMobile: true });</script>' }) %>
+`, scripts: '<script>flatpickr("#eventDatePicker", { minDate: "today", dateFormat: "Y-m-d", disableMobile: true });(function(){var a=Math.floor(Math.random()*10)+1,b=Math.floor(Math.random()*10)+1;document.getElementById("captcha-q").textContent="What is "+a+" + "+b+"?";document.getElementById("captcha-a").value=String(a+b);})();</script>' }) %>

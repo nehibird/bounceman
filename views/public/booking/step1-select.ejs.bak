@@ -67,7 +67,7 @@
       <div class="col-lg-8">
         <div class="row g-4" id="equipmentGrid">
           ${equipment.map(function(item) { return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + item.price_daily + '">' +
-            '<div class="equipment-card select-card">' +
+            '<div class="equipment-card select-card" onclick="toggleItem(this, &quot;' + item.id + '&quot;, &quot;' + (item.name || '').replace(/"/g, '') + '&quot;, ' + item.price_daily + ')">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '">' +
               '<div class="card-body">' +
@@ -101,7 +101,7 @@
             <span class="fw-bold" style="color:var(--bm-orange);font-size:20px;" id="subtotal">$0</span>
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
-          <a href="#" class="btn btn-book-now w-100 disabled" id="continueBtn">
+          <a href="#" class="btn btn-book-now w-100 disabled" id="continueBtn" onclick="goToStep2(event)">
             <i class="fas fa-arrow-right me-2"></i>Continue to Date Selection
           </a>
         </div>
@@ -114,23 +114,6 @@
 `, scripts: `
 <script>
   var selectedItems = {};
-
-  // Event delegation: equipment card click (toggleItem)
-  document.getElementById('equipmentGrid').addEventListener('click', function(e) {
-    var card = e.target.closest('.select-card');
-    if (!card) return;
-    var itemDiv = card.closest('.equipment-item');
-    if (!itemDiv) return;
-    var id = itemDiv.dataset.id;
-    var name = itemDiv.dataset.name;
-    var price = parseFloat(itemDiv.dataset.price);
-    if (id && name && !isNaN(price)) toggleItem(card, id, name, price);
-  });
-
-  // continueBtn click
-  document.getElementById('continueBtn').addEventListener('click', function(e) {
-    goToStep2(e);
-  });
 
   // Pre-select items from query params if returning
   (function() {

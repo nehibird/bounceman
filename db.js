@@ -630,6 +630,16 @@ function initialize() {
     ruleInsert.run(uuid(), 'Low Inventory Alert', 'Reduce budget when fewer than 2 units available', 'inventory', JSON.stringify({condition:'available_units_lt',threshold:2}), JSON.stringify({action:'reduce_budget',percent:50}));
   }
 
+  // Migration: add bot_paused column to communications
+  try {
+    d.prepare("ALTER TABLE communications ADD COLUMN bot_paused INTEGER DEFAULT 0").run();
+  } catch (e) { /* column already exists */ }
+
+  // Migration: add sms_consent column to bookings
+  try {
+    d.prepare("ALTER TABLE bookings ADD COLUMN sms_consent INTEGER DEFAULT 0").run();
+  } catch (e) { /* column already exists */ }
+
   console.log('[DB] Database initialized successfully');
 }
 

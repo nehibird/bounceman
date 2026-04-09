@@ -116,7 +116,7 @@
           <div class="date-card mb-4">
             <div class="d-flex justify-content-between align-items-center">
               <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-0"><i class="fas fa-search me-2"></i>Availability</h5>
-              <button type="button" class="btn btn-outline-primary rounded-pill" id="checkAvailBtn">
+              <button type="button" class="btn btn-outline-primary rounded-pill" id="checkAvailBtn" onclick="checkAvailability()">
                 <i class="fas fa-check-circle me-1"></i>Check Availability
               </button>
             </div>
@@ -130,7 +130,7 @@
             <p class="text-muted small mb-3">Enhance your event with these extras:</p>
             <div class="row g-3">
               ${addons.map(function(a) { return '<div class="col-md-6">' +
-                '<div class="d-flex align-items-center p-3 rounded-3" style="border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s" id="addon-card-' + a.id + '" data-addon-id="' + a.id + '" data-addon-name="' + (a.name || '').replace(/"/g, '') + '" data-price-4hr="' + (a.price_4hr || 0) + '" data-price-daily="' + (a.price_daily || 0) + '" data-price-overnight="' + (a.price_overnight || 0) + '">' +
+                '<div class="d-flex align-items-center p-3 rounded-3" style="border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s" id="addon-card-' + a.id + '" onclick="toggleAddon(&quot;' + a.id + '&quot;, &quot;' + (a.name || '').replace(/"/g, '') + '&quot;, ' + (a.price_4hr || 0) + ', ' + (a.price_daily || 0) + ', ' + (a.price_overnight || 0) + ')">' +
                   (a.image ? '<img src="' + a.image + '" alt="' + a.name + '" style="width:50px;height:50px;border-radius:8px;object-fit:cover" class="me-3">' : '<div class="me-3" style="width:50px;height:50px;border-radius:8px;background:#f0f0f0;display:flex;align-items:center;justify-content:center"><i class="fas fa-music" style="color:var(--bm-orange)"></i></div>') +
                   '<div class="flex-grow-1">' +
                     '<div class="fw-bold small">' + a.name + '</div>' +
@@ -161,25 +161,6 @@
 
 `, scripts: `
 <script>
-
-  // addEventListener replacements for inline onclick
-  document.getElementById('checkAvailBtn').addEventListener('click', function() { checkAvailability(); });
-
-  // Event delegation for add-on card clicks
-  var addonsSection = document.getElementById('addonsSection');
-  if (addonsSection) {
-    addonsSection.addEventListener('click', function(e) {
-      var card = e.target.closest('[data-addon-id]');
-      if (!card) return;
-      var id = card.dataset.addonId;
-      var name = card.dataset.addonName;
-      var price4hr = parseFloat(card.dataset.price4hr || 0);
-      var priceDaily = parseFloat(card.dataset.priceDaily || 0);
-      var priceOvernight = parseFloat(card.dataset.priceOvernight || 0);
-      toggleAddon(id, name, price4hr, priceDaily, priceOvernight);
-    });
-  }
-
   // Build time options (7:00 AM to 10:00 PM in 30min increments)
   (function() {
     var startSel = document.getElementById('startTime');

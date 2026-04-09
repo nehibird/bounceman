@@ -100,6 +100,76 @@ router.get('/bookings', (req, res) => {
   });
 });
 
+router.get('/bookings/new', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const equipment = db.prepare("SELECT * FROM equipment WHERE status = 'available' ORDER BY sort_order").all();
+  res.render('admin/bookings/new', {
+    title: 'New Booking - Admin', user: req.user, settings, equipment, page: 'bookings'
+  });
+});
+
+router.post('/bookings/create', (req, res) => {
+  const db = getDb();
+  const { v4: uuid } = require('uuid');
+  const { generateBookingNumber } = require('../lib/helpers');
+  const data = req.body;
+
+  // Create or find customer
+  let customer = null;
+  if (data.email) {
+    customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
+  }
+  if (!customer) {
+    const customerId = uuid();
+    db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source)
+      VALUES (?, ?, ?, ?, ?, 'admin')`).run(
+      customerId, data.first_name, data.last_name, data.email || null, data.phone || null
+    );
+    customer = { id: customerId };
+  }
+
+  // Create booking
+  const bookingId = uuid();
+  const bookingNumber = generateBookingNumber();
+  const subtotal = parseFloat(data.subtotal || 0);
+  const deliveryFee = parseFloat(data.delivery_fee || 0);
+  const discount = parseFloat(data.discount_amount || 0);
+  const total = parseFloat(data.total || 0);
+  const depositAmount = Math.round(total * 0.5 * 100) / 100;
+
+  db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
+    event_start_time, event_end_time, event_type, surface_type,
+    delivery_address, delivery_city, delivery_state, delivery_zip,
+    subtotal, delivery_fee, discount_amount, total, deposit_amount, balance_due,
+    payment_status, internal_notes, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
+    bookingId, bookingNumber, customer.id, data.status || 'confirmed',
+    data.event_date, data.event_start_time || null, data.event_end_time || null,
+    data.event_type || null, data.surface_type || null,
+    data.delivery_address || null, data.delivery_city || null,
+    data.delivery_state || 'OK', data.delivery_zip || null,
+    subtotal, deliveryFee, discount, total, depositAmount, total - (data.payment_status === 'paid' ? 0 : data.payment_status === 'deposit_paid' ? total - depositAmount : total),
+    data.payment_status || 'unpaid', data.internal_notes || null
+  );
+
+  // Add booking items
+  const equipIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? [data.equipment_ids] : []);
+  for (const eqId of equipIds) {
+    const equip = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+    if (!equip) continue;
+    const durationType = data['duration_' + eqId] || 'daily';
+    const price = durationType === '4hr' ? equip.price_4hr : durationType === 'overnight' ? equip.price_overnight : equip.price_daily;
+    db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type)
+      VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?)`).run(
+      uuid(), bookingId, eqId, equip.name, price, price, durationType
+    );
+  }
+
+  console.log('[ADMIN] Booking created:', bookingNumber, 'for', data.first_name, data.last_name);
+  res.redirect('/admin/bookings/' + bookingId);
+});
+
 router.get('/bookings/:id', (req, res) => {
   const db = getDb();
   const settings = getSettings();
@@ -138,6 +208,18 @@ router.post('/bookings/:id/crew', (req, res) => {
   const db = getDb();
   db.prepare("UPDATE bookings SET assigned_crew = ?, updated_at = datetime('now') WHERE id = ?").run(req.body.crew, req.params.id);
   res.redirect(`/admin/bookings/${req.params.id}`);
+});
+
+router.post('/bookings/:id/delete', (req, res) => {
+  const db = getDb();
+  const id = req.params.id;
+  db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(id);
+  db.prepare('DELETE FROM payments WHERE booking_id = ?').run(id);
+  db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(id);
+  db.prepare('DELETE FROM communications WHERE booking_id = ?').run(id);
+  db.prepare('DELETE FROM bookings WHERE id = ?').run(id);
+  console.log('[ADMIN] Booking deleted:', id);
+  res.redirect('/admin/bookings');
 });
 
 // === EQUIPMENT ===
@@ -320,6 +402,24 @@ router.get('/customers/:id', (req, res) => {
   });
 });
 
+router.post('/customers/:id/delete', (req, res) => {
+  const db = getDb();
+  const id = req.params.id;
+  // Delete related bookings and their children
+  const bookings = db.prepare('SELECT id FROM bookings WHERE customer_id = ?').all(id);
+  for (const b of bookings) {
+    db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(b.id);
+    db.prepare('DELETE FROM payments WHERE booking_id = ?').run(b.id);
+    db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(b.id);
+  }
+  db.prepare('DELETE FROM bookings WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM payments WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM communications WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+  console.log('[ADMIN] Customer deleted:', id);
+  res.redirect('/admin/customers');
+});
+
 // === CALENDAR ===
 router.get('/calendar', (req, res) => {
   const db = getDb();
@@ -476,6 +576,21 @@ router.get('/communications', (req, res) => {
   res.render('admin/communications', {
     title: 'Communications - Admin', user: req.user, settings, comms, page: 'communications'
   });
+});
+
+router.post('/communications/:id/delete', (req, res) => {
+  getDb().prepare('DELETE FROM communications WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/communications');
+});
+
+router.post('/communications/:id/bot-pause', (req, res) => {
+  getDb().prepare('UPDATE communications SET bot_paused = 1 WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/communications');
+});
+
+router.post('/communications/:id/bot-resume', (req, res) => {
+  getDb().prepare('UPDATE communications SET bot_paused = 0 WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/communications');
 });
 
 // === MAINTENANCE LOG ===

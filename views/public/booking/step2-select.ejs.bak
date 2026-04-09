@@ -104,7 +104,7 @@
             }
             var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units');
             return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '">' +
-            '<div class="equipment-card select-card">' +
+            '<div class="equipment-card select-card" onclick="toggleItem(this, &quot;' + item.id + '&quot;, &quot;' + (item.name || '').replace(/"/g, '') + '&quot;, ' + itemPrice + ')">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
               '<div class="card-body">' +
@@ -113,7 +113,7 @@
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                 (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
-                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><i class="fas fa-tint"></i> Wet (+$20)</div></div></div>' : '') +
+                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px" onclick="event.stopPropagation()"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '" onclick="event.stopPropagation();setWetDry(&quot;' + item.id + '&quot;,false,this)"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '" onclick="event.stopPropagation();setWetDry(&quot;' + item.id + '&quot;,true,this)"><i class="fas fa-tint"></i> Wet (+$20)</div></div></div>' : '') +
               '</div>' +
             '</div>' +
           '</div>'; }).join('')}
@@ -121,7 +121,7 @@
 
         
         <!-- Add-Ons Section -->
-        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = rentalDuration === '4hr' ? addon.price_4hr : (rentalDuration === 'overnight' ? (addon.price_overnight || addon.price_daily) : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
+        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = rentalDuration === '4hr' ? addon.price_4hr : (rentalDuration === 'overnight' ? (addon.price_overnight || addon.price_daily) : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0" onclick="toggleItem(this, &quot;' + addon.id + '&quot;, &quot;' + addon.name.replace(/"/g, '') + '&quot;, ' + addonPrice + ')"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
 
 
         ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
@@ -144,7 +144,7 @@
             <span class="fw-bold" style="color:var(--bm-orange);font-size:20px;" id="subtotal">$0</span>
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
-          <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
+          <button type="button" class="btn btn-book-now w-100" id="continueBtn" onclick="goToStep2(event)" disabled style="opacity:0.5">
             <i class="fas fa-arrow-right me-2"></i>Continue to Your Details
           </button>
         </div>
@@ -158,40 +158,6 @@
 <script>
   var selectedItems = {};
   var wetItems = {}; // track wet/dry per item ID
-
-  // Event delegation: equipment card click (toggleItem)
-  document.getElementById('equipmentGrid').addEventListener('click', function(e) {
-    // Handle wet/dry button clicks first (stop propagation to card)
-    var wdBtn = e.target.closest('.wd-btn');
-    if (wdBtn) {
-      e.stopPropagation();
-      var container = wdBtn.closest('.wet-dry-inline');
-      if (!container) return;
-      var itemId = container.id.replace('wetdry-', '');
-      var isWet = wdBtn.dataset.mode === 'wet';
-      setWetDry(itemId, isWet, wdBtn);
-      return;
-    }
-    // Handle card toggle
-    var card = e.target.closest('.select-card');
-    if (!card) return;
-    // Find item data from parent equipment-item div
-    var itemDiv = card.closest('.equipment-item');
-    if (!itemDiv) {
-      // fallback for add-ons in col-md-6 without equipment-item class
-      itemDiv = card.closest('[data-id]');
-    }
-    if (!itemDiv) return;
-    var id = itemDiv.dataset.id;
-    var name = itemDiv.dataset.name;
-    var price = parseFloat(itemDiv.dataset.price);
-    if (id && name && !isNaN(price)) toggleItem(card, id, name, price);
-  });
-
-  // continueBtn click
-  document.getElementById('continueBtn').addEventListener('click', function(e) {
-    goToStep2(e);
-  });
 
   function setWetDry(itemId, isWet, btn) {
     wetItems[itemId] = isWet;

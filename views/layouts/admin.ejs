@@ -151,7 +151,7 @@
   <main class="admin-main">
     <header class="admin-header">
       <div>
-        <button class="btn btn-sm btn-outline-secondary d-md-none" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <button class="btn btn-sm btn-outline-secondary d-md-none" id="sidebarToggleBtn">
           <i class="fas fa-bars"></i>
         </button>
         <strong><%= title.replace(' - Bounce Man Admin', '').replace(' - Admin', '') %></strong>
@@ -173,5 +173,13 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
   <% } %>
   <%- typeof scripts !== 'undefined' ? scripts : '' %>
+<script>
+  var sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener('click', function() {
+      document.getElementById('sidebar').classList.toggle('open');
+    });
+  }
+</script>
 </body>
 </html>

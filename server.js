@@ -33,6 +33,7 @@ app.use(helmet({
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'", "https://checkout.stripe.com"],
+      scriptSrcAttr: ["'none'"],
     }
   },
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
