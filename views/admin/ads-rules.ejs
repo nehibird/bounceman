@@ -103,11 +103,11 @@ function toggleRule(id, enabled) {
     body: JSON.stringify({ enabled: enabled })
   }).then(r => r.json()).then(d => {
     if (!d.success) {
-      alert('Error updating rule');
+      showToast('Error updating rule', 'error');
       document.getElementById('toggle-' + id).checked = !enabled;
     }
   }).catch(() => {
-    alert('Error updating rule');
+    showToast('Error updating rule', 'error');
     document.getElementById('toggle-' + id).checked = !enabled;
   });
 }

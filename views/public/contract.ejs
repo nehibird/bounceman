@@ -176,15 +176,15 @@
   signBtn.addEventListener('click', function() {
     var name = document.getElementById('signerName').value.trim();
     if (!name) {
-      alert('Please enter your name.');
+      showToast('Please enter your name.', 'warning');
       return;
     }
     if (!hasSigned) {
-      alert('Please draw your signature above.');
+      showToast('Please draw your signature above.', 'warning');
       return;
     }
     if (!agreeCheck.checked) {
-      alert('Please agree to the terms.');
+      showToast('Please agree to the terms.', 'warning');
       return;
     }
 

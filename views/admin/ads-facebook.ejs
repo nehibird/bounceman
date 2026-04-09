@@ -247,7 +247,7 @@ async function saveFbCampaign() {
     });
     const apiData = await apiRes.json();
     if (apiData.error) {
-      alert('Facebook API error: ' + apiData.error + '\n\nSaving locally only.');
+      showToast('Facebook API error: ' + apiData.error, 'error');
     }
   } catch(e) {
     console.warn('Facebook API campaign creation failed:', e.message);
@@ -261,7 +261,7 @@ async function saveFbCampaign() {
   });
   const d = await r.json();
   if (d.success) { location.reload(); }
-  else { alert('Error saving local record: ' + (d.error || 'unknown')); }
+  else { showToast('Error saving local record: ' + (d.error || 'unknown'), 'error'); }
 }
 
 function deleteCampaign(id) {

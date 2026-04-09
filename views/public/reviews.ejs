@@ -171,7 +171,7 @@ ${reviews && reviews.length > 0 ? '<section class="py-5 fun-bg"><div class="shap
     document.getElementById('reviewForm').addEventListener('submit', function(e) {
       if (!ratingInput.value) {
         e.preventDefault();
-        alert('Please select a star rating before submitting.');
+        showToast('Please select a star rating before submitting.', 'warning');
       }
     });
   })();

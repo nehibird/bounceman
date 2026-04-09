@@ -37,28 +37,28 @@
       <div class="col-md-3">
         <div class="how-it-works-step">
           <div class="step-number">1</div>
-          <h4>Browse</h4>
+          <h3>Browse</h3>
           <p>Check out our equipment and pick your favorites</p>
         </div>
       </div>
       <div class="col-md-3">
         <div class="how-it-works-step">
           <div class="step-number">2</div>
-          <h4>Pick a Date</h4>
+          <h3>Pick a Date</h3>
           <p>Choose your event date and check availability</p>
         </div>
       </div>
       <div class="col-md-3">
         <div class="how-it-works-step">
           <div class="step-number">3</div>
-          <h4>Book & Pay</h4>
+          <h3>Book & Pay</h3>
           <p>Reserve with a deposit — pay the rest on delivery day</p>
         </div>
       </div>
       <div class="col-md-3">
         <div class="how-it-works-step">
           <div class="step-number">4</div>
-          <h4>We Deliver!</h4>
+          <h3>We Deliver!</h3>
           <p>We set up, you party, we pick up. Easy!</p>
         </div>
       </div>
@@ -80,8 +80,8 @@ ${featured.length > 0 ? featured.map(item => `
           <div class="equipment-card">
             <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.category === 'add_ons' || item.category === 'add-ons') ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
             <div class="card-body">
-              <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') ? ' <span style="background:#3b82f6;color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
-              <h5 class="card-title mt-2">${item.name}${item.quantity > 1 ? ' <span style="background:#10b981;color:white;font-weight:600;padding:2px 8px;border-radius:20px;font-size:11px;vertical-align:middle">x' + item.quantity + ' Available</span>' : ''}</h5>
+              <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') ? ' <span style="background:#2563eb;color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
+              <h5 class="card-title mt-2">${item.name}${item.quantity > 1 ? ' <span style="background:#059669;color:white;font-weight:600;padding:2px 8px;border-radius:20px;font-size:11px;vertical-align:middle">x' + item.quantity + ' Available</span>' : ''}</h5>
               <p class="text-muted small">${item.short_description || ''}</p>
               <div class="d-flex justify-content-between align-items-center mt-3">
                 <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>

@@ -207,7 +207,7 @@ function saveCampaign() {
     body: JSON.stringify(body)
   }).then(r => r.json()).then(d => {
     if (d.success) { location.reload(); }
-    else { alert('Error saving campaign: ' + (d.error || 'unknown')); }
+    else { showToast('Error saving campaign: ' + (d.error || 'unknown'), 'error'); }
   });
 }
 function deleteCampaign(id) {

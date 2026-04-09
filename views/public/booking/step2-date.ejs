@@ -297,7 +297,7 @@
   function checkAvailability() {
     var date = document.getElementById('eventDateInput').value;
     if (!date) {
-      alert('Please select a date first.');
+      showToast('Please select a date first.', 'warning');
       return;
     }
     var btn = document.getElementById('checkAvailBtn');
@@ -338,21 +338,21 @@
   document.getElementById('dateForm').addEventListener('submit', function(e) {
     if (!document.getElementById('eventDateInput').value) {
       e.preventDefault();
-      alert('Please select an event date.');
+      showToast('Please select an event date.', 'warning');
       return;
     }
     var start = document.getElementById('startTime').value;
     var end = document.getElementById('endTime').value;
     if (!start || !end) {
       e.preventDefault();
-      alert('Please select start and end times.');
+      showToast('Please select start and end times.', 'warning');
       return;
     }
     var dur = document.querySelector('input[name="rental_duration"]:checked');
     var durVal = dur ? dur.value : 'daily';
     if (durVal !== 'overnight' && start >= end) {
       e.preventDefault();
-      alert('End time must be after start time.');
+      showToast('End time must be after start time.', 'warning');
       return;
     }
     // Append selected addon IDs to items list

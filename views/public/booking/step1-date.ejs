@@ -239,7 +239,7 @@
   document.getElementById('dateForm').addEventListener('submit', function(e) {
     if (!document.getElementById('eventDateInput').value) {
       e.preventDefault();
-      alert('Please select an event date.');
+      showToast('Please select an event date.', 'warning');
     }
   });
 

@@ -180,16 +180,29 @@
       document.getElementById('sidebar').classList.toggle('open');
     });
   }
-  // CSP-safe: global confirm-delete handler (replaces all onsubmit='return confirm()')
-  document.addEventListener('submit', function(e) {
-    var form = e.target;
-    if (form.classList.contains('confirm-delete') || form.dataset.confirm) {
-      var msg = form.dataset.confirm || 'Are you sure?';
-      if (!confirm(msg)) {
-        e.preventDefault();
-      }
-    }
-  });
 </script>
+<div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
+<script>
+function showToast(message, type) {
+  type = type || "error";
+  var colors = { error: "#EF476F", warning: "#f59e0b", success: "#06D6A0", info: "#118AB2" };
+  var icons = { error: "fa-exclamation-circle", warning: "fa-exclamation-triangle", success: "fa-check-circle", info: "fa-info-circle" };
+  var container = document.getElementById("toast-container");
+  var toast = document.createElement("div");
+  toast.style.cssText = "background:" + (colors[type] || colors.error) + ";color:white;padding:16px 20px;border-radius:12px;margin-bottom:10px;box-shadow:0 4px 20px rgba(0,0,0,0.2);display:flex;align-items:flex-start;gap:10px;animation:slideIn 0.3s ease;font-size:14px;line-height:1.4";
+  var closeSpan = document.createElement("span");
+  closeSpan.className = "toast-close";
+  closeSpan.style.cssText = "cursor:pointer;font-size:18px;line-height:1;opacity:0.8";
+  closeSpan.textContent = "u00d7";
+  closeSpan.addEventListener("click", function() { toast.remove(); });
+  toast.innerHTML = "<i class="fas " + (icons[type] || icons.error) + "" style="margin-top:2px"></i><div style="flex:1">" + message + "</div>";
+  toast.appendChild(closeSpan);
+  container.appendChild(toast);
+  setTimeout(function() { toast.style.opacity = "0"; toast.style.transition = "opacity 0.3s"; setTimeout(function() { toast.remove(); }, 300); }, 6000);
+}
+</script>
+<style>
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
 </body>
 </html>

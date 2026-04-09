@@ -256,7 +256,7 @@
       var waterCheck = document.getElementById('waterCheck');
       if (!waterCheck.checked) {
         e.preventDefault();
-        alert('You selected a wet setup, which requires a water hookup within 100 feet. Please confirm water is available or go back and select the dry option.');
+        showToast('You selected a wet setup, which requires a water hookup within 100 feet. Please confirm water is available or go back and select the dry option.', 'warning');
         waterCheck.focus();
         return;
       }
@@ -268,7 +268,7 @@
       var hasGenerator = items.indexOf('fff4986b-1b23-4202-9bcb-ddc8775c5410') !== -1;
       if (!hasGenerator) {
         e.preventDefault();
-        alert('Inflatables require power to run. Please confirm a power outlet is available nearby, or go back and add a Portable Generator to your rental.');
+        showToast('Inflatables require power to run. Please confirm a power outlet is available nearby, or go back and add a Portable Generator to your rental.', 'warning');
         powerCheck.focus();
         return;
       }
@@ -276,7 +276,7 @@
     // ZIP must be in service area
     if (!zipValid) {
       e.preventDefault();
-      alert('Your ZIP code is outside our delivery area. Please call (580) 308-9288 to discuss delivery options.');
+      showToast('Your ZIP code is outside our delivery area. Please call <a href="tel:5803089288" style="color:white;text-decoration:underline">(580) 308-9288</a> to discuss delivery options.', 'error');
       document.getElementById('zipInput').focus();
       return;
     }
