@@ -62,7 +62,7 @@
             <thead><tr><th>Date</th><th>Customer</th><th>Time</th><th>Status</th><th></th></tr></thead>
             <tbody>
               ${upcoming.length > 0 ? upcoming.map(b => `
-              <tr>
+              <tr style="cursor:pointer" data-booking-href="/admin/bookings/${b.id}">
                 <td><strong>${b.event_date}</strong></td>
                 <td>${b.first_name} ${b.last_name}</td>
                 <td>${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>
@@ -104,4 +104,4 @@
   </div>
 </div>
 
-`, scripts: '' }) %>
+`, scripts: '<script>document.addEventListener("click", function(e) { var row = e.target.closest("[data-booking-href]"); if (row && !e.target.closest("a,button")) window.location = row.dataset.bookingHref; });<\/script>' }) %>

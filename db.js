@@ -453,7 +453,7 @@ function initialize() {
     'company_email': 'nehi@birdherd.media',
     'company_phone': '',
     'company_address': '113 North Barrick Way, Tonkawa, OK 74653',
-    'tax_rate': '0.085',
+    'tax_rate': '0.1025',
     'booking_lead_hours': '24',
     'max_booking_days_out': '180',
     'delivery_radius_miles': '50',

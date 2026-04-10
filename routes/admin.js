@@ -210,15 +210,52 @@ router.post('/bookings/:id/crew', (req, res) => {
   res.redirect(`/admin/bookings/${req.params.id}`);
 });
 
+
+// Bulk delete bookings
+router.post('/api/bookings/bulk-delete', (req, res) => {
+  const db = getDb();
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.json({ success: false, error: 'No bookings selected' });
+  }
+  let deleted = 0;
+  const del = db.transaction((bookingIds) => {
+    for (const id of bookingIds) {
+      db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM payments WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM communications WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM reviews WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM delivery_route_stops WHERE booking_id = ?').run(id);
+      db.prepare('DELETE FROM bookings WHERE id = ?').run(id);
+      deleted++;
+    }
+  });
+  try {
+    del(ids);
+    console.log('[ADMIN] Bulk deleted', deleted, 'bookings');
+    res.json({ success: true, deleted });
+  } catch (e) {
+    console.error('[ADMIN] Bulk delete error:', e.message);
+    res.json({ success: false, error: e.message });
+  }
+});
+
 router.post('/bookings/:id/delete', (req, res) => {
   const db = getDb();
   const id = req.params.id;
-  db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(id);
-  db.prepare('DELETE FROM payments WHERE booking_id = ?').run(id);
-  db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(id);
-  db.prepare('DELETE FROM communications WHERE booking_id = ?').run(id);
-  db.prepare('DELETE FROM bookings WHERE id = ?').run(id);
-  console.log('[ADMIN] Booking deleted:', id);
+  try {
+    db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM payments WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM communications WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM reviews WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM delivery_route_stops WHERE booking_id = ?').run(id);
+    db.prepare('DELETE FROM bookings WHERE id = ?').run(id);
+    console.log('[ADMIN] Booking deleted:', id);
+  } catch (e) {
+    console.error('[ADMIN] Delete booking error:', e.message);
+  }
   res.redirect('/admin/bookings');
 });
 

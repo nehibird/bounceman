@@ -180,6 +180,14 @@
       document.getElementById('sidebar').classList.toggle('open');
     });
   }
+  // Global confirm-delete handler (CSP-safe replacement for onsubmit="return confirm()")
+  document.addEventListener("submit", function(e) {
+    var form = e.target;
+    if (form.classList && form.classList.contains("confirm-delete")) {
+      var msg = form.dataset.confirm || "Are you sure?";
+      if (!confirm(msg)) { e.preventDefault(); }
+    }
+  });
 </script>
 <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
 <script>

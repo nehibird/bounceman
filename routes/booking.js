@@ -193,7 +193,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     }
   }
 
-  const pricing = calcPricing(settings, subtotal, delivery_fee);
+  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount } = pricing;
   const total = rawTotal - discount_amount;
 
@@ -257,7 +257,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
           : code.value;
       }
     }
-    const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee);
+    const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city);
     const recalcTotal = recalcPricing.total - recalcDiscountAmount;
     // Override form data with server-calculated values
     data.subtotal = recalcSubtotal;

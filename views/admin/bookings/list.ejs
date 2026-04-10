@@ -27,10 +27,23 @@
 <!-- Bookings Table -->
 <div class="card">
   <div class="card-body p-0">
-    <div class="table-responsive">
+    
+      <!-- Bulk Actions Bar -->
+      <div id="bulkActions" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 16px;margin-bottom:16px">
+        <div class="d-flex align-items-center justify-content-between">
+          <span><strong id="selectedCount">0</strong> booking(s) selected</span>
+          <div>
+            <button type="button" id="bulkDeleteBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+            <button type="button" id="bulkCancelSelect" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead>
           <tr>
+            <th style="width:40px"><input type="checkbox" id="selectAll"></th>
             <th>Booking #</th>
             <th>Customer</th>
             <th>Event Date</th>
@@ -44,6 +57,7 @@
         <tbody>
           ${bookings.length > 0 ? bookings.map(b => `
           <tr style="cursor:pointer" data-booking-href="/admin/bookings/${b.id}">
+            <td><input type="checkbox" class="booking-check" value="${b.id}" data-booking-number="${b.booking_number}"></td>
             <td><strong>${b.booking_number}</strong></td>
             <td>
               <div>${b.first_name} ${b.last_name}</div>
@@ -67,7 +81,7 @@
               </a>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No bookings found</td></tr>'}
+          `).join('') : '<tr><td colspan="9" class="text-center text-muted py-4">No bookings found</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -86,10 +100,71 @@
       });
     }
   })();
+
+  // Bulk select/delete
+  (function() {
+    var selectAll = document.getElementById('selectAll');
+    var bulkActions = document.getElementById('bulkActions');
+    var selectedCount = document.getElementById('selectedCount');
+    var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    var bulkCancelSelect = document.getElementById('bulkCancelSelect');
+
+    function updateBulkBar() {
+      var checked = document.querySelectorAll('.booking-check:checked');
+      if (checked.length > 0) {
+        bulkActions.style.display = 'block';
+        selectedCount.textContent = checked.length;
+      } else {
+        bulkActions.style.display = 'none';
+      }
+    }
+
+    if (selectAll) {
+      selectAll.addEventListener('change', function() {
+        document.querySelectorAll('.booking-check').forEach(function(cb) { cb.checked = selectAll.checked; });
+        updateBulkBar();
+      });
+    }
+
+    document.querySelectorAll('.booking-check').forEach(function(cb) {
+      cb.addEventListener('change', updateBulkBar);
+    });
+
+    if (bulkCancelSelect) {
+      bulkCancelSelect.addEventListener('click', function() {
+        document.querySelectorAll('.booking-check').forEach(function(cb) { cb.checked = false; });
+        if (selectAll) selectAll.checked = false;
+        updateBulkBar();
+      });
+    }
+
+    if (bulkDeleteBtn) {
+      bulkDeleteBtn.addEventListener('click', function() {
+        var checked = document.querySelectorAll('.booking-check:checked');
+        var ids = Array.from(checked).map(function(cb) { return cb.value; });
+        var numbers = Array.from(checked).map(function(cb) { return cb.dataset.bookingNumber; });
+        if (ids.length === 0) return;
+        if (!confirm('Delete ' + ids.length + ' booking(s)?\n\n' + numbers.join(', ') + '\n\nThis cannot be undone.')) return;
+        fetch('/admin/api/bookings/bulk-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: ids })
+        }).then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.success) {
+              showToast(data.deleted + ' booking(s) deleted', 'success');
+              setTimeout(function() { window.location.reload(); }, 1000);
+            } else {
+              showToast('Error: ' + (data.error || 'Unknown'), 'error');
+            }
+          }).catch(function() { showToast('Network error', 'error'); });
+      });
+    }
+  })();
   // Event delegation: row click to navigate to booking detail
   document.querySelector('table tbody') && document.querySelector('table tbody').addEventListener('click', function(e) {
     // Don't navigate if clicking a link or button
-    if (e.target.closest('a') || e.target.closest('button')) return;
+    if (e.target.closest('a') || e.target.closest('button') || e.target.closest('input')) return;
     var row = e.target.closest('[data-booking-href]');
     if (row) window.location.href = row.dataset.bookingHref;
   });
