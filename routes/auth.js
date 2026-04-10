@@ -68,7 +68,7 @@ router.post('/login', loginLimiter, (req, res) => {
   // HIGH-1: secure cookie in production
   res.cookie('token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production' || false,
+    secure: process.env.HTTPS_ONLY === 'true',
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   });

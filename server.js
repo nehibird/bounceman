@@ -34,9 +34,11 @@ app.use(helmet({
       baseUri: ["'self'"],
       formAction: ["'self'", "https://checkout.stripe.com"],
       scriptSrcAttr: ["'none'"],
+      upgradeInsecureRequests: null,
+
     }
   },
-  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  hsts: process.env.HTTPS_ONLY === 'true' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
   crossOriginEmbedderPolicy: false
 }));
 // HIGH-2: Restrict CORS origin — no wildcard in production
