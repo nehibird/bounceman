@@ -90,7 +90,7 @@ router.post('/slack/events', async (req, res) => {
 
   const BOOKINGS_CHANNEL = process.env.SLACK_BOOKINGS_CHANNEL || 'C0AQF8ZAEBE';
   const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
-  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || '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';
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
   const text = event.text.replace(/<@[A-Z0-9]+>/g, '').trim(); // Strip @mention
 
   console.log('[SARAH-SLACK] Message from', event.user, ':', text);
