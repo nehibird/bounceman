@@ -75,7 +75,7 @@
       <tbody>
         ${events.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-calendar-times me-2"></i>No events yet</td></tr>' : ''}
         ${events.map(function(e) {
-          return '<tr>' +
+          return '<tr style="cursor:pointer" data-row-href="/admin/events/' + e.id + '">' +
             '<td style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + e.name + '</a></td>' +
             '<td>' + e.event_date + '</td>' +
             '<td>' + (e.location || '-') + '</td>' +

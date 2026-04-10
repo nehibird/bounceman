@@ -404,6 +404,34 @@ router.get('/equipment/image/:imgId/delete', (req, res) => {
   res.redirect('/admin/equipment/' + equipmentId + '/edit');
 });
 
+// Delete equipment item
+router.post("/equipment/:id/delete", (req, res) => {
+  const db = getDb();
+  const id = req.params.id;
+  try {
+    // Delete related images first
+    const images = db.prepare("SELECT image_path FROM equipment_images WHERE equipment_id = ?").all(id);
+    db.prepare("DELETE FROM equipment_images WHERE equipment_id = ?").run(id);
+    // Delete booking items referencing this equipment
+    db.prepare("DELETE FROM booking_items WHERE equipment_id = ?").run(id);
+    // Delete maintenance logs
+    db.prepare("DELETE FROM maintenance_log WHERE equipment_id = ?").run(id);
+    // Delete the equipment itself
+    db.prepare("DELETE FROM equipment WHERE id = ?").run(id);
+    console.log("[ADMIN] Equipment deleted:", id);
+    // Try to delete image files
+    images.forEach(img => {
+      try {
+        const filePath = require("path").join(__dirname, "..", img.image_path.startsWith("/uploads") ? img.image_path : "public" + img.image_path);
+        require("fs").unlinkSync(filePath);
+      } catch(e) { /* ignore */ }
+    });
+  } catch (e) {
+    console.error("[ADMIN] Delete equipment error:", e.message);
+  }
+  res.redirect("/admin/equipment");
+});
+
 // === CUSTOMERS ===
 router.get('/customers', (req, res) => {
   const db = getDb();
@@ -597,6 +625,12 @@ router.post('/reviews/:id/approve', (req, res) => {
 router.post('/reviews/:id/respond', (req, res) => {
   getDb().prepare('UPDATE reviews SET response = ? WHERE id = ?').run(req.body.response, req.params.id);
   res.redirect('/admin/reviews');
+});
+
+router.post("/reviews/:id/delete", (req, res) => {
+  getDb().prepare("DELETE FROM reviews WHERE id = ?").run(req.params.id);
+  console.log("[ADMIN] Review deleted:", req.params.id);
+  res.redirect("/admin/reviews");
 });
 
 // === COMMUNICATIONS ===

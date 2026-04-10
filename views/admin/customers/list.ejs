@@ -25,7 +25,7 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
+      <table class="table table-hover mb-0" id="customersTable">
         <thead>
           <tr>
             <th>Name</th>
@@ -39,12 +39,8 @@
         </thead>
         <tbody>
           ${customers.length > 0 ? customers.map(c => `
-          <tr>
-            <td>
-              <a href="/admin/customers/${c.id}" class="text-decoration-none fw-bold">
-                ${c.first_name} ${c.last_name}
-              </a>
-            </td>
+          <tr style="cursor:pointer" data-row-href="/admin/customers/${c.id}">
+            <td><strong>${c.first_name} ${c.last_name}</strong></td>
             <td>${c.email || ''}</td>
             <td>${c.phone || ''}</td>
             <td><span class="badge bg-primary">${c.total_bookings || 0}</span></td>
@@ -63,4 +59,18 @@
   </div>
 </div>
 
-`, scripts: '' }) %>
+`, scripts: `
+<script>
+  // Row click navigation for customers table
+  (function() {
+    var tbody = document.querySelector('#customersTable tbody');
+    if (tbody) {
+      tbody.addEventListener('click', function(e) {
+        if (e.target.closest('a') || e.target.closest('button') || e.target.closest('input') || e.target.closest('form')) return;
+        var row = e.target.closest('[data-row-href]');
+        if (row) window.location.href = row.dataset.rowHref;
+      });
+    }
+  })();
+</script>
+` }) %>

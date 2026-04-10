@@ -188,6 +188,16 @@
       if (!confirm(msg)) { e.preventDefault(); }
     }
   });
+  // Global clickable rows handler - any table row with data-row-href becomes clickable
+  document.addEventListener("click", function(e) {
+    // Skip if clicking on interactive elements
+    if (e.target.closest("a") || e.target.closest("button") || e.target.closest("input") || e.target.closest("form") || e.target.closest("select") || e.target.closest("textarea")) return;
+    var row = e.target.closest("[data-row-href]");
+    if (row) window.location.href = row.dataset.rowHref;
+    // Also support data-booking-href for backwards compatibility
+    var bookingRow = e.target.closest("[data-booking-href]");
+    if (bookingRow) window.location.href = bookingRow.dataset.bookingHref;
+  });
 </script>
 <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
 <script>
