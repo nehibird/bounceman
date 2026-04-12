@@ -173,7 +173,7 @@ router.post('/bookings/create', (req, res) => {
 router.get('/bookings/:id', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const booking = db.prepare(`SELECT b.*, c.* FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?`).get(req.params.id);
+  const booking = db.prepare(`SELECT b.*, c.*, b.id as id FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?`).get(req.params.id);
   if (!booking) return res.redirect('/admin/bookings');
 
   const items = db.prepare(`SELECT bi.*, e.category,
