@@ -1,12 +1,9 @@
 <%- include('../../layouts/admin', { body: `
 
-<% if (typeof error !== "undefined" && error === "has_bookings") { %>
-<div class="alert alert-danger mb-3"><i class="fas fa-exclamation-triangle me-2"></i>Cannot delete this customer because they have active bookings. Delete the bookings first.</div>
-<% } %>
+${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert alert-danger mb-3"><i class="fas fa-exclamation-triangle me-2"></i>Cannot delete this customer because they have active bookings. Delete the bookings first.</div>' : ""}
 <a href="/admin/customers" class="text-decoration-none mb-3 d-inline-block">
   <i class="fas fa-arrow-left me-1"></i> Back to Customers
 </a>
-
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0">${customer.first_name} ${customer.last_name}</h4>
   <form method="POST" action="/admin/customers/${customer.id}/delete" class="confirm-delete" data-confirm="Delete this customer? This will only work if they have no bookings? This cannot be undone.">
