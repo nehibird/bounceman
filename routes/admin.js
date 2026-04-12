@@ -463,28 +463,28 @@ router.get('/customers/:id', (req, res) => {
 
   res.render('admin/customers/detail', {
     title: `${customer.first_name} ${customer.last_name} - Admin`, user: req.user, settings,
-    customer, bookings, payments, comms, page: 'customers'
+    customer, bookings, payments, comms, page: 'customers', error: req.query.error
   });
 });
 
 router.post('/customers/:id/delete', (req, res) => {
   const db = getDb();
   const id = req.params.id;
-  // Delete related bookings and their children
-  const bookings = db.prepare('SELECT id FROM bookings WHERE customer_id = ?').all(id);
-  for (const b of bookings) {
-    db.prepare('DELETE FROM booking_items WHERE booking_id = ?').run(b.id);
-    db.prepare('DELETE FROM payments WHERE booking_id = ?').run(b.id);
-    db.prepare('DELETE FROM contracts WHERE booking_id = ?').run(b.id);
+
+  // Protect customer data - don't delete if they have bookings
+  const bookingCount = db.prepare('SELECT COUNT(*) as count FROM bookings WHERE customer_id = ?').get(id).count;
+  if (bookingCount > 0) {
+    console.log('[ADMIN] Cannot delete customer with', bookingCount, 'active bookings:', id);
+    return res.redirect('/admin/customers/' + id + '?error=has_bookings');
   }
-  db.prepare('DELETE FROM bookings WHERE customer_id = ?').run(id);
+
+  // No bookings - safe to delete customer and their communications/payments
   db.prepare('DELETE FROM payments WHERE customer_id = ?').run(id);
   db.prepare('DELETE FROM communications WHERE customer_id = ?').run(id);
   db.prepare('DELETE FROM customers WHERE id = ?').run(id);
   console.log('[ADMIN] Customer deleted:', id);
   res.redirect('/admin/customers');
 });
-
 // === CALENDAR ===
 router.get('/calendar', (req, res) => {
   const db = getDb();
