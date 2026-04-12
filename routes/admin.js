@@ -462,9 +462,6 @@ router.get('/customers/:id', (req, res) => {
 
   const bookings = db.prepare(`SELECT * FROM bookings WHERE customer_id = ? ORDER BY event_date DESC`).all(req.params.id);
   const payments = db.prepare('SELECT * FROM payments WHERE customer_id = ? ORDER BY created_at DESC').all(req.params.id);
-  // Calculate amount paid from payments
-  const amountPaid = payments.reduce((sum, p) => sum + (p.status === "completed" ? p.amount : 0), 0);
-  booking.amount_paid = amountPaid;
   const comms = db.prepare('SELECT * FROM communications WHERE customer_id = ? ORDER BY sent_at DESC').all(req.params.id);
 
   res.render('admin/customers/detail', {
