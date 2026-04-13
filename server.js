@@ -26,7 +26,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", 'https://js.stripe.com', 'https://www.googletagmanager.com', 'https://connect.facebook.net', 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://www.clarity.ms'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://fonts.gstatic.com'],
+      fontSrc: ["'self'", "data:", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
       connectSrc: ["'self'", 'https://api.stripe.com', 'https://www.google-analytics.com', 'https://api.zippopotam.us', 'https://vapi.ai', 'https://cdn.jsdelivr.net'],
       frameSrc: ["'self'", 'https://js.stripe.com'],

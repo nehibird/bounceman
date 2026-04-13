@@ -3,51 +3,58 @@
 <!-- Stats Row -->
 <div class="row g-4 mb-4">
   <div class="col-md-3">
-    <div class="stat-card">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="stat-label">Today's Events</div>
-          <div class="stat-value">${stats.todayBookings}</div>
+    <a href="/admin/calendar" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Today's Events</div>
+            <div class="stat-value">${stats.todayBookings}</div>
+          </div>
+          <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-calendar-day"></i></div>
         </div>
-        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-calendar-day"></i></div>
       </div>
-    </div>
+    </a>
   </div>
   <div class="col-md-3">
-    <div class="stat-card">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="stat-label">Month Revenue</div>
-          <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+    <a href="/admin/reports" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Month Revenue</div>
+            <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+          </div>
+          <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-dollar-sign"></i></div>
         </div>
-        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-dollar-sign"></i></div>
       </div>
-    </div>
+    </a>
   </div>
   <div class="col-md-3">
-    <div class="stat-card">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="stat-label">Pending Bookings</div>
-          <div class="stat-value">${stats.pendingBookings}</div>
+    <a href="/admin/bookings?status=pending" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Pending Bookings</div>
+            <div class="stat-value">${stats.pendingBookings}</div>
+          </div>
+          <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-clock"></i></div>
         </div>
-        <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-clock"></i></div>
       </div>
-    </div>
+    </a>
   </div>
   <div class="col-md-3">
-    <div class="stat-card">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="stat-label">Total Customers</div>
-          <div class="stat-value">${stats.totalCustomers}</div>
+    <a href="/admin/customers" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Total Customers</div>
+            <div class="stat-value">${stats.totalCustomers}</div>
+          </div>
+          <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-users"></i></div>
         </div>
-        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-users"></i></div>
       </div>
-    </div>
+    </a>
   </div>
 </div>
-
 <!-- Quick Actions -->
 <div class="row g-4 mb-4">
   <div class="col-md-8">

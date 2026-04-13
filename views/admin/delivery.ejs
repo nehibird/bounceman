@@ -41,7 +41,7 @@ ${deliveries.length > 0 ? deliveries.map((d, i) => `
       <div class="col-12">
         <small class="text-muted d-block"><i class="fas fa-castle me-1"></i> Items</small>
         <div class="d-flex flex-wrap gap-2 mt-1">
-          ${d.items && d.items.length > 0 ? d.items.map(item => '<span class="badge bg-light text-dark border">' + (item.item_name || item.name || 'Item') + '</span>').join('') : '<span class="text-muted">No items listed</span>'}
+          ${d.items ? d.items.split(', ').map(function(name) { return '<span class="badge bg-light text-dark border">' + name + '</span>'; }).join('') : '<span class="text-muted">No items listed</span>'}
         </div>
       </div>
       ${d.delivery_notes ? `

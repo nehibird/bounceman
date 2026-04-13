@@ -208,13 +208,20 @@ function showToast(message, type) {
   var container = document.getElementById("toast-container");
   var toast = document.createElement("div");
   toast.style.cssText = "background:" + (colors[type] || colors.error) + ";color:white;padding:16px 20px;border-radius:12px;margin-bottom:10px;box-shadow:0 4px 20px rgba(0,0,0,0.2);display:flex;align-items:flex-start;gap:10px;animation:slideIn 0.3s ease;font-size:14px;line-height:1.4";
-  var closeSpan = document.createElement("span");
-  closeSpan.className = "toast-close";
-  closeSpan.style.cssText = "cursor:pointer;font-size:18px;line-height:1;opacity:0.8";
-  closeSpan.textContent = "u00d7";
-  closeSpan.addEventListener("click", function() { toast.remove(); });
-  toast.innerHTML = "<i class="fas " + (icons[type] || icons.error) + "" style="margin-top:2px"></i><div style="flex:1">" + message + "</div>";
-  toast.appendChild(closeSpan);
+  var icon = document.createElement("i");
+  icon.className = "fas " + (icons[type] || icons.error);
+  icon.style.marginTop = "2px";
+  var body = document.createElement("div");
+  body.style.flex = "1";
+  body.innerHTML = message;
+  var closeBtn = document.createElement("span");
+  closeBtn.className = "toast-close";
+  closeBtn.style.cssText = "cursor:pointer;font-size:18px;line-height:1;opacity:0.8";
+  closeBtn.textContent = "\u00d7";
+  closeBtn.addEventListener("click", function() { toast.remove(); });
+  toast.appendChild(icon);
+  toast.appendChild(body);
+  toast.appendChild(closeBtn);
   container.appendChild(toast);
   setTimeout(function() { toast.style.opacity = "0"; toast.style.transition = "opacity 0.3s"; setTimeout(function() { toast.remove(); }, 300); }, 6000);
 }
