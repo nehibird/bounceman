@@ -56,7 +56,7 @@ router.get('/equipment', (req, res) => {
       SELECT e.*,
         (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
       FROM equipment e
-      WHERE e.status = 'available' AND e.category != 'add-ons'
+      WHERE e.status = 'available'
       ORDER BY e.sort_order
     `).all();
   }

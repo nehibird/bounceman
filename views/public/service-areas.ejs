@@ -6,7 +6,7 @@
     <div class="row align-items-center">
       <div class="col-lg-7">
         <h1>Service <span>Areas</span></h1>
-        <p>FREE delivery to Ponca City, Blackwell, Tonkawa, Newkirk, Kaw City, and everywhere within 15 miles!</p>
+        <p>FREE delivery to Ponca City, Tonkawa, Kaw City, Deer Creek, Braman, and surrounding areas!</p>
       </div>
       <div class="col-lg-5 d-none d-lg-block text-center">
         <div style="font-size:140px;opacity:0.3">📍</div>
@@ -47,7 +47,24 @@
     </div>
 
     ${(function() {
-      var zipToTown = {'74653':'Tonkawa','74601':'Ponca City','74602':'Ponca City','74604':'Ponca City','74631':'Kaw City','74647':'Newkirk','74632':'Blackwell','74641':'Nardin','74073':'Stillwater','74644':'Marland','74646':'Red Rock','74651':'Perry','74630':'Braman','74074':'Stillwater','74075':'Stillwater','74076':'Stillwater','74078':'Stillwater','74058':'Morrison','74056':'Pawnee'};
+      var zipToTown = {
+        // Local (FREE)
+        '74653':'Tonkawa','74601':'Ponca City','74604':'Ponca City','74630':'Braman','74631':'Kaw City',
+        '74636':'Deer Creek','74643':'Lamont','74644':'Marland','74646':'Red Rock',
+        // Nearby ($35)
+        '73738':'Fairmont','73759':'Medford','74632':'Blackwell','74640':'Shidler','74647':'Newkirk','74651':'Perry',
+        // Extended ($100) - Oklahoma
+        '73056':'Lucien','73061':'Marshall','73073':'Orlando','73077':'Pawnee',
+        '73701':'Enid','73703':'Enid','73705':'Enid','73720':'Aline','73727':'Bison','73730':'Burlington',
+        '73733':'Carmen','73735':'Carrier','73736':'Cashion','73739':'Cleo Springs','73743':'Drummond',
+        '73749':'Fairview','73753':'Garber','73754':'Goltry','73757':'Helena','73758':'Hillsdale',
+        '73761':'Hunter','73766':'Kremlin','73771':'Lahoma','73773':'Meno',
+        '74032':'Glencoe','74045':'Jennings','74058':'Morrison','74075':'Stillwater',
+        '74633':'Billings','74637':'Burbank','74641':'Nardin','74650':'Ponca City Area','74652':'Ralston',
+        // Extended ($100) - Kansas
+        '67005':'Arkansas City, KS','67018':'Burden, KS','67022':'Cambridge, KS','67038':'Dexter, KS',
+        '67051':'Geuda Springs, KS','67102':'South Haven, KS','67140':'South Haven, KS','67156':'Wellington, KS'
+      };
       function zipsToTowns(zips) {
         if (!zips) return 'Contact for details';
         var towns = []; var seen = {};
@@ -111,7 +128,7 @@
                 </div>
                 <h5 style="color:var(--bm-blue);font-weight:700;margin:0">Free Delivery Across Kay County</h5>
               </div>
-              <p style="color:#666;margin:0">Live in Ponca City, Blackwell, Tonkawa, Newkirk, or Kaw City? Delivery, setup, and pickup are completely free. Book with confidence knowing there are no hidden delivery costs.</p>
+              <p style="color:#666;margin:0">Live in Ponca City, Tonkawa, Kaw City, Braman, Deer Creek, or Lamont? Delivery, setup, and pickup are completely free. Book with confidence knowing there are no hidden delivery costs.</p>
             </div>
           </div>
           <div class="col-md-6">
