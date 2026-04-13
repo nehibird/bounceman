@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function() {
       ids.push(cb.value);
       nums.push(cb.dataset.num);
     });
-    if (!confirm('Delete ' + ids.length + ' booking(s)?\n\n' + nums.join(', ') + '\n\nThis cannot be undone.')) return;
+    if (!confirm('Delete ' + ids.length + ' booking(s)?\\n\\n' + nums.join(', ') + '\\n\\nThis cannot be undone.')) return;
     
     fetch('/admin/api/bookings/bulk-delete', {
       method: 'POST',

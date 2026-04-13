@@ -131,11 +131,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     if (hasBookings.length > 0) {
-      alert('Cannot delete customers with bookings:\n\n' + hasBookings.join('\n') + '\n\nDelete their bookings first.');
+      alert('Cannot delete customers with bookings:\\n\\n' + hasBookings.join('\\n') + '\\n\\nDelete their bookings first.');
       return;
     }
     
-    if (!confirm('Delete ' + ids.length + ' customer(s)?\n\n' + names.join(', ') + '\n\nThis cannot be undone.')) return;
+    if (!confirm('Delete ' + ids.length + ' customer(s)?\\n\\n' + names.join(', ') + '\\n\\nThis cannot be undone.')) return;
     
     fetch('/admin/api/customers/bulk-delete', {
       method: 'POST',
