@@ -151,10 +151,10 @@ router.get('/stats', (req, res) => {
   const monthStart = dayjs().startOf('month').format('YYYY-MM-DD');
 
   res.json({
-    todayBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE event_date = ?").get(today).c,
+    todayBookings: db.prepare('SELECT COUNT(*) as c FROM bookings WHERE event_date = ?').get(today).c,
     monthRevenue: db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE created_at >= ? AND status != 'cancelled'").get(monthStart).r,
     pendingBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE status = 'pending'").get().c,
-    unsignedContracts: db.prepare("SELECT COUNT(*) as c FROM contracts WHERE signed = 0").get().c
+    unsignedContracts: db.prepare('SELECT COUNT(*) as c FROM contracts WHERE signed = 0').get().c
   });
 });
 
@@ -180,7 +180,7 @@ router.post('/bookings/quick', (req, res) => {
   let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
   const customerId = customer?.id || uuid();
   if (!customer) {
-    db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?)`)
+    db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?)')
       .run(customerId, data.first_name, data.last_name, data.email, data.phone);
   }
 

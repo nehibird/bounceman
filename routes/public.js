@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
   const reviews = db.prepare('SELECT * FROM reviews WHERE approved = 1 ORDER BY created_at DESC LIMIT 6').all();
 
   res.render('public/index', {
-    title: "Bounce House & Water Slide Rentals in Tonkawa, Ponca City & Kay County OK | Bounce Man",
+    title: 'Bounce House & Water Slide Rentals in Tonkawa, Ponca City & Kay County OK | Bounce Man',
     metaDescription: 'Bounce Man rents bounce houses, water slides & combos in Tonkawa, Ponca City, Blackwell & Stillwater OK. Free delivery to Kay County. Book online today!',
     canonicalPath: '/',
     settings,
@@ -366,7 +366,7 @@ const CITY_DATA = {
   tonkawa: {
     name: 'Tonkawa',
     h1: 'Bounce House Rentals in Tonkawa, Oklahoma',
-    subheading: "Your local bounce house & water slide rental company — right here in Tonkawa, Kay County.",
+    subheading: 'Your local bounce house & water slide rental company — right here in Tonkawa, Kay County.',
     freeDelivery: true,
     deliveryFee: null,
     deliveryNote: null,

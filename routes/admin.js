@@ -50,14 +50,14 @@ router.get('/', (req, res) => {
   const monthStart = dayjs().startOf('month').format('YYYY-MM-DD');
 
   const stats = {
-    todayBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE event_date = ?").get(today).c,
-    weekBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE created_at >= ?").get(weekAgo).c,
+    todayBookings: db.prepare('SELECT COUNT(*) as c FROM bookings WHERE event_date = ?').get(today).c,
+    weekBookings: db.prepare('SELECT COUNT(*) as c FROM bookings WHERE created_at >= ?').get(weekAgo).c,
     monthRevenue: db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE created_at >= ? AND status != 'cancelled'").get(monthStart).r,
     pendingBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE status = 'pending'").get().c,
-    totalCustomers: db.prepare("SELECT COUNT(*) as c FROM customers").get().c,
-    totalEquipment: db.prepare("SELECT COUNT(*) as c FROM equipment").get().c,
-    unsignedContracts: db.prepare("SELECT COUNT(*) as c FROM contracts WHERE signed = 0").get().c,
-    pendingReviews: db.prepare("SELECT COUNT(*) as c FROM reviews WHERE approved = 0").get().c
+    totalCustomers: db.prepare('SELECT COUNT(*) as c FROM customers').get().c,
+    totalEquipment: db.prepare('SELECT COUNT(*) as c FROM equipment').get().c,
+    unsignedContracts: db.prepare('SELECT COUNT(*) as c FROM contracts WHERE signed = 0').get().c,
+    pendingReviews: db.prepare('SELECT COUNT(*) as c FROM reviews WHERE approved = 0').get().c
   };
 
   const upcoming = db.prepare(`
@@ -173,7 +173,7 @@ router.post('/bookings/create', (req, res) => {
 router.get('/bookings/:id', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const booking = db.prepare(`SELECT b.*, c.*, b.id as id FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?`).get(req.params.id);
+  const booking = db.prepare('SELECT b.*, c.*, b.id as id FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?').get(req.params.id);
   if (!booking) return res.redirect('/admin/bookings');
 
   const items = db.prepare(`SELECT bi.*, e.category,
@@ -181,7 +181,7 @@ router.get('/bookings/:id', (req, res) => {
     FROM booking_items bi LEFT JOIN equipment e ON e.id = bi.equipment_id WHERE bi.booking_id = ?`).all(req.params.id);
   const payments = db.prepare('SELECT * FROM payments WHERE booking_id = ? ORDER BY created_at DESC').all(req.params.id);
   // Calculate amount paid from payments
-  const amountPaid = payments.reduce((sum, p) => sum + (p.status === "completed" ? p.amount : 0), 0);
+  const amountPaid = payments.reduce((sum, p) => sum + (p.status === 'completed' ? p.amount : 0), 0);
   booking.amount_paid = amountPaid;
   const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(req.params.id);
   const comms = db.prepare('SELECT * FROM communications WHERE booking_id = ? ORDER BY sent_at DESC').all(req.params.id);
@@ -252,7 +252,7 @@ router.post('/api/customers/bulk-delete', (req, res) => {
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
     return res.json({ success: false, error: 'No customers selected' });
   }
-  
+
   // Check for customers with bookings
   const hasBookings = [];
   for (const id of ids) {
@@ -265,7 +265,7 @@ router.post('/api/customers/bulk-delete', (req, res) => {
   if (hasBookings.length > 0) {
     return res.json({ success: false, error: 'Cannot delete customers with bookings: ' + hasBookings.join(', ') });
   }
-  
+
   let deleted = 0;
   const del = db.transaction((customerIds) => {
     for (const id of customerIds) {
@@ -449,31 +449,31 @@ router.get('/equipment/image/:imgId/delete', (req, res) => {
 });
 
 // Delete equipment item
-router.post("/equipment/:id/delete", (req, res) => {
+router.post('/equipment/:id/delete', (req, res) => {
   const db = getDb();
   const id = req.params.id;
   try {
     // Delete related images first
-    const images = db.prepare("SELECT image_path FROM equipment_images WHERE equipment_id = ?").all(id);
-    db.prepare("DELETE FROM equipment_images WHERE equipment_id = ?").run(id);
+    const images = db.prepare('SELECT image_path FROM equipment_images WHERE equipment_id = ?').all(id);
+    db.prepare('DELETE FROM equipment_images WHERE equipment_id = ?').run(id);
     // Delete booking items referencing this equipment
-    db.prepare("DELETE FROM booking_items WHERE equipment_id = ?").run(id);
+    db.prepare('DELETE FROM booking_items WHERE equipment_id = ?').run(id);
     // Delete maintenance logs
-    db.prepare("DELETE FROM maintenance_log WHERE equipment_id = ?").run(id);
+    db.prepare('DELETE FROM maintenance_log WHERE equipment_id = ?').run(id);
     // Delete the equipment itself
-    db.prepare("DELETE FROM equipment WHERE id = ?").run(id);
-    console.log("[ADMIN] Equipment deleted:", id);
+    db.prepare('DELETE FROM equipment WHERE id = ?').run(id);
+    console.log('[ADMIN] Equipment deleted:', id);
     // Try to delete image files
     images.forEach(img => {
       try {
-        const filePath = require("path").join(__dirname, "..", img.image_path.startsWith("/uploads") ? img.image_path : "public" + img.image_path);
-        require("fs").unlinkSync(filePath);
+        const filePath = require('path').join(__dirname, '..', img.image_path.startsWith('/uploads') ? img.image_path : 'public' + img.image_path);
+        require('fs').unlinkSync(filePath);
       } catch(e) { /* ignore */ }
     });
   } catch (e) {
-    console.error("[ADMIN] Delete equipment error:", e.message);
+    console.error('[ADMIN] Delete equipment error:', e.message);
   }
-  res.redirect("/admin/equipment");
+  res.redirect('/admin/equipment');
 });
 
 // === CUSTOMERS ===
@@ -501,7 +501,7 @@ router.get('/customers/:id', (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!customer) return res.redirect('/admin/customers');
 
-  const bookings = db.prepare(`SELECT * FROM bookings WHERE customer_id = ? ORDER BY event_date DESC`).all(req.params.id);
+  const bookings = db.prepare('SELECT * FROM bookings WHERE customer_id = ? ORDER BY event_date DESC').all(req.params.id);
   const payments = db.prepare('SELECT * FROM payments WHERE customer_id = ? ORDER BY created_at DESC').all(req.params.id);
   const comms = db.prepare('SELECT * FROM communications WHERE customer_id = ? ORDER BY sent_at DESC').all(req.params.id);
 
@@ -587,9 +587,9 @@ router.get('/reports', (req, res) => {
   else if (period === 'quarter') dateFilter = dayjs().subtract(90, 'day').format('YYYY-MM-DD');
   else dateFilter = dayjs().subtract(365, 'day').format('YYYY-MM-DD');
 
-  const revenue = db.prepare(`SELECT COALESCE(SUM(total), 0) as total FROM bookings WHERE created_at >= ? AND status != 'cancelled'`).get(dateFilter);
-  const bookingCount = db.prepare(`SELECT COUNT(*) as c FROM bookings WHERE created_at >= ? AND status != 'cancelled'`).get(dateFilter);
-  const avgTicket = db.prepare(`SELECT COALESCE(AVG(total), 0) as avg FROM bookings WHERE created_at >= ? AND status != 'cancelled'`).get(dateFilter);
+  const revenue = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM bookings WHERE created_at >= ? AND status != \'cancelled\'').get(dateFilter);
+  const bookingCount = db.prepare('SELECT COUNT(*) as c FROM bookings WHERE created_at >= ? AND status != \'cancelled\'').get(dateFilter);
+  const avgTicket = db.prepare('SELECT COALESCE(AVG(total), 0) as avg FROM bookings WHERE created_at >= ? AND status != \'cancelled\'').get(dateFilter);
 
   const topItems = db.prepare(`
     SELECT bi.item_name, COUNT(*) as rentals, SUM(bi.total_price) as revenue
@@ -671,10 +671,10 @@ router.post('/reviews/:id/respond', (req, res) => {
   res.redirect('/admin/reviews');
 });
 
-router.post("/reviews/:id/delete", (req, res) => {
-  getDb().prepare("DELETE FROM reviews WHERE id = ?").run(req.params.id);
-  console.log("[ADMIN] Review deleted:", req.params.id);
-  res.redirect("/admin/reviews");
+router.post('/reviews/:id/delete', (req, res) => {
+  getDb().prepare('DELETE FROM reviews WHERE id = ?').run(req.params.id);
+  console.log('[ADMIN] Review deleted:', req.params.id);
+  res.redirect('/admin/reviews');
 });
 
 // === COMMUNICATIONS ===
@@ -927,10 +927,10 @@ router.get('/ads', requireAdmin, (req, res) => {
   const db = getDb();
   const settings = getSettings();
 
-  const campaigns = db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all();
-  const totalSpend = db.prepare("SELECT COALESCE(SUM(spend), 0) as s FROM ad_performance").get().s;
-  const totalConversions = db.prepare("SELECT COALESCE(SUM(conversions), 0) as c FROM ad_performance").get().c;
-  const rules = db.prepare("SELECT * FROM ad_rules ORDER BY created_at ASC").all();
+  const campaigns = db.prepare('SELECT * FROM ad_campaigns ORDER BY created_at DESC').all();
+  const totalSpend = db.prepare('SELECT COALESCE(SUM(spend), 0) as s FROM ad_performance').get().s;
+  const totalConversions = db.prepare('SELECT COALESCE(SUM(conversions), 0) as c FROM ad_performance').get().c;
+  const rules = db.prepare('SELECT * FROM ad_rules ORDER BY created_at ASC').all();
 
   res.render('admin/ads-dashboard', {
     title: 'Ad Management',
@@ -973,7 +973,7 @@ router.get('/ads/facebook', requireAdmin, (req, res) => {
 router.get('/ads/rules', requireAdmin, (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const rules = db.prepare("SELECT * FROM ad_rules ORDER BY created_at ASC").all();
+  const rules = db.prepare('SELECT * FROM ad_rules ORDER BY created_at ASC').all();
   res.render('admin/ads-rules', { title: 'Ad Rules', settings, rules, page: 'ads', user: req.user });
 });
 
@@ -995,15 +995,15 @@ router.get('/ads/reports', requireAdmin, (req, res) => {
 // GET /admin/api/ads/dashboard
 router.get('/api/ads/dashboard', requireAdmin, (req, res) => {
   const db = getDb();
-  const campaigns = db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all();
-  const perf = db.prepare("SELECT COALESCE(SUM(spend),0) as spend, COALESCE(SUM(conversions),0) as conversions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(impressions),0) as impressions FROM ad_performance").get();
+  const campaigns = db.prepare('SELECT * FROM ad_campaigns ORDER BY created_at DESC').all();
+  const perf = db.prepare('SELECT COALESCE(SUM(spend),0) as spend, COALESCE(SUM(conversions),0) as conversions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(impressions),0) as impressions FROM ad_performance').get();
   res.json({ campaigns, stats: perf });
 });
 
 // GET /admin/api/ads/campaigns
 router.get('/api/ads/campaigns', requireAdmin, (req, res) => {
   const db = getDb();
-  res.json(db.prepare("SELECT * FROM ad_campaigns ORDER BY created_at DESC").all());
+  res.json(db.prepare('SELECT * FROM ad_campaigns ORDER BY created_at DESC').all());
 });
 
 // POST /admin/api/ads/campaigns
@@ -1033,7 +1033,7 @@ router.patch('/api/ads/campaigns/:id', requireAdmin, (req, res) => {
 
 // DELETE /admin/api/ads/campaigns/:id
 router.delete('/api/ads/campaigns/:id', requireAdmin, (req, res) => {
-  getDb().prepare("DELETE FROM ad_campaigns WHERE id = ?").run(req.params.id);
+  getDb().prepare('DELETE FROM ad_campaigns WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
@@ -1041,22 +1041,22 @@ router.delete('/api/ads/campaigns/:id', requireAdmin, (req, res) => {
 router.get('/api/ads/performance', requireAdmin, (req, res) => {
   const db = getDb();
   const { campaign_id, from, to } = req.query;
-  let q = "SELECT p.*, c.name as campaign_name, c.platform FROM ad_performance p LEFT JOIN ad_campaigns c ON c.id = p.campaign_id WHERE 1=1";
+  let q = 'SELECT p.*, c.name as campaign_name, c.platform FROM ad_performance p LEFT JOIN ad_campaigns c ON c.id = p.campaign_id WHERE 1=1';
   const params = [];
-  if (campaign_id) { q += " AND p.campaign_id = ?"; params.push(campaign_id); }
-  if (from) { q += " AND p.date >= ?"; params.push(from); }
-  if (to) { q += " AND p.date <= ?"; params.push(to); }
-  q += " ORDER BY p.date DESC LIMIT 500";
+  if (campaign_id) { q += ' AND p.campaign_id = ?'; params.push(campaign_id); }
+  if (from) { q += ' AND p.date >= ?'; params.push(from); }
+  if (to) { q += ' AND p.date <= ?'; params.push(to); }
+  q += ' ORDER BY p.date DESC LIMIT 500';
   res.json(db.prepare(q).all(...params));
 });
 
 // PATCH /admin/api/ads/rules/:id — toggle enabled
 router.patch('/api/ads/rules/:id', requireAdmin, (req, res) => {
   const db = getDb();
-  const rule = db.prepare("SELECT id, enabled FROM ad_rules WHERE id = ?").get(req.params.id);
+  const rule = db.prepare('SELECT id, enabled FROM ad_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
   const newEnabled = req.body.enabled !== undefined ? (req.body.enabled ? 1 : 0) : (rule.enabled ? 0 : 1);
-  db.prepare("UPDATE ad_rules SET enabled = ? WHERE id = ?").run(newEnabled, req.params.id);
+  db.prepare('UPDATE ad_rules SET enabled = ? WHERE id = ?').run(newEnabled, req.params.id);
   res.json({ success: true, enabled: newEnabled });
 });
 

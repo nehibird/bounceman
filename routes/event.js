@@ -53,7 +53,7 @@ router.get('/', (req, res) => {
   const settings = getSettings();
   const eventId = req.query.event;
   const kiosk = req.query.kiosk === '1';
-  const events = db.prepare("SELECT * FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC").all();
+  const events = db.prepare('SELECT * FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC').all();
   const selectedEvent = eventId
     ? db.prepare('SELECT * FROM walk_up_events WHERE id = ? AND active = 1').get(eventId)
     : null;

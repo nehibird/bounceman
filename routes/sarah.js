@@ -464,7 +464,7 @@ router.post('/walkin-link', async (req, res) => {
   const db = getDb();
   const event = event_id
     ? db.prepare('SELECT * FROM walk_up_events WHERE id = ? AND active = 1').get(event_id)
-    : db.prepare("SELECT * FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC LIMIT 1").get();
+    : db.prepare('SELECT * FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC LIMIT 1').get();
 
   if (!event) return res.status(404).json({ error: 'No active event found' });
 
@@ -503,7 +503,7 @@ router.post('/create-event', (req, res) => {
 // GET /api/sarah/status — Today's event stats
 router.get('/status', (req, res) => {
   const db = getDb();
-  const events = db.prepare("SELECT * FROM walk_up_events WHERE active = 1").all();
+  const events = db.prepare('SELECT * FROM walk_up_events WHERE active = 1').all();
 
   if (events.length === 0) {
     return res.json({ success: true, message: 'No active events.' });
@@ -526,7 +526,7 @@ router.get('/status', (req, res) => {
 // GET /api/sarah/events — List active events (for n8n to pick from)
 router.get('/events', (req, res) => {
   const db = getDb();
-  const events = db.prepare("SELECT id, name, event_date, price_per_kid FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC").all();
+  const events = db.prepare('SELECT id, name, event_date, price_per_kid FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC').all();
   res.json({ success: true, events });
 });
 

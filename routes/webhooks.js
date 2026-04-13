@@ -171,7 +171,7 @@ Rules:
 
     // Create customer
     const customerId = uuid();
-    db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source) VALUES (?, ?, ?, ?, ?, 'slack')`).run(
+    db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone, source) VALUES (?, ?, ?, ?, ?, \'slack\')').run(
       customerId, parsed.first_name || 'Unknown', parsed.last_name || '', parsed.email || null, parsed.phone || null
     );
 

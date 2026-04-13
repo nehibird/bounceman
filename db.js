@@ -632,12 +632,12 @@ function initialize() {
 
   // Migration: add bot_paused column to communications
   try {
-    d.prepare("ALTER TABLE communications ADD COLUMN bot_paused INTEGER DEFAULT 0").run();
+    d.prepare('ALTER TABLE communications ADD COLUMN bot_paused INTEGER DEFAULT 0').run();
   } catch (e) { /* column already exists */ }
 
   // Migration: add sms_consent column to bookings
   try {
-    d.prepare("ALTER TABLE bookings ADD COLUMN sms_consent INTEGER DEFAULT 0").run();
+    d.prepare('ALTER TABLE bookings ADD COLUMN sms_consent INTEGER DEFAULT 0').run();
   } catch (e) { /* column already exists */ }
 
   console.log('[DB] Database initialized successfully');
