@@ -241,4 +241,107 @@ async function slackReply(token, channel, thread_ts, text) {
   });
 }
 
+
+// Slack interactivity endpoint (button clicks)
+router.post('/slack/interactivity', async (req, res) => {
+  try {
+    // Slack sends payload as form-urlencoded
+    const payload = JSON.parse(req.body.payload);
+
+    // Immediately acknowledge (Slack expects 200 within 3s)
+    res.status(200).send('');
+
+    const { type, user, actions, response_url, message } = payload;
+
+    if (type !== 'block_actions' || !actions || actions.length === 0) {
+      return;
+    }
+
+    const action = actions[0];
+    const actionId = action.action_id;
+    const value = action.value ? JSON.parse(action.value) : {};
+
+    console.log('[SLACK INTERACT]', actionId, value);
+
+    if (actionId === 'on_my_way') {
+      await handleOnMyWay(value, user, response_url, message);
+    } else if (actionId === 'record_payment_modal') {
+      // Future: Open modal for payment recording
+      await respondToSlack(response_url, { text: 'Record Payment modal coming soon. For now, use Admin > Bookings > ' + value.booking_number });
+    }
+
+  } catch (err) {
+    console.error('[SLACK INTERACT] Error:', err.message);
+  }
+});
+
+async function handleOnMyWay(value, user, response_url, originalMessage) {
+  const { getDb } = require('../db');
+  const smsService = require('../services/sms');
+  const db = getDb();
+
+  const { booking_id, booking_number, phone, first_name } = value;
+
+  // Get current booking status
+  const booking = db.prepare(`
+    SELECT b.*, c.signed as contract_signed
+    FROM bookings b
+    LEFT JOIN contracts c ON c.booking_id = b.id
+    WHERE b.id = ?
+  `).get(booking_id);
+
+  if (!booking) {
+    await respondToSlack(response_url, { text: ':x: Booking not found' });
+    return;
+  }
+
+  const issues = [];
+  if (!booking.contract_signed) issues.push(':warning: Contract NOT signed');
+  if (parseFloat(booking.balance_due) > 0) issues.push(':moneybag: $' + parseFloat(booking.balance_due).toFixed(2) + ' balance due');
+
+  // Send SMS to customer
+  const customerPhone = phone || booking.phone;
+  if (customerPhone) {
+    try {
+      await smsService.sendSMS(customerPhone,
+        'Bounce Man is on the way! ' + first_name + ', we should arrive within 30-60 minutes. See you soon!');
+      console.log('[ON MY WAY] SMS sent to', customerPhone, 'for', booking_number);
+    } catch (err) {
+      console.error('[ON MY WAY] SMS failed:', err.message);
+      issues.push(':x: SMS failed: ' + err.message);
+    }
+  } else {
+    issues.push(':warning: No phone number for SMS');
+  }
+
+  // Update the Slack message with confirmation
+  const statusText = issues.length > 0
+    ? issues.join('\n')
+    : ':white_check_mark: All clear!';
+
+  const updatedBlocks = originalMessage.blocks.filter(b => b.type !== 'actions');
+  updatedBlocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: ':truck: *On My Way* sent by <@' + user.id + '> at ' + new Date().toLocaleTimeString() }]
+  });
+  updatedBlocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: statusText }
+  });
+
+  await respondToSlack(response_url, {
+    replace_original: true,
+    blocks: updatedBlocks,
+    text: 'On My Way notification sent for ' + booking_number
+  });
+}
+
+async function respondToSlack(response_url, payload) {
+  await fetch(response_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 module.exports = router;

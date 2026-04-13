@@ -18,6 +18,7 @@ function getTransporter() {
 const LOGO_URL = 'https://bouncemanrentals.com/assets/images/wordmark-email.png?v=1';
 const ORANGE = '#D77C42';
 const NAVY = '#1A212D';
+const GREEN = '#06D6A0';
 const PHONE = '(580) 308-9288';
 const FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
@@ -126,7 +127,41 @@ ${contractId ? `<table width="100%" cellpadding="0" cellspacing="0" style="margi
 </table>`;
 }
 
-function deliveryReminderBody(booking, customer) {
+function deliveryReminderBody(booking, customer, contractId) {
+  const BASE_URL = process.env.BASE_URL || 'https://bouncemanrentals.com';
+  const hasBalance = parseFloat(booking.balance_due) > 0;
+  const needsSignature = contractId && !booking.contract_signed;
+  
+  let actionButtons = '';
+  if (hasBalance || needsSignature) {
+    actionButtons = `
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+<tr><td align="center">
+  <table cellpadding="0" cellspacing="0"><tr>`;
+    
+    if (hasBalance) {
+      actionButtons += `
+    <td style="padding-right:${needsSignature ? '8px' : '0'};">
+      <a href="${BASE_URL}/booking/pay/${booking.booking_number}" style="display:inline-block;background-color:${GREEN};color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:8px;">Pay Balance ($${fmtMoney(booking.balance_due)})</a>
+    </td>`;
+    }
+    
+    if (needsSignature) {
+      actionButtons += `
+    <td style="padding-left:${hasBalance ? '8px' : '0'};">
+      <a href="${BASE_URL}/contract/${contractId}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:8px;">Sign Waiver</a>
+    </td>`;
+    }
+    
+    actionButtons += `
+  </tr></table>
+</td></tr>
+<tr><td align="center" style="padding-top:8px;font-size:12px;color:#666;">
+  ${hasBalance ? 'Pay online now or on delivery' : ''}${hasBalance && needsSignature ? ' • ' : ''}${needsSignature ? 'Waiver required before setup' : ''}
+</td></tr>
+</table>`;
+  }
+
   return `
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">Your rental is tomorrow!</td></tr>
 <tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:20px;">Delivery Day</td></tr></table>
@@ -137,17 +172,18 @@ function deliveryReminderBody(booking, customer) {
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Booking #:</strong> ${booking.booking_number}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${fmtDate(booking.event_date)}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Address:</strong> ${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</td></tr>
-<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Balance Due:</strong> $${fmtMoney(booking.balance_due)}</td></tr>
+${hasBalance ? `<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Balance Due:</strong> $${fmtMoney(booking.balance_due)}</td></tr>` : `<tr><td style="font-size:14px;color:${GREEN};padding:4px 0;"><strong>Status:</strong> Paid in Full</td></tr>`}
+${needsSignature ? `<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Waiver:</strong> Please sign before delivery</td></tr>` : booking.contract_signed ? `<tr><td style="font-size:14px;color:${GREEN};padding:4px 0;"><strong>Waiver:</strong> Signed</td></tr>` : ''}
 </table>
 </td></tr>
 </table>
-
+${actionButtons}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:13px;color:#333;padding:4px 0;">Before we arrive, please make sure:</td></tr>
 <tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Setup area is clear and flat</td></tr>
 <tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Power outlet within 100 feet</td></tr>
 <tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Adult (18+) present for delivery</td></tr>
-<tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Balance ready (cash or card)</td></tr>
+${hasBalance ? `<tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Balance ready (cash, card, or pay online above)</td></tr>` : ''}
 </table>
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
@@ -206,12 +242,12 @@ async function sendBookingConfirmation(booking, customer, items, contractId) {
   console.log('[EMAIL] Booking confirmation sent to ' + customer.email);
 }
 
-async function sendDeliveryReminder(booking, customer) {
+async function sendDeliveryReminder(booking, customer, contractId) {
   await getTransporter().sendMail({
     from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
     to: customer.email,
     subject: 'Your Bounce Man Delivery is Tomorrow! #' + booking.booking_number,
-    html: wrap('Delivery Reminder', deliveryReminderBody(booking, customer)),
+    html: wrap('Delivery Reminder', deliveryReminderBody(booking, customer, contractId)),
   });
   console.log('[EMAIL] Delivery reminder sent to ' + customer.email);
 }

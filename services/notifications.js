@@ -192,6 +192,26 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
     });
   }
 
+  // Add "On My Way" button for delivery day
+  blocks.push({
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: ':truck: On My Way', emoji: true },
+        style: 'primary',
+        action_id: 'on_my_way',
+        value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, phone: customer.phone, first_name: customer.first_name })
+      },
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: ':clipboard: Record Payment', emoji: true },
+        action_id: 'record_payment_modal',
+        value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, balance: booking.balance_due })
+      }
+    ]
+  });
+
   blocks.push({
     type: 'context',
     elements: [

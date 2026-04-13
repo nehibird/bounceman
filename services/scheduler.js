@@ -12,6 +12,7 @@
 const { getDb } = require('../db');
 const emailService = require('./email');
 const smsService = require('./sms');
+const notifyService = require('./notifications');
 
 function getTomorrow() {
   const d = new Date();
@@ -31,9 +32,10 @@ async function sendDeliveryReminders() {
 
   // Find bookings for tomorrow that haven't received a reminder yet
   const bookings = db.prepare(`
-    SELECT b.*, c.first_name, c.last_name, c.email, c.phone
+    SELECT b.*, c.first_name, c.last_name, c.email, c.phone, ct.id as contract_id, ct.signed as contract_signed_flag
     FROM bookings b
     JOIN customers c ON c.id = b.customer_id
+    LEFT JOIN contracts ct ON ct.booking_id = b.id
     WHERE b.event_date = ?
       AND b.status NOT IN ('cancelled', 'declined')
       AND b.weather_alert_sent = 0
@@ -47,7 +49,7 @@ async function sendDeliveryReminders() {
         last_name: b.last_name,
         email: b.email,
         phone: b.phone,
-      });
+      }, b.contract_id);
     } catch (err) {
       console.error(`[SCHEDULER] Email reminder failed for ${b.booking_number}:`, err.message);
     }
@@ -59,6 +61,16 @@ async function sendDeliveryReminders() {
       }
     } catch (err) {
       console.error(`[SCHEDULER] SMS reminder failed for ${b.booking_number}:`, err.message);
+    }
+
+
+    try {
+      // Slack notification to admin with On My Way button
+      const items = db.prepare("SELECT bi.*, e.name as item_name FROM booking_items bi JOIN equipment e ON e.id = bi.equipment_id WHERE bi.booking_id = ?").all(b.id);
+      const contract = b.contract_id ? { id: b.contract_id, signed: b.contract_signed_flag } : null;
+      await notifyService.notifyDeliveryReminder(b, { first_name: b.first_name, last_name: b.last_name, phone: b.phone }, items, contract);
+    } catch (err) {
+      console.error(`[SCHEDULER] Slack notification failed for ${b.booking_number}:`, err.message);
     }
 
     // Mark as sent (using weather_alert_sent column as delivery_reminder_sent)
@@ -75,9 +87,10 @@ async function sendReviewRequests() {
 
   // Find bookings from yesterday that haven't received a review request
   const bookings = db.prepare(`
-    SELECT b.*, c.first_name, c.last_name, c.email, c.phone
+    SELECT b.*, c.first_name, c.last_name, c.email, c.phone, ct.id as contract_id, ct.signed as contract_signed_flag
     FROM bookings b
     JOIN customers c ON c.id = b.customer_id
+    LEFT JOIN contracts ct ON ct.booking_id = b.id
     WHERE b.event_date = ?
       AND b.status NOT IN ('cancelled', 'declined')
       AND b.review_requested = 0
@@ -90,7 +103,7 @@ async function sendReviewRequests() {
         last_name: b.last_name,
         email: b.email,
         phone: b.phone,
-      });
+      }, b.contract_id);
     } catch (err) {
       console.error(`[SCHEDULER] Email review request failed for ${b.booking_number}:`, err.message);
     }
