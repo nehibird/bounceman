@@ -244,6 +244,47 @@ router.post('/api/bookings/bulk-delete', (req, res) => {
   }
 });
 
+
+// Bulk delete customers (only those without bookings)
+router.post('/api/customers/bulk-delete', (req, res) => {
+  const db = getDb();
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.json({ success: false, error: 'No customers selected' });
+  }
+  
+  // Check for customers with bookings
+  const hasBookings = [];
+  for (const id of ids) {
+    const count = db.prepare('SELECT COUNT(*) as count FROM bookings WHERE customer_id = ?').get(id).count;
+    if (count > 0) {
+      const cust = db.prepare('SELECT first_name, last_name FROM customers WHERE id = ?').get(id);
+      hasBookings.push(cust ? cust.first_name + ' ' + cust.last_name : id);
+    }
+  }
+  if (hasBookings.length > 0) {
+    return res.json({ success: false, error: 'Cannot delete customers with bookings: ' + hasBookings.join(', ') });
+  }
+  
+  let deleted = 0;
+  const del = db.transaction((customerIds) => {
+    for (const id of customerIds) {
+      db.prepare('DELETE FROM payments WHERE customer_id = ?').run(id);
+      db.prepare('DELETE FROM communications WHERE customer_id = ?').run(id);
+      db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+      deleted++;
+    }
+  });
+  try {
+    del(ids);
+    console.log('[ADMIN] Bulk deleted', deleted, 'customers');
+    res.json({ success: true, deleted });
+  } catch (e) {
+    console.error('[ADMIN] Customer bulk delete error:', e.message);
+    res.json({ success: false, error: e.message });
+  }
+});
+
 router.post('/bookings/:id/delete', (req, res) => {
   const db = getDb();
   const id = req.params.id;

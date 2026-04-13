@@ -7,6 +7,15 @@
   </div>
 </div>
 
+<!-- Bulk Actions Bar -->
+<div id="bulkActions" class="alert alert-warning d-flex align-items-center justify-content-between mb-3" style="display:none !important">
+  <span><i class="fas fa-check-square me-2"></i><strong id="selectedCount">0</strong> customer(s) selected</span>
+  <div>
+    <button type="button" id="bulkDeleteBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+    <button type="button" id="bulkCancelSelect" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
+  </div>
+</div>
+
 <!-- Search -->
 <div class="card mb-4">
   <div class="card-body">
@@ -28,6 +37,7 @@
       <table class="table table-hover mb-0" id="customersTable">
         <thead>
           <tr>
+            <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input"></th>
             <th>Name</th>
             <th>Email</th>
             <th>Phone</th>
@@ -40,6 +50,7 @@
         <tbody>
           ${customers.length > 0 ? customers.map(c => `
           <tr style="cursor:pointer" data-row-href="/admin/customers/${c.id}">
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input customer-check" value="${c.id}" data-customer-name="${c.first_name} ${c.last_name}" data-booking-count="${c.total_bookings || 0}"></td>
             <td><strong>${c.first_name} ${c.last_name}</strong></td>
             <td>${c.email || ''}</td>
             <td>${c.phone || ''}</td>
@@ -52,7 +63,7 @@
               </a>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">No customers found</td></tr>'}
+          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No customers found</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -61,7 +72,83 @@
 
 `, scripts: `
 <script>
-  // Row click navigation for customers table
+  // Bulk select/delete for customers
+  (function() {
+    var selectAll = document.getElementById('selectAll');
+    var bulkActions = document.getElementById('bulkActions');
+    var selectedCount = document.getElementById('selectedCount');
+    var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    var bulkCancelSelect = document.getElementById('bulkCancelSelect');
+
+    function updateBulkBar() {
+      var checked = document.querySelectorAll('.customer-check:checked');
+      if (checked.length > 0) {
+        bulkActions.style.cssText = 'display:flex !important';
+        selectedCount.textContent = checked.length;
+      } else {
+        bulkActions.style.cssText = 'display:none !important';
+      }
+    }
+
+    if (selectAll) {
+      selectAll.addEventListener('change', function() {
+        document.querySelectorAll('.customer-check').forEach(function(cb) { cb.checked = selectAll.checked; });
+        updateBulkBar();
+      });
+    }
+
+    document.querySelectorAll('.customer-check').forEach(function(cb) {
+      cb.addEventListener('change', updateBulkBar);
+    });
+
+    if (bulkCancelSelect) {
+      bulkCancelSelect.addEventListener('click', function() {
+        document.querySelectorAll('.customer-check').forEach(function(cb) { cb.checked = false; });
+        if (selectAll) selectAll.checked = false;
+        updateBulkBar();
+      });
+    }
+
+    if (bulkDeleteBtn) {
+      bulkDeleteBtn.addEventListener('click', function() {
+        var checked = document.querySelectorAll('.customer-check:checked');
+        var ids = [];
+        var names = [];
+        var hasBookings = [];
+        checked.forEach(function(cb) {
+          ids.push(cb.value);
+          names.push(cb.dataset.customerName);
+          if (parseInt(cb.dataset.bookingCount) > 0) {
+            hasBookings.push(cb.dataset.customerName + ' (' + cb.dataset.bookingCount + ' bookings)');
+          }
+        });
+        if (ids.length === 0) return;
+        
+        if (hasBookings.length > 0) {
+          alert('Cannot delete customers with active bookings:\n\n' + hasBookings.join('\n') + '\n\nDelete their bookings first.');
+          return;
+        }
+        
+        if (!confirm('Delete ' + ids.length + ' customer(s)?\n\n' + names.join(', ') + '\n\nThis cannot be undone.')) return;
+        
+        fetch('/admin/api/customers/bulk-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: ids })
+        }).then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.success) {
+              showToast(data.deleted + ' customer(s) deleted', 'success');
+              setTimeout(function() { window.location.reload(); }, 1000);
+            } else {
+              showToast('Error: ' + (data.error || 'Unknown'), 'error');
+            }
+          }).catch(function() { showToast('Network error', 'error'); });
+      });
+    }
+  })();
+
+  // Row click navigation
   (function() {
     var tbody = document.querySelector('#customersTable tbody');
     if (tbody) {

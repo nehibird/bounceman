@@ -8,6 +8,15 @@
   <a href="/admin/bookings/new" class="btn btn-bm"><i class="fas fa-plus me-1"></i> New Booking</a>
 </div>
 
+<!-- Bulk Actions Bar (fixed at top when visible) -->
+<div id="bulkActions" class="alert alert-warning d-flex align-items-center justify-content-between mb-3" style="display:none !important">
+  <span><i class="fas fa-check-square me-2"></i><strong id="selectedCount">0</strong> booking(s) selected</span>
+  <div>
+    <button type="button" id="bulkDeleteBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+    <button type="button" id="bulkCancelSelect" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
+  </div>
+</div>
+
 <!-- Filter Bar -->
 <div class="card mb-4">
   <div class="card-body d-flex flex-wrap align-items-center gap-3">
@@ -27,23 +36,11 @@
 <!-- Bookings Table -->
 <div class="card">
   <div class="card-body p-0">
-    
-      <!-- Bulk Actions Bar -->
-      <div id="bulkActions" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 16px;margin-bottom:16px">
-        <div class="d-flex align-items-center justify-content-between">
-          <span><strong id="selectedCount">0</strong> booking(s) selected</span>
-          <div>
-            <button type="button" id="bulkDeleteBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
-            <button type="button" id="bulkCancelSelect" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="table-responsive">
+    <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead>
           <tr>
-            <th style="width:40px"><input type="checkbox" id="selectAll"></th>
+            <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input"></th>
             <th>Booking #</th>
             <th>Customer</th>
             <th>Event Date</th>
@@ -57,7 +54,7 @@
         <tbody>
           ${bookings.length > 0 ? bookings.map(b => `
           <tr style="cursor:pointer" data-booking-href="/admin/bookings/${b.id}">
-            <td><input type="checkbox" class="booking-check" value="${b.id}" data-booking-number="${b.booking_number}"></td>
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input booking-check" value="${b.id}" data-booking-number="${b.booking_number}"></td>
             <td><strong>${b.booking_number}</strong></td>
             <td>
               <div>${b.first_name} ${b.last_name}</div>
@@ -90,7 +87,7 @@
 
 `, scripts: `
 <script>
-  // CSP-safe: date filter navigation
+  // Date filter navigation
   (function() {
     var df = document.getElementById('dateFilter');
     if (df) {
@@ -112,10 +109,10 @@
     function updateBulkBar() {
       var checked = document.querySelectorAll('.booking-check:checked');
       if (checked.length > 0) {
-        bulkActions.style.display = 'block';
+        bulkActions.style.cssText = 'display:flex !important';
         selectedCount.textContent = checked.length;
       } else {
-        bulkActions.style.display = 'none';
+        bulkActions.style.cssText = 'display:none !important';
       }
     }
 
@@ -161,9 +158,9 @@
       });
     }
   })();
-  // Event delegation: row click to navigate to booking detail
+
+  // Row click navigation
   document.querySelector('table tbody') && document.querySelector('table tbody').addEventListener('click', function(e) {
-    // Don't navigate if clicking a link or button
     if (e.target.closest('a') || e.target.closest('button') || e.target.closest('input')) return;
     var row = e.target.closest('[data-booking-href]');
     if (row) window.location.href = row.dataset.bookingHref;
