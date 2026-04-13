@@ -497,4 +497,127 @@ router.post('/lookup', (req, res) => {
   });
 });
 
+// ============================================
+// PAY BALANCE ROUTES
+// ============================================
+
+// Pay remaining balance - shows amount and redirects to Stripe
+router.get("/pay/:bookingNumber", async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const booking = db.prepare(`
+    SELECT b.*, c.first_name, c.last_name, c.email, c.phone
+    FROM bookings b
+    JOIN customers c ON c.id = b.customer_id
+    WHERE b.booking_number = ?
+  `).get(req.params.bookingNumber);
+
+  if (!booking) {
+    return res.status(404).render("public/error", { title: "Not Found", settings, message: "Booking not found" });
+  }
+
+  if (parseFloat(booking.balance_due) <= 0) {
+    return res.render("public/booking/already-paid", { title: "Already Paid", settings, booking });
+  }
+
+  // Create Stripe Checkout session for balance
+  try {
+    const stripe = require("../services/stripe");
+    const baseUrl = process.env.BASE_URL || "https://bouncemanrentals.com";
+    
+    const session = await stripe.createCheckoutSession({
+      bookingId: booking.id,
+      bookingNumber: booking.booking_number,
+      depositAmount: parseFloat(booking.balance_due),
+      customerEmail: booking.email,
+      description: `Balance payment for booking ${booking.booking_number} - Event ${booking.event_date}`,
+      successUrl: `${baseUrl}/booking/pay/${booking.booking_number}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${baseUrl}/booking/pay/${booking.booking_number}/cancel`
+    });
+
+    res.redirect(303, session.url);
+  } catch (err) {
+    console.error("[PAY BALANCE] Stripe error:", err.message);
+    res.status(500).render("public/error", { title: "Payment Error", settings, message: "Unable to process payment. Please try again or call us." });
+  }
+});
+
+// Payment success
+router.get("/pay/:bookingNumber/success", async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const { session_id } = req.query;
+  
+  const booking = db.prepare(`
+    SELECT b.*, c.first_name, c.last_name, c.email, c.phone, c.id as cust_id
+    FROM bookings b
+    JOIN customers c ON c.id = b.customer_id
+    WHERE b.booking_number = ?
+  `).get(req.params.bookingNumber);
+
+  if (!booking) {
+    return res.status(404).render("public/error", { title: "Not Found", settings, message: "Booking not found" });
+  }
+
+  // Verify payment with Stripe
+  if (session_id) {
+    try {
+      const stripe = require("../services/stripe");
+      const session = await stripe.retrieveSession(session_id);
+      
+      if (session.payment_status === "paid") {
+        const amountPaid = session.amount_total / 100;
+        
+        // Record the payment
+        const paymentId = require("crypto").randomUUID();
+        db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, created_at) 
+          VALUES (?, ?, ?, ?, charge, card, ?, completed, datetime(now))`).run(paymentId, booking.id, booking.cust_id, amountPaid, session.payment_intent?.id || session.id);
+        
+        // Update booking balance
+        const newBalance = Math.max(0, parseFloat(booking.balance_due) - amountPaid);
+        const newStatus = newBalance <= 0 ? "paid" : "partial";
+        db.prepare("UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime(now) WHERE id = ?")
+          .run(newBalance, newStatus, booking.id);
+        
+        // Send Slack notification
+        const slack = require("../services/notifications");
+        if (slack.sendSlackMessage) {
+          slack.sendSlackMessage({
+            text: ":white_check_mark: *Balance Paid Online* - " + booking.booking_number,
+            blocks: [
+              { type: "section", text: { type: "mrkdwn", text: ":white_check_mark: *Balance Paid Online*\n*" + booking.first_name + " " + booking.last_name + "* paid remaining balance" } },
+              { type: "section", fields: [
+                { type: "mrkdwn", text: "*Booking:*\n" + booking.booking_number },
+                { type: "mrkdwn", text: "*Amount:*\n$" + amountPaid.toFixed(2) },
+                { type: "mrkdwn", text: "*Event Date:*\n" + booking.event_date },
+                { type: "mrkdwn", text: "*Status:*\n:white_check_mark: " + newStatus.toUpperCase() }
+              ]}
+            ]
+          }).catch(e => console.error("[SLACK] Balance payment notification failed:", e.message));
+        }
+        
+        // Send receipt email
+        const email = require("../services/email");
+        email.sendPaymentReceipt(booking, { first_name: booking.first_name, last_name: booking.last_name, email: booking.email }, amountPaid)
+          .catch(e => console.error("[EMAIL] Receipt failed:", e.message));
+        
+        console.log("[PAY BALANCE] $" + amountPaid.toFixed(2) + " paid for " + booking.booking_number);
+      }
+    } catch (err) {
+      console.error("[PAY BALANCE] Stripe verification error:", err.message);
+    }
+  }
+
+  res.render("public/booking/payment-success", { title: "Payment Complete!", settings, booking });
+});
+
+// Payment cancelled
+router.get("/pay/:bookingNumber/cancel", (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const booking = db.prepare("SELECT * FROM bookings WHERE booking_number = ?").get(req.params.bookingNumber);
+  
+  res.render("public/booking/payment-cancel", { title: "Payment Cancelled", settings, booking });
+});
+
 module.exports = router;
