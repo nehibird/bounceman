@@ -7,12 +7,14 @@
   </div>
 </div>
 
-<!-- Bulk Actions Bar -->
-<div id="bulkActions" class="alert alert-warning d-flex align-items-center justify-content-between mb-3" style="display:none !important">
-  <span><i class="fas fa-check-square me-2"></i><strong id="selectedCount">0</strong> customer(s) selected</span>
-  <div>
-    <button type="button" id="bulkDeleteBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
-    <button type="button" id="bulkCancelSelect" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
+<!-- Bulk Actions Bar - hidden by default -->
+<div id="bulkBar" class="alert alert-warning d-none mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <span><i class="fas fa-check-square me-2"></i><span id="selCount">0</span> customer(s) selected</span>
+    <div>
+      <button type="button" id="delBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+      <button type="button" id="clearBtn" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -34,10 +36,10 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0" id="customersTable">
+      <table class="table table-hover mb-0">
         <thead>
           <tr>
-            <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input"></th>
+            <th style="width:40px"><input type="checkbox" class="form-check-input" id="selAll"></th>
             <th>Name</th>
             <th>Email</th>
             <th>Phone</th>
@@ -47,10 +49,10 @@
             <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="custBody">
           ${customers.length > 0 ? customers.map(c => `
-          <tr style="cursor:pointer" data-row-href="/admin/customers/${c.id}">
-            <td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input customer-check" value="${c.id}" data-customer-name="${c.first_name} ${c.last_name}" data-booking-count="${c.total_bookings || 0}"></td>
+          <tr data-href="/admin/customers/${c.id}">
+            <td><input type="checkbox" class="form-check-input rowCb" value="${c.id}" data-name="${c.first_name} ${c.last_name}" data-bookings="${c.total_bookings || 0}"></td>
             <td><strong>${c.first_name} ${c.last_name}</strong></td>
             <td>${c.email || ''}</td>
             <td>${c.phone || ''}</td>
@@ -72,92 +74,92 @@
 
 `, scripts: `
 <script>
-  // Bulk select/delete for customers
-  (function() {
-    var selectAll = document.getElementById('selectAll');
-    var bulkActions = document.getElementById('bulkActions');
-    var selectedCount = document.getElementById('selectedCount');
-    var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-    var bulkCancelSelect = document.getElementById('bulkCancelSelect');
+document.addEventListener('DOMContentLoaded', function() {
+  var bar = document.getElementById('bulkBar');
+  var count = document.getElementById('selCount');
+  var selAll = document.getElementById('selAll');
+  var delBtn = document.getElementById('delBtn');
+  var clearBtn = document.getElementById('clearBtn');
+  var tbody = document.getElementById('custBody');
 
-    function updateBulkBar() {
-      var checked = document.querySelectorAll('.customer-check:checked');
-      if (checked.length > 0) {
-        bulkActions.style.cssText = 'display:flex !important';
-        selectedCount.textContent = checked.length;
-      } else {
-        bulkActions.style.cssText = 'display:none !important';
-      }
+  function getChecked() {
+    return document.querySelectorAll('.rowCb:checked');
+  }
+
+  function updateBar() {
+    var n = getChecked().length;
+    if (n > 0) {
+      bar.classList.remove('d-none');
+      count.textContent = n;
+    } else {
+      bar.classList.add('d-none');
     }
+  }
 
-    if (selectAll) {
-      selectAll.addEventListener('change', function() {
-        document.querySelectorAll('.customer-check').forEach(function(cb) { cb.checked = selectAll.checked; });
-        updateBulkBar();
-      });
-    }
-
-    document.querySelectorAll('.customer-check').forEach(function(cb) {
-      cb.addEventListener('change', updateBulkBar);
+  // Select all
+  selAll.addEventListener('change', function() {
+    document.querySelectorAll('.rowCb').forEach(function(cb) {
+      cb.checked = selAll.checked;
     });
+    updateBar();
+  });
 
-    if (bulkCancelSelect) {
-      bulkCancelSelect.addEventListener('click', function() {
-        document.querySelectorAll('.customer-check').forEach(function(cb) { cb.checked = false; });
-        if (selectAll) selectAll.checked = false;
-        updateBulkBar();
-      });
+  // Individual checkbox change
+  tbody.addEventListener('change', function(e) {
+    if (e.target.classList.contains('rowCb')) {
+      updateBar();
     }
+  });
 
-    if (bulkDeleteBtn) {
-      bulkDeleteBtn.addEventListener('click', function() {
-        var checked = document.querySelectorAll('.customer-check:checked');
-        var ids = [];
-        var names = [];
-        var hasBookings = [];
-        checked.forEach(function(cb) {
-          ids.push(cb.value);
-          names.push(cb.dataset.customerName);
-          if (parseInt(cb.dataset.bookingCount) > 0) {
-            hasBookings.push(cb.dataset.customerName + ' (' + cb.dataset.bookingCount + ' bookings)');
-          }
-        });
-        if (ids.length === 0) return;
-        
-        if (hasBookings.length > 0) {
-          alert('Cannot delete customers with active bookings:\n\n' + hasBookings.join('\n') + '\n\nDelete their bookings first.');
-          return;
-        }
-        
-        if (!confirm('Delete ' + ids.length + ' customer(s)?\n\n' + names.join(', ') + '\n\nThis cannot be undone.')) return;
-        
-        fetch('/admin/api/customers/bulk-delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: ids })
-        }).then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.success) {
-              showToast(data.deleted + ' customer(s) deleted', 'success');
-              setTimeout(function() { window.location.reload(); }, 1000);
-            } else {
-              showToast('Error: ' + (data.error || 'Unknown'), 'error');
-            }
-          }).catch(function() { showToast('Network error', 'error'); });
-      });
-    }
-  })();
+  // Clear selection
+  clearBtn.addEventListener('click', function() {
+    document.querySelectorAll('.rowCb').forEach(function(cb) { cb.checked = false; });
+    selAll.checked = false;
+    updateBar();
+  });
 
-  // Row click navigation
-  (function() {
-    var tbody = document.querySelector('#customersTable tbody');
-    if (tbody) {
-      tbody.addEventListener('click', function(e) {
-        if (e.target.closest('a') || e.target.closest('button') || e.target.closest('input') || e.target.closest('form')) return;
-        var row = e.target.closest('[data-row-href]');
-        if (row) window.location.href = row.dataset.rowHref;
-      });
+  // Delete selected
+  delBtn.addEventListener('click', function() {
+    var checked = getChecked();
+    var ids = [], names = [], hasBookings = [];
+    checked.forEach(function(cb) {
+      ids.push(cb.value);
+      names.push(cb.dataset.name);
+      if (parseInt(cb.dataset.bookings) > 0) {
+        hasBookings.push(cb.dataset.name + ' (' + cb.dataset.bookings + ')');
+      }
+    });
+    
+    if (hasBookings.length > 0) {
+      alert('Cannot delete customers with bookings:\n\n' + hasBookings.join('\n') + '\n\nDelete their bookings first.');
+      return;
     }
-  })();
+    
+    if (!confirm('Delete ' + ids.length + ' customer(s)?\n\n' + names.join(', ') + '\n\nThis cannot be undone.')) return;
+    
+    fetch('/admin/api/customers/bulk-delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: ids})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        showToast(data.deleted + ' customer(s) deleted', 'success');
+        setTimeout(function() { location.reload(); }, 800);
+      } else {
+        showToast('Error: ' + (data.error || 'Unknown'), 'error');
+      }
+    })
+    .catch(function() { showToast('Network error', 'error'); });
+  });
+
+  // Row click navigation (exclude checkbox clicks)
+  tbody.addEventListener('click', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.closest('a') || e.target.closest('button')) return;
+    var row = e.target.closest('[data-href]');
+    if (row) location.href = row.dataset.href;
+  });
+});
 </script>
 ` }) %>
