@@ -8,6 +8,17 @@ function fmtDate(d) {
   catch (e) { return d; }
 }
 
+function fmtTime(t) {
+  if (!t) return '';
+  try {
+    const [h, m] = t.split(':');
+    const hour = parseInt(h);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const h12 = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+    return h12 + ':' + (m || '00') + ' ' + ampm;
+  } catch (e) { return t; }
+}
+
 async function postToSlack(channel, blocks, text) {
   try {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
@@ -25,37 +36,121 @@ async function postToSlack(channel, blocks, text) {
 }
 
 async function notifyNewBooking(booking, customer, items) {
-  const itemList = items.map(i => i.item_name + ' ($' + parseFloat(i.unit_price).toFixed(0) + ')').join(', ');
+  // Comprehensive booking notification - all data preserved in Slack
+  const itemList = items.map(i => {
+    const wet = i.wet_or_dry === 'wet' ? ' (WET)' : (i.wet_or_dry === 'dry' ? ' (DRY)' : '');
+    return '• ' + i.item_name + wet + ' — $' + parseFloat(i.unit_price).toFixed(2);
+  }).join('\n');
+
   const blocks = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'New Booking! ' + booking.booking_number }
+      text: { type: 'plain_text', text: '🎉 New Booking: ' + booking.booking_number }
+    },
+    // Customer info block
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*CUSTOMER*' }
     },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: '*Customer:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
+        { type: 'mrkdwn', text: '*Name:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
+        { type: 'mrkdwn', text: '*Email:*\n' + (customer.email || 'N/A') },
+        { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') },
+        { type: 'mrkdwn', text: '*Customer ID:*\n`' + customer.id + '`' }
+      ]
+    },
+    // Event info block
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*EVENT DETAILS*' }
+    },
+    {
+      type: 'section',
+      fields: [
         { type: 'mrkdwn', text: '*Date:*\n' + fmtDate(booking.event_date) },
-        { type: 'mrkdwn', text: '*Items:*\n' + itemList },
-        { type: 'mrkdwn', text: '*Total:*\n$' + parseFloat(booking.total).toFixed(2) },
-        { type: 'mrkdwn', text: '*Deposit:*\n$' + parseFloat(booking.deposit_amount).toFixed(2) },
-        { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') }
+        { type: 'mrkdwn', text: '*Time:*\n' + fmtTime(booking.event_start_time) + ' - ' + fmtTime(booking.event_end_time) },
+        { type: 'mrkdwn', text: '*Event Type:*\n' + (booking.event_type || 'N/A') },
+        { type: 'mrkdwn', text: '*Duration:*\n' + (booking.rental_duration || 'Full Day') }
+      ]
+    },
+    // Delivery info block
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*DELIVERY*' }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Address:*\n' + [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ') },
+        { type: 'mrkdwn', text: '*Venue:*\n' + (booking.venue_type || 'N/A') },
+        { type: 'mrkdwn', text: '*Surface:*\n' + (booking.surface_type || 'N/A') },
+        { type: 'mrkdwn', text: '*Power:*\n' + (booking.power_available ? 'Yes' : 'No/Unknown') }
+      ]
+    },
+    // Equipment block
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*EQUIPMENT*\n' + itemList }
+    },
+    // Pricing block
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*PRICING*' }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Subtotal:*\n$' + parseFloat(booking.subtotal || 0).toFixed(2) },
+        { type: 'mrkdwn', text: '*Delivery Fee:*\n$' + parseFloat(booking.delivery_fee || 0).toFixed(2) },
+        { type: 'mrkdwn', text: '*Tax (' + ((booking.tax_rate || 0) * 100).toFixed(1) + '%):*\n$' + parseFloat(booking.tax_amount || 0).toFixed(2) },
+        { type: 'mrkdwn', text: '*Damage Waiver:*\n$' + parseFloat(booking.damage_waiver_fee || 0).toFixed(2) }
       ]
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: '*Address:* ' + [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ') }
-    },
-    {
-      type: 'context',
-      elements: [
-        { type: 'mrkdwn', text: booking.event_type + ' | ' + (booking.event_start_time || '') + ' - ' + (booking.event_end_time || '') + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
+      fields: [
+        { type: 'mrkdwn', text: '*TOTAL:*\n*$' + parseFloat(booking.total).toFixed(2) + '*' },
+        { type: 'mrkdwn', text: '*Deposit:*\n$' + parseFloat(booking.deposit_amount).toFixed(2) },
+        { type: 'mrkdwn', text: '*Balance Due:*\n$' + parseFloat(booking.balance_due || 0).toFixed(2) },
+        { type: 'mrkdwn', text: '*Payment Status:*\n' + (booking.payment_status || 'unpaid') }
       ]
     }
   ];
 
-  await postToSlack(BOOKINGS_CHANNEL, blocks, 'New booking ' + booking.booking_number + ' from ' + customer.first_name);
-  console.log('[SLACK] Booking notification sent for', booking.booking_number);
+  // Add discount if present
+  if (booking.discount_code || parseFloat(booking.discount_amount) > 0) {
+    blocks.push({
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Discount Code:*\n' + (booking.discount_code || 'N/A') },
+        { type: 'mrkdwn', text: '*Discount Amount:*\n-$' + parseFloat(booking.discount_amount || 0).toFixed(2) }
+      ]
+    });
+  }
+
+  // Add delivery notes if present
+  if (booking.delivery_notes) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*DELIVERY NOTES:*\n' + booking.delivery_notes }
+    });
+  }
+
+  // Admin link and IDs for recovery
+  blocks.push({
+    type: 'divider'
+  });
+  blocks.push({
+    type: 'context',
+    elements: [
+      { type: 'mrkdwn', text: '*Booking ID:* `' + booking.id + '` | *Created:* ' + (booking.created_at || 'now') + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
+    ]
+  });
+
+  await postToSlack(BOOKINGS_CHANNEL, blocks, 'New booking ' + booking.booking_number + ' from ' + customer.first_name + ' ' + (customer.last_name || '') + ' — $' + parseFloat(booking.total).toFixed(2));
+  console.log('[SLACK] Comprehensive booking notification sent for', booking.booking_number);
 }
 
 async function notifyDeliveryReminder(booking, customer, items, contract) {
