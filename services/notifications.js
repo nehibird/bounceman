@@ -72,7 +72,7 @@ async function notifyNewBooking(booking, customer, items) {
         { type: 'mrkdwn', text: '*Date:*\n' + fmtDate(booking.event_date) },
         { type: 'mrkdwn', text: '*Time:*\n' + fmtTime(booking.event_start_time) + ' - ' + fmtTime(booking.event_end_time) },
         { type: 'mrkdwn', text: '*Event Type:*\n' + (booking.event_type || 'N/A') },
-        { type: 'mrkdwn', text: '*Duration:*\n' + (booking.rental_duration || 'Full Day') }
+        { type: 'mrkdwn', text: '*Duration:*\n' + (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') }
       ]
     },
     // Delivery info block

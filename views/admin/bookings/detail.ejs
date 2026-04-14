@@ -32,6 +32,10 @@
             <strong>${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(booking.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(booking.event_end_time)}</strong>
           </div>
           <div class="col-sm-4">
+            <small class="text-muted d-block">Duration</small>
+            <strong>${items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day'}</strong>
+          </div>
+          <div class="col-sm-4">
             <small class="text-muted d-block">Event Type</small>
             <strong>${booking.event_type || 'N/A'}</strong>
           </div>
