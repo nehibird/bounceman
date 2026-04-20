@@ -150,7 +150,8 @@ router.post('/review', bookingLimiter, async (req, res) => {
     first_name, last_name, email, phone,
     delivery_address, delivery_city, delivery_zip,
     event_type, venue_type, surface_type, power_available,
-    delivery_notes, discount_code, rental_duration, wet_items
+    delivery_notes, discount_code, rental_duration, wet_items,
+    tax_exempt_claimed
   } = req.body;
 
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
@@ -193,7 +194,8 @@ router.post('/review', bookingLimiter, async (req, res) => {
     }
   }
 
-  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city);
+  const taxExemptClaimed = tax_exempt_claimed === '1';
+  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptClaimed);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount } = pricing;
   const total = rawTotal - discount_amount;
 
@@ -207,6 +209,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount },
     wet_items: wet_items || '',
     rental_duration: duration,
+    tax_exempt_claimed: taxExemptClaimed,
     page: 'booking'
   });
 });
@@ -258,7 +261,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       }
     }
     const existingCustomer = data.email ? db.prepare('SELECT tax_exempt FROM customers WHERE email = ?').get(data.email) : null;
-    const taxExempt = existingCustomer && existingCustomer.tax_exempt ? true : false;
+    const taxExempt = (existingCustomer && existingCustomer.tax_exempt) || data.tax_exempt_claimed === '1';
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city, taxExempt);
     const recalcTotal = recalcPricing.total - recalcDiscountAmount;
     // Override form data with server-calculated values
@@ -291,8 +294,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
       delivery_notes, surface_type, power_available, sms_consent,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount, discount_code,
-      damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      damage_waiver_fee, total, deposit_amount, balance_due, payment_status, tax_exempt_claimed
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       bookingId, bookingNumber, customerId,
       data.event_date, data.event_start_time, data.event_end_time,
       data.event_type, data.venue_type,
@@ -304,7 +307,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       parseFloat(data.discount_amount || 0), data.discount_code || null,
       parseFloat(data.damage_waiver_fee || 0),
       parseFloat(data.total), parseFloat(data.deposit_amount),
-      parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid'
+      parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid',
+      taxExempt ? 1 : 0
     );
 
     // Add line items

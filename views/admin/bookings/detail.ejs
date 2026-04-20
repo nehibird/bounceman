@@ -144,6 +144,8 @@
 
     <!-- Pricing Breakdown -->
     <div class="card mb-4">
+      ${booking.tax_exempt_claimed && !booking.tax_exempt ? '<div class="alert alert-warning mb-0 rounded-0 border-0 border-bottom"><i class="fas fa-exclamation-triangle me-2"></i><strong>Tax Exempt Claimed</strong> — Customer claims tax-exempt status. Verify certificate before collecting balance due. <a href="/admin/customers/' + booking.customer_id + '">Mark as verified on customer record.</a></div>' : ''}
+      ${booking.tax_exempt_claimed && booking.tax_exempt ? '<div class="alert alert-success mb-0 rounded-0 border-0 border-bottom"><i class="fas fa-check-circle me-2"></i>Tax exempt — verified.</div>' : ''}
       <div class="card-header"><i class="fas fa-dollar-sign me-2"></i>Pricing</div>
       <div class="card-body">
         <div class="d-flex justify-content-between mb-2">

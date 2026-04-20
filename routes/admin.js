@@ -563,7 +563,7 @@ router.post('/customers/:id/tax-exempt', (req, res) => {
   const db = getDb();
   const { tax_exempt, tax_exempt_cert } = req.body;
   db.prepare("UPDATE customers SET tax_exempt = ?, tax_exempt_cert = ?, updated_at = datetime('now') WHERE id = ?")
-    .run([].concat(tax_exempt).includes("1") ? 1 : 0, (tax_exempt_cert || '').trim() || null, req.params.id);
+    .run([].concat(tax_exempt).includes('1') ? 1 : 0, (tax_exempt_cert || '').trim() || null, req.params.id);
   console.log('[ADMIN] Tax exempt updated for customer:', req.params.id, 'exempt:', tax_exempt);
   res.redirect('/admin/customers/' + req.params.id);
 });

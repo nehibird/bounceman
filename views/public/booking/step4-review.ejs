@@ -164,10 +164,7 @@
                 <span>${parseFloat(pricing.delivery_fee) === 0 ? '<span class="text-success fw-bold">FREE</span>' : '$' + parseFloat(pricing.delivery_fee).toFixed(2)}</span>
               </div>
               ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
-              <div class="price-line">
-                <span>Tax (${(parseFloat(pricing.tax_rate) * 100).toFixed(1)}%)</span>
-                <span>$${parseFloat(pricing.tax_amount).toFixed(2)}</span>
-              </div>
+              ${tax_exempt_claimed ? '<div class="price-line" style="color:#2e7d32"><span><i class="fas fa-check-circle me-1"></i>Tax Exempt (pending verification)</span><span>$0.00</span></div>' : '<div class="price-line"><span>Tax (' + (parseFloat(pricing.tax_rate) * 100).toFixed(1) + '%)</span><span>$' + parseFloat(pricing.tax_amount).toFixed(2) + '</span></div>'}
               ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><i class="fas fa-tag me-1"></i>Discount (' + (pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
               <div class="price-line total">
                 <span>Total</span>
@@ -207,6 +204,7 @@
             <input type="hidden" name="tax_rate" value="${pricing.tax_rate}">
             <input type="hidden" name="discount_amount" value="${pricing.discount_amount || 0}">
             <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+            ${tax_exempt_claimed ? '<input type="hidden" name="tax_exempt_claimed" value="1">' : ''}
             <input type="hidden" name="damage_waiver_fee" value="${pricing.damage_waiver_fee || 0}">
             <input type="hidden" name="total" value="${pricing.total}">
             <input type="hidden" name="deposit_amount" value="${pricing.deposit_amount}">
