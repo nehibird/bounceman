@@ -501,6 +501,65 @@ router.post('/create-event', (req, res) => {
 });
 
 // GET /api/sarah/status — Today's event stats
+
+// POST /api/sarah/lookup-booking
+// Look up a customer's most recent booking by phone number or booking number
+router.post('/lookup-booking', (req, res) => {
+  const db = getDb();
+  const { phone, booking_number } = req.body;
+
+  let booking = null;
+
+  if (booking_number) {
+    booking = db.prepare(`SELECT b.*, c.first_name, c.last_name, c.email, c.phone as cust_phone
+      FROM bookings b JOIN customers c ON c.id = b.customer_id
+      WHERE b.booking_number = ?`).get(booking_number.toUpperCase());
+  } else if (phone) {
+    const normalized = normalizePhone(phone);
+    const customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(normalized);
+    if (customer) {
+      booking = db.prepare(`SELECT b.* FROM bookings b
+        WHERE b.customer_id = ? AND b.status NOT IN ('cancelled','declined')
+        ORDER BY b.event_date DESC LIMIT 1`).get(customer.id);
+      if (booking) {
+        booking.first_name = customer.first_name;
+        booking.last_name = customer.last_name;
+        booking.cust_phone = customer.phone;
+      }
+    }
+  }
+
+  if (!booking) {
+    return res.json({
+      found: false,
+      message: "I don't see any bookings for that number. Would you like to make a new booking?"
+    });
+  }
+
+  const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id);
+  const itemNames = items.map(i => i.item_name).join(', ');
+  const total = parseFloat(booking.total || 0).toFixed(2);
+  const deposit = parseFloat(booking.deposit_amount || 0).toFixed(2);
+  const balance = parseFloat(booking.balance_due || 0).toFixed(2);
+
+  const payStatus = booking.payment_status === 'deposit_paid' ? 'deposit paid, balance due on delivery'
+    : booking.payment_status === 'paid' ? 'paid in full'
+    : 'deposit not yet paid';
+
+  res.json({
+    found: true,
+    booking_number: booking.booking_number,
+    event_date: fmtDate(booking.event_date),
+    items: itemNames,
+    status: booking.status,
+    payment_status: booking.payment_status,
+    total,
+    deposit_amount: deposit,
+    balance_due: balance,
+    message: `I found your booking #${booking.booking_number} for ${fmtDate(booking.event_date)}: ${itemNames}. Payment status: ${payStatus}. Total is $${total}, deposit is $${deposit}, balance due on delivery day is $${balance}.`
+  });
+});
+
 router.get('/status', (req, res) => {
   const db = getDb();
   const events = db.prepare('SELECT * FROM walk_up_events WHERE active = 1').all();
