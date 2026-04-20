@@ -124,7 +124,13 @@ ${contractId ? `<table width="100%" cellpadding="0" cellspacing="0" style="margi
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:14px;color:#333;">Questions? Call <strong>${PHONE}</strong></td></tr>
-</table>`;
+</table>
+${booking.tax_exempt_claimed ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td style="font-size:13px;color:#333;background:#E8F5E9;border-left:4px solid #4CAF50;border-radius:4px;padding:12px;">
+<strong>Tax-Exempt Organization Notice:</strong> Since you indicated your organization is tax-exempt, please reply to this email with a copy of your Oklahoma Sales Tax Exemption Certificate before your balance is due.
+</td></tr>
+</table>` : ''}
+`;
 }
 
 function deliveryReminderBody(booking, customer, contractId) {
@@ -188,7 +194,13 @@ ${hasBalance ? `<tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:14px;color:#333;">Questions? Call <strong>${PHONE}</strong></td></tr>
-</table>`;
+</table>
+${booking.tax_exempt_claimed ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td style="font-size:13px;color:#333;background:#E8F5E9;border-left:4px solid #4CAF50;border-radius:4px;padding:12px;">
+<strong>Tax-Exempt Organization Notice:</strong> Since you indicated your organization is tax-exempt, please reply to this email with a copy of your Oklahoma Sales Tax Exemption Certificate before your balance is due.
+</td></tr>
+</table>` : ''}
+`;
 }
 
 function reviewRequestBody(booking, customer) {
