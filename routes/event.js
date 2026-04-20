@@ -48,6 +48,7 @@ async function notifySlack(reg, event) {
 }
 
 // GET /event — Walk-up registration page
+
 router.get('/', (req, res) => {
   const db = getDb();
   const settings = getSettings();
@@ -212,6 +213,15 @@ router.post('/webhook', async (req, res) => {
   }
 
   res.json({ received: true });
+});
+
+
+// GET /event/:slug --- Slug-based event shortlink (must be last to avoid shadowing /success, /status)
+router.get('/:slug', (req, res) => {
+  const db = getDb();
+  const event = db.prepare('SELECT id FROM walk_up_events WHERE slug = ? AND active = 1').get(req.params.slug);
+  if (!event) return res.redirect('/event');
+  return res.redirect('/event?event=' + event.id);
 });
 
 module.exports = router;
