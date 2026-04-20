@@ -51,6 +51,29 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
       </div>
     </div>
 
+    <!-- Tax Exempt -->
+    <div class="card mb-4">
+      <div class="card-header"><i class="fas fa-file-invoice-dollar me-2"></i>Tax Exempt Status</div>
+      <div class="card-body">
+        <form method="POST" action="/admin/customers/${customer.id}/tax-exempt">
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input type="hidden" name="tax_exempt" value="0">
+              <input class="form-check-input" type="checkbox" name="tax_exempt" value="1" id="taxExemptToggle" ${customer.tax_exempt ? 'checked' : ''} onchange="this.form.submit()">
+              <label class="form-check-label" for="taxExemptToggle">
+                ${customer.tax_exempt ? '<span class="badge bg-success">Tax Exempt</span>' : '<span class="text-muted">Not exempt</span>'}
+              </label>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small text-muted">Exemption Certificate #</label>
+            <input type="text" name="tax_exempt_cert" class="form-control form-control-sm" placeholder="OK exemption cert number" value="${customer.tax_exempt_cert || ''}">
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><i class="fas fa-save me-1"></i> Save</button>
+        </form>
+      </div>
+    </div>
+
     <!-- Add Note -->
     <div class="card mb-4">
       <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Add Note</div>

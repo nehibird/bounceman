@@ -214,51 +214,51 @@ router.post('/bookings/:id/crew', (req, res) => {
 });
 
 // Record manual payment (cash, check, card on delivery)
-router.post("/bookings/:id/payment", (req, res) => {
+router.post('/bookings/:id/payment', (req, res) => {
   const db = getDb();
   const { amount, payment_method, notes } = req.body;
   const bookingId = req.params.id;
-  
+
   // Get booking and customer
-  const booking = db.prepare("SELECT b.*, c.first_name, c.last_name, c.email, c.id as cust_id FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?").get(bookingId);
-  if (!booking) return res.redirect("/admin/bookings?error=Booking+not+found");
-  
+  const booking = db.prepare('SELECT b.*, c.first_name, c.last_name, c.email, c.id as cust_id FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.id = ?').get(bookingId);
+  if (!booking) return res.redirect('/admin/bookings?error=Booking+not+found');
+
   const paymentAmount = parseFloat(amount) || 0;
-  if (paymentAmount <= 0) return res.redirect("/admin/bookings/" + bookingId + "?error=Invalid+amount");
-  
+  if (paymentAmount <= 0) return res.redirect('/admin/bookings/' + bookingId + '?error=Invalid+amount');
+
   // Create payment record
-  const paymentId = require("crypto").randomUUID();
-  db.prepare("INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime(\"now\"))").run(
-    paymentId, bookingId, booking.cust_id, paymentAmount, "charge", payment_method || "cash", "completed", notes || null
+  const paymentId = require('crypto').randomUUID();
+  db.prepare('INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))').run(
+    paymentId, bookingId, booking.cust_id, paymentAmount, 'charge', payment_method || 'cash', 'completed', notes || null
   );
-  
+
   // Calculate new balance
-  const totalPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ? AND status = \"completed\"").get(bookingId).total;
+  const totalPaid = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ? AND status = "completed"').get(bookingId).total;
   const newBalance = Math.max(0, parseFloat(booking.total) - totalPaid);
-  const newStatus = newBalance <= 0 ? "paid" : (totalPaid > 0 ? "partial" : "unpaid");
-  
+  const newStatus = newBalance <= 0 ? 'paid' : (totalPaid > 0 ? 'partial' : 'unpaid');
+
   // Update booking
-  db.prepare("UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime(\"now\") WHERE id = ?").run(newBalance, newStatus, bookingId);
-  
+  db.prepare('UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime("now") WHERE id = ?').run(newBalance, newStatus, bookingId);
+
   // Send Slack notification
-  const slack = require("../services/notifications");
+  const slack = require('../services/notifications');
   if (slack.sendSlackMessage) {
     slack.sendSlackMessage({
-      text: ":white_check_mark: *Payment Recorded* - " + booking.booking_number,
+      text: ':white_check_mark: *Payment Recorded* - ' + booking.booking_number,
       blocks: [
-        { type: "section", text: { type: "mrkdwn", text: ":white_check_mark: *Payment Recorded*\n*" + booking.first_name + " " + booking.last_name + "* - " + booking.booking_number } },
-        { type: "section", fields: [
-          { type: "mrkdwn", text: "*Amount:*\n$" + paymentAmount.toFixed(2) },
-          { type: "mrkdwn", text: "*Method:*\n" + (payment_method || "cash") },
-          { type: "mrkdwn", text: "*New Balance:*\n$" + newBalance.toFixed(2) },
-          { type: "mrkdwn", text: "*Status:*\n" + newStatus }
+        { type: 'section', text: { type: 'mrkdwn', text: ':white_check_mark: *Payment Recorded*\n*' + booking.first_name + ' ' + booking.last_name + '* - ' + booking.booking_number } },
+        { type: 'section', fields: [
+          { type: 'mrkdwn', text: '*Amount:*\n$' + paymentAmount.toFixed(2) },
+          { type: 'mrkdwn', text: '*Method:*\n' + (payment_method || 'cash') },
+          { type: 'mrkdwn', text: '*New Balance:*\n$' + newBalance.toFixed(2) },
+          { type: 'mrkdwn', text: '*Status:*\n' + newStatus }
         ]}
       ]
-    }).catch(e => console.error("[SLACK] Payment notification failed:", e.message));
+    }).catch(e => console.error('[SLACK] Payment notification failed:', e.message));
   }
-  
-  console.log("[PAYMENT] Recorded $" + paymentAmount.toFixed(2) + " " + payment_method + " for " + booking.booking_number);
-  res.redirect("/admin/bookings/" + bookingId + "?success=Payment+recorded");
+
+  console.log('[PAYMENT] Recorded $' + paymentAmount.toFixed(2) + ' ' + payment_method + ' for ' + booking.booking_number);
+  res.redirect('/admin/bookings/' + bookingId + '?success=Payment+recorded');
 });
 
 
@@ -557,6 +557,15 @@ router.get('/customers/:id', (req, res) => {
     title: `${customer.first_name} ${customer.last_name} - Admin`, user: req.user, settings,
     customer, bookings, payments, comms, page: 'customers', error: req.query.error
   });
+});
+
+router.post('/customers/:id/tax-exempt', (req, res) => {
+  const db = getDb();
+  const { tax_exempt, tax_exempt_cert } = req.body;
+  db.prepare("UPDATE customers SET tax_exempt = ?, tax_exempt_cert = ?, updated_at = datetime('now') WHERE id = ?")
+    .run([].concat(tax_exempt).includes("1") ? 1 : 0, (tax_exempt_cert || '').trim() || null, req.params.id);
+  console.log('[ADMIN] Tax exempt updated for customer:', req.params.id, 'exempt:', tax_exempt);
+  res.redirect('/admin/customers/' + req.params.id);
 });
 
 router.post('/customers/:id/delete', (req, res) => {

@@ -640,6 +640,14 @@ function initialize() {
     d.prepare('ALTER TABLE bookings ADD COLUMN sms_consent INTEGER DEFAULT 0').run();
   } catch (e) { /* column already exists */ }
 
+  // Migration: add tax_exempt columns to customers
+  try {
+    d.prepare('ALTER TABLE customers ADD COLUMN tax_exempt INTEGER DEFAULT 0').run();
+  } catch (e) { /* column already exists */ }
+  try {
+    d.prepare('ALTER TABLE customers ADD COLUMN tax_exempt_cert TEXT').run();
+  } catch (e) { /* column already exists */ }
+
   console.log('[DB] Database initialized successfully');
 }
 
