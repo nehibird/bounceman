@@ -196,8 +196,10 @@ router.post('/review', bookingLimiter, async (req, res) => {
 
   const taxExemptClaimed = tax_exempt_claimed === '1';
   const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptClaimed);
-  const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount } = pricing;
+  const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
   const total = rawTotal - discount_amount;
+  const reviewDepositPct = parseFloat(settings.deposit_percent || '50') / 100;
+  const deposit_amount = Math.floor(total * reviewDepositPct * 100) / 100;
 
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',
@@ -271,7 +273,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     data.tax_amount = recalcPricing.taxAmount;
     data.damage_waiver_fee = recalcPricing.damageWaiverFee;
     data.total = recalcTotal;
-    data.deposit_amount = recalcPricing.depositAmount;
+    const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
+    data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
     data.discount_amount = recalcDiscountAmount;
 
     // Create or find customer
