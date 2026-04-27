@@ -14,6 +14,7 @@ const bookingRoutes = require('./routes/booking');
 const webhookRoutes = require('./routes/webhooks');
 const eventRoutes = require('./routes/event');
 const sarahRoutes = require('./routes/sarah');
+const callsRouter = require('./routes/calls');
 
 const cookieParser = require('cookie-parser');
 const app = express();
@@ -44,12 +45,19 @@ app.use(helmet({
 // HIGH-2: Restrict CORS origin — no wildcard in production
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://bouncemanrentals.com' }));
 
-// Rate limiting
+// Trust proxy — required behind nginx so rate limiter sees real client IPs
+app.set('trust proxy', 1);
+
+// Rate limiting — only on public-facing endpoints, not server-to-server calls
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for authenticated server-to-server routes
+    return req.path.startsWith('/sarah') || req.path.startsWith('/webhooks');
+  }
 });
 app.use('/api/', limiter);
 
@@ -81,6 +89,7 @@ app.get('/api/ads/google/callback', (req, res) => {
   res.redirect('/admin/api/ads/google/callback' + (qs ? '?' + qs : ''));
 });
 app.use('/api/sarah', sarahRoutes);
+app.use('/api/call', callsRouter);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api', apiRoutes);
 app.use('/event', eventRoutes);

@@ -4,7 +4,9 @@ const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
-const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone } = require('../lib/helpers');
+const emailService = require('../services/email');
+const notificationsService = require('../services/notifications');
+const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate } = require('../lib/helpers');
 
 function getTwilio() {
   return require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -27,9 +29,15 @@ router.use((req, res, next) => {
 // Vapi calls this when customer asks about a date
 router.post('/check-availability', (req, res) => {
   const db = getDb();
-  const { date } = req.body;
+  const { date: rawDate, zip } = req.body;
 
-  if (!date) return res.status(400).json({ error: 'Date required (YYYY-MM-DD)' });
+  if (!rawDate) return res.status(400).json({ error: 'Date required' });
+
+  // Resolve natural language dates ("next Saturday", "April 15th", "tomorrow", etc.)
+  const date = resolveDate(rawDate);
+  if (!date) {
+    return res.json({ available: false, message: `I didn't quite catch that date. Could you say it again, like "May tenth" or "next Saturday"?` });
+  }
 
   // Validate date is in the future
   const today = new Date().toISOString().slice(0, 10);
@@ -61,16 +69,41 @@ router.post('/check-availability', (req, res) => {
   // Get add-ons too
   const addons = db.prepare("SELECT id, name, price_daily, price_4hr FROM equipment WHERE status = 'available' AND category = 'add_ons'").all();
 
-  const listing = available.map(e =>
-    `${e.name}: $${e.price_4hr} for 4 hours, $${e.price_daily} full day`
-  ).join('. ');
+  // Calculate delivery fee and totals if zip provided
+  const settings = getSettings();
+  let delivery_fee = 0, delivery_zone = null, sample_total = null, sample_deposit = null;
+  if (zip) {
+    const zoneResult = getDeliveryFee(db, zip);
+    delivery_fee = zoneResult.fee;
+    delivery_zone = zoneResult.zone;
+    // Sample total using first available item (full day) so Sarah can quote a ballpark
+    if (available.length > 0) {
+      const samplePrice = available[0].price_daily;
+      const pricing = calcPricing(settings, samplePrice, delivery_fee);
+      sample_total = pricing.total;
+      sample_deposit = pricing.depositAmount;
+    }
+  }
 
-  const addonListing = addons.map(a => `${a.name}: $${a.price_4hr} for 4 hours, $${a.price_daily} full day`).join('. ');
+  const listing = available.map(e => {
+    let line = `${e.name}: $${e.price_4hr} half day, $${e.price_daily} full day`;
+    if (zip && delivery_fee === 0) line += ' (free delivery to your area)';
+    else if (zip) line += ` + $${delivery_fee} delivery`;
+    return line;
+  }).join('. ');
+
+  const addonListing = addons.map(a => `${a.name}: $${a.price_4hr} half day, $${a.price_daily} full day`).join('. ');
+
+  const deliveryNote = zip
+    ? (delivery_zone ? ` Delivery to your area: ${delivery_fee === 0 ? 'FREE' : `$${delivery_fee}`} (${delivery_zone}).` : ' Your zip is outside our standard zones — we may still deliver, fee to be confirmed.')
+    : '';
 
   res.json({
     available: true,
-    date: date,
+    date,
     date_formatted: fmtDate(date),
+    delivery_fee,
+    delivery_zone,
     equipment: available.map(e => ({
       id: e.id,
       name: e.name,
@@ -86,7 +119,7 @@ router.post('/check-availability', (req, res) => {
       price_daily: a.price_daily
     })),
     unavailable: unavailable.map(e => e.name),
-    message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons available: ${addonListing}.${unavailable.length > 0 ? ` (Already booked: ${unavailable.map(e => e.name).join(', ')})` : ''}`
+    message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons: ${addonListing}.${deliveryNote}${unavailable.length > 0 ? ` Already booked that day: ${unavailable.map(e => e.name).join(', ')}.` : ''}`
   });
 });
 
@@ -188,7 +221,7 @@ router.post('/create-and-send-link', async (req, res) => {
     equipment_ids, duration,
     event_date, event_start_time, event_end_time,
     delivery_address, delivery_city, delivery_zip,
-    event_type, surface_type
+    event_type, surface_type, discount_code
   } = req.body;
 
   // Validate required fields
@@ -237,6 +270,22 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     const { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
+
+    // Apply discount code if provided
+    let discount_amount = 0;
+    let applied_code = null;
+    if (discount_code) {
+      const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(discount_code.toUpperCase());
+      if (code) {
+        discount_amount = code.type === 'percent'
+          ? Math.round(subtotal * (code.value / 100) * 100) / 100
+          : Math.min(code.value, subtotal);
+        applied_code = code.code;
+        db.prepare('UPDATE discount_codes SET uses_count = uses_count + 1 WHERE id = ?').run(code.id);
+        subtotal = Math.max(0, subtotal - discount_amount);
+      }
+    }
+
     const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee);
 
     // Create or find customer
@@ -264,13 +313,13 @@ router.post('/create-and-send-link', async (req, res) => {
       surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, 1, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`).run(
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       bookingId, bookingNumber, customerId,
       event_date, event_start_time || '9:00 AM', event_end_time || '1:00 PM',
       event_type || 'birthday_party',
       delivery_address || '', delivery_city || '', delivery_zip || '',
       surface_type || 'grass',
-      subtotal, delivery_fee, tax_amount, tax_rate,
+      subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, total, 'unpaid'
     );
 
@@ -301,21 +350,47 @@ router.post('/create-and-send-link', async (req, res) => {
     db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
       .run(`stripe_session:${session.id}`, bookingId);
 
-    // Text the payment link to the customer
+    // Create contract from default template
+    let contractId = null;
+    try {
+      const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
+      if (template) {
+        contractId = uuid();
+        const customerForContract = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+        const content = (template.content || '')
+          .replace(/\{\{customer_name\}\}/g, `${first_name} ${last_name || ''}`.trim())
+          .replace(/\{\{booking_number\}\}/g, bookingNumber)
+          .replace(/\{\{event_date\}\}/g, fmtDate(event_date))
+          .replace(/\{\{equipment\}\}/g, lineItems.map(i => i.item_name).join(', '))
+          .replace(/\{\{total\}\}/g, `$${total.toFixed(2)}`);
+        db.prepare('INSERT INTO contracts (id, booking_id, customer_id, template_id, content) VALUES (?, ?, ?, ?, ?)')
+          .run(contractId, bookingId, customerId, template.id, content);
+      }
+    } catch (contractErr) {
+      console.error('[SARAH] Contract creation failed (non-fatal):', contractErr.message);
+    }
+
+    // Notify Slack #bookings of new booking
+    const bookingForNotify = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+    const customerForNotify = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    notificationsService.notifyNewBooking(bookingForNotify, customerForNotify, lineItems)
+      .catch(err => console.error('[SARAH] Slack notify failed (non-fatal):', err.message));
+
+    // Payment link URL
     const paymentUrl = session.url;
+
+    // Send booking confirmation SMS (A2P 10DLC campaign verified 2026-04-27)
     const smsBody = `Hi ${first_name}! Here's your Bounce Man booking for ${fmtDate(event_date)}:\n\n` +
       `${itemNames}\n` +
-      `Total: ${total.toFixed(2)}\n` +
-      `Deposit due now: ${deposit_amount.toFixed(2)}\n\n` +
+      `Total: $${total.toFixed(2)}\n` +
+      `Deposit due now: $${deposit_amount.toFixed(2)}\n\n` +
       `Pay here: ${paymentUrl}\n\n` +
       `Booking #${bookingNumber} — Questions? Call (580) 308-9288`;
-
-    let sms_sent = false;
     try {
       await smsService.sendSms(phone, smsBody);
-      sms_sent = true;
+      console.log('[SARAH] SMS sent to', phone);
     } catch (smsErr) {
-      console.error('[SARAH] SMS failed (booking still created):', smsErr.message);
+      console.error('[SARAH] SMS failed:', smsErr.message);
     }
 
     // Log activity
@@ -324,7 +399,7 @@ router.post('/create-and-send-link', async (req, res) => {
       uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${first_name} ${last_name || ''}`, source: 'phone_ai' }), req.ip
     );
 
-    console.log(`[SARAH] Booking ${bookingNumber} created, payment link texted to ${phone}`);
+    console.log(`[SARAH] Booking ${bookingNumber} created for ${phone}, payment URL: ${paymentUrl}`);
 
     res.json({
       success: true,
@@ -335,10 +410,8 @@ router.post('/create-and-send-link', async (req, res) => {
       deposit_amount: deposit_amount,
       balance_due: Math.round((total - deposit_amount) * 100) / 100,
       payment_url: paymentUrl,
-      sms_sent,
-      message: sms_sent
-        ? `I've created booking #${bookingNumber} and just texted a payment link to your phone. The deposit is ${deposit_amount.toFixed(2)} and you can pay right from the link. The remaining ${(total - deposit_amount).toFixed(2)} is due on delivery day. Check your text messages!`
-        : `I've created booking #${bookingNumber}! The deposit is ${deposit_amount.toFixed(2)}. I wasn't able to text the link, but you can pay at this URL: ${paymentUrl}. The remaining ${(total - deposit_amount).toFixed(2)} is due on delivery day.`
+      sms_sent: true,
+      message: `I've created booking #${bookingNumber}! To lock it in, pay the deposit of $${deposit_amount.toFixed(2)} at this link: ${paymentUrl} — that's your secure Stripe checkout. The remaining $${(total - deposit_amount).toFixed(2)} is due on delivery day. Do you have a pen or can you pull that up right now?`
     });
   } catch (err) {
     console.error('[SARAH] Create booking error:', err);
@@ -377,6 +450,21 @@ router.post('/check-payment', async (req, res) => {
           payment_status = 'deposit_paid', deposit_paid = 1,
           balance_due = total - ?, updated_at = datetime('now')
           WHERE id = ?`).run(booking.deposit_amount, booking.id);
+
+        // Send confirmation email if customer has email on file
+        try {
+          const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+          const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id);
+          const contract = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(booking.id);
+          if (customer?.email) {
+            emailService.sendBookingConfirmation(
+              { ...booking, payment_status: 'deposit_paid', deposit_paid: 1 },
+              customer, items, contract?.id
+            ).catch(err => console.error('[SARAH] Confirmation email failed:', err.message));
+          }
+        } catch (emailErr) {
+          console.error('[SARAH] Email lookup failed:', emailErr.message);
+        }
 
         return res.json({
           paid: true,

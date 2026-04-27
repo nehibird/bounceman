@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c182c';
 
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
@@ -343,5 +344,123 @@ async function respondToSlack(response_url, payload) {
     body: JSON.stringify(payload)
   });
 }
+
+// ============================================================
+// VAPI WEBHOOK — End-of-call reports → Slack #phone-calls
+// POST /api/webhooks/vapi
+// ============================================================
+router.post('/vapi', async (req, res) => {
+  const msg = req.body?.message;
+  if (!msg) return res.json({ received: true });
+
+  // ─── ASSISTANT REQUEST: intercept before Sarah picks up ───────────────────
+  if (msg.type === 'assistant-request') {
+    const db = getDb();
+    const callerNumber = msg.call?.customer?.number || '';
+    const callId = msg.call?.id || '';
+
+    const logCall = (status, reason) => {
+      try {
+        db.prepare(`INSERT INTO call_log (id, caller_number, vapi_call_id, status, block_reason, called_at)
+          VALUES (?, ?, ?, ?, ?, datetime('now'))`).run(uuid(), callerNumber, callId, status, reason || null);
+      } catch (e) { /* ignore */ }
+    };
+
+    // 1. Non-US number (valid US: +1 followed by area code 2-9 + 9 more digits)
+    if (callerNumber && !/^\+1[2-9]\d{9}$/.test(callerNumber)) {
+      logCall('blocked', 'non_us_number');
+      console.log('[VAPI SPAM]', callerNumber, '-> blocked (non-US)');
+      return res.json({ error: 'Service unavailable from your number.' });
+    }
+
+    // 2. Explicit blocklist
+    try {
+      const blocked = db.prepare('SELECT reason FROM blocked_numbers WHERE number = ?').get(callerNumber);
+      if (blocked) {
+        logCall('blocked', 'blocklist:' + blocked.reason);
+        console.log('[VAPI SPAM]', callerNumber, '-> blocked (blocklist)');
+        return res.json({ error: 'This number has been blocked.' });
+      }
+    } catch (e) { /* ignore if table not yet created */ }
+
+    // 3. Rate limit: >5 calls in 24 hours -> auto-block
+    try {
+      const recent = db.prepare(`SELECT COUNT(*) as c FROM call_log
+        WHERE caller_number = ? AND called_at > datetime('now', '-24 hours')`).get(callerNumber);
+      if (recent && recent.c >= 5) {
+        db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
+          VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), callerNumber);
+        logCall('blocked', 'rate_limit');
+        console.log('[VAPI SPAM]', callerNumber, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
+        return res.json({ error: 'Too many calls from this number.' });
+      }
+    } catch (e) { /* ignore if table not yet created */ }
+
+    // 4. Allowed -> connect to Sarah
+    logCall('allowed', null);
+    console.log('[VAPI] Inbound call from', callerNumber || 'Unknown', '-> connecting to Sarah');
+    return res.json({ assistantId: VAPI_ASSISTANT_ID });
+  }
+
+  // ─── ALL OTHER EVENTS: acknowledge then process async ────────────────────
+  res.json({ received: true });
+
+  const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
+  const PHONE_CALLS_CHANNEL = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
+
+  if (msg.type === 'end-of-call-report') {
+    const call = msg.call || {};
+    const callerNumber = call.customer?.number || 'Unknown';
+    const startedAt = call.startedAt ? new Date(call.startedAt) : null;
+    const endedAt = call.endedAt ? new Date(call.endedAt) : null;
+    const durationSec = (startedAt && endedAt) ? Math.round((endedAt - startedAt) / 1000) : null;
+    const durationStr = durationSec != null
+      ? (durationSec >= 60 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : `${durationSec}s`)
+      : 'unknown';
+    const cost = call.cost != null ? `$${Number(call.cost).toFixed(4)}` : 'n/a';
+    const endedReason = call.endedReason || 'unknown';
+    const recordingUrl = call.recordingUrl || null;
+    const summary = msg.summary || call.summary || null;
+    const transcript = msg.transcript || call.transcript || null;
+
+    const headerLine = `:telephone_receiver: *Inbound Call* from ${callerNumber}`;
+    const metaLine = `Duration: ${durationStr} | Ended: ${endedReason} | Cost: ${cost}`;
+    const recordingLine = recordingUrl ? `:headphones: <${recordingUrl}|Listen to Recording>` : ':mute: No recording available';
+    const summarySection = summary ? `\n*Summary:*\n${summary}` : '';
+
+    let transcriptSection = '';
+    if (transcript) {
+      const MAX = 2800;
+      const truncated = transcript.length > MAX ? transcript.slice(0, MAX) + '\n…[truncated]' : transcript;
+      transcriptSection = `\n*Transcript:*\n\`\`\`${truncated}\`\`\``;
+    }
+
+    const slackText = `${headerLine}\n${metaLine}\n${recordingLine}${summarySection}${transcriptSection}`;
+
+    try {
+      await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: PHONE_CALLS_CHANNEL, text: slackText, unfurl_links: false })
+      });
+      console.log('[VAPI] End-of-call report posted to Slack for', callerNumber);
+    } catch (err) {
+      console.error('[VAPI] Slack post failed:', err.message);
+    }
+
+    // Also log to DB activity log
+    try {
+      const db = getDb();
+      db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
+        VALUES (?, 'sarah_call_completed', 'call', ?, ?, ?)`).run(
+        uuid(), call.id || uuid(),
+        JSON.stringify({ caller: callerNumber, duration_sec: durationSec, ended_reason: endedReason, cost: call.cost, recording_url: recordingUrl }),
+        req.ip
+      );
+    } catch (dbErr) {
+      console.error('[VAPI] DB log failed:', dbErr.message);
+    }
+  }
+});
 
 module.exports = router;

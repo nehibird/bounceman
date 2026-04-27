@@ -653,6 +653,30 @@ function initialize() {
     d.prepare('ALTER TABLE customers ADD COLUMN tax_exempt_cert TEXT').run();
   } catch (e) { /* column already exists */ }
 
+
+  // Migration: blocked_numbers table for spam call filtering
+  try {
+    d.prepare(`CREATE TABLE IF NOT EXISTS blocked_numbers (
+      id TEXT PRIMARY KEY,
+      number TEXT UNIQUE NOT NULL,
+      reason TEXT,
+      auto_blocked INTEGER DEFAULT 0,
+      blocked_at TEXT DEFAULT (datetime('now'))
+    )`).run();
+  } catch (e) { /* already exists */ }
+
+  // Migration: call_log table for inbound call tracking
+  try {
+    d.prepare(`CREATE TABLE IF NOT EXISTS call_log (
+      id TEXT PRIMARY KEY,
+      caller_number TEXT NOT NULL,
+      vapi_call_id TEXT,
+      status TEXT NOT NULL,
+      block_reason TEXT,
+      called_at TEXT DEFAULT (datetime('now'))
+    )`).run();
+  } catch (e) { /* already exists */ }
+
   console.log('[DB] Database initialized successfully');
 }
 
