@@ -140,30 +140,17 @@ function deliveryReminderBody(booking, customer, contractId) {
   
   let actionButtons = '';
   if (hasBalance || needsSignature) {
+    const manageUrl = `${BASE_URL}/booking/manage/${booking.booking_number}`;
+    const btnLabel = hasBalance && needsSignature ? 'Pay Balance & Sign Agreement'
+                   : hasBalance ? `Pay Balance ($${fmtMoney(booking.balance_due)})`
+                   : 'Sign Rental Agreement';
     actionButtons = `
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
 <tr><td align="center">
-  <table cellpadding="0" cellspacing="0"><tr>`;
-    
-    if (hasBalance) {
-      actionButtons += `
-    <td style="padding-right:${needsSignature ? '8px' : '0'};">
-      <a href="${BASE_URL}/booking/pay/${booking.booking_number}" style="display:inline-block;background-color:${GREEN};color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:8px;">Pay Balance ($${fmtMoney(booking.balance_due)})</a>
-    </td>`;
-    }
-    
-    if (needsSignature) {
-      actionButtons += `
-    <td style="padding-left:${hasBalance ? '8px' : '0'};">
-      <a href="${BASE_URL}/contract/${contractId}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:8px;">Sign Waiver</a>
-    </td>`;
-    }
-    
-    actionButtons += `
-  </tr></table>
+  <a href="${manageUrl}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;">${btnLabel}</a>
 </td></tr>
 <tr><td align="center" style="padding-top:8px;font-size:12px;color:#666;">
-  ${hasBalance ? 'Pay online now or on delivery' : ''}${hasBalance && needsSignature ? ' • ' : ''}${needsSignature ? 'Waiver required before setup' : ''}
+  ${hasBalance ? 'Pay online or on delivery' : ''}${hasBalance && needsSignature ? ' • ' : ''}${needsSignature ? 'Waiver required before setup' : ''}
 </td></tr>
 </table>`;
   }

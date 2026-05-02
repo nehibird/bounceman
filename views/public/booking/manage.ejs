@@ -1,0 +1,141 @@
+<%- include('../../layouts/public', { body: `
+
+<section class="py-5">
+  <div class="container" style="max-width:720px">
+
+    <div class="text-center mb-4">
+      <h1 style="color:var(--bm-blue);font-weight:700"><i class="fas fa-clipboard-list me-2"></i>Your Booking</h1>
+      <p class="text-muted">Booking #<strong>${booking.booking_number}</strong></p>
+    </div>
+
+    <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <div class="text-muted small">Event Date</div>
+          <div class="fw-bold">${booking.event_date}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="text-muted small">Delivery Address</div>
+          <div class="fw-bold">${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="text-muted small">Items</div>
+          <div class="fw-bold">${itemList}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="text-muted small">Balance Due on Delivery</div>
+          <div class="fw-bold" style="color:${parseFloat(booking.balance_due) > 0 ? '#D77C42' : '#06D6A0'}">
+            ${parseFloat(booking.balance_due) > 0 ? '$' + parseFloat(booking.balance_due).toFixed(2) : 'Paid in Full ✓'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    ${parseFloat(booking.balance_due) > 0 ? `
+    <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
+      <h5 style="color:var(--bm-blue);font-weight:700;margin-bottom:4px"><i class="fas fa-credit-card me-2"></i>Pay Balance</h5>
+      <p class="text-muted small mb-3">Pay online now or hand cash/card to our crew on delivery day.</p>
+      <a href="/booking/pay/${booking.booking_number}" class="btn btn-book-now btn-lg w-100">
+        <i class="fas fa-lock me-2"></i>Pay $${parseFloat(booking.balance_due).toFixed(2)} Online
+      </a>
+    </div>
+    ` : ''}
+
+    ${contract && !contract.signed ? `
+    <div class="bg-white rounded-4 shadow-sm mb-4">
+      <div class="p-4" style="border-bottom:1px solid #eee">
+        <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><i class="fas fa-file-contract me-2"></i>Rental Agreement</h5>
+        <p class="text-muted small mt-1 mb-0">Please read and sign before your event.</p>
+      </div>
+      <div class="p-4" style="max-height:350px;overflow-y:auto;line-height:1.8;color:#555;font-size:14px;white-space:pre-wrap">${contract.content}</div>
+      <div class="p-4" style="border-top:1px solid #eee">
+        <label class="fw-bold mb-2">Your Signature</label>
+        <div style="border:2px dashed #ccc;border-radius:12px;background:#fafafa;position:relative;margin-bottom:12px">
+          <canvas id="sigCanvas" width="640" height="180" style="width:100%;height:180px;display:block;cursor:crosshair;touch-action:none"></canvas>
+          <div id="sigPlaceholder" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#bbb;font-size:15px;pointer-events:none"><i class="fas fa-pen me-2"></i>Sign here</div>
+        </div>
+        <div class="d-flex justify-content-end mb-3">
+          <button id="clearSigBtn" class="btn btn-sm btn-outline-secondary rounded-pill"><i class="fas fa-eraser me-1"></i>Clear</button>
+        </div>
+        <div class="mb-3">
+          <label for="signerName" class="form-label fw-bold">Print Name</label>
+          <input type="text" id="signerName" class="form-control" value="${booking.first_name} ${booking.last_name || ''}" style="border-radius:12px">
+        </div>
+        <div class="form-check mb-4">
+          <input class="form-check-input" type="checkbox" id="agreeCheck">
+          <label class="form-check-label" for="agreeCheck">I have read and agree to the terms above</label>
+        </div>
+        <button id="signBtn" class="btn btn-book-now btn-lg w-100" disabled>
+          <i class="fas fa-check-circle me-2"></i>Sign Agreement
+        </button>
+        <div id="signError" class="alert alert-danger mt-3" style="display:none"></div>
+      </div>
+    </div>
+    ` : contract && contract.signed ? `
+    <div class="bg-white rounded-4 p-4 shadow-sm mb-4 text-center">
+      <i class="fas fa-check-circle fa-2x mb-2" style="color:#06D6A0"></i>
+      <div class="fw-bold">Rental Agreement Signed</div>
+      <div class="text-muted small">Signed by ${contract.signer_name || booking.first_name}</div>
+    </div>
+    ` : ''}
+
+    <div class="text-center text-muted small mt-2">
+      Questions? Call <a href="tel:5803089288" style="color:#D77C42">(580) 308-9288</a>
+    </div>
+
+  </div>
+</section>
+
+`, scripts: `
+<script>
+(function() {
+  var canvas = document.getElementById('sigCanvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var drawing = false, hasSigned = false;
+  var placeholder = document.getElementById('sigPlaceholder');
+  var agreeCheck = document.getElementById('agreeCheck');
+  var signBtn = document.getElementById('signBtn');
+
+  function resizeCanvas() {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#333';
+  }
+  resizeCanvas();
+  window.addEventListener('resize', function() { if (!hasSigned) resizeCanvas(); });
+
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    return { x: (e.touches ? e.touches[0].clientX : e.clientX) - rect.left, y: (e.touches ? e.touches[0].clientY : e.clientY) - rect.top };
+  }
+  canvas.addEventListener('mousedown', function(e) { drawing = true; var p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mousemove', function(e) { if (!drawing) return; var p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSigned = true; placeholder.style.display = 'none'; updateBtn(); });
+  canvas.addEventListener('mouseup', function() { drawing = false; });
+  canvas.addEventListener('mouseleave', function() { drawing = false; });
+  canvas.addEventListener('touchstart', function(e) { e.preventDefault(); drawing = true; var p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
+  canvas.addEventListener('touchmove', function(e) { e.preventDefault(); if (!drawing) return; var p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSigned = true; placeholder.style.display = 'none'; updateBtn(); }, { passive: false });
+  canvas.addEventListener('touchend', function(e) { e.preventDefault(); drawing = false; }, { passive: false });
+  document.getElementById('clearSigBtn').addEventListener('click', function() { ctx.clearRect(0, 0, canvas.width, canvas.height); hasSigned = false; placeholder.style.display = 'block'; updateBtn(); });
+  function updateBtn() { signBtn.disabled = !(hasSigned && agreeCheck.checked); }
+  agreeCheck.addEventListener('change', updateBtn);
+
+  signBtn.addEventListener('click', function() {
+    var name = document.getElementById('signerName').value.trim();
+    if (!name || !hasSigned || !agreeCheck.checked) return;
+    signBtn.disabled = true;
+    fetch('/contract/${contract ? contract.id : ''}/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature_data: canvas.toDataURL('image/png'), signer_name: name })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.success) { window.location.reload(); }
+      else { document.getElementById('signError').style.display = 'block'; document.getElementById('signError').textContent = d.message || 'Signing failed.'; signBtn.disabled = false; }
+    }).catch(function() { document.getElementById('signError').style.display = 'block'; document.getElementById('signError').textContent = 'An error occurred. Please try again.'; signBtn.disabled = false; });
+  });
+})();
+</script>
+` }) %>

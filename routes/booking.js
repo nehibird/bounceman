@@ -629,4 +629,25 @@ router.get('/pay/:bookingNumber/cancel', (req, res) => {
   res.render('public/booking/payment-cancel', { title: 'Payment Cancelled', settings, booking });
 });
 
+router.get('/manage/:bookingNumber', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const booking = db.prepare(`
+    SELECT b.*, c.first_name, c.last_name, c.email, c.phone
+    FROM bookings b
+    JOIN customers c ON c.id = b.customer_id
+    WHERE b.booking_number = ?
+  `).get(req.params.bookingNumber);
+
+  if (!booking) {
+    return res.status(404).render('public/error', { title: 'Not Found', settings, message: 'Booking not found' });
+  }
+
+  const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id);
+  const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
+  const itemList = items.map(i => i.item_name).join(', ');
+
+  res.render('public/booking/manage', { title: 'Your Booking', settings, booking, contract, itemList, page: 'booking' });
+});
+
 module.exports = router;

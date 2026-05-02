@@ -192,6 +192,13 @@ router.get('/bookings/:id', (req, res) => {
   });
 });
 
+router.get('/bookings/:id/contract', (req, res) => {
+  const db = getDb();
+  const contract = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(req.params.id);
+  if (!contract) return res.redirect('/admin/bookings/' + req.params.id);
+  res.redirect('/contract/' + contract.id);
+});
+
 router.post('/bookings/:id/status', (req, res) => {
   const db = getDb();
   const { status } = req.body;

@@ -137,7 +137,11 @@
       <div class="card-body">
         <h6 class="mb-2">${booking.first_name} ${booking.last_name}</h6>
         <div class="mb-1"><i class="fas fa-envelope text-muted me-2"></i>${booking.email || 'N/A'}</div>
-        <div class="mb-1"><i class="fas fa-phone text-muted me-2"></i>${booking.phone || 'N/A'}</div>
+        <div class="mb-1 d-flex align-items-center gap-2">
+          <i class="fas fa-phone text-muted"></i>
+          <span>${booking.phone || 'N/A'}</span>
+          ${booking.phone ? '<button class="btn btn-sm btn-outline-success rounded-pill py-0 px-2 call-btn" data-phone="' + booking.phone + '" title="Click to call"><i class="fas fa-phone-alt me-1"></i>Call</button>' : ''}
+        </div>
         ${booking.customer_id ? '<a href="/admin/customers/' + booking.customer_id + '" class="btn btn-sm btn-outline-secondary mt-2"><i class="fas fa-external-link-alt me-1"></i> View Customer</a>' : ''}
       </div>
     </div>
@@ -268,4 +272,39 @@
   </div>
 </div>
 
-`, scripts: '' }) %>
+`, scripts: `
+<script>
+(function() {
+  var MY_PHONE_KEY = 'bm_my_phone';
+  document.querySelectorAll('.call-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var customerPhone = btn.getAttribute('data-phone');
+      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
+      myPhone = prompt('Your cell number to call from:', myPhone);
+      if (!myPhone) return;
+      localStorage.setItem(MY_PHONE_KEY, myPhone);
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...';
+      fetch('/api/call/dial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: customerPhone, your_phone: myPhone })
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) {
+          btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing!';
+          setTimeout(function() { btn.disabled = false; btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call'; }, 5000);
+        } else {
+          alert('Error: ' + (d.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call';
+        }
+      }).catch(function() {
+        alert('Request failed');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call';
+      });
+    });
+  });
+})();
+</script>
+` }) %>

@@ -21,6 +21,16 @@ router.use((req, res, next) => {
   next();
 });
 
+// Vapi wraps tool arguments: {message: {toolCallList: [{function: {arguments: "..."}}]}}
+// Unwrap so all route handlers can read req.body.fieldName directly.
+router.use((req, res, next) => {
+  const toolCall = req.body?.message?.toolCallList?.[0];
+  if (toolCall?.function?.arguments) {
+    try { req.body = JSON.parse(toolCall.function.arguments); } catch (e) {}
+  }
+  next();
+});
+
 // ============================================================
 // VAPI TOOL ENDPOINTS — Sarah's e-commerce brain
 // ============================================================
@@ -675,6 +685,41 @@ router.get('/events', (req, res) => {
   const db = getDb();
   const events = db.prepare('SELECT id, name, event_date, price_per_kid FROM walk_up_events WHERE active = 1 ORDER BY event_date DESC').all();
   res.json({ success: true, events });
+});
+
+// POST /api/sarah/request-human
+// Sarah calls this when caller demands to speak with a person.
+// Sends Slack alert to Nehemiah with the caller's phone number.
+router.post('/request-human', async (req, res) => {
+  const { caller_phone, caller_name } = req.body;
+
+  const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
+  const channel = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
+
+  const nameTag = caller_name ? ` (${caller_name})` : '';
+  const phone = caller_phone || 'unknown';
+
+  const blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `🚨 *Caller wants to speak with you*\n📞 ${phone}${nameTag}\n_Sarah told them you'd call back within the hour._`
+      }
+    }
+  ];
+
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, blocks, text: 'Caller wants to speak with you: ' + phone + nameTag })
+    });
+  } catch (e) {
+    console.error('[SARAH] request-human Slack error:', e.message);
+  }
+
+  res.json({ success: true, message: 'Nehemiah has been notified and will call you back within the hour.' });
 });
 
 module.exports = router;

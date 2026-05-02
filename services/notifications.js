@@ -223,10 +223,12 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
   console.log('[SLACK] Delivery reminder sent for', booking.booking_number);
 }
 
-// Check for tomorrow's deliveries and send reminders
+// Check for tomorrow's deliveries and send Slack + customer email reminders
 async function checkDeliveryReminders() {
   try {
     const { getDb } = require('../db');
+    const { sendDeliveryReminder } = require('./email');
+    const { v4: uuid } = require('uuid');
     const db = getDb();
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -237,13 +239,64 @@ async function checkDeliveryReminders() {
     if (bookings.length === 0) return;
 
     for (const booking of bookings) {
+      const slackSent = booking.slack_reminder_sent_date === tomorrowStr;
+      const emailSent = booking.email_reminder_sent_date === tomorrowStr;
+
+      if (slackSent && emailSent) {
+        console.log('[REMINDER] Already sent for', booking.booking_number, '— skipping');
+        continue;
+      }
+
       const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
       const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id);
-      const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
-      if (customer) await notifyDeliveryReminder(booking, customer, items, contract);
+      if (!customer) continue;
+
+      let contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
+
+      // Auto-create contract from default template if missing
+      if (!contract) {
+        try {
+          const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
+          if (template) {
+            const contractId = uuid();
+            const itemNames = items.map(i => i.item_name).join(', ');
+            const content = (template.content || '')
+              .replace(/\{\{customer_name\}\}/g, `${customer.first_name} ${customer.last_name || ''}`.trim())
+              .replace(/\{\{booking_number\}\}/g, booking.booking_number)
+              .replace(/\{\{event_date\}\}/g, booking.event_date)
+              .replace(/\{\{equipment\}\}/g, itemNames)
+              .replace(/\{\{total\}\}/g, `$${parseFloat(booking.total).toFixed(2)}`);
+            db.prepare('INSERT INTO contracts (id, booking_id, customer_id, template_id, content) VALUES (?, ?, ?, ?, ?)')
+              .run(contractId, booking.id, booking.customer_id, template.id, content);
+            contract = { id: contractId, signed: 0 };
+            console.log('[REMINDER] Created contract for', booking.booking_number);
+          }
+        } catch (contractErr) {
+          console.error('[REMINDER] Contract creation failed (non-fatal):', contractErr.message);
+        }
+      }
+
+      // Slack reminder
+      if (!slackSent) {
+        await notifyDeliveryReminder(booking, customer, items, contract);
+        db.prepare('UPDATE bookings SET slack_reminder_sent_date = ? WHERE id = ?').run(tomorrowStr, booking.id);
+      }
+
+      // Customer email reminder
+      if (!emailSent && customer.email) {
+        try {
+          await sendDeliveryReminder(booking, customer, contract ? contract.id : null);
+          db.prepare('UPDATE bookings SET email_reminder_sent_date = ? WHERE id = ?').run(tomorrowStr, booking.id);
+          console.log('[EMAIL] Delivery reminder sent to', customer.email, 'for', booking.booking_number);
+        } catch (emailErr) {
+          console.error('[REMINDER] Email failed (non-fatal):', emailErr.message);
+        }
+      } else if (!customer.email) {
+        console.log('[REMINDER] No email on file for', booking.booking_number);
+      }
     }
   } catch (e) {
-    console.error('[SLACK] Delivery reminder check error:', e.message);
+    console.error('[REMINDER] Delivery reminder check error:', e.message);
   }
 }
 
