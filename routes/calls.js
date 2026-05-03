@@ -100,4 +100,16 @@ router.get('/bridge', (req, res) => {
 </Response>`);
 });
 
+
+// GET /api/call/forward — Forward all inbound calls directly to Nehemiah's cell
+router.get('/forward', (req, res) => {
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial callerId="${process.env.TWILIO_PHONE}" timeout="30">
+    <Number>+15806281765</Number>
+  </Dial>
+</Response>`);
+});
+
 module.exports = router;
