@@ -27,6 +27,10 @@ router.post('/stripe', async (req, res) => {
         const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         if (!booking) break;
 
+        // Deduplicate: skip if this payment intent was already recorded
+        const existingPayment = db.prepare('SELECT id FROM payments WHERE stripe_payment_id = ? AND status = ?').get(pi.id, 'completed');
+        if (existingPayment) break;
+
         db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method,
           stripe_payment_id, card_last4, card_brand, status)
           VALUES (?, ?, ?, ?, 'charge', 'stripe', ?, ?, ?, 'completed')`).run(
@@ -37,12 +41,14 @@ router.post('/stripe', async (req, res) => {
 
         const totalPaid = db.prepare('SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE booking_id = ? AND status = ?')
           .get(bookingId, 'completed').paid;
-        const newBalance = booking.total - totalPaid;
+        const newBalance = Math.max(0, booking.total - totalPaid);
+        const depositPaid = totalPaid >= booking.deposit_amount ? 1 : 0;
+        const paymentStatus = newBalance <= 0 ? 'paid' : (depositPaid ? 'deposit_paid' : 'partial');
+        const bookingStatus = depositPaid ? 'confirmed' : booking.status;
 
-        db.prepare(`UPDATE bookings SET payment_status = ?, balance_due = ?, deposit_paid = ?,
+        db.prepare(`UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?,
           updated_at = datetime('now') WHERE id = ?`).run(
-          newBalance <= 0 ? 'paid' : 'partial', Math.max(0, newBalance),
-          totalPaid >= booking.deposit_amount ? 1 : 0, bookingId
+          bookingStatus, paymentStatus, newBalance, depositPaid, bookingId
         );
 
         // Update customer revenue
