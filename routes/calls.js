@@ -101,15 +101,79 @@ router.get('/bridge', (req, res) => {
 });
 
 
-// GET /api/call/forward — Forward all inbound calls directly to Nehemiah's cell
-router.get('/forward', (req, res) => {
+// GET /api/call/voicemail — Branded voicemail greeting + record
+router.get('/voicemail', (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${process.env.TWILIO_PHONE}" timeout="30">
-    <Number>+15806281765</Number>
-  </Dial>
+  <Say voice="Polly.Joanna-Neural">
+    You have reached Bounce Man Rentals in Tonkawa, Oklahoma.
+    We are unable to take your call right now, but we would love to hear from you.
+    Please leave your name, phone number, and a brief message after the beep,
+    and we will get back to you as soon as possible. Thank you for calling Bounce Man!
+  </Say>
+  <Record
+    maxLength="120"
+    transcribe="true"
+    transcribeCallback="https://bouncemanrentals.com/api/call/voicemail-callback"
+    action="https://bouncemanrentals.com/api/call/voicemail-done"
+    playBeep="true" />
 </Response>`);
+});
+
+// GET /api/call/voicemail-done — Plays after recording ends
+router.get('/voicemail-done', (req, res) => {
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna-Neural">Thank you! We will be in touch soon. Have a great day!</Say>
+</Response>`);
+});
+
+// POST /api/call/voicemail-callback — Twilio posts transcription + recording URL here
+router.post('/voicemail-callback', async (req, res) => {
+  const caller = req.body.From || req.body.Caller || 'Unknown';
+  const transcription = req.body.TranscriptionText || '(transcription pending)';
+  const recordingUrl = req.body.RecordingUrl ? req.body.RecordingUrl + '.mp3' : null;
+  const duration = req.body.RecordingDuration || '?';
+
+  const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
+  const channel = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
+
+  const blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `📱 *New Voicemail — Bounce Man*
+*From:* ${caller}
+*Duration:* ${duration}s
+
+*Transcription:*
+> ${transcription}`
+      }
+    }
+  ];
+
+  if (recordingUrl) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `<${recordingUrl}|▶ Listen to recording>` }
+    });
+  }
+
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, blocks, text: 'New voicemail from ' + caller })
+    });
+    console.log('[VOICEMAIL] Notification sent for', caller);
+  } catch (e) {
+    console.error('[VOICEMAIL] Slack error:', e.message);
+  }
+
+  res.sendStatus(200);
 });
 
 module.exports = router;
