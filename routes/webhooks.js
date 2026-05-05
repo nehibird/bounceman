@@ -371,6 +371,45 @@ async function respondToSlack(response_url, payload) {
   });
 }
 
+// ── Internal tool executor: calls our sarah endpoints from within the webhook ──
+async function callSarahToolInternal(name, args, callerPhone) {
+  if (name === 'transferCall') return { result: 'TRANSFER_INITIATED to +15806281765' };
+  if (name === 'endCall') return { result: 'CALL_ENDED' };
+
+  const pathMap = {
+    checkAvailability: 'check-availability',
+    createAndSendLink: 'create-and-send-link',
+    lookupBooking: 'lookup-booking'
+  };
+  const path = pathMap[name];
+  if (!path) return { error: `Unknown tool: ${name}` };
+
+  // Only inject callerPhone if args.phone is missing/bogus AND callerPhone is a real customer number.
+  // +15803089288 is BounceMan's own Twilio number — it appears as the caller on SIP bridge legs
+  // because Twilio ignores unverified callerId for external SIP dials. When callerPhone is the
+  // BounceMan number, Sarah has already asked the customer for their number, so args.phone is correct.
+  const BM_NUMBER = '+15803089288';
+  if (name === 'createAndSendLink') {
+    if ((!args.phone || args.phone.includes('{{')) && callerPhone && callerPhone !== BM_NUMBER) {
+      args.phone = callerPhone;
+    }
+  }
+  if (name === 'lookupBooking') {
+    if ((!args.phone || args.phone.includes('{{')) && callerPhone && callerPhone !== BM_NUMBER) {
+      args.phone = callerPhone;
+    }
+  }
+
+  const SARAH_KEY = process.env.SARAH_API_KEY || 'sarah-bm-k3y-2026-s3cur3';
+  const PORT = process.env.PORT || 3200;
+  const r = await fetch(`http://localhost:${PORT}/api/sarah/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-sarah-key': SARAH_KEY },
+    body: JSON.stringify(args)
+  });
+  return r.json();
+}
+
 // ============================================================
 // VAPI WEBHOOK — End-of-call reports → Slack #phone-calls
 // POST /api/webhooks/vapi
@@ -385,16 +424,30 @@ router.post('/vapi', async (req, res) => {
     const callerNumber = msg.call?.customer?.number || '';
     const callId = msg.call?.id || '';
 
-    const logCall = (status, reason) => {
+    const logBlock = (status, reason) => {
       try {
         db.prepare(`INSERT INTO call_log (id, caller_number, vapi_call_id, status, block_reason, called_at)
           VALUES (?, ?, ?, ?, ?, datetime('now'))`).run(uuid(), callerNumber, callId, status, reason || null);
       } catch (e) { /* ignore */ }
     };
 
+    // 0. Skip spam filtering for outbound calls and SIP bridge legs
+    //    +15803089288 = BounceMan's own number, appears as caller on SIP bridge legs
+    if (msg.call?.type === 'outboundPhoneCall') {
+      console.log('[VAPI] Outbound call to', callerNumber, '-> connecting to Sarah');
+      return res.json({ assistantId: VAPI_ASSISTANT_ID });
+    }
+
+    // 0b. Owner/bridge whitelist — never block
+    const WHITELIST = ['+15806281765', '+15803089288'];
+    if (WHITELIST.includes(callerNumber)) {
+      console.log('[VAPI] Whitelisted number', callerNumber, '-> connecting to Sarah');
+      return res.json({ assistantId: VAPI_ASSISTANT_ID });
+    }
+
     // 1. Non-US number (valid US: +1 followed by area code 2-9 + 9 more digits)
     if (callerNumber && !/^\+1[2-9]\d{9}$/.test(callerNumber)) {
-      logCall('blocked', 'non_us_number');
+      logBlock('blocked', 'non_us_number');
       console.log('[VAPI SPAM]', callerNumber, '-> blocked (non-US)');
       return res.json({ error: 'Service unavailable from your number.' });
     }
@@ -403,29 +456,52 @@ router.post('/vapi', async (req, res) => {
     try {
       const blocked = db.prepare('SELECT reason FROM blocked_numbers WHERE number = ?').get(callerNumber);
       if (blocked) {
-        logCall('blocked', 'blocklist:' + blocked.reason);
+        logBlock('blocked', 'blocklist:' + blocked.reason);
         console.log('[VAPI SPAM]', callerNumber, '-> blocked (blocklist)');
         return res.json({ error: 'This number has been blocked.' });
       }
     } catch (e) { /* ignore if table not yet created */ }
 
-    // 3. Rate limit: >5 calls in 24 hours -> auto-block
+    // 3. Rate limit: count twilio-entry rows only (twilio-entry already logs 'allowed' rows,
+    //    so we don't double-log here — just check the count from twilio-entry logs)
     try {
       const recent = db.prepare(`SELECT COUNT(*) as c FROM call_log
         WHERE caller_number = ? AND called_at > datetime('now', '-24 hours')`).get(callerNumber);
-      if (recent && recent.c >= 5) {
+      if (recent && recent.c >= 10) {
         db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
           VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), callerNumber);
-        logCall('blocked', 'rate_limit');
+        logBlock('blocked', 'rate_limit');
         console.log('[VAPI SPAM]', callerNumber, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
         return res.json({ error: 'Too many calls from this number.' });
       }
     } catch (e) { /* ignore if table not yet created */ }
 
-    // 4. Allowed -> connect to Sarah
-    logCall('allowed', null);
+    // 4. Allowed -> connect to Sarah (no additional logging — twilio-entry already logged this call)
     console.log('[VAPI] Inbound call from', callerNumber || 'Unknown', '-> connecting to Sarah');
     return res.json({ assistantId: VAPI_ASSISTANT_ID });
+  }
+
+  // ─── TOOL CALLS: execute tools internally, return results synchronously ─────
+  if (msg.type === 'tool-calls') {
+    const toolCallList = msg.toolCallList || [];
+    const callerPhone = msg.call?.customer?.number || '';
+    const results = [];
+
+    for (const tc of toolCallList) {
+      const name = tc.function?.name;
+      const rawArgs = tc.function?.arguments;
+      const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs || {});
+      try {
+        const result = await callSarahToolInternal(name, args, callerPhone);
+        console.log('[VAPI TOOL]', name, 'args:', JSON.stringify(args).slice(0, 80), '-> result:', JSON.stringify(result).slice(0, 120));
+        results.push({ toolCallId: tc.id, result: JSON.stringify(result) });
+      } catch (err) {
+        console.error('[VAPI TOOL]', name, 'ERROR:', err.message);
+        results.push({ toolCallId: tc.id, result: JSON.stringify({ error: err.message }) });
+      }
+    }
+
+    return res.json({ results });
   }
 
   // ─── ALL OTHER EVENTS: acknowledge then process async ────────────────────
@@ -445,7 +521,7 @@ router.post('/vapi', async (req, res) => {
       : 'unknown';
     const cost = call.cost != null ? `$${Number(call.cost).toFixed(4)}` : 'n/a';
     const endedReason = call.endedReason || 'unknown';
-    const recordingUrl = call.recordingUrl || null;
+    const recordingUrl = msg.artifact?.recordingUrl || msg.artifact?.stereoRecordingUrl || call.recordingUrl || null;
     const summary = msg.summary || call.summary || null;
     const transcript = msg.transcript || call.transcript || null;
 
@@ -486,6 +562,115 @@ router.post('/vapi', async (req, res) => {
     } catch (dbErr) {
       console.error('[VAPI] DB log failed:', dbErr.message);
     }
+  }
+});
+
+// ============================================================
+// POST /api/webhooks/twilio-entry
+// Twilio voice_url endpoint — spam filter before Vapi
+// Returns TwiML: hangup for spam, Redirect to Vapi for clean calls
+// ============================================================
+router.post('/twilio-entry', (req, res) => {
+  const from = (req.body?.From || '').trim();
+  const callId = req.body?.CallSid || '';
+  const db = getDb();
+
+  const twimlHangup = (msg) => {
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>${msg}</Say><Hangup/></Response>`);
+  };
+
+  const twimlGather = () => {
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" action="/api/webhooks/twilio-gather" method="POST" timeout="8"><Play>https://bouncemanrentals.com/assets/audio/thanks-for-calling.mp3</Play></Gather><Hangup/></Response>`);
+  };
+
+  const logCall = (status, reason) => {
+    try {
+      db.prepare(`INSERT INTO call_log (id, caller_number, vapi_call_id, status, block_reason, called_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))`).run(uuid(), from, callId, status, reason || null);
+    } catch (e) { /* ignore */ }
+  };
+
+  // 0. Owner whitelist — never block or rate-limit
+  const WHITELIST = ['+15806281765'];
+  if (WHITELIST.includes(from)) {
+    logCall('allowed', null);
+    console.log('[TWILIO ENTRY] Whitelisted number', from, '-> press-1 gate');
+    return twimlGather();
+  }
+
+  // 1. Non-US numbers
+  if (from && !/^\+1[2-9]\d{9}$/.test(from)) {
+    logCall('blocked', 'non_us_number');
+    console.log('[TWILIO SPAM]', from, '-> blocked (non-US)');
+    return twimlHangup("We're sorry, this service is not available from your number.");
+  }
+
+  // 1b. Landline / VoIP detection via Twilio Lookup (async — best effort, non-blocking)
+  // Fire lookup in background; block if confirmed non-mobile
+  (async () => {
+    try {
+      const lookupRes = await fetch(
+        `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(from)}?Fields=line_type_intelligence`,
+        { headers: { 'Authorization': 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64') } }
+      );
+      const data = await lookupRes.json();
+      const lineType = data?.line_type_intelligence?.type;
+      if (lineType && lineType !== 'mobile' && lineType !== 'nonFixedVoip') {
+        db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked) VALUES (?, ?, 'non_mobile', 1)`)
+          .run(uuid(), from);
+        console.log('[TWILIO SPAM]', from, '-> auto-blocked async (line type:', lineType + ')');
+      }
+    } catch (e) { /* ignore — don't block call if lookup fails */ }
+  })();
+
+  // 2. Explicit blocklist
+  try {
+    const blocked = db.prepare('SELECT reason FROM blocked_numbers WHERE number = ?').get(from);
+    if (blocked) {
+      logCall('blocked', 'blocklist:' + blocked.reason);
+      console.log('[TWILIO SPAM]', from, '-> blocked (blocklist)');
+      return twimlHangup("We're sorry, this number has been blocked.");
+    }
+  } catch (e) { /* ignore */ }
+
+  // 3. Rate limit: >5 calls in 24 hours
+  try {
+    const recent = db.prepare(`SELECT COUNT(*) as c FROM call_log
+      WHERE caller_number = ? AND called_at > datetime('now', '-24 hours')`).get(from);
+    if (recent && recent.c >= 5) {
+      db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
+        VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), from);
+      logCall('blocked', 'rate_limit');
+      console.log('[TWILIO SPAM]', from, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
+      return twimlHangup("We're sorry, we've received too many calls from your number.");
+    }
+  } catch (e) { /* ignore */ }
+
+  // Clean — log and present press-1 IVR
+  logCall('allowed', null);
+  console.log('[TWILIO ENTRY] Inbound from', from || 'Unknown', '-> press-1 gate');
+  twimlGather();
+});
+
+// ============================================================
+// POST /api/webhooks/twilio-gather
+// Handles the press-1 response. On "1": uses <Dial><Sip> to bridge the
+// caller into Vapi via a Twilio SIP Domain. <Redirect> always fails because
+// Vapi requires CallStatus=ringing, but by gather time the call is in-progress.
+// <Dial><Sip> creates a fresh ringing leg that Vapi accepts.
+// ============================================================
+router.post('/twilio-gather', (req, res) => {
+  const digit = (req.body?.Digits || '').trim();
+  res.type('text/xml');
+  if (digit === '1') {
+    const callerPhone = (req.body?.From || '+15803089288').trim();
+    console.log('[TWILIO GATHER] Digit=1, caller:', callerPhone, '-> SIP dial to sip:bounceman@sip.vapi.ai');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerPhone}"><Sip>sip:bounceman@sip.vapi.ai</Sip></Dial></Response>`);
+  } else {
+    console.log('[TWILIO GATHER] Digit=' + (digit || 'none') + ' -> hanging up');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
   }
 });
 

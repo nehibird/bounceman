@@ -7,7 +7,10 @@
     "start": "node server.js",
     "seed": "node seed.js",
     "lint": "eslint routes/*.js lib/*.js server.js db.js --fix",
-    "lint:check": "eslint routes/*.js lib/*.js server.js db.js"
+    "lint:check": "eslint routes/*.js lib/*.js server.js db.js",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -31,6 +34,7 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "eslint": "^10.2.0"
   }
 }
