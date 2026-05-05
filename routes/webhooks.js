@@ -2,71 +2,91 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
+const stripeService = require('../services/stripe');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c182c';
 
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
-  const db = getDb();
-  const settings = Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value]));
-
-  if (!settings.stripe_webhook_secret) {
+  const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error('[Stripe Webhook] STRIPE_EVENT_WEBHOOK_SECRET not set');
     return res.status(400).json({ error: 'Stripe webhook not configured' });
   }
 
   try {
-    const stripe = require('stripe')(settings.stripe_secret_key);
     const sig = req.headers['stripe-signature'];
-    const event = stripe.webhooks.constructEvent(req.body, sig, settings.stripe_webhook_secret);
+    const event = stripeService.constructWebhookEvent(req.body, sig, webhookSecret);
+    const db = getDb();
 
     switch (event.type) {
-      case 'payment_intent.succeeded': {
-        const pi = event.data.object;
-        const bookingId = pi.metadata?.booking_id;
-        if (!bookingId) break;
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const bookingId = session.metadata && session.metadata.booking_id;
+        if (!bookingId) {
+          console.log('[Stripe Webhook] No booking_id in metadata, skipping');
+          break;
+        }
 
         const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
-        if (!booking) break;
+        if (!booking) {
+          console.log('[Stripe Webhook] Booking not found:', bookingId);
+          break;
+        }
 
-        // Deduplicate: skip if this payment intent was already recorded
-        const existingPayment = db.prepare('SELECT id FROM payments WHERE stripe_payment_id = ? AND status = ?').get(pi.id, 'completed');
-        if (existingPayment) break;
+        // Dedup: success redirect may have already recorded this payment via payment intent ID
+        const piId = typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : (session.payment_intent && session.payment_intent.id ? session.payment_intent.id : session.id);
 
-        db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method,
-          stripe_payment_id, card_last4, card_brand, status)
-          VALUES (?, ?, ?, ?, 'charge', 'stripe', ?, ?, ?, 'completed')`).run(
-          uuid(), bookingId, booking.customer_id, pi.amount / 100,
-          pi.id, pi.charges?.data?.[0]?.payment_method_details?.card?.last4 || '',
-          pi.charges?.data?.[0]?.payment_method_details?.card?.brand || ''
-        );
+        const existing = db.prepare('SELECT id FROM payments WHERE stripe_payment_id = ?').get(piId);
+        if (existing) {
+          console.log('[Stripe Webhook] Payment already recorded for', piId, '- skipping');
+          break;
+        }
 
-        const totalPaid = db.prepare('SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE booking_id = ? AND status = ?')
-          .get(bookingId, 'completed').paid;
+        const amountPaid = (session.amount_total || 0) / 100;
+
+        db.prepare(
+          "INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status) VALUES (?, ?, ?, ?, 'charge', 'stripe', ?, 'completed')"
+        ).run(uuid(), bookingId, booking.customer_id, amountPaid, piId);
+
+        const totalPaid = db.prepare(
+          "SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE booking_id = ? AND status = 'completed'"
+        ).get(bookingId).paid;
+
         const newBalance = Math.max(0, booking.total - totalPaid);
         const depositPaid = totalPaid >= booking.deposit_amount ? 1 : 0;
         const paymentStatus = newBalance <= 0 ? 'paid' : (depositPaid ? 'deposit_paid' : 'partial');
         const bookingStatus = depositPaid ? 'confirmed' : booking.status;
 
-        db.prepare(`UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?,
-          updated_at = datetime('now') WHERE id = ?`).run(
-          bookingStatus, paymentStatus, newBalance, depositPaid, bookingId
-        );
+        db.prepare(
+          "UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?, updated_at = datetime('now') WHERE id = ?"
+        ).run(bookingStatus, paymentStatus, newBalance, depositPaid, bookingId);
 
-        // Update customer revenue
         db.prepare('UPDATE customers SET total_revenue = total_revenue + ? WHERE id = ?')
-          .run(pi.amount / 100, booking.customer_id);
+          .run(amountPaid, booking.customer_id);
 
         db.prepare('INSERT INTO activity_log (id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)')
-          .run(uuid(), 'payment_received', 'booking', bookingId, JSON.stringify({ amount: pi.amount / 100, method: 'stripe' }));
+          .run(uuid(), 'payment_received', 'booking', bookingId,
+            JSON.stringify({ amount: amountPaid, method: 'stripe', source: 'webhook' }));
 
+        console.log('[Stripe Webhook] checkout.session.completed: booking', bookingId,
+          'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
         break;
       }
 
       case 'charge.refunded': {
         const charge = event.data.object;
         const refundAmount = charge.amount_refunded / 100;
-        const payment = db.prepare('SELECT * FROM payments WHERE stripe_charge_id = ?').get(charge.id);
+        const payment = db.prepare(
+          'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
+        ).get(charge.payment_intent || charge.id, charge.id);
         if (payment) {
-          db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?').run(refundAmount, payment.id);
+          db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?')
+            .run(refundAmount, payment.id);
+          console.log('[Stripe Webhook] charge.refunded: $' + refundAmount.toFixed(2) + ' recorded');
+        } else {
+          console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
         }
         break;
       }
