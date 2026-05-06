@@ -371,8 +371,10 @@ async function respondToSlack(response_url, payload) {
   });
 }
 
+const BM_NUMBER = '+15803089288'; // BounceMan's Twilio number — appears as SIP FROM on bridge legs
+
 // ── Internal tool executor: calls our sarah endpoints from within the webhook ──
-async function callSarahToolInternal(name, args, callerPhone) {
+async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
   if (name === 'transferCall') return { result: 'TRANSFER_INITIATED to +15806281765' };
   if (name === 'endCall') return { result: 'CALL_ENDED' };
 
@@ -384,19 +386,30 @@ async function callSarahToolInternal(name, args, callerPhone) {
   const path = pathMap[name];
   if (!path) return { error: `Unknown tool: ${name}` };
 
-  // Only inject callerPhone if args.phone is missing/bogus AND callerPhone is a real customer number.
-  // +15803089288 is BounceMan's own Twilio number — it appears as the caller on SIP bridge legs
-  // because Twilio ignores unverified callerId for external SIP dials. When callerPhone is the
-  // BounceMan number, Sarah has already asked the customer for their number, so args.phone is correct.
-  const BM_NUMBER = '+15803089288';
+  // Resolve the real caller's phone. When calls come through the SIP bridge, Twilio
+  // injects BM_NUMBER as the SIP FROM (ignores callerId for external SIP URIs).
+  // We stored the real phone in sip_call_map during assistant-request, and GPT-4.1
+  // also knows it from {{customerPhone}} in the system prompt and should pass it in args.
+  const getRealPhone = () => {
+    if (callerPhone && callerPhone !== BM_NUMBER) return callerPhone;
+    if (vapiCallId) {
+      try {
+        const db = getDb();
+        const row = db.prepare('SELECT real_caller_phone FROM sip_call_map WHERE vapi_call_id = ?').get(vapiCallId);
+        if (row?.real_caller_phone && row.real_caller_phone !== BM_NUMBER) return row.real_caller_phone;
+      } catch (e) { /* ignore */ }
+    }
+    return callerPhone;
+  };
+
   if (name === 'createAndSendLink') {
-    if ((!args.phone || args.phone.includes('{{')) && callerPhone && callerPhone !== BM_NUMBER) {
-      args.phone = callerPhone;
+    if (!args.phone || args.phone.includes('{{') || args.phone === BM_NUMBER) {
+      args.phone = getRealPhone();
     }
   }
   if (name === 'lookupBooking') {
-    if ((!args.phone || args.phone.includes('{{')) && callerPhone && callerPhone !== BM_NUMBER) {
-      args.phone = callerPhone;
+    if (!args.phone || args.phone.includes('{{') || args.phone === BM_NUMBER) {
+      args.phone = getRealPhone();
     }
   }
 
@@ -431,18 +444,50 @@ router.post('/vapi', async (req, res) => {
       } catch (e) { /* ignore */ }
     };
 
-    // 0. Skip spam filtering for outbound calls and SIP bridge legs
-    //    +15803089288 = BounceMan's own number, appears as caller on SIP bridge legs
+    // Ensure sip_call_map table exists for phone bridging
+    try {
+      db.prepare(`CREATE TABLE IF NOT EXISTS sip_call_map (
+        vapi_call_id TEXT PRIMARY KEY,
+        real_caller_phone TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`).run();
+    } catch (e) { /* ignore */ }
+
+    // Helper: build response with real caller's phone injected as {{customerPhone}}
+    const connectToSarah = (realPhone) => {
+      if (callId && realPhone) {
+        try { db.prepare('INSERT OR REPLACE INTO sip_call_map (vapi_call_id, real_caller_phone) VALUES (?, ?)').run(callId, realPhone); } catch (e) { /* ignore */ }
+      }
+      console.log('[VAPI] Connecting to Sarah — customerPhone:', realPhone || 'unknown');
+      return res.json({
+        assistantId: VAPI_ASSISTANT_ID,
+        assistantOverrides: { variableValues: { customerPhone: realPhone || '' } }
+      });
+    };
+
+    // 0. Skip spam filtering for outbound calls
     if (msg.call?.type === 'outboundPhoneCall') {
-      console.log('[VAPI] Outbound call to', callerNumber, '-> connecting to Sarah');
-      return res.json({ assistantId: VAPI_ASSISTANT_ID });
+      return connectToSarah(callerNumber);
     }
 
     // 0b. Owner/bridge whitelist — never block
     const WHITELIST = ['+15806281765', '+15803089288'];
     if (WHITELIST.includes(callerNumber)) {
-      console.log('[VAPI] Whitelisted number', callerNumber, '-> connecting to Sarah');
-      return res.json({ assistantId: VAPI_ASSISTANT_ID });
+      let realPhone = callerNumber;
+      if (callerNumber === BM_NUMBER) {
+        // SIP bridge leg — real caller's phone is in call_log from twilio-entry (last ~2 min)
+        try {
+          const recent = db.prepare(`
+            SELECT caller_number FROM call_log
+            WHERE status = 'allowed' AND caller_number != ?
+            AND called_at > datetime('now', '-120 seconds')
+            ORDER BY called_at DESC LIMIT 1
+          `).get(BM_NUMBER);
+          if (recent?.caller_number) realPhone = recent.caller_number;
+        } catch (e) { /* ignore */ }
+        console.log('[VAPI] SIP bridge leg — resolved real caller:', realPhone);
+      }
+      return connectToSarah(realPhone);
     }
 
     // 1. Non-US number (valid US: +1 followed by area code 2-9 + 9 more digits)
@@ -476,15 +521,15 @@ router.post('/vapi', async (req, res) => {
       }
     } catch (e) { /* ignore if table not yet created */ }
 
-    // 4. Allowed -> connect to Sarah (no additional logging — twilio-entry already logged this call)
-    console.log('[VAPI] Inbound call from', callerNumber || 'Unknown', '-> connecting to Sarah');
-    return res.json({ assistantId: VAPI_ASSISTANT_ID });
+    // 4. Allowed -> connect to Sarah
+    return connectToSarah(callerNumber);
   }
 
   // ─── TOOL CALLS: execute tools internally, return results synchronously ─────
   if (msg.type === 'tool-calls') {
     const toolCallList = msg.toolCallList || [];
     const callerPhone = msg.call?.customer?.number || '';
+    const vapiCallId = msg.call?.id || '';
     const results = [];
 
     for (const tc of toolCallList) {
@@ -492,7 +537,7 @@ router.post('/vapi', async (req, res) => {
       const rawArgs = tc.function?.arguments;
       const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs || {});
       try {
-        const result = await callSarahToolInternal(name, args, callerPhone);
+        const result = await callSarahToolInternal(name, args, callerPhone, vapiCallId);
         console.log('[VAPI TOOL]', name, 'args:', JSON.stringify(args).slice(0, 80), '-> result:', JSON.stringify(result).slice(0, 120));
         results.push({ toolCallId: tc.id, result: JSON.stringify(result) });
       } catch (err) {
