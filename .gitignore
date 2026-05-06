@@ -1,7 +1,37 @@
+# Dependencies
 node_modules/
-data/
+
+# Environment files — ALL of them, never commit secrets
 .env
+.env.*
+*.env
+
+# Database files
+data/
 *.db
 *.db-journal
+
+# Logs
+*.log
+server.log
+logs/
+
+# Backup files
+*.bak
+*.bak[0-9]*
+backups/backup.log
+
+# Uploads (customer files, not source code)
+uploads/
+
+# Build / test artifacts
+test-results/
+playwright-report/
+.playwright/
+
+# Generated audio assets
+public/assets/audio/
+
+# macOS / Windows junk
 .DS_Store
 Thumbs.db
