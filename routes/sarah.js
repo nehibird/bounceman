@@ -26,7 +26,8 @@ router.use((req, res, next) => {
 router.use((req, res, next) => {
   const toolCall = req.body?.message?.toolCallList?.[0];
   if (toolCall?.function?.arguments) {
-    try { req.body = JSON.parse(toolCall.function.arguments); } catch (e) {}
+    const args = toolCall.function.arguments;
+    try { req.body = typeof args === 'string' ? JSON.parse(args) : args; } catch (e) {}
   }
   next();
 });
@@ -108,26 +109,42 @@ router.post('/check-availability', (req, res) => {
     ? (delivery_zone ? ` Delivery to your area: ${delivery_fee === 0 ? 'FREE' : `$${delivery_fee}`} (${delivery_zone}).` : ' Your zip is outside our standard zones — we may still deliver, fee to be confirmed.')
     : '';
 
-  res.json({
-    available: true,
-    date,
-    date_formatted: fmtDate(date),
-    delivery_fee,
-    delivery_zone,
-    equipment: available.map(e => ({
+  const equipmentWithIds = available.map(e => ({
       id: e.id,
       name: e.name,
       category: e.category,
       price_4hr: e.price_4hr,
       price_daily: e.price_daily,
       price_overnight: e.price_overnight
-    })),
-    addons: addons.map(a => ({
+    }));
+  const addonsWithIds = addons.map(a => ({
       id: a.id,
       name: a.name,
       price_4hr: a.price_4hr,
       price_daily: a.price_daily
-    })),
+    }));
+
+  // Build result string with IDs so LLM can use them in createAndSendLink
+  const equipmentLines = available.map(e =>
+    `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight`
+  ).join('\n');
+  const addonLines = addons.map(a =>
+    `${a.name} (equipment_id: ${a.id}) — $${a.price_4hr} half day, $${a.price_daily} full day`
+  ).join('\n');
+  const unavailLine = unavailable.length > 0 ? `\nAlready booked: ${unavailable.map(e => e.name).join(', ')}.` : '';
+  const deliveryLine = zip ? (delivery_fee === 0 ? `\nDelivery: FREE to zip ${zip}.` : `\nDelivery fee: $${delivery_fee} to zip ${zip}.`) : '';
+
+  const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}\n\nUse the equipment_id values above when calling createAndSendLink.`;
+
+  res.json({
+    result: resultText,
+    available: true,
+    date,
+    date_formatted: fmtDate(date),
+    delivery_fee,
+    delivery_zone,
+    equipment: equipmentWithIds,
+    addons: addonsWithIds,
     unavailable: unavailable.map(e => e.name),
     message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons: ${addonListing}.${deliveryNote}${unavailable.length > 0 ? ` Already booked that day: ${unavailable.map(e => e.name).join(', ')}.` : ''}`
   });
@@ -314,11 +331,11 @@ router.post('/create-and-send-link', async (req, res) => {
       );
     }
 
+    const powerAvailable = power_available === false ? 0 : 1;
+
     // Create booking
     const bookingId = uuid();
     const bookingNumber = generateBookingNumber();
-
-    const powerAvailable = power_available === false ? 0 : 1;
 
     db.prepare(`INSERT INTO bookings (
       id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
@@ -416,6 +433,7 @@ router.post('/create-and-send-link', async (req, res) => {
     console.log(`[SARAH] Booking ${bookingNumber} created for ${phone}, payment URL: ${paymentUrl}`);
 
     res.json({
+      result: `Booking confirmed! Number: ${bookingNumber}. Total: $${total.toFixed(2)}. Deposit: $${deposit_amount.toFixed(2)} due now. Balance: $${(total - deposit_amount).toFixed(2)} due on delivery. Payment link texted to customer. URL: ${paymentUrl}`,
       success: true,
       booking_number: bookingNumber,
       booking_id: bookingId,
@@ -648,7 +666,9 @@ router.post('/lookup-booking', (req, res) => {
     : booking.payment_status === 'paid' ? 'paid in full'
     : 'deposit not yet paid';
 
+  const lookupMessage = `Booking #${booking.booking_number} for ${fmtDate(booking.event_date)}: ${itemNames}. Status: ${booking.status}. Payment: ${payStatus}. Total: $${total}. Deposit: $${deposit}. Balance due on delivery: $${balance}.`;
   res.json({
+    result: lookupMessage,
     found: true,
     booking_number: booking.booking_number,
     event_date: fmtDate(booking.event_date),
@@ -658,7 +678,7 @@ router.post('/lookup-booking', (req, res) => {
     total,
     deposit_amount: deposit,
     balance_due: balance,
-    message: `I found your booking #${booking.booking_number} for ${fmtDate(booking.event_date)}: ${itemNames}. Payment status: ${payStatus}. Total is $${total}, deposit is $${deposit}, balance due on delivery day is $${balance}.`
+    message: lookupMessage
   });
 });
 

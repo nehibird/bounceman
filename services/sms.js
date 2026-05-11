@@ -25,19 +25,24 @@ function formatPhone(phone) {
 }
 
 async function sendSms(to, body) {
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  if (!fromNumber) throw new Error('TWILIO_PHONE_NUMBER not set');
-
   const toFormatted = formatPhone(to);
   if (!toFormatted) throw new Error(`Invalid phone number: ${to}`);
 
-  const message = await getClient().messages.create({
-    body,
-    from: fromNumber,
-    to: toFormatted,
-  });
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 
-  console.log(`[SMS] Sent to ${toFormatted} — SID: ${message.sid}`);
+  const params = { body, to: toFormatted };
+  // Route through Messaging Service for A2P 10DLC compliance; fall back to direct number
+  if (messagingServiceSid) {
+    params.messagingServiceSid = messagingServiceSid;
+  } else if (fromNumber) {
+    params.from = fromNumber;
+  } else {
+    throw new Error('TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER must be set');
+  }
+
+  const message = await getClient().messages.create(params);
+  console.log(`[SMS] Sent to ${toFormatted} via ${messagingServiceSid ? 'MsgSvc' : 'direct'} — SID: ${message.sid}`);
   return message;
 }
 

@@ -48,6 +48,7 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://bouncemanrentals.com'
 // Trust proxy — required behind nginx so rate limiter sees real client IPs
 app.set('trust proxy', 1);
 
+
 // Rate limiting — only on public-facing endpoints, not server-to-server calls
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
