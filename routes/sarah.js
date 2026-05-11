@@ -63,12 +63,25 @@ router.post('/check-availability', (req, res) => {
   }
 
   // Get all rentable equipment (not add-ons)
-  const allEquipment = db.prepare("SELECT id, name, category, price_daily, price_4hr, price_overnight FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
+  const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
 
-  const bookedIds = getBookedEquipmentIds(db, date);
+  // Check each time window separately for accurate per-slot availability
+  const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00');
+  const bookedAfternoon = getBookedEquipmentIds(db, date, '15:00:00', '19:00:00');
+  const bookedFullDay   = getBookedEquipmentIds(db, date, '09:00:00', '19:00:00');
 
-  const available = allEquipment.filter(e => !bookedIds.has(e.id));
-  const unavailable = allEquipment.filter(e => bookedIds.has(e.id));
+  const slotAvail = (e, bookedMap) => (bookedMap.get(e.id) || 0) < (e.quantity || 1);
+
+  const equipmentWithSlots = allEquipment.map(e => ({
+    ...e,
+    morningOpen:   slotAvail(e, bookedMorning),
+    afternoonOpen: slotAvail(e, bookedAfternoon),
+    fullDayOpen:   slotAvail(e, bookedFullDay),
+    isAnyOpen:     slotAvail(e, bookedMorning) || slotAvail(e, bookedAfternoon)
+  }));
+
+  const available   = equipmentWithSlots.filter(e => e.isAnyOpen);
+  const unavailable = equipmentWithSlots.filter(e => !e.isAnyOpen);
 
   if (available.length === 0) {
     return res.json({
@@ -97,7 +110,9 @@ router.post('/check-availability', (req, res) => {
   }
 
   const listing = available.map(e => {
-    let line = `${e.name}: $${e.price_4hr} half day, $${e.price_daily} full day`;
+    const partialNote = e.fullDayOpen ? '' :
+      ` [${[e.morningOpen && 'morning', e.afternoonOpen && 'afternoon'].filter(Boolean).join(' or ')} half day only]`;
+    let line = `${e.name}${partialNote}: $${e.price_4hr} half day${e.fullDayOpen ? `, $${e.price_daily} full day` : ''}`;
     if (zip && delivery_fee === 0) line += ' (free delivery to your area)';
     else if (zip) line += ` + $${delivery_fee} delivery`;
     return line;
@@ -125,13 +140,17 @@ router.post('/check-availability', (req, res) => {
     }));
 
   // Build result string with IDs so LLM can use them in createAndSendLink
-  const equipmentLines = available.map(e =>
-    `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight`
-  ).join('\n');
+  const equipmentLines = available.map(e => {
+    if (e.fullDayOpen) {
+      return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight`;
+    }
+    const slots = [e.morningOpen && 'morning half day (9 AM–1 PM)', e.afternoonOpen && 'afternoon half day (3–7 PM)'].filter(Boolean);
+    return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} [PARTIAL: ${slots.join(' or ')} only — do NOT book full day or overnight for this item]`;
+  }).join('\n');
   const addonLines = addons.map(a =>
     `${a.name} (equipment_id: ${a.id}) — $${a.price_4hr} half day, $${a.price_daily} full day`
   ).join('\n');
-  const unavailLine = unavailable.length > 0 ? `\nAlready booked: ${unavailable.map(e => e.name).join(', ')}.` : '';
+  const unavailLine = unavailable.length > 0 ? `\nFully booked (do not offer): ${unavailable.map(e => e.name).join(', ')}.` : '';
   const deliveryLine = zip ? (delivery_fee === 0 ? `\nDelivery: FREE to zip ${zip}.` : `\nDelivery fee: $${delivery_fee} to zip ${zip}.`) : '';
 
   const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}\n\nUse the equipment_id values above when calling createAndSendLink.`;
