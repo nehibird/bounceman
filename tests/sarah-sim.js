@@ -249,11 +249,14 @@ const SCENARIOS = [
     ]
   },
   {
-    name: '9. Full booking flow (3-turn)',
+    name: '9. Full booking flow',
     turns: [
       'I need a water slide for May twentieth',
       'The Blue Crush sounds great. My zip is 74653. My name is Jamie. Full day please.',
-      'My number is 5806281765'
+      'Yes I have a standard power outlet nearby',
+      'No thanks on the water hose',
+      'Yes that all sounds right',
+      'Yes go ahead and text the link to this number'
     ],
     checks: [
       { type: 'tool_called', tool: 'checkAvailability' },
@@ -267,9 +270,8 @@ const SCENARIOS = [
   {
     name: '10. Power question asked during booking',
     turns: [
-      'I want to rent the Monkey Jumper for June seventh',
-      'Full day please. Zip is 74653. Name is Dana.',
-      'Yes I have a power outlet'
+      'I want to rent the Monkey Jumper for June eighth',
+      'Full day please. Zip is 74653. Name is Dana.'
     ],
     checks: [
       { type: 'tool_called', tool: 'checkAvailability' },
@@ -277,14 +279,10 @@ const SCENARIOS = [
     ]
   },
   {
-    name: '11. Water add-on offered for water slide',
-    turns: [
-      'I need the Blue Crush slide for June fourteenth',
-      'Half day morning. Zip 74653. Name is Tyler.'
-    ],
+    name: '11. Overnight not available on Saturday',
+    turns: ['Can I do an overnight rental this Saturday?'],
     checks: [
-      { type: 'tool_called', tool: 'checkAvailability' },
-      { type: 'response_contains_one_of', values: ['water', 'wet', 'hose', 'twenty', '$20'] }
+      { type: 'response_contains_one_of', values: ['overnight', 'saturday', 'not available', 'monday', 'friday', 'weekday'] }
     ]
   }
 ];
