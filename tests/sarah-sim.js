@@ -110,63 +110,64 @@ async function callTool(name, args) {
   return res.json();
 }
 
-// ── One conversation turn through GPT-4.1 ────────────────────────────────────
+// ── Simulate a real conversation: process each user turn individually ─────────
 async function runConversation(systemPrompt, turns, opts = {}) {
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...turns.map(t => ({ role: 'user', content: t }))
-  ];
+  const messages = [{ role: 'system', content: systemPrompt }];
   const log = [];
   const createdBookings = [];
 
-  // Multi-turn: process until no more tool calls (max 6 rounds)
-  for (let round = 0; round < 6; round++) {
-    const body = {
-      model: 'gpt-4.1',
-      messages,
-      tools: TOOLS,
-      tool_choice: 'auto',
-      temperature: 0.4,
-      max_tokens: 600
-    };
+  for (const userTurn of turns) {
+    messages.push({ role: 'user', content: userTurn });
 
-    const res  = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_KEY}` },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
+    // After each user message, let the model respond (with possible tool calls)
+    for (let round = 0; round < 6; round++) {
+      const body = {
+        model: 'gpt-4.1',
+        messages,
+        tools: TOOLS,
+        tool_choice: 'auto',
+        temperature: 0.4,
+        max_tokens: 600
+      };
 
-    const choice  = data.choices[0];
-    const message = choice.message;
-    messages.push(message);
-
-    if (message.content) log.push({ role: 'assistant', text: message.content });
-
-    if (choice.finish_reason !== 'tool_calls' || !message.tool_calls?.length) break;
-
-    // Execute each tool call against real endpoints
-    for (const tc of message.tool_calls) {
-      const args = typeof tc.function.arguments === 'string'
-        ? JSON.parse(tc.function.arguments)
-        : tc.function.arguments;
-
-      log.push({ role: 'tool_call', name: tc.function.name, args });
-
-      const result = await callTool(tc.function.name, args);
-      log.push({ role: 'tool_result', name: tc.function.name, result });
-
-      // Track test bookings for cleanup
-      if (tc.function.name === 'createAndSendLink' && result.booking_number) {
-        createdBookings.push(result.booking_number);
-      }
-
-      messages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: JSON.stringify(result)
+      const res  = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_KEY}` },
+        body: JSON.stringify(body)
       });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+
+      const choice  = data.choices[0];
+      const message = choice.message;
+      messages.push(message);
+
+      if (message.content) log.push({ role: 'assistant', text: message.content });
+
+      if (choice.finish_reason !== 'tool_calls' || !message.tool_calls?.length) break;
+
+      // Execute each tool call against real endpoints
+      for (const tc of message.tool_calls) {
+        const args = typeof tc.function.arguments === 'string'
+          ? JSON.parse(tc.function.arguments)
+          : tc.function.arguments;
+
+        log.push({ role: 'tool_call', name: tc.function.name, args });
+
+        const result = await callTool(tc.function.name, args);
+        log.push({ role: 'tool_result', name: tc.function.name, result });
+
+        // Track test bookings for cleanup
+        if (tc.function.name === 'createAndSendLink' && result.booking_number) {
+          createdBookings.push(result.booking_number);
+        }
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result)
+        });
+      }
     }
   }
 
