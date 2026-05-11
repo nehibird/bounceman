@@ -302,16 +302,39 @@ router.post('/create-and-send-link', async (req, res) => {
       return res.status(400).json({ error: 'None of the selected equipment is available' });
     }
 
-    // Verify date availability
+    // Verify date availability (time-aware, quantity-aware)
+    // Normalize event_start_time to HH:MM:SS 24-hour for comparison
+    const norm24 = t => {
+      if (!t) return null;
+      const m = String(t).trim().match(/^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(AM|PM)?$/i);
+      if (!m) return t;
+      let h = parseInt(m[1]), min = m[2] || '00', sec = m[3] || '00', mer = (m[4] || '').toUpperCase();
+      if (mer === 'PM' && h !== 12) h += 12;
+      if (mer === 'AM' && h === 12) h = 0;
+      return `${String(h).padStart(2,'0')}:${min}:${sec}`;
+    };
+    let checkStart, checkEnd;
+    if (duration === 'daily') {
+      checkStart = '09:00:00'; checkEnd = '19:00:00';
+    } else if (duration === 'overnight') {
+      checkStart = '15:00:00'; checkEnd = '23:59:59';
+    } else { // 4hr — determine morning vs afternoon from event_start_time
+      const normStart = norm24(event_start_time) || '09:00:00';
+      const startH = parseInt(normStart.split(':')[0]);
+      if (startH >= 12) { checkStart = '15:00:00'; checkEnd = '19:00:00'; }
+      else               { checkStart = '09:00:00'; checkEnd = '13:00:00'; }
+    }
     for (const item of lineItems) {
-      const conflict = db.prepare(`
-        SELECT 1 FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
+      const { cnt } = db.prepare(`
+        SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
         WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-      `).get(event_date, item.equipment_id);
-      if (conflict) {
+          AND b.event_start_time < ? AND b.event_end_time > ?
+      `).get(event_date, item.equipment_id, checkEnd, checkStart);
+      const qty = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id)?.quantity || 1;
+      if (cnt >= qty) {
         return res.json({
           success: false,
-          error: `Sorry, ${item.item_name} just got booked for ${fmtDate(event_date)}. Want to try a different date?`
+          error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(event_date)}. Want to try a different slot or date?`
         });
       }
     }
