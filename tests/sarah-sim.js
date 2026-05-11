@@ -263,6 +263,29 @@ const SCENARIOS = [
       { type: 'response_contains_one_of', values: ['BM-', 'booking', 'text', 'link', 'deposit'] }
     ],
     cleanup: true
+  },
+  {
+    name: '10. Power question asked during booking',
+    turns: [
+      'I want to rent the Monkey Jumper for June seventh',
+      'Full day please. Zip is 74653. Name is Dana.',
+      'Yes I have a power outlet'
+    ],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'response_contains_one_of', values: ['outlet', 'power', 'electrical', 'generator', 'plug'] }
+    ]
+  },
+  {
+    name: '11. Water add-on offered for water slide',
+    turns: [
+      'I need the Blue Crush slide for June fourteenth',
+      'Half day morning. Zip 74653. Name is Tyler.'
+    ],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'response_contains_one_of', values: ['water', 'wet', 'hose', 'twenty', '$20'] }
+    ]
   }
 ];
 

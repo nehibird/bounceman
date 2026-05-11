@@ -231,7 +231,8 @@ router.post('/create-and-send-link', async (req, res) => {
     equipment_ids, duration,
     event_date, event_start_time, event_end_time,
     delivery_address, delivery_city, delivery_zip,
-    event_type, surface_type, discount_code
+    event_type, surface_type, discount_code,
+    power_available
   } = req.body;
 
   // Validate required fields
@@ -317,18 +318,21 @@ router.post('/create-and-send-link', async (req, res) => {
     const bookingId = uuid();
     const bookingNumber = generateBookingNumber();
 
+    const powerAvailable = power_available === false ? 0 : 1;
+
     db.prepare(`INSERT INTO bookings (
       id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
       surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       bookingId, bookingNumber, customerId,
       event_date, event_start_time || '9:00 AM', event_end_time || '1:00 PM',
       event_type || 'birthday_party',
       delivery_address || '', delivery_city || '', delivery_zip || '',
       surface_type || 'grass',
+      powerAvailable,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, total, 'unpaid'
     );
