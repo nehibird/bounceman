@@ -284,6 +284,47 @@ const SCENARIOS = [
     checks: [
       { type: 'response_contains_one_of', values: ['overnight', 'saturday', 'not available', 'monday', 'friday', 'weekday'] }
     ]
+  },
+  {
+    name: '12. Partial availability — Blue Crush morning open on July 4th',
+    turns: ['What do you have available for July fourth?'],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'response_contains_one_of', values: ['blue crush', 'morning', 'water slide'] },
+      { type: 'response_not_contains', value: 'fully booked' }
+    ]
+  },
+  {
+    name: '13. Partial availability — Blue Crush morning booking succeeds',
+    turns: [
+      'I want to rent the Blue Crush slide on July fourth in the morning.',
+      'Zip is 74653. Name is Jamie.',
+      'Yes I have an outlet.',
+      'Yes that sounds right.',
+      'Yes please text the link.'
+    ],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'tool_called', tool: 'createAndSendLink' },
+      { type: 'tool_result_has', tool: 'createAndSendLink', key: 'success', value: true }
+    ],
+    cleanup: true
+  },
+  {
+    name: '14. Partial availability — Blue Crush afternoon blocked on July 4th',
+    turns: ['Can I get the Blue Crush slide on July fourth in the afternoon?'],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'response_contains_one_of', values: ['booked', 'unavailable', 'not available', 'afternoon', 'taken', 'morning'] }
+    ]
+  },
+  {
+    name: '15. Ordinal-of-Month date — "fourth of July"',
+    turns: ['Do you have anything available for the fourth of July?'],
+    checks: [
+      { type: 'tool_called', tool: 'checkAvailability' },
+      { type: 'response_not_contains', value: "didn't quite catch" }
+    ]
   }
 ];
 
