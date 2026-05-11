@@ -343,7 +343,7 @@ router.post('/create-and-send-link', async (req, res) => {
       surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       bookingId, bookingNumber, customerId,
       event_date, event_start_time || '9:00 AM', event_end_time || '1:00 PM',
       event_type || 'birthday_party',
