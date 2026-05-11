@@ -54,7 +54,7 @@ router.get('/select', (req, res) => {
     FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
   `).all();
 
-  const bookedCounts = getBookedEquipmentIds(db, eventDate);
+  const bookedCounts = getBookedEquipmentIds(db, eventDate, eventStartTime, eventEndTime);
   equipment.forEach(item => {
     const booked = bookedCounts.get(item.id) || 0;
     const qty = item.quantity || 1;
@@ -77,7 +77,7 @@ router.get('/select', (req, res) => {
 // Check availability for multiple items on a date
 router.post('/check-date', (req, res) => {
   const db = getDb();
-  const { date, equipment_ids } = req.body;
+  const { date, equipment_ids, start_time, end_time } = req.body;
 
   if (!date || !equipment_ids?.length) {
     return res.json({ available: false, message: 'Date and equipment required' });
@@ -87,14 +87,24 @@ router.post('/check-date', (req, res) => {
   const blocked = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id IS NULL').get(date);
   if (blocked) return res.json({ available: false, message: blocked.reason || 'Date unavailable' });
 
-  // Check each item
+  // Check each item (time-overlap aware)
   const unavailable = [];
   for (const eqId of equipment_ids) {
-    const bookedCount = db.prepare(`
-      SELECT COUNT(*) as cnt FROM bookings b
-      JOIN booking_items bi ON bi.booking_id = b.id
-      WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-    `).get(date, eqId);
+    let bookedCount;
+    if (start_time && end_time) {
+      bookedCount = db.prepare(`
+        SELECT COUNT(*) as cnt FROM bookings b
+        JOIN booking_items bi ON bi.booking_id = b.id
+        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+          AND b.event_start_time < ? AND b.event_end_time > ?
+      `).get(date, eqId, end_time, start_time);
+    } else {
+      bookedCount = db.prepare(`
+        SELECT COUNT(*) as cnt FROM bookings b
+        JOIN booking_items bi ON bi.booking_id = b.id
+        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+      `).get(date, eqId);
+    }
     const eqInfo = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(eqId);
     if (bookedCount && bookedCount.cnt >= (eqInfo?.quantity || 1)) unavailable.push(eqInfo?.name || 'Item');
 
@@ -276,6 +286,28 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
     data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
     data.discount_amount = recalcDiscountAmount;
+
+    // Availability guard: prevent double-booking (race condition protection)
+    const submitDate = data.event_date;
+    const submitStartTime = data.event_start_time;
+    const submitEndTime = data.event_end_time;
+    for (const eqId of submitItems) {
+      const conflict = db.prepare(`
+        SELECT b.booking_number FROM bookings b
+        JOIN booking_items bi ON bi.booking_id = b.id
+        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+          AND b.event_start_time < ? AND b.event_end_time > ?
+        LIMIT 1
+      `).get(submitDate, eqId, submitEndTime, submitStartTime);
+      if (conflict) {
+        const eq = db.prepare('SELECT name FROM equipment WHERE id = ?').get(eqId);
+        return res.status(409).render('error', {
+          title: 'Equipment No Longer Available',
+          message: `Sorry, ${eq?.name || 'the selected equipment'} was just booked for that time slot. Please go back and choose a different time.`,
+          status: 409
+        });
+      }
+    }
 
     // Create or find customer
     let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
