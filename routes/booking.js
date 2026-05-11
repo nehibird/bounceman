@@ -66,10 +66,31 @@ router.get('/select', (req, res) => {
     item.booked = booked >= (item.quantity || 1);
   });
 
+  // For booked equipment, find which other time windows still have availability
+  const TIME_WINDOWS = [
+    { label: 'Morning', start: '08:00', end: '12:00' },
+    { label: 'Afternoon', start: '12:00', end: '17:00' },
+    { label: 'Evening', start: '17:00', end: '21:00' },
+  ];
+  for (const item of equipment) {
+    if (!item.booked || !eventDate) { item.availableSlots = []; continue; }
+    item.availableSlots = [];
+    for (const w of TIME_WINDOWS) {
+      if (eventStartTime >= w.start && eventStartTime < w.end) continue;
+      const wCounts = getBookedEquipmentIds(db, eventDate, w.start, w.end);
+      const wBooked = wCounts.get(item.id) || 0;
+      if (wBooked < (item.quantity || 1)) item.availableSlots.push(w.label);
+    }
+  }
+
+  const currentTimeLabel = TIME_WINDOWS.find(function(w){ return eventStartTime >= w.start && eventStartTime < w.end; });
+  const currentTimeLabelStr = currentTimeLabel ? currentTimeLabel.label : 'This time';
+
   res.render('public/booking/step2-select', {
     title: 'Choose Your Rentals - Bounce Man',
     settings, equipment, categories, addons,
     eventDate, rentalDuration, eventStartTime, eventEndTime,
+    currentTimeLabel: currentTimeLabelStr,
     page: 'booking'
   });
 });

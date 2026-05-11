@@ -89,9 +89,31 @@
           ${equipment.map(function(item) {
             var itemPrice = rentalDuration === '4hr' ? (item.price_4hr || item.price_daily * 0.65) : rentalDuration === 'overnight' ? (item.price_overnight || item.price_daily * 1.15) : item.price_daily;
             if (item.booked) {
+              // Has availability in other time windows — show card in color with info overlay
+              if (item.availableSlots && item.availableSlots.length > 0) {
+                var firstSlot = item.availableSlots[0];
+                var otherSlots = item.availableSlots.join(' & ');
+                return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '">' +
+                  '<div class="equipment-card" style="pointer-events:none;position:relative;border:2px solid #bbf7d0">' +
+                    '<div style="position:absolute;top:10px;left:10px;right:10px;z-index:5;display:flex;justify-content:space-between;align-items:flex-start">' +
+                      '<div style="background:rgba(239,71,111,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><i class="fas fa-lock me-1"></i>' + currentTimeLabel + ' full</div>' +
+                      '<div style="background:rgba(22,163,74,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><i class="fas fa-check-circle me-1"></i>' + firstSlot + ' open</div>' +
+                    '</div>' +
+                    '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
+                    '<div class="card-body">' +
+                      '<span class="badge-category mb-2">' + (item.category || '').replace(/_/g, ' ') + '</span>' +
+                      '<h5 class="card-title mt-2">' + item.name + '</h5>' +
+                      '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
+                      '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
+                      '<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center"><i class="fas fa-clock me-1"></i>Switch to ' + otherSlots + ' to book this</div>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>';
+              }
+              // Fully booked across all time windows — show grayed out card
               return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '">' +
                 '<div class="equipment-card" style="opacity:0.45;pointer-events:none;position:relative">' +
-                  '<div style="position:absolute;top:12px;right:12px;z-index:5;background:var(--bm-pink,#EF476F);color:white;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"><i class="fas fa-ban me-1"></i>Booked</div>' +
+                  '<div style="position:absolute;top:12px;right:12px;z-index:5;background:var(--bm-pink,#EF476F);color:white;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"><i class="fas fa-ban me-1"></i>Fully Booked</div>' +
                   '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '" style="filter:grayscale(100%)' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ';object-fit:contain;padding:20px;background:#f8f8f8' : '') + '">' +
                   '<div class="card-body">' +
                     '<span class="badge-category mb-2">' + (item.category || '').replace(/_/g, ' ') + '</span>' +
