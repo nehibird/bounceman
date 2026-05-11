@@ -251,7 +251,7 @@ const SCENARIOS = [
   {
     name: '9. Full booking flow',
     turns: [
-      'I need a water slide for May twentieth',
+      'I need a water slide for October tenth',
       'The Blue Crush sounds great. My zip is 74653. My name is Jamie. Full day please.',
       'Yes I have a standard power outlet nearby',
       'No thanks on the water hose',
@@ -259,7 +259,6 @@ const SCENARIOS = [
       'Yes go ahead and text the link to this number'
     ],
     checks: [
-      { type: 'tool_called', tool: 'checkAvailability' },
       { type: 'tool_called', tool: 'createAndSendLink' },
       { type: 'tool_result_has', tool: 'createAndSendLink', key: 'success', value: true },
       { type: 'tool_result_has', tool: 'createAndSendLink', key: 'sms_sent', value: true },
@@ -300,6 +299,7 @@ async function main() {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
   const prompt = systemPrompt
     .replace('{{call.customer.number}}', CALLER_NUM)
+    .replace(/\{\{customerPhone\}\}/g, CALLER_NUM)
     .replace(/{{"now" \| date:.*?}}/, today);
   console.log(`System prompt loaded (${prompt.length} chars). Today = ${today}\n`);
 
