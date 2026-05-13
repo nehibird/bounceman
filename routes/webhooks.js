@@ -178,7 +178,7 @@ Rules:
 - If date unclear, use the next occurrence of the mentioned day
 - If owner says "might pay" or "prepare for payment", set payment_status to "unpaid"
 - Default status to "confirmed" since the owner is creating it directly
-- For "message/text [name] at [phone] a parent form" or similar: use action "send_customer_links" with fields: first_name, last_name (if given), phone, send_contract (true), send_payment (true if payment mentioned), amount (dollar amount if mentioned, default 10), notes`
+- For "message/text [name] at [phone] a parent form" or similar: use action "send_customer_links" with fields: first_name, last_name (if given), phone, free (true if "free", "google review", "no charge", or "15 min" mentioned, else false), notes`
           },
           { role: 'user', content: text }
         ],
@@ -195,43 +195,30 @@ Rules:
       return;
     }
 
-    // === SEND CUSTOMER LINKS (parent form + payment) ===
+    // === SEND EVENT LINKS (parent waiver + payment for walk-up events) ===
     if (parsed.action === 'send_customer_links') {
-      const { buildEventCard } = require('../services/notifications');
       const smsService = require('../services/sms');
       const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
       const today = new Date().toISOString().split('T')[0];
-      const amount = parseFloat(parsed.amount || 10);
+      const isFree = parsed.free === true;
 
-      // Create customer
-      const custId = uuid();
-      db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone, source) VALUES (?, ?, ?, null, ?, \'slack_event\')').run(
-        custId, parsed.first_name || 'Guest', parsed.last_name || '', parsed.phone || null
-      );
+      // Find today's active event — free = price 0, paid = price > 0
+      const walkUpEvent = db.prepare(
+        'SELECT * FROM walk_up_events WHERE event_date = ? AND active = 1 AND price_per_kid ' +
+        (isFree ? '= 0' : '> 0') +
+        ' ORDER BY created_at DESC LIMIT 1'
+      ).get(today);
 
-      // Create lightweight booking
-      const bookingId = uuid();
-      const { generateBookingNumber } = require('../lib/helpers');
-      const bookingNumber = generateBookingNumber();
-      db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
-        event_start_time, event_end_time, event_type, subtotal, total, deposit_amount, balance_due,
-        payment_status, internal_notes, created_at, updated_at)
-        VALUES (?, ?, ?, 'confirmed', ?, '09:00', '17:00', 'walk_in', ?, ?, ?, ?, 'unpaid', ?, datetime('now'), datetime('now'))`).run(
-        bookingId, bookingNumber, custId, today, amount, amount, amount, amount,
-        (parsed.notes || 'Walk-in event — sent via Slack')
-      );
+      if (!walkUpEvent) {
+        await slackReply(SLACK_TOKEN, event.channel, event.ts, ':warning: No active walk-up event found for today. Set one up in the DB first.');
+        return;
+      }
 
-      // Create a contract record so the manage page can show it
-      const contractId = uuid();
-      db.prepare(`INSERT INTO contracts (id, booking_id, customer_id, content, signed, created_at)
-        VALUES (?, ?, ?, 'Bounce Man LLC Rental Agreement', 0, datetime('now'))`).run(
-        contractId, bookingId, custId
-      );
+      const eventUrl = baseUrl + '/event/' + walkUpEvent.slug;
+      const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
+        (isFree ? ' (free 15-min session):' : ' and pay $' + walkUpEvent.price_per_kid + '/kid:') +
+        ' ' + eventUrl;
 
-      // Send SMS
-      const manageUrl = baseUrl + '/booking/manage/' + bookingNumber;
-      const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to sign your rental agreement' +
-        (parsed.send_payment !== false ? ' and pay' : '') + ': ' + manageUrl;
       let smsSent = false;
       if (parsed.phone) {
         try {
@@ -242,29 +229,10 @@ Rules:
         }
       }
 
-      // Build and post the live status card
-      const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(custId);
-      const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
-      const cardBlocks = buildEventCard(booking, customer);
-      const cardText = bookingNumber + ': ' + (parsed.first_name || 'Guest') + ' — Not Signed, Not Paid';
-
-      const cardResp = await fetch('https://slack.com/api/chat.postMessage', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: event.channel, blocks: cardBlocks, text: cardText })
-      });
-      const cardData = await cardResp.json();
-
-      // Store ts + channel on booking for live updates
-      if (cardData.ok) {
-        db.prepare('UPDATE bookings SET slack_message_ts = ?, slack_message_channel = ? WHERE id = ?')
-          .run(cardData.ts, cardData.channel, bookingId);
-      }
-
-      // Confirm in thread
+      const label = isFree ? 'Free 15-min (Google Review)' : '$' + walkUpEvent.price_per_kid + '/kid — All Day';
       const confirmMsg = smsSent
-        ? ':white_check_mark: Sent ' + (parsed.first_name || 'them') + ' a link to sign + pay. Card above will update automatically.'
-        : ':warning: Booking created but SMS failed. Share this link manually: ' + manageUrl;
+        ? ':white_check_mark: Sent ' + (parsed.first_name || 'them') + ' the event link (' + label + "). You'll get a Slack notification when they sign and pay."
+        : ':warning: SMS failed. Share this link manually: ' + eventUrl;
       await slackReply(SLACK_TOKEN, event.channel, event.ts, confirmMsg);
       return;
     }

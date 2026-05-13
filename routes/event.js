@@ -93,6 +93,22 @@ router.post('/pay', async (req, res) => {
     waiver_signature, req.ip, amount
   );
 
+  // Free events: skip Stripe, assign wristbands and complete immediately
+  if (amount === 0) {
+    try {
+      const { start, end } = assignWristbands(event_id, parseInt(kid_count));
+      db.prepare(`UPDATE walk_up_registrations SET
+        payment_status = 'completed', wristband_start = ?, wristband_end = ?
+        WHERE id = ?`).run(start, end, regId);
+      const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+      await notifySlack(updatedReg, event);
+      return res.json({ url: `/event/success?reg_id=${regId}` });
+    } catch (err) {
+      console.error('[EVENT] Free registration error:', err.message);
+      return res.status(500).json({ error: 'Registration failed. Please try again.' });
+    }
+  }
+
   try {
     const baseUrl = process.env.EVENT_BASE_URL || `${req.protocol}://${req.get('host')}/event`;
     const kiosk = req.body.kiosk ? '&kiosk=1' : '';
@@ -135,9 +151,15 @@ router.get('/success', (req, res) => {
   const sessionId = req.query.session_id;
   const kiosk = req.query.kiosk === '1';
 
-  if (!sessionId) return res.redirect('/event');
+  const regId = req.query.reg_id;
 
-  const reg = db.prepare('SELECT r.*, e.name as event_name, e.id as ev_id FROM walk_up_registrations r JOIN walk_up_events e ON e.id = r.event_id WHERE r.stripe_session_id = ?').get(sessionId);
+  // Free registrations come with reg_id directly; paid come with session_id
+  let reg;
+  if (regId) {
+    reg = db.prepare('SELECT r.*, e.name as event_name, e.id as ev_id FROM walk_up_registrations r JOIN walk_up_events e ON e.id = r.event_id WHERE r.id = ?').get(regId);
+  } else if (sessionId) {
+    reg = db.prepare('SELECT r.*, e.name as event_name, e.id as ev_id FROM walk_up_registrations r JOIN walk_up_events e ON e.id = r.event_id WHERE r.stripe_session_id = ?').get(sessionId);
+  }
 
   if (!reg) return res.redirect('/event');
 
