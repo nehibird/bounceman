@@ -74,12 +74,12 @@ router.post('/stripe', async (req, res) => {
           'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
 
         // Update Slack live card if one exists for this booking
-        setImmediate(async () => {
+        setTimeout(async () => {
           try {
             const { updateBookingSlackCard } = require('../services/notifications');
             await updateBookingSlackCard(bookingId);
           } catch (e) { console.error('[STRIPE WEBHOOK] Slack card update failed:', e.message); }
-        });
+        }, 0);
         break;
       }
 

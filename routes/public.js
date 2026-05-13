@@ -355,12 +355,12 @@ router.post('/contract/:id/sign', (req, res) => {
     contract_signature = ? WHERE id = ?`).run(signature_data, contract.booking_id);
 
   // Update Slack live card if one exists for this booking
-  setImmediate(async () => {
+  setTimeout(async () => {
     try {
       const { updateBookingSlackCard } = require('../services/notifications');
       await updateBookingSlackCard(contract.booking_id);
     } catch (e) { console.error('[CONTRACT] Slack card update failed:', e.message); }
-  });
+  }, 0);
 
   if (req.headers['content-type']?.includes('json')) {
     return res.json({ success: true, message: 'Contract signed successfully!' });
