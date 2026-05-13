@@ -331,4 +331,97 @@ async function notifyContactForm(data) {
   console.log('[SLACK] Contact form notification sent for', data.name);
 }
 
-module.exports = { notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm };
+
+function buildEventCard(booking, customer) {
+  const contractIcon = booking.contract_signed ? '✅' : '❌';
+  const contractText = booking.contract_signed
+    ? '✅ Signed' + (booking.contract_signed_at ? ' · ' + new Date(booking.contract_signed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '')
+    : '❌ Not Signed';
+
+  const bal = parseFloat(booking.balance_due || booking.total || 0);
+  let paymentText;
+  if (booking.payment_status === 'paid') {
+    paymentText = '✅ Paid';
+  } else if (booking.payment_status === 'deposit_paid') {
+    paymentText = '✅ Deposit Paid ($' + bal.toFixed(2) + ' remaining)';
+  } else {
+    paymentText = '❌ Not Paid ($' + bal.toFixed(2) + ')';
+  }
+
+  const allDone = booking.contract_signed && (booking.payment_status === 'paid');
+
+  const phone = customer.phone || 'No phone';
+  const total = parseFloat(booking.total || 0).toFixed(2);
+  const adminUrl = 'https://bouncemanrentals.com/admin/bookings/' + booking.id;
+
+  const blocks = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🎈 ' + booking.booking_number + ': ' + customer.first_name + ' ' + (customer.last_name || '') }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Phone:*\n' + phone },
+        { type: 'mrkdwn', text: '*Amount:*\n$' + total }
+      ]
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: '*Contract:*\n' + contractText },
+        { type: 'mrkdwn', text: '*Payment:*\n' + paymentText }
+      ]
+    }
+  ];
+
+  if (allDone) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '✅ *All done! Signed & Paid.*' } });
+  }
+
+  blocks.push({
+    type: 'actions',
+    elements: [
+      { type: 'button', text: { type: 'plain_text', text: 'View Booking' }, url: adminUrl, action_id: 'view_booking_card' }
+    ]
+  });
+
+  return blocks;
+}
+
+async function updateBookingSlackCard(bookingId) {
+  const { getDb } = require('../db');
+  const db = getDb();
+
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+  if (!booking || !booking.slack_message_ts || !booking.slack_message_channel) return;
+
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+  if (!customer) return;
+
+  const blocks = buildEventCard(booking, customer);
+  const allDone = booking.contract_signed && (booking.payment_status === 'paid');
+  const statusLine = booking.booking_number + ': ' + customer.first_name + ' — ' +
+    (booking.contract_signed ? 'Signed' : 'Not Signed') + ', ' +
+    (booking.payment_status === 'paid' ? 'Paid' : 'Not Paid');
+
+  try {
+    const resp = await fetch('https://slack.com/api/chat.update', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel: booking.slack_message_channel,
+        ts: booking.slack_message_ts,
+        blocks,
+        text: statusLine
+      })
+    });
+    const data = await resp.json();
+    if (!data.ok) console.error('[SLACK] Card update failed:', data.error);
+    else console.log('[SLACK] Card updated for', booking.booking_number, '- contract:', booking.contract_signed ? 'signed' : 'unsigned', 'payment:', booking.payment_status);
+  } catch (e) {
+    console.error('[SLACK] Card update error:', e.message);
+  }
+}
+
+module.exports = { notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };

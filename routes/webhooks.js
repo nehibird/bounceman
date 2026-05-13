@@ -72,6 +72,14 @@ router.post('/stripe', async (req, res) => {
 
         console.log('[Stripe Webhook] checkout.session.completed: booking', bookingId,
           'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
+
+        // Update Slack live card if one exists for this booking
+        setImmediate(async () => {
+          try {
+            const { updateBookingSlackCard } = require('../services/notifications');
+            await updateBookingSlackCard(bookingId);
+          } catch (e) { console.error('[STRIPE WEBHOOK] Slack card update failed:', e.message); }
+        });
         break;
       }
 
@@ -146,7 +154,7 @@ ${equipment.map(e => `- ${e.name} (ID: ${e.id}): $${e.price_4hr} (4hr) / $${e.pr
 
 Return a JSON object with these fields:
 {
-  "action": "create_booking" or "unknown",
+  "action": "create_booking" or "send_customer_links" or "unknown",
   "first_name": "customer first name",
   "last_name": "customer last name (or empty string)",
   "email": "email or null if not provided",
@@ -169,7 +177,8 @@ Rules:
 - If equipment not specified, leave equipment_ids empty and ask in confirmation_message
 - If date unclear, use the next occurrence of the mentioned day
 - If owner says "might pay" or "prepare for payment", set payment_status to "unpaid"
-- Default status to "confirmed" since the owner is creating it directly`
+- Default status to "confirmed" since the owner is creating it directly
+- For "message/text [name] at [phone] a parent form" or similar: use action "send_customer_links" with fields: first_name, last_name (if given), phone, send_contract (true), send_payment (true if payment mentioned), amount (dollar amount if mentioned, default 10), notes`
           },
           { role: 'user', content: text }
         ],
@@ -183,6 +192,80 @@ Rules:
       parsed = JSON.parse(aiData.choices[0].message.content);
     } catch (e) {
       await slackReply(SLACK_TOKEN, event.channel, event.ts, 'Sorry, I couldn\'t understand that. Try something like: "Create a booking for John Smith on July 4th for the Blue Crush Slide all day"');
+      return;
+    }
+
+    // === SEND CUSTOMER LINKS (parent form + payment) ===
+    if (parsed.action === 'send_customer_links') {
+      const { buildEventCard } = require('../services/notifications');
+      const smsService = require('../services/sms');
+      const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+      const today = new Date().toISOString().split('T')[0];
+      const amount = parseFloat(parsed.amount || 10);
+
+      // Create customer
+      const custId = uuid();
+      db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone, source) VALUES (?, ?, ?, null, ?, \'slack_event\')').run(
+        custId, parsed.first_name || 'Guest', parsed.last_name || '', parsed.phone || null
+      );
+
+      // Create lightweight booking
+      const bookingId = uuid();
+      const { generateBookingNumber } = require('../lib/helpers');
+      const bookingNumber = generateBookingNumber();
+      db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
+        event_start_time, event_end_time, event_type, subtotal, total, deposit_amount, balance_due,
+        payment_status, internal_notes, created_at, updated_at)
+        VALUES (?, ?, ?, 'confirmed', ?, '09:00', '17:00', 'walk_in', ?, ?, ?, ?, 'unpaid', ?, datetime('now'), datetime('now'))`).run(
+        bookingId, bookingNumber, custId, today, amount, amount, amount, amount,
+        (parsed.notes || 'Walk-in event — sent via Slack')
+      );
+
+      // Create a contract record so the manage page can show it
+      const contractId = uuid();
+      db.prepare(`INSERT INTO contracts (id, booking_id, customer_id, content, signed, created_at)
+        VALUES (?, ?, ?, 'Bounce Man LLC Rental Agreement', 0, datetime('now'))`).run(
+        contractId, bookingId, custId
+      );
+
+      // Send SMS
+      const manageUrl = baseUrl + '/booking/manage/' + bookingNumber;
+      const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to sign your rental agreement' +
+        (parsed.send_payment !== false ? ' and pay' : '') + ': ' + manageUrl;
+      let smsSent = false;
+      if (parsed.phone) {
+        try {
+          await smsService.sendSms(parsed.phone, smsBody);
+          smsSent = true;
+        } catch (e) {
+          console.error('[SARAH-SLACK] SMS failed:', e.message);
+        }
+      }
+
+      // Build and post the live status card
+      const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(custId);
+      const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+      const cardBlocks = buildEventCard(booking, customer);
+      const cardText = bookingNumber + ': ' + (parsed.first_name || 'Guest') + ' — Not Signed, Not Paid';
+
+      const cardResp = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: event.channel, blocks: cardBlocks, text: cardText })
+      });
+      const cardData = await cardResp.json();
+
+      // Store ts + channel on booking for live updates
+      if (cardData.ok) {
+        db.prepare('UPDATE bookings SET slack_message_ts = ?, slack_message_channel = ? WHERE id = ?')
+          .run(cardData.ts, cardData.channel, bookingId);
+      }
+
+      // Confirm in thread
+      const confirmMsg = smsSent
+        ? ':white_check_mark: Sent ' + (parsed.first_name || 'them') + ' a link to sign + pay. Card above will update automatically.'
+        : ':warning: Booking created but SMS failed. Share this link manually: ' + manageUrl;
+      await slackReply(SLACK_TOKEN, event.channel, event.ts, confirmMsg);
       return;
     }
 

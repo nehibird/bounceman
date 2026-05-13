@@ -685,6 +685,13 @@ function initialize() {
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN email_reminder_sent_date TEXT').run();
   } catch {} // column already exists
+  // Migration: add Slack live card tracking columns
+  try {
+    d.prepare('ALTER TABLE bookings ADD COLUMN slack_message_ts TEXT').run();
+  } catch {} // column already exists
+  try {
+    d.prepare('ALTER TABLE bookings ADD COLUMN slack_message_channel TEXT').run();
+  } catch {} // column already exists
   console.log('[DB] Database initialized successfully');
 }
 
