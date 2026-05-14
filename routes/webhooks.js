@@ -189,9 +189,12 @@ Rules:
     const aiData = await aiResp.json();
     let parsed;
     try {
-      parsed = JSON.parse(aiData.choices[0].message.content);
+      let rawContent = aiData.choices[0].message.content;
+      rawContent = rawContent.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      parsed = JSON.parse(rawContent);
     } catch (e) {
-      await slackReply(SLACK_TOKEN, event.channel, event.ts, 'Sorry, I couldn\'t understand that. Try something like: "Create a booking for John Smith on July 4th for the Blue Crush Slide all day"');
+      console.error('[SARAH-SLACK] AI parse error:', e.message, 'Raw:', JSON.stringify(aiData).slice(0,300));
+      await slackReply(SLACK_TOKEN, event.channel, event.ts, ':thinking_face: Got your message but had trouble parsing it. Try: "text Brenna at 9403678241 a parent form"');
       return;
     }
 
