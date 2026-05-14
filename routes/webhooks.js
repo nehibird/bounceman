@@ -205,15 +205,17 @@ Rules:
       const today = new Date().toISOString().split('T')[0];
       const isFree = parsed.free === true;
 
-      // Find today's active event — free = price 0, paid = price > 0
+      // Find next upcoming active event (today or future, within 7 days) — free = price 0, paid = price > 0
+      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 7);
+      const futureDateStr = futureDate.toISOString().split('T')[0];
       const walkUpEvent = db.prepare(
-        'SELECT * FROM walk_up_events WHERE event_date = ? AND active = 1 AND price_per_kid ' +
+        'SELECT * FROM walk_up_events WHERE event_date >= ? AND event_date <= ? AND active = 1 AND price_per_kid ' +
         (isFree ? '= 0' : '> 0') +
-        ' ORDER BY created_at DESC LIMIT 1'
-      ).get(today);
+        ' ORDER BY event_date ASC LIMIT 1'
+      ).get(today, futureDateStr);
 
       if (!walkUpEvent) {
-        await slackReply(SLACK_TOKEN, event.channel, event.ts, ':warning: No active walk-up event found for today. Set one up in the DB first.');
+        await slackReply(SLACK_TOKEN, event.channel, event.ts, ':warning: No active walk-up event found in the next 7 days. Set one up in the DB first.');
         return;
       }
 
