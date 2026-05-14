@@ -221,7 +221,7 @@ Rules:
 
       const eventUrl = baseUrl + '/event/' + walkUpEvent.slug;
       const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
-        (isFree ? ' (free 15-min session):' : ' and pay $' + walkUpEvent.price_per_kid + '/kid:') +
+        (isFree ? ' (free 15-min session):' : ' and pay $' + (walkUpEvent.price_per_kid / 100) + '/kid:') +
         ' ' + eventUrl;
 
       let smsSent = false;
@@ -234,7 +234,7 @@ Rules:
         }
       }
 
-      const label = isFree ? 'Free 15-min (Google Review)' : '$' + walkUpEvent.price_per_kid + '/kid — All Day';
+      const label = isFree ? 'Free 15-min (Google Review)' : '$' + (walkUpEvent.price_per_kid / 100) + '/kid — All Day';
       const confirmMsg = smsSent
         ? ':white_check_mark: Sent ' + (parsed.first_name || 'them') + ' the event link (' + label + "). You'll get a Slack notification when they sign and pay."
         : ':warning: SMS failed. Share this link manually: ' + eventUrl;
