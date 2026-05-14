@@ -953,6 +953,15 @@ router.post('/events', requireAuth, (req, res) => {
   res.redirect('/admin/events');
 });
 
+// Edit event (name, date, location, price)
+router.post('/events/:id/edit', requireAuth, (req, res) => {
+  const { name, event_date, location, price_per_kid } = req.body;
+  const db = getDb();
+  db.prepare('UPDATE walk_up_events SET name = ?, event_date = ?, location = ?, price_per_kid = ? WHERE id = ?')
+    .run(name, event_date, location || '', parseFloat(price_per_kid || 0), req.params.id);
+  res.redirect('/admin/events');
+});
+
 // Toggle event active/inactive
 router.post('/events/:id/toggle', requireAuth, (req, res) => {
   const db = getDb();

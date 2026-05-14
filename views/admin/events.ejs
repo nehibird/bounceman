@@ -83,12 +83,16 @@
             '<td>' + (e.total_kids || 0) + '</td>' +
             '<td><strong>$' + (e.total_revenue || 0).toFixed(2) + '</strong></td>' +
             '<td><span class="badge-status ' + (e.active ? 'badge-confirmed' : 'badge-cancelled') + '">' + (e.active ? 'Active' : 'Inactive') + '</span></td>' +
-            '<td>' +
+            '<td style="white-space:nowrap">' +
               '<form method="POST" action="/admin/events/' + e.id + '/toggle" style="display:inline">' +
-                '<button class="btn btn-sm btn-outline-secondary rounded-pill" title="' + (e.active ? 'Deactivate' : 'Activate') + '">' +
+                '<button class="btn btn-sm btn-outline-secondary rounded-pill me-1" title="' + (e.active ? 'Deactivate' : 'Activate') + '">' +
                   '<i class="fas fa-' + (e.active ? 'pause' : 'play') + '"></i>' +
                 '</button>' +
               '</form>' +
+              '<button class="btn btn-sm btn-outline-primary rounded-pill" title="Edit" ' +
+                'onclick="openEditModal(\'' + e.id + '\',\'' + e.name.replace(/'/g,"\\'") + '\',\'' + e.event_date + '\',\'' + (e.location||'').replace(/'/g,"\\'") + '\',' + parseFloat(e.price_per_kid) + ')" >' +
+                '<i class="fas fa-pencil-alt"></i>' +
+              '</button>' +
             '</td>' +
           '</tr>';
         }).join('')}
@@ -133,4 +137,52 @@
   </div>
 </div>
 
-`, scripts: '' }) %>
+<!-- Edit Event Modal -->
+<div class="modal fade" id="editEventModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:16px">
+      <div class="modal-header" style="border-bottom:1px solid #eee">
+        <h5 class="modal-title" style="font-weight:700"><i class="fas fa-pencil-alt me-2" style="color:var(--bm-primary)"></i>Edit Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editEventForm" action="">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Event Name *</label>
+            <input type="text" class="form-control" name="name" id="editName" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Event Date *</label>
+            <input type="date" class="form-control" name="event_date" id="editDate" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Location</label>
+            <input type="text" class="form-control" name="location" id="editLocation">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Price Per Kid ($)</label>
+            <input type="number" class="form-control" name="price_per_kid" id="editPrice" min="0" step="1" required>
+            <div class="form-text">Set to 0 for a free event.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-bm rounded-pill"><i class="fas fa-check me-1"></i>Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+function openEditModal(id, name, date, location, price) {
+  document.getElementById('editEventForm').action = '/admin/events/' + id + '/edit';
+  document.getElementById('editName').value = name;
+  document.getElementById('editDate').value = date;
+  document.getElementById('editLocation').value = location;
+  document.getElementById('editPrice').value = price;
+  new bootstrap.Modal(document.getElementById('editEventModal')).show();
+}
+</script>
+` }) %>
