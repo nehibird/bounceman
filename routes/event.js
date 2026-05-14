@@ -3,6 +3,69 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 
+
+const fs = require('fs');
+const path = require('path');
+
+function saveSignedWaiver(reg, event) {
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'waivers');
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+  const signedAt = new Date(reg.waiver_signed_at || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' });
+  const kidNames = (() => { try { return JSON.parse(reg.kid_names || '[]').join(', ') || 'Not specified'; } catch { return 'Not specified'; } })();
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Signed Waiver — ${reg.parent_name}</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; color: #333; }
+  h1 { color: #e74c3c; } h2 { color: #555; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+  .meta { background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+  .meta p { margin: 4px 0; } .waiver-text { font-size: 13px; line-height: 1.7; }
+  .signature-section { margin-top: 32px; border-top: 2px solid #333; padding-top: 16px; }
+  .sig-img { border: 1px solid #ccc; border-radius: 4px; background: #fff; max-width: 400px; }
+  .footer { margin-top: 24px; font-size: 11px; color: #888; }
+</style></head>
+<body>
+<h1>Bounce Man LLC — Signed Liability Waiver</h1>
+<div class="meta">
+  <p><strong>Event:</strong> ${event.name}</p>
+  <p><strong>Event Date:</strong> ${event.event_date}</p>
+  <p><strong>Location:</strong> ${event.location || 'Blinn Park, Tonkawa OK'}</p>
+  <p><strong>Parent/Guardian:</strong> ${reg.parent_name}</p>
+  <p><strong>Phone:</strong> ${reg.parent_phone || 'N/A'}</p>
+  <p><strong>Number of Children:</strong> ${reg.kid_count}</p>
+  <p><strong>Child Name(s):</strong> ${kidNames}</p>
+  <p><strong>Signed At:</strong> ${signedAt} CT</p>
+  <p><strong>IP Address:</strong> ${reg.signer_ip || 'N/A'}</p>
+  <p><strong>Registration ID:</strong> ${reg.id}</p>
+</div>
+<h2>Liability Waiver Agreement</h2>
+<div class="waiver-text">
+  <p>By signing below, I acknowledge and agree to the following:</p>
+  <p><strong>1. ASSUMPTION OF RISK:</strong> I understand that the use of inflatable equipment involves inherent risks including but not limited to falls, collisions, sprains, fractures, and other injuries. I voluntarily assume all risks associated with participation.</p>
+  <p><strong>2. RELEASE OF LIABILITY:</strong> I hereby release, waive, and discharge Bounce Man LLC, its owners, employees, agents, and representatives from any and all liability, claims, demands, or causes of action arising out of or related to any injury, damage, or loss sustained while using the equipment.</p>
+  <p><strong>3. INDEMNIFICATION:</strong> I agree to indemnify and hold harmless Bounce Man LLC from any claims, damages, or expenses arising from my child's participation.</p>
+  <p><strong>4. SUPERVISION:</strong> I understand that Bounce Man LLC provides equipment only and does not supervise children. I am responsible for supervising my child(ren) at all times.</p>
+  <p><strong>5. RULES:</strong> I agree that my child(ren) will follow all safety rules including: no shoes, no food/drinks, no sharp objects, no rough play, and observe maximum capacity limits.</p>
+  <p>This waiver is binding on myself, my heirs, and legal representatives.</p>
+</div>
+<div class="signature-section">
+  <p><strong>Electronic Signature of Parent/Guardian:</strong></p>
+  <img class="sig-img" src="${reg.waiver_signature}" alt="Signature" />
+  <p style="margin-top:8px"><em>${reg.parent_name} — signed ${signedAt} CT</em></p>
+</div>
+<div class="footer">
+  <p>This document was electronically signed and is legally binding. Bounce Man LLC · Tonkawa, OK · (580) 308-9288</p>
+</div>
+</body></html>`;
+
+  const filename = `waiver-${reg.id}.html`;
+  const filepath = path.join(uploadDir, filename);
+  fs.writeFileSync(filepath, html, 'utf8');
+  return '/uploads/waivers/' + filename;
+}
+
 function getSettings() {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM settings').all();
@@ -68,11 +131,13 @@ async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*Wristbands:* ' + wb + ' \u00B7 ' + reg.kid_count + ' kid' + (reg.kid_count > 1 ? 's' : '') } });
   }
   try {
-    await fetch('https://slack.com/api/chat.update', {
+    const slackRes = await fetch('https://slack.com/api/chat.update', {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ channel: reg.slack_card_channel, ts: reg.slack_card_ts, blocks, text: firstName + ' — ' + (paymentComplete ? 'paid' : 'waiver signed') })
     });
+    const slackJson = await slackRes.json();
+    if (!slackJson.ok) console.error('[EVENT] Slack card update failed:', slackJson.error);
   } catch (err) {
     console.error('[EVENT] Slack card update failed:', err.message);
   }
@@ -124,12 +189,20 @@ router.post('/pay', async (req, res) => {
     waiver_signature, req.ip, amount
   );
 
+  // Save signed waiver document
+  const regForWaiver = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+  const eventForWaiver = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(event_id);
+  try { saveSignedWaiver(regForWaiver, eventForWaiver); } catch (wErr) { console.error('[EVENT] Waiver save failed:', wErr.message); }
+
   // Check for pending Slack card (from @sarah send link) and attach to this registration
   if (parent_phone) {
-    const pendingCard = db.prepare('SELECT channel, ts FROM pending_slack_cards WHERE phone = ?').get(parent_phone);
+    const normalizedPhone = parent_phone.replace(/\D/g, '');
+    const allCards = db.prepare('SELECT channel, ts, phone FROM pending_slack_cards').all();
+    const pendingCard = allCards.find(c => c.phone.replace(/\D/g, '') === normalizedPhone);
     if (pendingCard) {
+      console.log('[EVENT] Slack card matched for', normalizedPhone, '-> ts:', pendingCard.ts);
       db.prepare('UPDATE walk_up_registrations SET slack_card_channel = ?, slack_card_ts = ? WHERE id = ?').run(pendingCard.channel, pendingCard.ts, regId);
-      db.prepare('DELETE FROM pending_slack_cards WHERE phone = ?').run(parent_phone);
+      db.prepare('DELETE FROM pending_slack_cards WHERE phone = ?').run(pendingCard.phone);
     }
   }
 
