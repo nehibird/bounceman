@@ -73,7 +73,14 @@
     </div>
   </div>
 
-  <% if (kiosk) { %>
+  <% if (googleReviewUrl && parseFloat(reg.amount_paid) === 0) { %>
+  <div style="margin-top:20px">
+    <a href="<%= googleReviewUrl %>" id="reviewBtn" class="btn btn-warning btn-lg w-100 fw-bold" style="border-radius:16px;font-size:18px;padding:16px">
+      ⭐ Leave Us a Google Review
+    </a>
+    <div class="countdown">Redirecting in <strong id="countdown">5</strong> seconds…</div>
+  </div>
+  <% } else if (kiosk) { %>
   <div class="countdown">
     Next registration in <strong id="countdown">10</strong> seconds
   </div>
@@ -117,8 +124,23 @@
     poll();
   }
 
-  // Kiosk countdown
-  if (status === 'completed' && kiosk) {
+  // Google review redirect for free events
+  var googleReviewUrl = '<%= googleReviewUrl %>';
+  var amountPaid = parseFloat('<%= reg.amount_paid %>');
+  if (status === 'completed' && googleReviewUrl && amountPaid === 0) {
+    var secs = 5;
+    var el = document.getElementById('countdown');
+    var timer = setInterval(function() {
+      el.textContent = --secs;
+      if (secs <= 0) {
+        clearInterval(timer);
+        window.location.href = googleReviewUrl;
+      }
+    }, 1000);
+  }
+
+  // Kiosk countdown (paid events only)
+  if (status === 'completed' && kiosk && amountPaid > 0) {
     var secs = 10;
     var el = document.getElementById('countdown');
     var timer = setInterval(function() {

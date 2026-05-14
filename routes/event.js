@@ -282,9 +282,10 @@ router.get('/success', (req, res) => {
 
   if (!reg) return res.redirect('/event');
 
+  const googleReviewUrl = (settings.google_review_url || '').trim();
   res.render('public/event/success', {
     title: 'All Set! - Bounce Man',
-    settings, reg, kiosk, sessionId,
+    settings, reg, kiosk, sessionId, googleReviewUrl,
     page: 'event'
   });
 });
