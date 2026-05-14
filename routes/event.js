@@ -93,7 +93,7 @@ function assignWristbands(eventId, kidCount) {
 // Slack notification helper
 async function notifySlack(reg, event) {
   const token = process.env.SLACK_BOT_TOKEN;
-  const channel = process.env.SLACK_CHANNEL_ID;
+  const channel = process.env.SLACK_BOOKINGS_CHANNEL || process.env.SLACK_CHANNEL_ID;
   if (!token || !channel) return;
   const wristbands = reg.wristband_start === reg.wristband_end
     ? `#${reg.wristband_start}`
