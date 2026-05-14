@@ -265,7 +265,25 @@ router.post('/slack/events', async (req, res) => {
       }
 
       blocks.push({ type: 'divider' });
-      blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '💡 DM Sarah or mention @Sarah to send a parent link or create a booking' }] });
+
+      // Commands reference
+      blocks.push({ type: 'header', text: { type: 'plain_text', text: '💬 What I Can Do', emoji: true } });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*Send a parent the paid event link + waiver*\n`text [Name] at [phone] a parent form`\n_Example: text Brenna at 5801234567 a parent form_' }
+      });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*Send a parent the free bounce link (Google Review)*\n`text [Name] at [phone] a free link`\n_Example: text Marcus at 5809876543 a free link_' }
+      });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*Create a rental booking*\n`book [Name] on [date] for [equipment]`\n_Example: book Sarah Johnson on June 14 for the Blue Crush slide all day_' }
+      });
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: 'DM me directly or mention @Sarah in any channel. I\'ll post tracking cards to <#' + (process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS') + '>.' }]
+      });
 
       await fetch('https://slack.com/api/views.publish', {
         method: 'POST',
@@ -380,35 +398,40 @@ Rules:
         return;
       }
 
-      const eventUrl = baseUrl + '/event/' + walkUpEvent.slug + "?phone=" + encodeURIComponent(parsed.phone || "");
-      const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
+      const label = isFree ? 'Free (Google Review)' : '$' + walkUpEvent.price_per_kid + '/kid';
+      const firstName = parsed.first_name || 'Customer';
+
+      // No phone — ask for it
+      if (!parsed.phone) {
+        await slackReply(SLACK_TOKEN, event.channel, event.ts,
+          "What's " + firstName + "'s phone number? Example: _text " + firstName + ' at 5801234567 ' + (isFree ? 'a free link' : 'a parent form') + '_');
+        return;
+      }
+
+      const eventUrl = baseUrl + '/event/' + walkUpEvent.slug + '?phone=' + encodeURIComponent(parsed.phone);
+      const smsBody = 'Hi ' + firstName + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
         (isFree ? ' (free 15-min session):' : ' and pay $' + walkUpEvent.price_per_kid + '/kid:') +
         ' ' + eventUrl;
 
       let smsSent = false;
-      if (parsed.phone) {
-        try {
-          await smsService.sendSms(parsed.phone, smsBody);
-          smsSent = true;
-        } catch (e) {
-          console.error('[SARAH-SLACK] SMS failed:', e.message);
-        }
+      try {
+        await smsService.sendSms(parsed.phone, smsBody);
+        smsSent = true;
+      } catch (e) {
+        console.error('[SARAH-SLACK] SMS failed:', e.message);
       }
 
-      const label = isFree ? 'Free (Google Review)' : '$' + walkUpEvent.price_per_kid + '/kid';
-      const firstName = parsed.first_name || 'Customer';
-
-      // Post live tracking card to #bookings
+      // Post live tracking card to #events
       const bookingsChannel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
       const cardBlocks = [
-        { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — Link Sent' } },
+        { type: 'header', text: { type: 'plain_text', text: '🎈 ' + firstName + ' — Link Sent' } },
         { type: 'section', fields: [
-          { type: 'mrkdwn', text: '*Phone:*\n' + (parsed.phone || 'N/A') },
+          { type: 'mrkdwn', text: '*Phone:*\n' + parsed.phone },
           { type: 'mrkdwn', text: '*Event:*\n' + walkUpEvent.name + ' (' + label + ')' }
         ]},
         { type: 'section', fields: [
-          { type: 'mrkdwn', text: '*Waiver:*\n\u274C Not yet' },
-          { type: 'mrkdwn', text: '*Payment:*\n\u274C Pending' }
+          { type: 'mrkdwn', text: '*Waiver:*\n❌ Not yet' },
+          { type: 'mrkdwn', text: '*Payment:*\n' + (isFree ? '✅ Free' : '❌ Pending') }
         ]},
         { type: 'context', elements: [{ type: 'mrkdwn', text: 'Link sent — waiting for ' + firstName + ' to fill out the form' }] }
       ];
@@ -420,7 +443,7 @@ Rules:
           body: JSON.stringify({ channel: bookingsChannel, blocks: cardBlocks, text: firstName + ' — link sent' })
         });
         const cardData = await cardResp.json();
-        if (cardData.ok && parsed.phone) {
+        if (cardData.ok) {
           db.prepare('INSERT OR REPLACE INTO pending_slack_cards (phone, channel, ts, first_name, event_id) VALUES (?, ?, ?, ?, ?)').run(
             parsed.phone, cardData.channel, cardData.ts, firstName, walkUpEvent.id
           );
@@ -430,8 +453,8 @@ Rules:
       }
 
       const confirmMsg = smsSent
-        ? ':white_check_mark: Sent ' + firstName + ' the event link (' + label + '). Card posted to #bookings — will auto-update when they sign and pay.'
-        : ':warning: SMS failed. Share this link manually: ' + eventUrl;
+        ? ':white_check_mark: Sent ' + firstName + ' the ' + (isFree ? 'free bounce' : 'event') + ' link. Card in <#' + bookingsChannel + '> — updates when they sign' + (isFree ? '.' : ' and pay.')
+        : ':warning: SMS failed to ' + parsed.phone + '. Share manually: ' + eventUrl;
       await slackReply(SLACK_TOKEN, event.channel, event.ts, confirmMsg);
       return;
     }
@@ -516,6 +539,17 @@ async function slackReply(token, channel, thread_ts, text) {
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts, text })
   });
+}
+
+async function slackDeleteMessage(channel, ts) {
+  const userToken = process.env.SLACK_USER_TOKEN;
+  if (!userToken) return { ok: false, error: 'no_user_token' };
+  const r = await fetch('https://slack.com/api/chat.delete', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + userToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, ts })
+  });
+  return r.json();
 }
 
 

@@ -89,8 +89,13 @@
                   '<i class="fas fa-' + (e.active ? 'pause' : 'play') + '"></i>' +
                 '</button>' +
               '</form>' +
-              '<button class="btn btn-sm btn-outline-primary rounded-pill" title="Edit" ' +
-                'onclick="openEditModal(\'' + e.id + '\',\'' + e.name.replace(/'/g,"\\'") + '\',\'' + e.event_date + '\',\'' + (e.location||'').replace(/'/g,"\\'") + '\',' + parseFloat(e.price_per_kid) + ')" >' +
+              '<button class="btn btn-sm btn-outline-primary rounded-pill btn-edit-event" title="Edit" ' +
+                'data-id="' + e.id + '" ' +
+                'data-name="' + e.name.replace(/"/g, '&quot;') + '" ' +
+                'data-date="' + e.event_date + '" ' +
+                'data-location="' + (e.location||'').replace(/"/g, '&quot;') + '" ' +
+                'data-price="' + parseFloat(e.price_per_kid) + '" ' +
+                'data-bs-toggle="modal" data-bs-target="#editEventModal">' +
                 '<i class="fas fa-pencil-alt"></i>' +
               '</button>' +
             '</td>' +
@@ -176,13 +181,13 @@
 
 `, scripts: `
 <script>
-function openEditModal(id, name, date, location, price) {
-  document.getElementById('editEventForm').action = '/admin/events/' + id + '/edit';
-  document.getElementById('editName').value = name;
-  document.getElementById('editDate').value = date;
-  document.getElementById('editLocation').value = location;
-  document.getElementById('editPrice').value = price;
-  new bootstrap.Modal(document.getElementById('editEventModal')).show();
-}
+document.getElementById('editEventModal').addEventListener('show.bs.modal', function(e) {
+  var btn = e.relatedTarget;
+  document.getElementById('editEventForm').action = '/admin/events/' + btn.dataset.id + '/edit';
+  document.getElementById('editName').value = btn.dataset.name;
+  document.getElementById('editDate').value = btn.dataset.date;
+  document.getElementById('editLocation').value = btn.dataset.location;
+  document.getElementById('editPrice').value = btn.dataset.price;
+});
 </script>
 ` }) %>
