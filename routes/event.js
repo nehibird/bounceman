@@ -157,7 +157,7 @@ router.get('/', (req, res) => {
 
   res.render('public/event/walkin', {
     title: 'Walk-Up Registration - Bounce Man',
-    settings, events, selectedEvent, kiosk,
+    settings, events, selectedEvent, kiosk, prefillPhone: req.query.phone || '',
     stripeKey: process.env.STRIPE_PUBLISHABLE_KEY,
     page: 'event'
   });
@@ -363,7 +363,8 @@ router.get('/:slug', (req, res) => {
   const db = getDb();
   const event = db.prepare('SELECT id FROM walk_up_events WHERE slug = ? AND active = 1').get(req.params.slug);
   if (!event) return res.redirect('/event');
-  return res.redirect('/event?event=' + event.id);
+  const phoneQ = req.query.phone ? '&phone=' + encodeURIComponent(req.query.phone) : '';
+  return res.redirect('/event?event=' + event.id + phoneQ);
 });
 
 module.exports = router;

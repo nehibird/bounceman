@@ -219,7 +219,7 @@ Rules:
         return;
       }
 
-      const eventUrl = baseUrl + '/event/' + walkUpEvent.slug;
+      const eventUrl = baseUrl + '/event/' + walkUpEvent.slug + "?phone=" + encodeURIComponent(parsed.phone || "");
       const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
         (isFree ? ' (free 15-min session):' : ' and pay $' + walkUpEvent.price_per_kid + '/kid:') +
         ' ' + eventUrl;

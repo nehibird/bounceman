@@ -86,10 +86,14 @@
         <label class="form-label">Your Name *</label>
         <input type="text" id="parentName" class="form-control" placeholder="Full name" required>
       </div>
+      <% if (!prefillPhone) { %>
       <div>
         <label class="form-label">Phone Number <span class="text-muted">(optional)</span></label>
         <input type="tel" id="parentPhone" class="form-control" placeholder="(580) 555-0123">
       </div>
+      <% } else { %>
+      <input type="hidden" id="parentPhone" value="<%= prefillPhone %>">
+      <% } %>
     </div>
 
     <!-- Kids -->
