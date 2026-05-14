@@ -47,6 +47,37 @@ async function notifySlack(reg, event) {
   }
 }
 
+async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token || !reg.slack_card_ts || !reg.slack_card_channel) return;
+  const priceLabel = eventRow.price_per_kid === 0 ? 'Free (Google Review)' : '$' + (eventRow.price_per_kid / 100) + '/kid';
+  const firstName = (reg.parent_name || 'Customer').split(' ')[0];
+  const blocks = [
+    { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — ' + (paymentComplete ? 'All Done!' : 'Waiver Signed') } },
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Phone:*\n' + (reg.parent_phone || 'N/A') },
+      { type: 'mrkdwn', text: '*Event:*\n' + eventRow.name + ' (' + priceLabel + ')' }
+    ]},
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Waiver:*\n' + (waiverSigned ? '\u2705 Signed' : '\u274C Not yet') },
+      { type: 'mrkdwn', text: '*Payment:*\n' + (paymentComplete ? '\u2705 Paid ($' + reg.amount_paid.toFixed(2) + ')' : '\u274C Pending') }
+    ]}
+  ];
+  if (paymentComplete && reg.wristband_start) {
+    const wb = reg.wristband_start === reg.wristband_end ? '#' + reg.wristband_start : '#' + reg.wristband_start + '-#' + reg.wristband_end;
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*Wristbands:* ' + wb + ' \u00B7 ' + reg.kid_count + ' kid' + (reg.kid_count > 1 ? 's' : '') } });
+  }
+  try {
+    await fetch('https://slack.com/api/chat.update', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: reg.slack_card_channel, ts: reg.slack_card_ts, blocks, text: firstName + ' — ' + (paymentComplete ? 'paid' : 'waiver signed') })
+    });
+  } catch (err) {
+    console.error('[EVENT] Slack card update failed:', err.message);
+  }
+}
+
 // GET /event — Walk-up registration page
 
 router.get('/', (req, res) => {
@@ -93,6 +124,15 @@ router.post('/pay', async (req, res) => {
     waiver_signature, req.ip, amount
   );
 
+  // Check for pending Slack card (from @sarah send link) and attach to this registration
+  if (parent_phone) {
+    const pendingCard = db.prepare('SELECT channel, ts FROM pending_slack_cards WHERE phone = ?').get(parent_phone);
+    if (pendingCard) {
+      db.prepare('UPDATE walk_up_registrations SET slack_card_channel = ?, slack_card_ts = ? WHERE id = ?').run(pendingCard.channel, pendingCard.ts, regId);
+      db.prepare('DELETE FROM pending_slack_cards WHERE phone = ?').run(parent_phone);
+    }
+  }
+
   // Free events: skip Stripe, assign wristbands and complete immediately
   if (amount === 0) {
     try {
@@ -102,12 +142,18 @@ router.post('/pay', async (req, res) => {
         WHERE id = ?`).run(start, end, regId);
       const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
       await notifySlack(updatedReg, event);
+      await updateSlackCard(updatedReg, event, true, true);
       return res.json({ url: `/event/success?reg_id=${regId}` });
     } catch (err) {
       console.error('[EVENT] Free registration error:', err.message);
       return res.status(500).json({ error: 'Registration failed. Please try again.' });
     }
   }
+
+  // Update Slack card to show waiver signed, payment pending
+  const regForCard = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+  const eventForCard = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(event_id);
+  await updateSlackCard(regForCard, eventForCard, true, false);
 
   try {
     const baseUrl = process.env.EVENT_BASE_URL || `${req.protocol}://${req.get('host')}/event`;
@@ -225,6 +271,7 @@ router.post('/webhook', async (req, res) => {
       const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(eventId);
       const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
       await notifySlack(updatedReg, event);
+      await updateSlackCard(updatedReg, event, true, true);
 
       db.prepare('UPDATE walk_up_registrations SET slack_notified = 1 WHERE id = ?').run(regId);
 

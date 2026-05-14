@@ -692,6 +692,16 @@ function initialize() {
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN slack_message_channel TEXT').run();
   } catch {} // column already exists
+  try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
+  try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
+  d.prepare(`CREATE TABLE IF NOT EXISTS pending_slack_cards (
+    phone TEXT PRIMARY KEY,
+    channel TEXT,
+    ts TEXT,
+    first_name TEXT,
+    event_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run();
   console.log('[DB] Database initialized successfully');
 }
 

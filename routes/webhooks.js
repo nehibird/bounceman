@@ -234,9 +234,42 @@ Rules:
         }
       }
 
-      const label = isFree ? 'Free 15-min (Google Review)' : '$' + (walkUpEvent.price_per_kid / 100) + '/kid — All Day';
+      const label = isFree ? 'Free (Google Review)' : '$' + (walkUpEvent.price_per_kid / 100) + '/kid';
+      const firstName = parsed.first_name || 'Customer';
+
+      // Post live tracking card to #bookings
+      const bookingsChannel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0AQF8ZAEBE';
+      const cardBlocks = [
+        { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — Link Sent' } },
+        { type: 'section', fields: [
+          { type: 'mrkdwn', text: '*Phone:*\n' + (parsed.phone || 'N/A') },
+          { type: 'mrkdwn', text: '*Event:*\n' + walkUpEvent.name + ' (' + label + ')' }
+        ]},
+        { type: 'section', fields: [
+          { type: 'mrkdwn', text: '*Waiver:*\n\u274C Not yet' },
+          { type: 'mrkdwn', text: '*Payment:*\n\u274C Pending' }
+        ]},
+        { type: 'context', elements: [{ type: 'mrkdwn', text: 'Link sent — waiting for ' + firstName + ' to fill out the form' }] }
+      ];
+
+      try {
+        const cardResp = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: bookingsChannel, blocks: cardBlocks, text: firstName + ' — link sent' })
+        });
+        const cardData = await cardResp.json();
+        if (cardData.ok && parsed.phone) {
+          db.prepare('INSERT OR REPLACE INTO pending_slack_cards (phone, channel, ts, first_name, event_id) VALUES (?, ?, ?, ?, ?)').run(
+            parsed.phone, cardData.channel, cardData.ts, firstName, walkUpEvent.id
+          );
+        }
+      } catch (cardErr) {
+        console.error('[SARAH-SLACK] Card post failed:', cardErr.message);
+      }
+
       const confirmMsg = smsSent
-        ? ':white_check_mark: Sent ' + (parsed.first_name || 'them') + ' the event link (' + label + "). You'll get a Slack notification when they sign and pay."
+        ? ':white_check_mark: Sent ' + firstName + ' the event link (' + label + '). Card posted to #bookings — will auto-update when they sign and pay.'
         : ':warning: SMS failed. Share this link manually: ' + eventUrl;
       await slackReply(SLACK_TOKEN, event.channel, event.ts, confirmMsg);
       return;
