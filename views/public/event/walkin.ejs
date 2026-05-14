@@ -166,10 +166,10 @@
     <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Setting up payment...</div>
 
     <button class="btn-pay" id="payBtn" disabled>
-      <i class="fas fa-lock me-2"></i>Pay & Register
+      <i class="fas fa-lock me-2"></i><span id="payBtnLabel">Register</span>
     </button>
 
-    <p class="text-center text-white small mt-3" style="opacity:0.7">
+    <p id="stripeFooter" class="text-center text-white small mt-3" style="opacity:0.7;display:none">
       <i class="fas fa-shield-alt me-1"></i>Secure payment via Stripe
     </p>
 
@@ -269,7 +269,9 @@
   function updatePayBtn() {
     var btn = document.getElementById('payBtn');
     var name = document.getElementById('parentName').value.trim();
-    btn.disabled = !(hasSigned && agreeCheck.checked && name && eventId && pricePerKid > 0);
+    btn.disabled = !(hasSigned && agreeCheck.checked && name && eventId);
+    document.getElementById('payBtnLabel').textContent = pricePerKid > 0 ? 'Pay & Register' : 'Register';
+    document.getElementById('stripeFooter').style.display = pricePerKid > 0 ? 'block' : 'none';
   }
   document.getElementById('parentName').addEventListener('input', updatePayBtn);
 
