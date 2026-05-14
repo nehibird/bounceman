@@ -50,7 +50,11 @@
     <img src="/assets/images/navbar-wordmark.svg" alt="Bounce Man" style="height:50px;margin-bottom:6px;filter:drop-shadow(0 0 3px white) drop-shadow(0 0 3px white) drop-shadow(0 0 1px white)">
     <% if (selectedEvent) { %>
       <div class="event-name"><%= selectedEvent.name %></div>
-      <div class="price-badge">$<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+      <% if (parseFloat(selectedEvent.price_per_kid) === 0) { %>
+        <div class="price-badge" style="background:rgba(46,204,113,0.25);color:#1a7a4a">🎈 15 min free bounce</div>
+      <% } else { %>
+        <div class="price-badge">$<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+      <% } %>
     <% } else { %>
       <div class="event-name">Walk-Up Registration</div>
     <% } %>
