@@ -22,8 +22,79 @@ router.post('/stripe', async (req, res) => {
       case 'checkout.session.completed': {
         const session = event.data.object;
         const bookingId = session.metadata && session.metadata.booking_id;
+
+        // Walk-up event payment (registration_id in metadata)
+        if (!bookingId && session.metadata && session.metadata.registration_id) {
+          const regId = session.metadata.registration_id;
+          const eventId = session.metadata.event_id;
+          const reg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+          if (!reg) { console.error('[Stripe Webhook] Walk-up reg not found:', regId); break; }
+
+          // Dedup
+          if (reg.payment_status === 'completed') { console.log('[Stripe Webhook] Walk-up already completed:', regId); break; }
+
+          // Assign wristbands atomically using transaction
+          const evRow = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(eventId);
+          const { start, end } = db.transaction((eid, count) => {
+            const ev = db.prepare('SELECT wristband_counter FROM walk_up_events WHERE id = ?').get(eid);
+            const s = (ev ? ev.wristband_counter : 0) + 1;
+            const e = s + count - 1;
+            db.prepare('UPDATE walk_up_events SET wristband_counter = ? WHERE id = ?').run(e, eid);
+            return { start: s, end: e };
+          })(eventId, reg.kid_count);
+
+          const amountPaid = (session.amount_total || 0) / 100;
+          db.prepare(`UPDATE walk_up_registrations SET payment_status = 'completed', stripe_payment_intent = ?, amount_paid = ?, wristband_start = ?, wristband_end = ? WHERE id = ?`)
+            .run(session.payment_intent, amountPaid, start, end, regId);
+
+          const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
+          console.log(`[Stripe Webhook] Walk-up payment completed: ${reg.parent_name}, wristbands ${start}-${end}`);
+
+          // Update Slack card if one exists
+          setTimeout(async () => {
+            try {
+              const slackToken = process.env.SLACK_BOT_TOKEN;
+              if (slackToken && updatedReg.slack_card_ts && updatedReg.slack_card_channel) {
+                const wristbandLabel = start === end ? '#' + start : '#' + start + '–#' + end;
+                const blocks = [
+                  { type: 'header', text: { type: 'plain_text', text: '🎈 ' + updatedReg.parent_name + ' — Ready!' } },
+                  { type: 'section', fields: [
+                    { type: 'mrkdwn', text: '*Phone:*\n' + (updatedReg.parent_phone || 'N/A') },
+                    { type: 'mrkdwn', text: '*Event:*\n' + (evRow ? evRow.name : 'Walk-Up Event') }
+                  ]},
+                  { type: 'section', fields: [
+                    { type: 'mrkdwn', text: '*Waiver:*\n✅ Signed' },
+                    { type: 'mrkdwn', text: '*Payment:*\n✅ $' + amountPaid.toFixed(2) }
+                  ]},
+                  { type: 'section', fields: [
+                    { type: 'mrkdwn', text: '*Kids:*\n' + updatedReg.kid_count },
+                    { type: 'mrkdwn', text: '*Wristband' + (updatedReg.kid_count > 1 ? 's' : '') + ':*\n' + wristbandLabel }
+                  ]},
+                  { type: 'context', elements: [{ type: 'mrkdwn', text: '✅ All done — send them to the bounce house!' }] }
+                ];
+                await fetch('https://slack.com/api/chat.update', {
+                  method: 'POST',
+                  headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ channel: updatedReg.slack_card_channel, ts: updatedReg.slack_card_ts, blocks, text: updatedReg.parent_name + ' — paid & ready' })
+                });
+              }
+              // Also post a new notification to #events if no card to update
+              if (slackToken && (!updatedReg.slack_card_ts)) {
+                const eventsChannel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
+                const wristbandLabel = start === end ? '#' + start : '#' + start + '–#' + end;
+                await fetch('https://slack.com/api/chat.postMessage', {
+                  method: 'POST',
+                  headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ channel: eventsChannel, text: '✅ ' + updatedReg.parent_name + ' paid $' + amountPaid.toFixed(2) + ' — wristbands ' + wristbandLabel })
+                });
+              }
+            } catch (e) { console.error('[Stripe Webhook] Walk-up Slack notify failed:', e.message); }
+          }, 0);
+          break;
+        }
+
         if (!bookingId) {
-          console.log('[Stripe Webhook] No booking_id in metadata, skipping');
+          console.log('[Stripe Webhook] No booking_id or registration_id in metadata, skipping');
           break;
         }
 
@@ -118,15 +189,105 @@ router.post('/slack/events', async (req, res) => {
   res.json({ ok: true });
 
   const event = req.body.event;
-  if (!event || event.type !== 'app_mention') return;
+  if (!event) return;
 
-  // Ignore bot messages to prevent loops
-  if (event.bot_id) return;
+  // App Home opened — publish dashboard view
+  if (event.type === 'app_home_opened') {
+    const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
+    if (!SLACK_TOKEN) return;
+    try {
+      const db = getDb();
+      const today = new Date().toISOString().split('T')[0];
 
-  const BOOKINGS_CHANNEL = process.env.SLACK_BOOKINGS_CHANNEL || 'C0AQF8ZAEBE';
+      // Today's active events
+      const todayEvents = db.prepare('SELECT * FROM walk_up_events WHERE event_date = ? AND active = 1 ORDER BY price_per_kid ASC').all(today);
+
+      // Today's registrations
+      const todayRegs = db.prepare(
+        "SELECT r.*, e.name as event_name, e.price_per_kid FROM walk_up_registrations r JOIN walk_up_events e ON r.event_id = e.id WHERE r.created_at >= ? ORDER BY r.created_at DESC"
+      ).all(today + ' 00:00:00');
+
+      const totalKids = todayRegs.reduce((s, r) => s + (r.kid_count || 0), 0);
+      const totalRevenue = todayRegs.filter(r => r.payment_status === 'completed').reduce((s, r) => s + parseFloat(r.amount_paid || 0), 0);
+      const signedWaivers = todayRegs.filter(r => r.waiver_signed).length;
+
+      const blocks = [
+        { type: 'header', text: { type: 'plain_text', text: '🎈 Bounce Man Dashboard', emoji: true } },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: '*Today:* ' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) }] },
+        { type: 'divider' }
+      ];
+
+      // Stats row
+      blocks.push({
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: '*Kids Today*\n' + totalKids },
+          { type: 'mrkdwn', text: '*Revenue*\n$' + totalRevenue.toFixed(2) },
+          { type: 'mrkdwn', text: '*Registrations*\n' + todayRegs.length },
+          { type: 'mrkdwn', text: '*Waivers Signed*\n' + signedWaivers }
+        ]
+      });
+      blocks.push({ type: 'divider' });
+
+      // Today's events
+      if (todayEvents.length > 0) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*📅 Today\'s Events*' } });
+        for (const ev of todayEvents) {
+          const evRegs = todayRegs.filter(r => r.event_id === ev.id);
+          const evKids = evRegs.reduce((s, r) => s + (r.kid_count || 0), 0);
+          const priceLabel = parseFloat(ev.price_per_kid) === 0 ? 'Free (Google Review)' : '$' + parseFloat(ev.price_per_kid).toFixed(0) + '/kid';
+          blocks.push({
+            type: 'section',
+            text: { type: 'mrkdwn', text: '*' + ev.name + '*  •  ' + priceLabel + '\n' + ev.location + '  •  ' + evRegs.length + ' registrations, ' + evKids + ' kids' },
+            accessory: { type: 'button', text: { type: 'plain_text', text: 'Open Site' }, url: (process.env.BASE_URL || 'https://bouncemanrentals.com') + '/event/' + ev.slug, action_id: 'open_event_' + ev.id }
+          });
+        }
+        blocks.push({ type: 'divider' });
+      } else {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_No active events today_' } });
+        blocks.push({ type: 'divider' });
+      }
+
+      // Recent registrations
+      if (todayRegs.length > 0) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*📋 Today\'s Registrations*' } });
+        for (const r of todayRegs.slice(0, 8)) {
+          const waiverIcon = r.waiver_signed ? '✅' : '❌';
+          const payIcon = r.payment_status === 'completed' ? '✅' : '⏳';
+          const wristbands = r.wristband_start == null ? '—' : (r.wristband_start === r.wristband_end ? '#' + r.wristband_start : '#' + r.wristband_start + '–#' + r.wristband_end);
+          blocks.push({
+            type: 'section',
+            text: { type: 'mrkdwn', text: '*' + r.parent_name + '*  •  ' + r.kid_count + ' kid' + (r.kid_count !== 1 ? 's' : '') + '  •  ' + wristbands + '\nWaiver ' + waiverIcon + '  |  Payment ' + payIcon + '  |  $' + parseFloat(r.amount_paid || 0).toFixed(2) }
+          });
+        }
+      } else {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_No registrations yet today_' } });
+      }
+
+      blocks.push({ type: 'divider' });
+      blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '💡 DM Sarah or mention @Sarah to send a parent link or create a booking' }] });
+
+      await fetch('https://slack.com/api/views.publish', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: event.user, view: { type: 'home', blocks } })
+      });
+    } catch (e) {
+      console.error('[APP_HOME] Error publishing home view:', e.message);
+    }
+    return;
+  }
+
+  const isDm = event.type === 'message' && event.channel_type === 'im';
+  if (event.type !== 'app_mention' && !isDm) return;
+
+  // Ignore bot messages and message subtypes (edits, deletions) to prevent loops
+  if (event.bot_id || event.subtype) return;
+
+  const BOOKINGS_CHANNEL = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
   const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
   const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
-  const text = event.text.replace(/<@[A-Z0-9]+>/g, '').trim(); // Strip @mention
+  const text = (event.text || '').replace(/<@[A-Z0-9]+>/g, '').trim(); // Strip @mention if present
 
   console.log('[SARAH-SLACK] Message from', event.user, ':', text);
 
@@ -238,7 +399,7 @@ Rules:
       const firstName = parsed.first_name || 'Customer';
 
       // Post live tracking card to #bookings
-      const bookingsChannel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0AQF8ZAEBE';
+      const bookingsChannel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
       const cardBlocks = [
         { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — Link Sent' } },
         { type: 'section', fields: [
