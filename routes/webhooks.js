@@ -452,10 +452,11 @@ Rules:
         console.error('[SARAH-SLACK] Card post failed:', cardErr.message);
       }
 
-      const confirmMsg = smsSent
-        ? ':white_check_mark: Sent ' + firstName + ' the ' + (isFree ? 'free bounce' : 'event') + ' link. Card in <#' + bookingsChannel + '> — updates when they sign' + (isFree ? '.' : ' and pay.')
-        : ':warning: SMS failed to ' + parsed.phone + '. Share manually: ' + eventUrl;
-      await slackReply(SLACK_TOKEN, event.channel, event.ts, confirmMsg);
+      if (smsSent) {
+        await slackReact(SLACK_TOKEN, event.channel, event.ts, 'white_check_mark');
+      } else {
+        await slackReply(SLACK_TOKEN, event.channel, event.ts, ':warning: SMS failed to ' + parsed.phone + '. Share manually: ' + eventUrl);
+      }
       return;
     }
 
@@ -538,6 +539,14 @@ async function slackReply(token, channel, thread_ts, text) {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts, text })
+  });
+}
+
+async function slackReact(token, channel, ts, emoji) {
+  await fetch('https://slack.com/api/reactions.add', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, timestamp: ts, name: emoji })
   });
 }
 

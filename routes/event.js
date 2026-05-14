@@ -214,7 +214,6 @@ router.post('/pay', async (req, res) => {
         payment_status = 'completed', wristband_start = ?, wristband_end = ?
         WHERE id = ?`).run(start, end, regId);
       const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
-      await notifySlack(updatedReg, event);
       await updateSlackCard(updatedReg, event, true, true);
       return res.json({ url: `/event/success?reg_id=${regId}` });
     } catch (err) {
@@ -344,7 +343,6 @@ router.post('/webhook', async (req, res) => {
       // Slack notification
       const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ?').get(eventId);
       const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
-      await notifySlack(updatedReg, event);
       await updateSlackCard(updatedReg, event, true, true);
 
       db.prepare('UPDATE walk_up_registrations SET slack_notified = 1 WHERE id = ?').run(regId);
