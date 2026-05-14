@@ -50,7 +50,7 @@ async function notifySlack(reg, event) {
 async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !reg.slack_card_ts || !reg.slack_card_channel) return;
-  const priceLabel = eventRow.price_per_kid === 0 ? 'Free (Google Review)' : '$' + (eventRow.price_per_kid / 100) + '/kid';
+  const priceLabel = eventRow.price_per_kid === 0 ? 'Free (Google Review)' : '$' + eventRow.price_per_kid + '/kid';
   const firstName = (reg.parent_name || 'Customer').split(' ')[0];
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — ' + (paymentComplete ? 'All Done!' : 'Waiver Signed') } },

@@ -221,7 +221,7 @@ Rules:
 
       const eventUrl = baseUrl + '/event/' + walkUpEvent.slug;
       const smsBody = 'Hi ' + (parsed.first_name || 'there') + '! Bounce Man here 🎈 Tap to fill in your info, sign the waiver' +
-        (isFree ? ' (free 15-min session):' : ' and pay $' + (walkUpEvent.price_per_kid / 100) + '/kid:') +
+        (isFree ? ' (free 15-min session):' : ' and pay $' + walkUpEvent.price_per_kid + '/kid:') +
         ' ' + eventUrl;
 
       let smsSent = false;
@@ -234,7 +234,7 @@ Rules:
         }
       }
 
-      const label = isFree ? 'Free (Google Review)' : '$' + (walkUpEvent.price_per_kid / 100) + '/kid';
+      const label = isFree ? 'Free (Google Review)' : '$' + walkUpEvent.price_per_kid + '/kid';
       const firstName = parsed.first_name || 'Customer';
 
       // Post live tracking card to #bookings
