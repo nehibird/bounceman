@@ -983,6 +983,17 @@ router.post('/events/:id/delete', requireAuth, (req, res) => {
   res.redirect('/admin/events');
 });
 
+// Delete selected registrations
+router.post('/events/:id/registrations/delete', requireAuth, (req, res) => {
+  const db = getDb();
+  const ids = [].concat(req.body.ids || []);
+  if (ids.length > 0) {
+    const placeholders = ids.map(() => '?').join(',');
+    db.prepare('DELETE FROM walk_up_registrations WHERE id IN (' + placeholders + ') AND event_id = ?').run(...ids, req.params.id);
+  }
+  res.redirect('/admin/events/' + req.params.id);
+});
+
 // Event detail with registrations
 router.get('/events/:id', requireAuth, (req, res) => {
   const db = getDb();

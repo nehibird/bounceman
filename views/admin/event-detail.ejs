@@ -71,16 +71,23 @@
 </div>
 
 <!-- Registrations Table -->
+<form method="POST" action="/admin/events/${event.id}/registrations/delete" id="deleteRegsForm">
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span><i class="fas fa-list me-2"></i>Registrations (${registrations.length})</span>
-    <span class="text-muted small">Wristbands issued: ${event.wristband_counter}</span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted small me-2">Wristbands issued: ${event.wristband_counter}</span>
+      <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill" id="deleteRegsBtn" style="display:none">
+        <i class="fas fa-trash me-1"></i>Delete Selected
+      </button>
+    </div>
   </div>
   <div class="table-responsive">
     <table class="table table-hover mb-0">
       <thead>
         <tr style="background:#f8f9fa">
-          <th style="padding:12px 20px">Wristband</th>
+          <th style="padding:12px 20px;width:40px"><input type="checkbox" id="selectAll" title="Select all"></th>
+          <th>Wristband</th>
           <th>Parent</th>
           <th>Phone</th>
           <th>Kids</th>
@@ -91,13 +98,14 @@
         </tr>
       </thead>
       <tbody>
-        ${registrations.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-4">No registrations yet</td></tr>' : ''}
+        ${registrations.length === 0 ? '<tr><td colspan="9" class="text-center text-muted py-4">No registrations yet</td></tr>' : ''}
         ${registrations.map(function(r) {
           var kids = [];
           try { kids = JSON.parse(r.kid_names || '[]'); } catch(e) {}
           var wristband = r.wristband_start ? (r.wristband_start === r.wristband_end ? '#' + r.wristband_start : '#' + r.wristband_start + '-#' + r.wristband_end) : '-';
           return '<tr>' +
-            '<td style="padding:12px 20px"><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
+            '<td style="padding:12px 20px"><input type="checkbox" name="ids" value="' + r.id + '" class="reg-checkbox"></td>' +
+            '<td><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
             '<td>' + r.parent_name + '</td>' +
             '<td>' + (r.parent_phone || '-') + '</td>' +
             '<td>' + r.kid_count + ' <span class="text-muted small">(' + kids.join(', ') + ')</span></td>' +
@@ -111,15 +119,47 @@
     </table>
   </div>
 </div>
+</form>
 
 `, scripts: `
 <script>
-  // addEventListener replacement for inline onclick
   var copyBtn = document.getElementById('copyLinkBtn');
   if (copyBtn) {
     copyBtn.addEventListener('click', function() {
       navigator.clipboard.writeText(document.getElementById('eventLink').textContent);
     });
   }
+
+  var selectAll = document.getElementById('selectAll');
+  var deleteBtn = document.getElementById('deleteRegsBtn');
+  var checkboxes = document.querySelectorAll('.reg-checkbox');
+
+  function updateDeleteBtn() {
+    var checked = document.querySelectorAll('.reg-checkbox:checked').length;
+    deleteBtn.style.display = checked > 0 ? 'inline-block' : 'none';
+    deleteBtn.textContent = checked > 0 ? ' Delete Selected (' + checked + ')' : '';
+    if (checked > 0) deleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Selected (' + checked + ')';
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function() {
+      checkboxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+      updateDeleteBtn();
+    });
+  }
+
+  checkboxes.forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      selectAll.checked = document.querySelectorAll('.reg-checkbox:checked').length === checkboxes.length;
+      updateDeleteBtn();
+    });
+  });
+
+  document.getElementById('deleteRegsForm').addEventListener('submit', function(e) {
+    var count = document.querySelectorAll('.reg-checkbox:checked').length;
+    if (!confirm('Delete ' + count + ' registration' + (count > 1 ? 's' : '') + '? This cannot be undone.')) {
+      e.preventDefault();
+    }
+  });
 </script>
 ` }) %>
