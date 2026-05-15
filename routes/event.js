@@ -104,7 +104,7 @@ async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
     ]},
     { type: 'section', fields: [
       { type: 'mrkdwn', text: '*Waiver:*\n' + (waiverSigned ? '\u2705 Signed' : '\u274C Not yet') },
-      { type: 'mrkdwn', text: '*Payment:*\n' + (paymentComplete ? '\u2705 Paid ($' + reg.amount_paid.toFixed(2) + ')' : '\u274C Pending') }
+      { type: 'mrkdwn', text: '*Payment:*\n' + (paymentComplete ? (reg.payment_method === 'cash' ? '\ud83d\udcb5 Cash ($' + parseFloat(reg.amount_paid || 0).toFixed(2) + ')' : reg.payment_method === 'google_review' ? '\u2b50 Google Review' : '\ud83d\udcb3 Card ($' + parseFloat(reg.amount_paid || 0).toFixed(2) + ')') : '\u274c Pending') }
     ]}
   ];
   if (paymentComplete && reg.wristband_start) {
