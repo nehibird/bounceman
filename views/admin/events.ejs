@@ -89,7 +89,7 @@
                   '<i class="fas fa-' + (e.active ? 'pause' : 'play') + '"></i>' +
                 '</button>' +
               '</form>' +
-              '<button class="btn btn-sm btn-outline-primary rounded-pill btn-edit-event" title="Edit" ' +
+              '<button class="btn btn-sm btn-outline-primary rounded-pill btn-edit-event me-1" title="Edit" ' +
                 'data-id="' + e.id + '" ' +
                 'data-name="' + e.name.replace(/"/g, '&quot;') + '" ' +
                 'data-date="' + e.event_date + '" ' +
@@ -98,6 +98,11 @@
                 'data-bs-toggle="modal" data-bs-target="#editEventModal">' +
                 '<i class="fas fa-pencil-alt"></i>' +
               '</button>' +
+              '<form method="POST" action="/admin/events/' + e.id + '/delete" style="display:inline" onsubmit="return confirm(\'Delete ' + e.name.replace(/'/g, "\\'") + '? This cannot be undone.\');">' +
+                '<button class="btn btn-sm btn-outline-danger rounded-pill" title="Delete">' +
+                  '<i class="fas fa-trash"></i>' +
+                '</button>' +
+              '</form>' +
             '</td>' +
           '</tr>';
         }).join('')}

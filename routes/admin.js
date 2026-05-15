@@ -972,6 +972,17 @@ router.post('/events/:id/toggle', requireAuth, (req, res) => {
   res.redirect('/admin/events');
 });
 
+// Delete event
+router.post('/events/:id/delete', requireAuth, (req, res) => {
+  const db = getDb();
+  const regCount = db.prepare('SELECT COUNT(*) as cnt FROM walk_up_registrations WHERE event_id = ?').get(req.params.id);
+  if (regCount.cnt > 0) {
+    return res.redirect('/admin/events?error=has_registrations');
+  }
+  db.prepare('DELETE FROM walk_up_events WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/events');
+});
+
 // Event detail with registrations
 router.get('/events/:id', requireAuth, (req, res) => {
   const db = getDb();
