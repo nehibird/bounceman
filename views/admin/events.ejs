@@ -95,6 +95,9 @@
                 'data-date="' + e.event_date + '" ' +
                 'data-location="' + (e.location||'').replace(/"/g, '&quot;') + '" ' +
                 'data-price="' + parseFloat(e.price_per_kid) + '" ' +
+                'data-allow-card="' + (e.allow_card ? '1' : '0') + '" ' +
+                'data-allow-cash="' + (e.allow_cash ? '1' : '0') + '" ' +
+                'data-allow-google-review="' + (e.allow_google_review ? '1' : '0') + '" ' +
                 'data-bs-toggle="modal" data-bs-target="#editEventModal">' +
                 '<i class="fas fa-pencil-alt"></i>' +
               '</button>' +
@@ -135,7 +138,22 @@
           </div>
           <div class="mb-3">
             <label class="form-label fw-bold">Price Per Kid ($) *</label>
-            <input type="number" class="form-control" name="price_per_kid" value="15" min="1" step="1" required>
+            <input type="number" class="form-control" name="price_per_kid" value="10" min="0" step="1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Payment Options</label>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" name="allow_card" value="1" id="createAllowCard" checked>
+              <label class="form-check-label" for="createAllowCard">💳 Card (Stripe)</label>
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" name="allow_cash" value="1" id="createAllowCash">
+              <label class="form-check-label" for="createAllowCash">💵 Cash at Booth</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="allow_google_review" value="1" id="createAllowGoogleReview">
+              <label class="form-check-label" for="createAllowGoogleReview">⭐ Google Review (Free 15 min)</label>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -172,7 +190,21 @@
           <div class="mb-3">
             <label class="form-label fw-bold">Price Per Kid ($)</label>
             <input type="number" class="form-control" name="price_per_kid" id="editPrice" min="0" step="1" required>
-            <div class="form-text">Set to 0 for a free event.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Payment Options</label>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" name="allow_card" value="1" id="editAllowCard">
+              <label class="form-check-label" for="editAllowCard">💳 Card (Stripe)</label>
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" name="allow_cash" value="1" id="editAllowCash">
+              <label class="form-check-label" for="editAllowCash">💵 Cash at Booth</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="allow_google_review" value="1" id="editAllowGoogleReview">
+              <label class="form-check-label" for="editAllowGoogleReview">⭐ Google Review (Free 15 min)</label>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -193,6 +225,9 @@ document.getElementById('editEventModal').addEventListener('show.bs.modal', func
   document.getElementById('editDate').value = btn.dataset.date;
   document.getElementById('editLocation').value = btn.dataset.location;
   document.getElementById('editPrice').value = btn.dataset.price;
+  document.getElementById('editAllowCard').checked = btn.dataset.allowCard === '1';
+  document.getElementById('editAllowCash').checked = btn.dataset.allowCash === '1';
+  document.getElementById('editAllowGoogleReview').checked = btn.dataset.allowGoogleReview === '1';
 });
 </script>
 ` }) %>

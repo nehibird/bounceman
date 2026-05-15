@@ -633,25 +633,25 @@ function initialize() {
   // Migration: add bot_paused column to communications
   try {
     d.prepare('ALTER TABLE communications ADD COLUMN bot_paused INTEGER DEFAULT 0').run();
-  } catch (e) { /* column already exists */ }
+  } catch { /* column already exists */ }
 
   // Migration: add sms_consent column to bookings
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN sms_consent INTEGER DEFAULT 0').run();
-  } catch (e) { /* column already exists */ }
+  } catch { /* column already exists */ }
 
   // Migration: add tax_exempt_claimed column to bookings
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN tax_exempt_claimed INTEGER DEFAULT 0').run();
-  } catch (e) { /* column already exists */ }
+  } catch { /* column already exists */ }
 
   // Migration: add tax_exempt columns to customers
   try {
     d.prepare('ALTER TABLE customers ADD COLUMN tax_exempt INTEGER DEFAULT 0').run();
-  } catch (e) { /* column already exists */ }
+  } catch { /* column already exists */ }
   try {
     d.prepare('ALTER TABLE customers ADD COLUMN tax_exempt_cert TEXT').run();
-  } catch (e) { /* column already exists */ }
+  } catch { /* column already exists */ }
 
 
   // Migration: blocked_numbers table for spam call filtering
@@ -663,7 +663,7 @@ function initialize() {
       auto_blocked INTEGER DEFAULT 0,
       blocked_at TEXT DEFAULT (datetime('now'))
     )`).run();
-  } catch (e) { /* already exists */ }
+  } catch { /* already exists */ }
 
   // Migration: call_log table for inbound call tracking
   try {
@@ -675,7 +675,7 @@ function initialize() {
       block_reason TEXT,
       called_at TEXT DEFAULT (datetime('now'))
     )`).run();
-  } catch (e) { /* already exists */ }
+  } catch { /* already exists */ }
 
 
   // Migration: add slack_reminder_sent_date to bookings (dedup delivery reminders)

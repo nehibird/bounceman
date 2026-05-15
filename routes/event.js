@@ -90,25 +90,6 @@ function assignWristbands(eventId, kidCount) {
   return assign(eventId, kidCount);
 }
 
-// Slack notification helper
-async function notifySlack(reg, event) {
-  const token = process.env.SLACK_BOT_TOKEN;
-  const channel = process.env.SLACK_BOOKINGS_CHANNEL || process.env.SLACK_CHANNEL_ID;
-  if (!token || !channel) return;
-  const wristbands = reg.wristband_start === reg.wristband_end
-    ? `#${reg.wristband_start}`
-    : `#${reg.wristband_start}-#${reg.wristband_end}`;
-  const text = `${reg.parent_name} paid $${reg.amount_paid.toFixed(2)} for ${reg.kid_count} kid${reg.kid_count > 1 ? 's' : ''} at *${event.name}* -- waiver signed -- wristband ${wristbands}`;
-  try {
-    await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, text })
-    });
-  } catch (err) {
-    console.error('[EVENT] Slack notification failed:', err.message);
-  }
-}
 
 async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
   const token = process.env.SLACK_BOT_TOKEN;

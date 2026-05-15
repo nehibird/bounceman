@@ -456,7 +456,7 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
     const existingCount = db.prepare('SELECT COUNT(*) as c FROM equipment_images WHERE equipment_id = ?').get(req.params.id).c;
     req.files.forEach((file, i) => {
       // Fix permissions so nginx/Docker can serve the file
-      try { require('fs').chmodSync(file.path, 0o644); } catch(e) {}
+      try { require('fs').chmodSync(file.path, 0o644); } catch {}
       const isPrimary = (existingCount === 0 && i === 0) ? 1 : 0;
       db.prepare('INSERT INTO equipment_images (id, equipment_id, image_path, is_primary, sort_order) VALUES (?, ?, ?, ?, ?)')
         .run(uuid(), req.params.id, `/uploads/equipment/${file.filename}`, isPrimary, existingCount + i);
@@ -498,7 +498,7 @@ router.get('/equipment/image/:imgId/delete', (req, res) => {
   try {
     const filePath = path.join(__dirname, '..', img.image_path.startsWith('/uploads') ? img.image_path : 'public' + img.image_path);
     require('fs').unlinkSync(filePath);
-  } catch(e) { /* file may not exist or be in Docker volume */ }
+  } catch { /* file may not exist or be in Docker volume */ }
 
   res.redirect('/admin/equipment/' + equipmentId + '/edit');
 });
@@ -523,7 +523,7 @@ router.post('/equipment/:id/delete', (req, res) => {
       try {
         const filePath = require('path').join(__dirname, '..', img.image_path.startsWith('/uploads') ? img.image_path : 'public' + img.image_path);
         require('fs').unlinkSync(filePath);
-      } catch(e) { /* ignore */ }
+      } catch { /* ignore */ }
     });
   } catch (e) {
     console.error('[ADMIN] Delete equipment error:', e.message);
