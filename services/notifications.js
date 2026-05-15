@@ -1,11 +1,11 @@
 'use strict';
 
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
-const BOOKINGS_CHANNEL = process.env.SLACK_BOOKINGS_CHANNEL || 'C0AQF8ZAEBE';
+const BOOKINGS_CHANNEL = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
 
 function fmtDate(d) {
   try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
-  catch (e) { return d; }
+  catch { return d; }
 }
 
 function fmtTime(t) {
@@ -16,7 +16,7 @@ function fmtTime(t) {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const h12 = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
     return h12 + ':' + (m || '00') + ' ' + ampm;
-  } catch (e) { return t; }
+  } catch { return t; }
 }
 
 async function postToSlack(channel, blocks, text) {
@@ -333,7 +333,6 @@ async function notifyContactForm(data) {
 
 
 function buildEventCard(booking, customer) {
-  const contractIcon = booking.contract_signed ? '✅' : '❌';
   const contractText = booking.contract_signed
     ? '✅ Signed' + (booking.contract_signed_at ? ' · ' + new Date(booking.contract_signed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '')
     : '❌ Not Signed';
@@ -400,7 +399,7 @@ async function updateBookingSlackCard(bookingId) {
   if (!customer) return;
 
   const blocks = buildEventCard(booking, customer);
-  const allDone = booking.contract_signed && (booking.payment_status === 'paid');
+  // const allDone = booking.contract_signed && (booking.payment_status === 'paid');
   const statusLine = booking.booking_number + ': ' + customer.first_name + ' — ' +
     (booking.contract_signed ? 'Signed' : 'Not Signed') + ', ' +
     (booking.payment_status === 'paid' ? 'Paid' : 'Not Paid');
