@@ -148,7 +148,8 @@ router.get('/', (req, res) => {
 router.post('/pay', async (req, res) => {
   const db = getDb();
   const stripe = getStripe();
-  const { event_id, parent_name, parent_phone, kid_count, kid_names, waiver_signature } = req.body;
+  const { event_id, parent_name, parent_phone, kid_count, kid_names, waiver_signature, payment_method: rawMethod } = req.body;
+  const payment_method = rawMethod || 'card';
 
   if (!event_id || !parent_name || !kid_count || kid_count < 1 || !waiver_signature) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -157,17 +158,21 @@ router.post('/pay', async (req, res) => {
   const event = db.prepare('SELECT * FROM walk_up_events WHERE id = ? AND active = 1').get(event_id);
   if (!event) return res.status(404).json({ error: 'Event not found or inactive' });
 
+  if (payment_method === 'card' && !event.allow_card) return res.status(400).json({ error: 'Card payment not available for this event' });
+  if (payment_method === 'cash' && !event.allow_cash) return res.status(400).json({ error: 'Cash payment not available for this event' });
+  if (payment_method === 'google_review' && !event.allow_google_review) return res.status(400).json({ error: 'Google Review option not available for this event' });
+
   const regId = uuid();
-  const amount = event.price_per_kid * kid_count;
+  const amount = payment_method === 'google_review' ? 0 : event.price_per_kid * parseInt(kid_count);
 
   // Create pending registration with waiver
   db.prepare(`INSERT INTO walk_up_registrations
     (id, event_id, parent_name, parent_phone, kid_count, kid_names,
-     waiver_signed, waiver_signature, waiver_signed_at, signer_ip, amount_paid, payment_status)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), ?, ?, 'pending')`).run(
+     waiver_signed, waiver_signature, waiver_signed_at, signer_ip, amount_paid, payment_status, payment_method)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), ?, ?, 'pending', ?)`).run(
     regId, event_id, parent_name, parent_phone || null, parseInt(kid_count),
     JSON.stringify(kid_names || []),
-    waiver_signature, req.ip, amount
+    waiver_signature, req.ip, amount, payment_method
   );
 
   // Save signed waiver document
@@ -187,8 +192,8 @@ router.post('/pay', async (req, res) => {
     }
   }
 
-  // Free events: skip Stripe, assign wristbands and complete immediately
-  if (amount === 0) {
+  // Cash/Google Review: skip Stripe, assign wristbands and complete immediately
+  if (payment_method === 'cash' || payment_method === 'google_review') {
     try {
       const { start, end } = assignWristbands(event_id, parseInt(kid_count));
       db.prepare(`UPDATE walk_up_registrations SET
