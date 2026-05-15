@@ -37,7 +37,13 @@
   <div class="success-card">
     <div class="check-icon"><i class="fas fa-check"></i></div>
     <h2 style="color:var(--bm-blue);font-weight:800;margin-bottom:4px">All Set!</h2>
-    <p class="text-muted">Grab your wristband<%= reg.kid_count > 1 ? 's' : '' %> and have fun!</p>
+    <% if (reg.payment_method === 'cash') { %>
+      <p class="text-muted">Grab your wristband<%= reg.kid_count > 1 ? 's' : '' %> and pay at the booth!</p>
+    <% } else if (reg.payment_method === 'google_review') { %>
+      <p class="text-muted">Show us your Google review at the booth to get in!</p>
+    <% } else { %>
+      <p class="text-muted">Grab your wristband<%= reg.kid_count > 1 ? 's' : '' %> and have fun!</p>
+    <% } %>
 
     <!-- Wristband Number -->
     <div class="wristband-display">
@@ -49,7 +55,13 @@
           #<%= reg.wristband_start %> - #<%= reg.wristband_end %>
         <% } %>
       </div>
-      <div class="instruction">Show this to get your wristband<%= reg.kid_count > 1 ? 's' : '' %></div>
+      <% if (reg.payment_method === 'cash') { %>
+        <div class="instruction" style="font-size:14px;opacity:1;font-weight:700">💵 Bring $<%= (parseFloat(reg.amount_paid) || 0).toFixed(0) %> cash when you check in</div>
+      <% } else if (reg.payment_method === 'google_review') { %>
+        <div class="instruction" style="font-size:14px;opacity:1;font-weight:700">⭐ Show your Google review at the booth</div>
+      <% } else { %>
+        <div class="instruction">Show this to get your wristband<%= reg.kid_count > 1 ? 's' : '' %></div>
+      <% } %>
     </div>
 
     <!-- Details -->
@@ -67,18 +79,24 @@
         <span class="value"><%= reg.event_name %></span>
       </div>
       <div class="detail-row">
-        <span class="label">Paid</span>
-        <span class="value">$<%= parseFloat(reg.amount_paid).toFixed(2) %></span>
+        <span class="label">Payment</span>
+        <% if (reg.payment_method === 'cash') { %>
+          <span class="value">💵 Cash at booth</span>
+        <% } else if (reg.payment_method === 'google_review') { %>
+          <span class="value">⭐ Google Review</span>
+        <% } else { %>
+          <span class="value">💳 $<%= parseFloat(reg.amount_paid).toFixed(2) %></span>
+        <% } %>
       </div>
     </div>
   </div>
 
-  <% if (googleReviewUrl && parseFloat(reg.amount_paid) === 0) { %>
+  <% if (reg.payment_method === 'google_review' && googleReviewUrl) { %>
   <div style="margin-top:20px">
     <a href="<%= googleReviewUrl %>" id="reviewBtn" class="btn btn-warning btn-lg w-100 fw-bold" style="border-radius:16px;font-size:18px;padding:16px">
       ⭐ Leave Us a Google Review
     </a>
-    <div class="countdown">Redirecting in <strong id="countdown">5</strong> seconds…</div>
+    <div class="countdown">Opening review page in <strong id="countdown">5</strong> seconds…</div>
   </div>
   <% } else if (kiosk) { %>
   <div class="countdown">
@@ -124,10 +142,10 @@
     poll();
   }
 
-  // Google review redirect for free events
+  // Google review redirect
   var googleReviewUrl = '<%= googleReviewUrl %>';
-  var amountPaid = parseFloat('<%= reg.amount_paid %>');
-  if (status === 'completed' && googleReviewUrl && amountPaid === 0) {
+  var paymentMethod = '<%= reg.payment_method || "" %>';
+  if (status === 'completed' && paymentMethod === 'google_review' && googleReviewUrl) {
     var secs = 5;
     var el = document.getElementById('countdown');
     var timer = setInterval(function() {
@@ -139,8 +157,8 @@
     }, 1000);
   }
 
-  // Kiosk countdown (paid events only)
-  if (status === 'completed' && kiosk && amountPaid > 0) {
+  // Kiosk countdown (card and cash only)
+  if (status === 'completed' && kiosk && paymentMethod !== 'google_review') {
     var secs = 10;
     var el = document.getElementById('countdown');
     var timer = setInterval(function() {

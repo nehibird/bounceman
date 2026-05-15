@@ -92,13 +92,14 @@
           <th>Phone</th>
           <th>Kids</th>
           <th>Paid</th>
+          <th>Method</th>
           <th>Waiver</th>
           <th>Status</th>
           <th>Time</th>
         </tr>
       </thead>
       <tbody>
-        ${registrations.length === 0 ? '<tr><td colspan="9" class="text-center text-muted py-4">No registrations yet</td></tr>' : ''}
+        ${registrations.length === 0 ? '<tr><td colspan="10" class="text-center text-muted py-4">No registrations yet</td></tr>' : ''}
         ${registrations.map(function(r) {
           var kids = [];
           try { kids = JSON.parse(r.kid_names || '[]'); } catch(e) {}
@@ -110,6 +111,7 @@
             '<td>' + (r.parent_phone || '-') + '</td>' +
             '<td>' + r.kid_count + ' <span class="text-muted small">(' + kids.join(', ') + ')</span></td>' +
             '<td><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
+            '<td>' + (r.payment_method === 'cash' ? '💵 Cash' : r.payment_method === 'google_review' ? '⭐ Review' : r.payment_method === 'card' ? '💳 Card' : '—') + '</td>' +
             '<td>' + (r.waiver_signed ? '<i class="fas fa-check-circle text-success me-2"></i><a href="/uploads/waivers/waiver-' + r.id + '.html" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:11px;padding:2px 8px">View</a>' : '<i class="fas fa-times-circle text-danger"></i>') + '</td>' +
             '<td><span class="badge-status ' + (r.payment_status === 'completed' ? 'badge-confirmed' : 'badge-pending') + '">' + r.payment_status + '</span></td>' +
             '<td class="text-muted small">' + (r.created_at || '') + '</td>' +

@@ -38,6 +38,13 @@
     .btn-pay:disabled { background: #ccc; box-shadow: none; transform: none; }
     .error-msg { background: #fee2e2; color: #991b1b; border-radius: 12px; padding: 12px 16px; font-size: 14px; display: none; margin-bottom: 12px; }
     .loading { display: none; text-align: center; padding: 20px; color: white; font-size: 16px; }
+    .payment-option { border: 2px solid #e9ecef; border-radius: 16px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; text-align: left; background: white; width: 100%; }
+    .payment-option:hover { border-color: var(--bm-orange); background: #fff8f5; }
+    .payment-option.selected { border-color: var(--bm-orange); background: #fff3ed; box-shadow: 0 0 0 3px rgba(255,107,53,0.15); }
+    .payment-option .opt-icon { font-size: 28px; margin-bottom: 4px; }
+    .payment-option .opt-title { font-weight: 800; font-size: 16px; color: #333; }
+    .payment-option .opt-desc { font-size: 13px; color: #888; margin-top: 2px; }
+    .payment-option.selected .opt-title { color: var(--bm-orange); }
     @media (max-width: 380px) { body { padding: 10px; } .walkin-card { padding: 18px; } }
   </style>
 </head>
@@ -160,14 +167,43 @@
       </div>
     </div>
 
+    <!-- Payment Method -->
+    <% var hasMultiple = (selectedEvent && (selectedEvent.allow_card + selectedEvent.allow_cash + selectedEvent.allow_google_review) > 1); %>
+    <% if (selectedEvent && (selectedEvent.allow_card || selectedEvent.allow_cash || selectedEvent.allow_google_review)) { %>
+    <div class="walkin-card">
+      <h6><i class="fas fa-credit-card me-2"></i>How would you like to pay?</h6>
+      <% if (selectedEvent.allow_card) { %>
+      <button type="button" class="payment-option" data-method="card">
+        <div class="opt-icon">💳</div>
+        <div class="opt-title">Pay by Card — $<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+        <div class="opt-desc">Secure checkout via Stripe</div>
+      </button>
+      <% } %>
+      <% if (selectedEvent.allow_cash) { %>
+      <button type="button" class="payment-option" data-method="cash">
+        <div class="opt-icon">💵</div>
+        <div class="opt-title">Pay Cash at the Booth</div>
+        <div class="opt-desc">Bring $<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid when you check in</div>
+      </button>
+      <% } %>
+      <% if (selectedEvent.allow_google_review) { %>
+      <button type="button" class="payment-option" data-method="google_review">
+        <div class="opt-icon">⭐</div>
+        <div class="opt-title">Google Review — Free Admission</div>
+        <div class="opt-desc">Write a Google review, show us your phone, and get a child admission for 15 minutes</div>
+      </button>
+      <% } %>
+    </div>
+    <% } %>
+
     <!-- Total & Pay -->
-    <div class="total-bar">
+    <div class="total-bar" id="totalBar">
       <div class="label">Total</div>
       <div class="amount" id="totalAmount">$0</div>
     </div>
 
     <div class="error-msg" id="errorMsg"></div>
-    <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Setting up payment...</div>
+    <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Processing...</div>
 
     <button class="btn-pay" id="payBtn" disabled>
       <i class="fas fa-lock me-2"></i><span id="payBtnLabel">Register</span>
@@ -187,6 +223,18 @@
   var eventId = '<%= selectedEvent ? selectedEvent.id : '' %>';
   var isKiosk = <%= kiosk ? 'true' : 'false' %>;
   var hasSigned = false;
+  var selectedMethod = null;
+  var allowCard = <%= selectedEvent && selectedEvent.allow_card ? 'true' : 'false' %>;
+  var allowCash = <%= selectedEvent && selectedEvent.allow_cash ? 'true' : 'false' %>;
+  var allowGoogleReview = <%= selectedEvent && selectedEvent.allow_google_review ? 'true' : 'false' %>;
+  var onlyOneMethod = [allowCard, allowCash, allowGoogleReview].filter(Boolean).length === 1;
+
+  // Auto-select if only one payment method
+  if (onlyOneMethod) {
+    if (allowCard) selectedMethod = 'card';
+    else if (allowCash) selectedMethod = 'cash';
+    else if (allowGoogleReview) selectedMethod = 'google_review';
+  }
 
   // Event selector (iPad kiosk)
   window.selectEvent = function(id) {
@@ -214,8 +262,18 @@
   };
 
   function updateTotal() {
-    var total = kidCount * pricePerKid;
-    document.getElementById('totalAmount').textContent = '$' + total.toFixed(0);
+    var totalEl = document.getElementById('totalAmount');
+    var totalBar = document.getElementById('totalBar');
+    if (selectedMethod === 'google_review') {
+      totalEl.textContent = 'FREE';
+      totalBar.style.background = 'linear-gradient(135deg,#2ECC71,#27AE60)';
+    } else if (selectedMethod === 'cash') {
+      totalEl.textContent = '$' + (kidCount * pricePerKid).toFixed(0) + ' cash';
+      totalBar.style.background = '';
+    } else {
+      totalEl.textContent = '$' + (kidCount * pricePerKid).toFixed(0);
+      totalBar.style.background = '';
+    }
     updatePayBtn();
   }
 
@@ -266,16 +324,45 @@
     updatePayBtn();
   };
 
+  // Payment option selection
+  document.querySelectorAll('.payment-option').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.payment-option').forEach(function(b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      selectedMethod = btn.dataset.method;
+      updateTotal();
+    });
+  });
+
+  // Auto-select highlight if only one method
+  if (onlyOneMethod) {
+    var autoBtn = document.querySelector('.payment-option[data-method="' + selectedMethod + '"]');
+    if (autoBtn) autoBtn.classList.add('selected');
+  }
+
   // Pay button state
   var agreeCheck = document.getElementById('agreeCheck');
   agreeCheck.addEventListener('change', updatePayBtn);
 
   function updatePayBtn() {
     var btn = document.getElementById('payBtn');
+    var labelEl = document.getElementById('payBtnLabel');
     var name = document.getElementById('parentName').value.trim();
-    btn.disabled = !(hasSigned && agreeCheck.checked && name && eventId);
-    document.getElementById('payBtnLabel').textContent = pricePerKid > 0 ? 'Pay & Register' : 'Register';
-    document.getElementById('stripeFooter').style.display = pricePerKid > 0 ? 'block' : 'none';
+    var needMethod = (allowCard || allowCash || allowGoogleReview) && !onlyOneMethod;
+    var ready = hasSigned && agreeCheck.checked && name && eventId && (!needMethod || selectedMethod);
+    btn.disabled = !ready;
+
+    if (selectedMethod === 'cash') {
+      labelEl.textContent = 'Register — Pay Cash at Booth';
+      btn.style.background = 'linear-gradient(135deg,#004E89,#0066b3)';
+    } else if (selectedMethod === 'google_review') {
+      labelEl.textContent = 'Register — Show Us Your Review';
+      btn.style.background = 'linear-gradient(135deg,#f59e0b,#d97706)';
+    } else {
+      labelEl.textContent = 'Pay & Register';
+      btn.style.background = '';
+    }
+    document.getElementById('stripeFooter').style.display = selectedMethod === 'card' ? 'block' : 'none';
   }
   document.getElementById('parentName').addEventListener('input', updatePayBtn);
 
@@ -286,6 +373,8 @@
     if (!hasSigned) { showError('Please sign the waiver.'); return; }
     if (!agreeCheck.checked) { showError('Please agree to the waiver.'); return; }
     if (!eventId) { showError('Please select an event.'); return; }
+    if ((allowCard || allowCash || allowGoogleReview) && !onlyOneMethod && !selectedMethod) { showError('Please select a payment method.'); return; }
+    document.getElementById('loadingMsg').querySelector('i + *') || (document.getElementById('loadingMsg').textContent = selectedMethod === 'card' ? 'Setting up payment...' : 'Registering...');
 
     var kidNames = [];
     document.querySelectorAll('#kidNamesList input').forEach(function(inp) {
@@ -299,6 +388,8 @@
 
     var sigData = canvas.toDataURL('image/png');
 
+    var method = selectedMethod || (allowCard ? 'card' : allowCash ? 'cash' : 'google_review');
+
     fetch('/event/pay', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -309,6 +400,7 @@
         kid_count: kidCount,
         kid_names: kidNames,
         waiver_signature: sigData,
+        payment_method: method,
         kiosk: isKiosk
       })
     })
