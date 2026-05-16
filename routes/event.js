@@ -96,6 +96,8 @@ async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
   if (!token || !reg.slack_card_ts || !reg.slack_card_channel) return;
   const priceLabel = eventRow.price_per_kid === 0 ? 'Free (Google Review)' : '$' + eventRow.price_per_kid + '/kid';
   const firstName = (reg.parent_name || 'Customer').split(' ')[0];
+  const kidList = (() => { try { return JSON.parse(reg.kid_names || '[]').filter(Boolean); } catch { return []; } })();
+  const kidLabel = kidList.length ? kidList.join(', ') : reg.kid_count + ' kid' + (reg.kid_count > 1 ? 's' : '');
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: '\u{1F388} ' + firstName + ' — ' + (paymentComplete ? 'All Done!' : 'Waiver Signed') } },
     { type: 'section', fields: [
@@ -105,11 +107,12 @@ async function updateSlackCard(reg, eventRow, waiverSigned, paymentComplete) {
     { type: 'section', fields: [
       { type: 'mrkdwn', text: '*Waiver:*\n' + (waiverSigned ? '\u2705 Signed' : '\u274C Not yet') },
       { type: 'mrkdwn', text: '*Payment:*\n' + (paymentComplete ? (reg.payment_method === 'cash' ? '\ud83d\udcb5 Cash ($' + parseFloat(reg.amount_paid || 0).toFixed(2) + ')' : reg.payment_method === 'google_review' ? '\u2b50 Google Review' : '\ud83d\udcb3 Card ($' + parseFloat(reg.amount_paid || 0).toFixed(2) + ')') : '\u274c Pending') }
-    ]}
+    ]},
+    { type: 'section', text: { type: 'mrkdwn', text: '*Kids (' + reg.kid_count + '):*\n' + kidLabel } }
   ];
   if (paymentComplete && reg.wristband_start) {
     const wb = reg.wristband_start === reg.wristband_end ? '#' + reg.wristband_start : '#' + reg.wristband_start + '-#' + reg.wristband_end;
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*Wristbands:* ' + wb + ' \u00B7 ' + reg.kid_count + ' kid' + (reg.kid_count > 1 ? 's' : '') } });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*Wristbands:* ' + wb } });
   }
   try {
     const slackRes = await fetch('https://slack.com/api/chat.update', {
