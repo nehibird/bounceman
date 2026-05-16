@@ -6,7 +6,7 @@
   <title><%= title %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root { --bm-orange: #FF6B35; --bm-blue: #004E89; --bm-green: #2ECC71; }
     * { box-sizing: border-box; }
@@ -38,6 +38,13 @@
     .btn-pay:disabled { background: #ccc; box-shadow: none; transform: none; }
     .error-msg { background: #fee2e2; color: #991b1b; border-radius: 12px; padding: 12px 16px; font-size: 14px; display: none; margin-bottom: 12px; }
     .loading { display: none; text-align: center; padding: 20px; color: white; font-size: 16px; }
+    .payment-option { border: 2px solid #e9ecef; border-radius: 16px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; text-align: left; background: white; width: 100%; }
+    .payment-option:hover { border-color: var(--bm-orange); background: #fff8f5; }
+    .payment-option.selected { border-color: var(--bm-orange); background: #fff3ed; box-shadow: 0 0 0 3px rgba(255,107,53,0.15); }
+    .payment-option .opt-icon { font-size: 28px; margin-bottom: 4px; }
+    .payment-option .opt-title { font-weight: 800; font-size: 16px; color: #333; }
+    .payment-option .opt-desc { font-size: 13px; color: #888; margin-top: 2px; }
+    .payment-option.selected .opt-title { color: var(--bm-orange); }
     @media (max-width: 380px) { body { padding: 10px; } .walkin-card { padding: 18px; } }
   </style>
 </head>
@@ -47,10 +54,14 @@
 
   <!-- Header -->
   <div class="walkin-header">
-    <h1><i class="fas fa-castle"></i> BOUNCE MAN</h1>
+    <img src="/assets/images/navbar-wordmark.svg" alt="Bounce Man" style="height:50px;margin-bottom:6px;filter:drop-shadow(0 0 3px white) drop-shadow(0 0 3px white) drop-shadow(0 0 1px white)">
     <% if (selectedEvent) { %>
       <div class="event-name"><%= selectedEvent.name %></div>
-      <div class="price-badge">$<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+      <% if (parseFloat(selectedEvent.price_per_kid) === 0) { %>
+        <div class="price-badge" style="background:rgba(46,204,113,0.25);color:#1a7a4a">🎈 15 min free bounce</div>
+      <% } else { %>
+        <div class="price-badge">$<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+      <% } %>
     <% } else { %>
       <div class="event-name">Walk-Up Registration</div>
     <% } %>
@@ -60,7 +71,7 @@
   <!-- Event Selector (iPad kiosk mode) -->
   <div class="walkin-card">
     <h6><i class="fas fa-calendar-alt me-2"></i>Select Event</h6>
-    <select id="eventSelect" class="form-select" onchange="selectEvent(this.value)">
+    <select id="eventSelect" class="form-select">
       <option value="">Choose an event...</option>
       <% events.forEach(function(e) { %>
         <option value="<%= e.id %>" data-price="<%= e.price_per_kid %>"><%= e.name %> (<%= e.event_date %>) - $<%= parseFloat(e.price_per_kid).toFixed(0) %>/kid</option>
@@ -86,10 +97,14 @@
         <label class="form-label">Full Legal Name (Print) *</label>
         <input type="text" id="parentName" class="form-control" placeholder="First and last name" required>
       </div>
+      <% if (!prefillPhone) { %>
       <div>
         <label class="form-label">Phone Number <span class="text-muted">(optional)</span></label>
         <input type="tel" id="parentPhone" class="form-control" placeholder="(580) 555-0123">
       </div>
+      <% } else { %>
+      <input type="hidden" id="parentPhone" value="<%= prefillPhone %>">
+      <% } %>
     </div>
 
     <!-- Kids -->
@@ -97,9 +112,9 @@
       <h6><i class="fas fa-child me-2"></i>Kids</h6>
       <div class="text-center mb-3">
         <div class="kid-stepper justify-content-center">
-          <button type="button" onclick="changeKidCount(-1)">-</button>
+          <button type="button" id="kidMinus">-</button>
           <div class="count" id="kidCount">1</div>
-          <button type="button" onclick="changeKidCount(1)">+</button>
+          <button type="button" id="kidPlus">+</button>
         </div>
       </div>
       <div id="kidNamesList">
@@ -160,26 +175,66 @@
           <input class="form-check-input" type="checkbox" id="agreeCheck">
           <label class="form-check-label small" for="agreeCheck">I confirm I have read, understand, and agree to all sections above. I am the parent or legal guardian of the child(ren) named and am at least 18 years of age.</label>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill ms-2" style="white-space:nowrap" onclick="clearSig()">
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill ms-2" style="white-space:nowrap" id="clearSigBtn">
           <i class="fas fa-eraser me-1"></i>Clear
         </button>
       </div>
     </div>
 
+    <!-- SMS Consent -->
+    <div class="walkin-card">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="smsConsent">
+        <label class="form-check-label small" for="smsConsent" style="color:#666">
+          I agree to receive text messages from Bounce Man LLC regarding this event and future events. Msg &amp; data rates may apply. Reply STOP to opt out.
+          <a href="/privacy" target="_blank" style="color:var(--bm-orange)">Privacy Policy</a>
+        </label>
+      </div>
+    </div>
+
+    <!-- Payment Method -->
+    <% var hasMultiple = (selectedEvent && (selectedEvent.allow_card + selectedEvent.allow_cash + selectedEvent.allow_google_review) > 1); %>
+    <% if (selectedEvent && (selectedEvent.allow_card || selectedEvent.allow_cash || selectedEvent.allow_google_review)) { %>
+    <div class="walkin-card">
+      <h6><i class="fas fa-credit-card me-2"></i>How would you like to pay?</h6>
+      <% if (selectedEvent.allow_card) { %>
+      <button type="button" class="payment-option" data-method="card">
+        <div class="opt-icon">💳</div>
+        <div class="opt-title">Pay by Card — $<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid</div>
+        <div class="opt-desc">Secure checkout via Stripe</div>
+      </button>
+      <% } %>
+      <% if (selectedEvent.allow_cash) { %>
+      <button type="button" class="payment-option" data-method="cash">
+        <div class="opt-icon">💵</div>
+        <div class="opt-title">Pay Cash at the Booth</div>
+        <div class="opt-desc">Bring $<%= parseFloat(selectedEvent.price_per_kid).toFixed(0) %>/kid when you check in</div>
+      </button>
+      <% } %>
+      <% if (selectedEvent.allow_google_review) { %>
+      <button type="button" class="payment-option" data-method="google_review">
+        <div class="opt-icon">⭐</div>
+        <div class="opt-title">Google Review — Free Admission</div>
+        <div class="opt-desc">Write a Google review, show us your phone, and get a child admission for 15 minutes</div>
+      </button>
+      <% } %>
+    </div>
+    <% } %>
+
     <!-- Total & Pay -->
-    <div class="total-bar">
+    <div class="total-bar" id="totalBar">
       <div class="label">Total</div>
       <div class="amount" id="totalAmount">$0</div>
     </div>
 
     <div class="error-msg" id="errorMsg"></div>
-    <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Setting up payment...</div>
+    <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin me-2"></i>Processing...</div>
 
-    <button class="btn-pay" id="payBtn" disabled onclick="submitAndPay()">
-      <i class="fas fa-lock me-2"></i>Pay & Register
+    <button class="btn-pay" id="payBtn" disabled>
+      <i class="fas fa-lock me-2"></i><span id="payBtnLabel">Register</span>
     </button>
 
-    <p class="text-center text-white small mt-3" style="opacity:0.7">
+    <p id="stripeFooter" class="text-center text-white small mt-3" style="opacity:0.7;display:none">
       <i class="fas fa-shield-alt me-1"></i>Secure payment via Stripe
     </p>
 
@@ -193,6 +248,18 @@
   var eventId = '<%= selectedEvent ? selectedEvent.id : '' %>';
   var isKiosk = <%= kiosk ? 'true' : 'false' %>;
   var hasSigned = false;
+  var selectedMethod = null;
+  var allowCard = <%= selectedEvent && selectedEvent.allow_card ? 'true' : 'false' %>;
+  var allowCash = <%= selectedEvent && selectedEvent.allow_cash ? 'true' : 'false' %>;
+  var allowGoogleReview = <%= selectedEvent && selectedEvent.allow_google_review ? 'true' : 'false' %>;
+  var onlyOneMethod = [allowCard, allowCash, allowGoogleReview].filter(Boolean).length === 1;
+
+  // Auto-select if only one payment method
+  if (onlyOneMethod) {
+    if (allowCard) selectedMethod = 'card';
+    else if (allowCash) selectedMethod = 'cash';
+    else if (allowGoogleReview) selectedMethod = 'google_review';
+  }
 
   // Event selector (iPad kiosk)
   window.selectEvent = function(id) {
@@ -220,12 +287,22 @@
   };
 
   function updateTotal() {
-    var total = kidCount * pricePerKid;
-    document.getElementById('totalAmount').textContent = '$' + total.toFixed(0);
+    var totalEl = document.getElementById('totalAmount');
+    var totalBar = document.getElementById('totalBar');
+    if (selectedMethod === 'google_review') {
+      totalEl.textContent = 'FREE';
+      totalBar.style.background = 'linear-gradient(135deg,#2ECC71,#27AE60)';
+    } else if (selectedMethod === 'cash') {
+      totalEl.textContent = '$' + (kidCount * pricePerKid).toFixed(0) + ' cash';
+      totalBar.style.background = '';
+    } else {
+      totalEl.textContent = '$' + (kidCount * pricePerKid).toFixed(0);
+      totalBar.style.background = '';
+    }
     updatePayBtn();
   }
 
-  // Signature canvas (copied from contract.ejs)
+  // Signature canvas
   var canvas = document.getElementById('sigCanvas');
   var ctx = canvas.getContext('2d');
   var drawing = false;
@@ -272,14 +349,45 @@
     updatePayBtn();
   };
 
+  // Payment option selection
+  document.querySelectorAll('.payment-option').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.payment-option').forEach(function(b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      selectedMethod = btn.dataset.method;
+      updateTotal();
+    });
+  });
+
+  // Auto-select highlight if only one method
+  if (onlyOneMethod) {
+    var autoBtn = document.querySelector('.payment-option[data-method="' + selectedMethod + '"]');
+    if (autoBtn) autoBtn.classList.add('selected');
+  }
+
   // Pay button state
   var agreeCheck = document.getElementById('agreeCheck');
   agreeCheck.addEventListener('change', updatePayBtn);
 
   function updatePayBtn() {
     var btn = document.getElementById('payBtn');
+    var labelEl = document.getElementById('payBtnLabel');
     var name = document.getElementById('parentName').value.trim();
-    btn.disabled = !(hasSigned && agreeCheck.checked && name && eventId && pricePerKid > 0);
+    var needMethod = (allowCard || allowCash || allowGoogleReview) && !onlyOneMethod;
+    var ready = hasSigned && agreeCheck.checked && name && eventId && (!needMethod || selectedMethod);
+    btn.disabled = !ready;
+
+    if (selectedMethod === 'cash') {
+      labelEl.textContent = 'Register — Pay Cash at Booth';
+      btn.style.background = 'linear-gradient(135deg,#004E89,#0066b3)';
+    } else if (selectedMethod === 'google_review') {
+      labelEl.textContent = 'Register — Show Us Your Review';
+      btn.style.background = 'linear-gradient(135deg,#f59e0b,#d97706)';
+    } else {
+      labelEl.textContent = 'Pay & Register';
+      btn.style.background = '';
+    }
+    document.getElementById('stripeFooter').style.display = selectedMethod === 'card' ? 'block' : 'none';
   }
   document.getElementById('parentName').addEventListener('input', updatePayBtn);
 
@@ -290,6 +398,7 @@
     if (!hasSigned) { showError('Please sign the waiver.'); return; }
     if (!agreeCheck.checked) { showError('Please agree to the waiver.'); return; }
     if (!eventId) { showError('Please select an event.'); return; }
+    if ((allowCard || allowCash || allowGoogleReview) && !onlyOneMethod && !selectedMethod) { showError('Please select a payment method.'); return; }
 
     var kidNames = [];
     var kidAges = [];
@@ -306,6 +415,7 @@
     document.getElementById('errorMsg').style.display = 'none';
 
     var sigData = canvas.toDataURL('image/png');
+    var method = selectedMethod || (allowCard ? 'card' : allowCash ? 'cash' : 'google_review');
 
     fetch('/event/pay', {
       method: 'POST',
@@ -319,6 +429,7 @@
         kid_ages: kidAges,
         waiver_signature: sigData,
         waiver_version: 'v2-2026-05-15',
+        payment_method: method,
         kiosk: isKiosk
       })
     })
@@ -352,6 +463,15 @@
 
   // Init
   updateTotal();
+
+  var evtSel = document.getElementById('eventSelect');
+  if (evtSel) { evtSel.addEventListener('change', function() { window.selectEvent(this.value); }); }
+
+  document.getElementById('kidMinus').addEventListener('click', function() { window.changeKidCount(-1); });
+  document.getElementById('kidPlus').addEventListener('click', function() { window.changeKidCount(1); });
+  document.getElementById('clearSigBtn').addEventListener('click', function() { window.clearSig(); });
+  document.getElementById('payBtn').addEventListener('click', function() { window.submitAndPay(); });
+
 })();
 </script>
 </body>
