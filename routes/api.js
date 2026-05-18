@@ -103,6 +103,72 @@ router.post('/communications', requireN8nKey, (req, res) => {
 });
 
 // === PROTECTED API ROUTES ===
+
+// Facebook Commerce Manager product feed
+// URL: https://bouncemanrentals.com/api/products/feed.csv
+router.get('/products/feed.csv', (req, res) => {
+  const db = getDb();
+
+  const equipment = db.prepare(`
+    SELECT e.id, e.name, e.slug, e.short_description, e.price_4hr, e.price_daily, e.category
+    FROM equipment e
+    WHERE e.status = 'available' AND e.category NOT IN ('add_ons', 'add-ons')
+    ORDER BY e.sort_order
+  `).all();
+
+  const imageMap = {};
+  db.prepare('SELECT equipment_id, image_path, is_primary FROM equipment_images ORDER BY is_primary DESC').all()
+    .forEach(row => {
+      if (!imageMap[row.equipment_id]) imageMap[row.equipment_id] = { primary: null, additional: [] };
+      if (row.is_primary) imageMap[row.equipment_id].primary = row.image_path;
+      else imageMap[row.equipment_id].additional.push(row.image_path);
+    });
+
+  const BASE = 'https://bouncemanrentals.com';
+  const GPC = 'Sporting Goods > Outdoor Recreation > Outdoor Games > Bounce Houses';
+
+  const headers = ['id','title','description','availability','condition','price','link','image_link','additional_image_link','brand','google_product_category'];
+
+  const escape = (v) => {
+    if (v == null) return '';
+    const s = String(v);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+
+  const rows = equipment.map(e => {
+    const imgs = imageMap[e.id] || { primary: null, additional: [] };
+    const primaryImg = imgs.primary ? BASE + imgs.primary : '';
+    const addlImgs = imgs.additional.slice(0, 9).map(p => BASE + p).join(',');
+    const price = (e.price_4hr || e.price_daily || 0).toFixed(2) + ' USD';
+    const desc = e.short_description || (e.name + ' rental — Kay County OK');
+    const link = BASE + '/equipment/' + e.slug;
+    return [
+      e.id,
+      e.name + ' Rental',
+      desc,
+      'in stock',
+      'new',
+      price,
+      link,
+      primaryImg,
+      addlImgs,
+      'Bounce Man',
+      GPC
+    ].map(escape).join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="bounceman-products.csv"');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(csv);
+});
+
+
 router.use(requireAuth);
 
 // Calendar events (for FullCalendar)
