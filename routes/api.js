@@ -125,7 +125,7 @@ router.get('/products/feed.csv', (req, res) => {
     });
 
   const BASE = 'https://bouncemanrentals.com';
-  const GPC = 'Sporting Goods > Outdoor Recreation > Outdoor Games > Bounce Houses';
+  const GPC = 'Toys & Games > Outdoor Play Equipment > Inflatable Bouncers';
 
   const headers = ['id','title','description','availability','condition','price','link','image_link','additional_image_link','brand','google_product_category'];
 
