@@ -157,6 +157,11 @@ router.post('/stripe', async (req, res) => {
                 await emailService.sendBookingConfirmation(refreshedBooking, customer, items, contract && contract.id);
                 db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(bookingId);
                 console.log('[Stripe Webhook] Confirmation email sent to', customer.email);
+
+                // Also fire Slack booking card if never created
+                const notifs = require('../services/notifications');
+                notifs.notifyNewBooking(refreshedBooking, customer, items)
+                  .catch(e2 => console.error('[STRIPE WEBHOOK] Slack notify failed:', e2.message));
               }
             }
           } catch (e) { console.error('[STRIPE WEBHOOK] Confirmation email failed:', e.message); }
