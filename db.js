@@ -692,6 +692,7 @@ function initialize() {
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN slack_message_channel TEXT').run();
   } catch {} // column already exists
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
   d.prepare(`CREATE TABLE IF NOT EXISTS pending_slack_cards (

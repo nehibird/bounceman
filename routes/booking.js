@@ -472,7 +472,7 @@ router.get('/confirmation', async (req, res) => {
   // Mark deposit as paid if Stripe session completed
   const notes = booking.internal_notes || '';
   const sessionMatch = notes.match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
-  if (sessionMatch && booking.deposit_paid !== 1) {
+  if (sessionMatch && !booking.confirmation_email_sent) {
     try {
       const session = await stripeService.retrieveSession(sessionMatch[1]);
       if (session.payment_status === 'paid') {
@@ -488,7 +488,9 @@ router.get('/confirmation', async (req, res) => {
           emailService.sendBookingConfirmation(
             { ...booking, payment_status: 'deposit_paid', deposit_paid: 1 },
             customer, items, contract?.id
-          ).catch(err => console.error('[EMAIL ERROR]', err.message));
+          ).then(() => {
+            db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(booking.id);
+          }).catch(err => console.error('[EMAIL ERROR]', err.message));
         }
         // Slack notification — payment confirmed
         notifyNewBooking({ ...booking, payment_status: 'deposit_paid' }, customer, items)

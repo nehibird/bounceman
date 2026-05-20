@@ -144,6 +144,24 @@ router.post('/stripe', async (req, res) => {
         console.log('[Stripe Webhook] checkout.session.completed: booking', bookingId,
           'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
 
+        // Send confirmation email (webhook is reliable path; page redirect may never fire)
+        setTimeout(async () => {
+          try {
+            const refreshedBooking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+            if (!refreshedBooking.confirmation_email_sent) {
+              const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(refreshedBooking.customer_id);
+              const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
+              if (customer && customer.email) {
+                const contract = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(bookingId);
+                const emailService = require('../services/email');
+                await emailService.sendBookingConfirmation(refreshedBooking, customer, items, contract && contract.id);
+                db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(bookingId);
+                console.log('[Stripe Webhook] Confirmation email sent to', customer.email);
+              }
+            }
+          } catch (e) { console.error('[STRIPE WEBHOOK] Confirmation email failed:', e.message); }
+        }, 0);
+
         // Update Slack live card if one exists for this booking
         setTimeout(async () => {
           try {
