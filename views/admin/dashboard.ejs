@@ -81,6 +81,20 @@
             <span>$${parseFloat(analytics.totalExpenses).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})} invested</span>
           </div>
         </div>
+        <div class="row g-0 text-center border rounded mb-2 py-2">
+          <div class="col-4">
+            <div class="text-muted" style="font-size:0.7rem">TOTAL BOOKED</div>
+            <div class="fw-bold small">${parseFloat(analytics.totalRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+          </div>
+          <div class="col-4 border-start border-end">
+            <div class="text-muted" style="font-size:0.7rem">CASH IN HAND</div>
+            <div class="fw-bold small text-success">${parseFloat(analytics.cashCollected).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+          </div>
+          <div class="col-4">
+            <div class="text-muted" style="font-size:0.7rem">STILL OWED</div>
+            <div class="fw-bold small text-warning">${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+          </div>
+        </div>
         <hr class="my-2">
         <div class="d-flex justify-content-between small">
           <span class="text-muted">Avg ticket</span>

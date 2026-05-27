@@ -71,6 +71,8 @@ router.get('/', (req, res) => {
 
   // Financial analytics
   const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
+  const cashCollected = db.prepare("SELECT COALESCE(SUM(deposit_amount), 0) as r FROM bookings WHERE deposit_paid = 1 AND status NOT IN ('cancelled', 'declined')").get().r;
+  const balanceOwed = db.prepare("SELECT COALESCE(SUM(balance_due), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
   const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses').get().t;
   const netPosition = totalRevenue - totalExpenses;
   const recoveryPct = totalExpenses > 0 ? (totalRevenue / totalExpenses * 100) : 0;
@@ -107,7 +109,7 @@ router.get('/', (req, res) => {
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
-    analytics: { totalRevenue, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt },
+    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt },
     monthlyRevenue, equipmentUtil
   });
 });
