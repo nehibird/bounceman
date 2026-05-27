@@ -1325,7 +1325,7 @@ router.get('/expenses', (req, res) => {
     "SELECT DISTINCT strftime('%Y', date) as y FROM expenses ORDER BY y DESC"
   ).all().map(r => r.y);
 
-  res.render('admin/expenses', { settings, expenses, totals, grandTotal, monthTotal, years, filter: { category, year }, page: 'expenses' });
+  res.render('admin/expenses', { title: 'Expenses - Admin', user: req.user, settings, expenses, totals, grandTotal, monthTotal, years, filter: { category, year }, page: 'expenses' });
 });
 
 router.post('/expenses', (req, res) => {
