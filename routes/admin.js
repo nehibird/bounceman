@@ -1292,5 +1292,64 @@ router.post('/api/ads/facebook/pixel/event', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Expenses ────────────────────────────────────────────────────────────────
+
+router.get('/expenses', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const { category, year } = req.query;
+
+  let query = 'SELECT * FROM expenses';
+  const params = [];
+  const conditions = [];
+
+  if (category) { conditions.push('category = ?'); params.push(category); }
+  if (year) { conditions.push("strftime('%Y', date) = ?"); params.push(year); }
+  if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+  query += ' ORDER BY date DESC';
+
+  const expenses = db.prepare(query).all(...params);
+
+  const totals = db.prepare(`
+    SELECT category, SUM(amount) as total FROM expenses GROUP BY category ORDER BY total DESC
+  `).all();
+
+  const grandTotal = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM expenses').get().t;
+
+  const thisMonthStart = dayjs().startOf('month').format('YYYY-MM-DD');
+  const monthTotal = db.prepare(
+    "SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ?"
+  ).get(thisMonthStart).t;
+
+  const years = db.prepare(
+    "SELECT DISTINCT strftime('%Y', date) as y FROM expenses ORDER BY y DESC"
+  ).all().map(r => r.y);
+
+  res.render('admin/expenses', { settings, expenses, totals, grandTotal, monthTotal, years, filter: { category, year }, page: 'expenses' });
+});
+
+router.post('/expenses', (req, res) => {
+  const db = getDb();
+  const { date, category, vendor, description, amount, payment_method, notes } = req.body;
+  if (!date || !category || !description || !amount) return res.redirect('/admin/expenses?error=missing');
+  db.prepare(`INSERT INTO expenses (id, date, category, vendor, description, amount, payment_method, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(uuid(), date, category, vendor || null, description, parseFloat(amount), payment_method || 'card', notes || null);
+  res.redirect('/admin/expenses');
+});
+
+router.post('/expenses/:id/delete', (req, res) => {
+  const db = getDb();
+  db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/expenses');
+});
+
+router.post('/expenses/:id/edit', (req, res) => {
+  const db = getDb();
+  const { date, category, vendor, description, amount, payment_method, notes } = req.body;
+  db.prepare(`UPDATE expenses SET date=?, category=?, vendor=?, description=?, amount=?, payment_method=?, notes=? WHERE id=?`)
+    .run(date, category, vendor || null, description, parseFloat(amount), payment_method || 'card', notes || null, req.params.id);
+  res.redirect('/admin/expenses');
+});
 
 module.exports = router;

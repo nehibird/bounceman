@@ -1,0 +1,235 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">Expense Tracker</h4>
+    <p class="text-muted mb-0">${expenses.length} record${expenses.length !== 1 ? 's' : ''}</p>
+  </div>
+  <button class="btn btn-bm" type="button" data-bs-toggle="collapse" data-bs-target="#addExpenseForm">
+    <i class="fas fa-plus me-1"></i> Add Expense
+  </button>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small mb-1">Total Spent (All Time)</div>
+        <div class="fs-4 fw-bold text-danger">$${grandTotal.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small mb-1">This Month</div>
+        <div class="fs-4 fw-bold text-warning">$${monthTotal.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small mb-1">Net Position (Revenue − Expenses)</div>
+        <div class="fs-4 fw-bold ${1408.12 - grandTotal >= 0 ? 'text-success' : 'text-danger'}">
+          $${(1408.12 - grandTotal).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- By Category Breakdown -->
+${totals.length > 0 ? `
+<div class="card mb-4">
+  <div class="card-header fw-semibold"><i class="fas fa-chart-pie me-2"></i>By Category</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <tbody>
+          ${totals.map(t => `
+          <tr>
+            <td class="ps-3"><span class="badge bg-secondary text-capitalize">${t.category.replace(/_/g,' ')}</span></td>
+            <td class="fw-semibold text-danger">$${t.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+            <td class="pe-3">
+              <div class="progress" style="height:6px;min-width:80px">
+                <div class="progress-bar bg-danger" style="width:${Math.round((t.total/grandTotal)*100)}%"></div>
+              </div>
+            </td>
+            <td class="pe-3 text-muted small">${Math.round((t.total/grandTotal)*100)}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>` : ''}
+
+<!-- Add Expense Form -->
+<div class="collapse mb-4" id="addExpenseForm">
+  <div class="card">
+    <div class="card-header"><i class="fas fa-plus-circle me-2"></i>New Expense</div>
+    <div class="card-body">
+      <form method="POST" action="/admin/expenses">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label">Date *</label>
+            <input type="date" name="date" class="form-control" required value="${new Date().toISOString().split('T')[0]}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Category *</label>
+            <select name="category" class="form-select" required>
+              <option value="">Select...</option>
+              <option value="equipment">Equipment</option>
+              <option value="insurance">Insurance</option>
+              <option value="storage">Storage</option>
+              <option value="marketing">Marketing</option>
+              <option value="software">Software / Subscriptions</option>
+              <option value="legal">Legal / Licensing</option>
+              <option value="supplies">Supplies</option>
+              <option value="fuel">Fuel / Transport</option>
+              <option value="labor">Labor</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Vendor / Payee</label>
+            <input type="text" name="vendor" class="form-control" placeholder="e.g. XINSURANCE">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Amount *</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input type="number" name="amount" class="form-control" step="0.01" min="0" required placeholder="0.00">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Description *</label>
+            <input type="text" name="description" class="form-control" required placeholder="What was this for?">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Payment Method</label>
+            <select name="payment_method" class="form-select">
+              <option value="card">Card</option>
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Notes</label>
+            <input type="text" name="notes" class="form-control" placeholder="Optional">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-bm"><i class="fas fa-save me-1"></i> Save Expense</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<form method="GET" action="/admin/expenses" class="row g-2 mb-3 align-items-end">
+  <div class="col-auto">
+    <select name="category" class="form-select form-select-sm">
+      <option value="">All Categories</option>
+      <option value="equipment" ${filter.category==='equipment'?'selected':''}>Equipment</option>
+      <option value="insurance" ${filter.category==='insurance'?'selected':''}>Insurance</option>
+      <option value="storage" ${filter.category==='storage'?'selected':''}>Storage</option>
+      <option value="marketing" ${filter.category==='marketing'?'selected':''}>Marketing</option>
+      <option value="software" ${filter.category==='software'?'selected':''}>Software</option>
+      <option value="legal" ${filter.category==='legal'?'selected':''}>Legal</option>
+      <option value="supplies" ${filter.category==='supplies'?'selected':''}>Supplies</option>
+      <option value="fuel" ${filter.category==='fuel'?'selected':''}>Fuel</option>
+      <option value="labor" ${filter.category==='labor'?'selected':''}>Labor</option>
+      <option value="other" ${filter.category==='other'?'selected':''}>Other</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="year" class="form-select form-select-sm">
+      <option value="">All Years</option>
+      ${years.map(y => `<option value="${y}" ${filter.year===y?'selected':''}>${y}</option>`).join('')}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
+    <a href="/admin/expenses" class="btn btn-sm btn-link text-muted">Clear</a>
+  </div>
+</form>
+
+<!-- Expenses Table -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Category</th>
+            <th>Vendor</th>
+            <th>Description</th>
+            <th>Amount</th>
+            <th>Method</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${expenses.length > 0 ? expenses.map(e => `
+          <tr>
+            <td><small>${e.date}</small></td>
+            <td><span class="badge bg-secondary text-capitalize">${(e.category||'').replace(/_/g,' ')}</span></td>
+            <td>${e.vendor || '<span class="text-muted">—</span>'}</td>
+            <td>${e.description}</td>
+            <td class="fw-semibold text-danger">$${parseFloat(e.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+            <td><small class="text-muted text-capitalize">${(e.payment_method||'').replace(/_/g,' ')}</small></td>
+            <td><small class="text-muted">${e.notes || ''}</small></td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#edit-${e.id}">
+                <i class="fas fa-pencil-alt"></i>
+              </button>
+              <form method="POST" action="/admin/expenses/${e.id}/delete" class="d-inline"
+                onsubmit="return confirm('Delete this expense?')">
+                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          <tr class="collapse" id="edit-${e.id}">
+            <td colspan="8" class="bg-light p-3">
+              <form method="POST" action="/admin/expenses/${e.id}/edit">
+                <div class="row g-2">
+                  <div class="col-md-2"><input type="date" name="date" class="form-control form-control-sm" value="${e.date}" required></div>
+                  <div class="col-md-2">
+                    <select name="category" class="form-select form-select-sm" required>
+                      ${['equipment','insurance','storage','marketing','software','legal','supplies','fuel','labor','other'].map(c=>`<option value="${c}" ${e.category===c?'selected':''}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="col-md-2"><input type="text" name="vendor" class="form-control form-control-sm" value="${e.vendor||''}" placeholder="Vendor"></div>
+                  <div class="col-md-3"><input type="text" name="description" class="form-control form-control-sm" value="${e.description}" required></div>
+                  <div class="col-md-1"><input type="number" name="amount" class="form-control form-control-sm" step="0.01" value="${e.amount}" required></div>
+                  <div class="col-md-1">
+                    <select name="payment_method" class="form-select form-select-sm">
+                      ${['card','cash','check','bank_transfer','other'].map(m=>`<option value="${m}" ${e.payment_method===m?'selected':''}>${m.replace('_',' ')}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="col-md-1 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-bm flex-fill">Save</button>
+                  </div>
+                </div>
+                <div class="row g-2 mt-1">
+                  <div class="col-md-4"><input type="text" name="notes" class="form-control form-control-sm" value="${e.notes||''}" placeholder="Notes"></div>
+                </div>
+              </form>
+            </td>
+          </tr>
+          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No expenses yet. Add your first one above.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+`, scripts: '' }) %>

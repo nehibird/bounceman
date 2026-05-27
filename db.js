@@ -703,6 +703,17 @@ function initialize() {
     event_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run();
+  d.prepare(`CREATE TABLE IF NOT EXISTS expenses (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    category TEXT NOT NULL,
+    vendor TEXT,
+    description TEXT NOT NULL,
+    amount REAL NOT NULL,
+    payment_method TEXT DEFAULT 'card',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
   console.log('[DB] Database initialized successfully');
 }
 
