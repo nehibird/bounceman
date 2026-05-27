@@ -32,8 +32,8 @@
     <div class="card text-center">
       <div class="card-body py-3">
         <div class="text-muted small mb-1">Net Position (Revenue − Expenses)</div>
-        <div class="fs-4 fw-bold ${1408.12 - grandTotal >= 0 ? 'text-success' : 'text-danger'}">
-          $${(1408.12 - grandTotal).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}
+        <div class="fs-4 fw-bold ${totalRevenue - grandTotal >= 0 ? 'text-success' : 'text-danger'}">
+          $${(totalRevenue - grandTotal).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}
         </div>
       </div>
     </div>

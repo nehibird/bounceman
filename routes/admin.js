@@ -1362,7 +1362,8 @@ router.get('/expenses', (req, res) => {
     "SELECT DISTINCT strftime('%Y', date) as y FROM expenses ORDER BY y DESC"
   ).all().map(r => r.y);
 
-  res.render('admin/expenses', { title: 'Expenses - Admin', user: req.user, settings, expenses, totals, grandTotal, monthTotal, years, filter: { category, year }, page: 'expenses' });
+  const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
+  res.render('admin/expenses', { title: 'Expenses - Admin', user: req.user, settings, expenses, totals, grandTotal, monthTotal, totalRevenue, years, filter: { category, year }, page: 'expenses' });
 });
 
 router.post('/expenses', (req, res) => {
