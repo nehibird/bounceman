@@ -69,9 +69,46 @@ router.get('/', (req, res) => {
 
   const recentActivity = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 15').all();
 
+  // Financial analytics
+  const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
+  const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses').get().t;
+  const netPosition = totalRevenue - totalExpenses;
+  const recoveryPct = totalExpenses > 0 ? (totalRevenue / totalExpenses * 100) : 0;
+  const avgTicketRow = db.prepare("SELECT COALESCE(AVG(total), 350) as a FROM bookings WHERE status NOT IN ('cancelled', 'declined') AND total > 0").get();
+  const avgTicket = avgTicketRow.a || 350;
+  const bookingsToBreakEven = netPosition >= 0 ? 0 : Math.ceil(Math.abs(netPosition) / avgTicket);
+  const pipeline = db.prepare("SELECT COALESCE(SUM(total), 0) as r, COUNT(*) as c FROM bookings WHERE event_date > ? AND status IN ('confirmed', 'pending')").get(today);
+  const creditCardDebt = parseFloat(settings.credit_card_debt || '0');
+
+  // Monthly revenue — last 6 months
+  const sixMonthsAgo = dayjs().subtract(5, 'month').startOf('month').format('YYYY-MM-DD');
+  const rawMonthly = db.prepare(`
+    SELECT strftime('%Y-%m', event_date) as month, COALESCE(SUM(total), 0) as revenue
+    FROM bookings WHERE status NOT IN ('cancelled', 'declined') AND event_date >= ?
+    GROUP BY month ORDER BY month
+  `).all(sixMonthsAgo);
+  const monthlyMap = Object.fromEntries(rawMonthly.map(r => [r.month, r.revenue]));
+  const monthlyRevenue = [];
+  for (let i = 5; i >= 0; i--) {
+    const key = dayjs().subtract(i, 'month').format('YYYY-MM');
+    const lbl = dayjs().subtract(i, 'month').format('MMM YY');
+    monthlyRevenue.push({ month: key, label: lbl, revenue: monthlyMap[key] || 0 });
+  }
+
+  // Equipment utilization
+  const equipmentUtil = db.prepare(`
+    SELECT e.name, COUNT(DISTINCT bi.booking_id) as bookings, COALESCE(SUM(bi.total_price), 0) as revenue
+    FROM equipment e
+    LEFT JOIN booking_items bi ON bi.equipment_id = e.id
+    LEFT JOIN bookings b ON b.id = bi.booking_id AND b.status NOT IN ('cancelled', 'declined')
+    GROUP BY e.id ORDER BY bookings DESC LIMIT 8
+  `).all();
+
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
-    user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard'
+    user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
+    analytics: { totalRevenue, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt },
+    monthlyRevenue, equipmentUtil
   });
 });
 
@@ -1318,7 +1355,7 @@ router.get('/expenses', (req, res) => {
 
   const thisMonthStart = dayjs().startOf('month').format('YYYY-MM-DD');
   const monthTotal = db.prepare(
-    "SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ?"
+    'SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ?'
   ).get(thisMonthStart).t;
 
   const years = db.prepare(
@@ -1347,9 +1384,20 @@ router.post('/expenses/:id/delete', (req, res) => {
 router.post('/expenses/:id/edit', (req, res) => {
   const db = getDb();
   const { date, category, vendor, description, amount, payment_method, notes } = req.body;
-  db.prepare(`UPDATE expenses SET date=?, category=?, vendor=?, description=?, amount=?, payment_method=?, notes=? WHERE id=?`)
+  db.prepare('UPDATE expenses SET date=?, category=?, vendor=?, description=?, amount=?, payment_method=?, notes=? WHERE id=?')
     .run(date, category, vendor || null, description, parseFloat(amount), payment_method || 'card', notes || null, req.params.id);
   res.redirect('/admin/expenses');
 });
 
 module.exports = router;
+
+
+// POST credit card debt update from dashboard
+router.post('/settings/credit-card-debt', requireAdmin, (req, res) => {
+  const db = getDb();
+  const amount = parseFloat(req.body.amount || 0).toFixed(2);
+  const exists = db.prepare('SELECT key FROM settings WHERE key = ?').get('credit_card_debt');
+  if (exists) db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(amount, 'credit_card_debt');
+  else db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('credit_card_debt', amount);
+  res.redirect('/admin');
+});
