@@ -1,7 +1,7 @@
 'use strict';
 
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
-const BOOKINGS_CHANNEL = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
+const BOOKINGS_CHANNEL = process.env.SLACK_NEW_BOOKING_CHANNEL || 'C0AQF8ZAEBE'; // #bookings (not #phonecalls)
 
 function fmtDate(d) {
   try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
