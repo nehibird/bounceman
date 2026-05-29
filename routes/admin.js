@@ -1208,19 +1208,6 @@ router.get('/ads/google/connect', requireAdmin, (req, res) => {
   }
 });
 
-// GET /api/ads/google/callback — OAuth callback (registered redirect URI, no /admin prefix)
-router.get('/api/ads/google/callback', async (req, res) => {
-  const { code, error } = req.query;
-  if (error) return res.redirect('/admin/ads/google?error=' + encodeURIComponent(error));
-  if (!code)  return res.redirect('/admin/ads/google?error=no_code');
-  try {
-    await googleAds.handleCallback(code);
-    res.redirect('/admin/ads/google?connected=1');
-  } catch (e) {
-    console.error('[GOOGLE ADS] callback error:', e.message);
-    res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
-  }
-});
 
 // ── Google API routes ─────────────────────────────────────────────────────────
 
