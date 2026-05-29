@@ -124,8 +124,9 @@
                 '</div>' +
               '</div>';
             }
-            var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units');
-            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '">' +
+            var wetUp = (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '') ? Number(item.price_wet) : 20;
+            var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '');
+            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '">' +
             '<div class="equipment-card select-card">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
@@ -136,7 +137,7 @@
                 (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
                 (item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
-                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><i class="fas fa-tint"></i> Wet (+$20)</div></div></div>' : '') +
+                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><i class="fas fa-tint"></i> Wet (+$' + wetUp + ')</div></div></div>' : '') +
               '</div>' +
             '</div>' +
           '</div>'; }).join('')}
@@ -295,7 +296,8 @@
       var itemTotal = item.price;
       var label = item.name;
       if (wetItems[id]) {
-        itemTotal += 20;
+        var wEl = document.querySelector('[data-id="' + id + '"]');
+        itemTotal += (wEl && wEl.dataset.wetUp ? parseFloat(wEl.dataset.wetUp) : 20);
         label += ' (Wet)';
       }
       subtotal += itemTotal;

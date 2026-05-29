@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -196,7 +196,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     if (!eq) continue;
     const isWet = wetItemIds.has(eqId);
     const basePrice = getPrice(eq, duration);
-    const unitPrice = isWet ? basePrice + 20 : basePrice;
+    const unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
     lineItems.push({
       equipment_id: eqId,
       item_name: isWet ? eq.name + ' (Wet)' : eq.name,
@@ -277,7 +277,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       if (!eq) continue;
       const isWet = submitWetIdsSet.has(eqId);
       const basePrice = getPrice(eq, submitDuration);
-      recalcSubtotal += isWet ? basePrice + 20 : basePrice;
+      recalcSubtotal += isWet ? basePrice + getWetUpcharge(eq) : basePrice;
     }
     let { fee: recalcDeliveryFee } = getDeliveryFee(db, data.delivery_zip);
     if (recalcDeliveryFee < 0) {
@@ -376,7 +376,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       if (!eq) continue;
       const isWet = submitWetIds.has(eqId);
       const basePrice = getPrice(eq, bookingDuration);
-      const unitPrice = isWet ? basePrice + 20 : basePrice;
+      const unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
       const itemName = isWet ? eq.name + ' (Wet)' : eq.name;
       db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, itemName, unitPrice, unitPrice, bookingDuration, isWet ? 1 : 0);
