@@ -627,7 +627,7 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
 
   // Get current booking status
   const booking = db.prepare(`
-    SELECT b.*, c.signed as contract_signed
+    SELECT b.*, c.signed as contract_signed, c.id as contract_id
     FROM bookings b
     LEFT JOIN contracts c ON c.booking_id = b.id
     WHERE b.id = ?
@@ -646,8 +646,16 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
   const customerPhone = phone || booking.phone;
   if (customerPhone) {
     try {
-      await smsService.sendSMS(customerPhone,
-        'Bounce Man is on the way! ' + first_name + ', we should arrive within 30-60 minutes. See you soon!');
+      const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+      let smsMsg = 'Bounce Man is on the way! ' + first_name + ', we should arrive within 30-60 minutes.';
+      if (!booking.contract_signed && booking.contract_id) {
+        smsMsg += '\n\nPlease sign your rental agreement before we arrive: ' + baseUrl + '/contract/' + booking.contract_id;
+      }
+      if (parseFloat(booking.balance_due) > 0) {
+        smsMsg += '\n\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + '/booking/pay/' + booking_number;
+      }
+      smsMsg += '\n\nSee you soon!';
+      await smsService.sendSms(customerPhone, smsMsg);
       console.log('[ON MY WAY] SMS sent to', customerPhone, 'for', booking_number);
     } catch (err) {
       console.error('[ON MY WAY] SMS failed:', err.message);
