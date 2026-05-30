@@ -673,7 +673,7 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
   const updatedBlocks = originalMessage.blocks.filter(b => b.type !== 'actions');
   updatedBlocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: ':truck: *On My Way* sent by <@' + user.id + '> at ' + new Date().toLocaleTimeString() }]
+    elements: [{ type: 'mrkdwn', text: ':truck: *On My Way* sent by <@' + user.id + '> at ' + new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT' }]
   });
   updatedBlocks.push({
     type: 'section',

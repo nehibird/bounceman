@@ -19,6 +19,16 @@ function fmtTime(t) {
   } catch { return t; }
 }
 
+// Format a SQLite UTC timestamp ('YYYY-MM-DD HH:MM:SS', stored by datetime('now')) in Central time
+function fmtCentral(sqlTs) {
+  if (!sqlTs) return 'now';
+  try {
+    const d = new Date(String(sqlTs).replace(' ', 'T') + 'Z');
+    if (isNaN(d.getTime())) return sqlTs;
+    return d.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT';
+  } catch { return sqlTs; }
+}
+
 async function postToSlack(channel, blocks, text) {
   try {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
@@ -145,7 +155,7 @@ async function notifyNewBooking(booking, customer, items) {
   blocks.push({
     type: 'context',
     elements: [
-      { type: 'mrkdwn', text: '*Booking ID:* `' + booking.id + '` | *Created:* ' + (booking.created_at || 'now') + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
+      { type: 'mrkdwn', text: '*Booking ID:* `' + booking.id + '` | *Created:* ' + fmtCentral(booking.created_at) + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
     ]
   });
 
@@ -334,7 +344,7 @@ async function notifyContactForm(data) {
 
 function buildEventCard(booking, customer) {
   const contractText = booking.contract_signed
-    ? '✅ Signed' + (booking.contract_signed_at ? ' · ' + new Date(booking.contract_signed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '')
+    ? '✅ Signed' + (booking.contract_signed_at ? ' · ' + new Date(String(booking.contract_signed_at).replace(' ', 'T') + 'Z').toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT' : '')
     : '❌ Not Signed';
 
   const bal = parseFloat(booking.balance_due || booking.total || 0);
