@@ -71,7 +71,7 @@ router.get('/', (req, res) => {
 
   // Financial analytics
   const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
-  const cashCollected = db.prepare("SELECT COALESCE(SUM(deposit_amount), 0) as r FROM bookings WHERE deposit_paid = 1 AND status NOT IN ('cancelled', 'declined')").get().r;
+  const cashCollected = db.prepare("SELECT COALESCE(SUM(total - balance_due), 0) as r FROM bookings WHERE deposit_paid = 1 AND status NOT IN ('cancelled', 'declined')").get().r;
   const balanceOwed = db.prepare("SELECT COALESCE(SUM(balance_due), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
   const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses').get().t;
   const netPosition = totalRevenue - totalExpenses;
