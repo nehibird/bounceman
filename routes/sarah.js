@@ -6,7 +6,10 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate } = require('../lib/helpers');
+
+// Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
+const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
 
 function getTwilio() {
   return require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -215,7 +218,7 @@ router.post('/list-equipment', (req, res) => {
 router.post('/get-quote', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const { equipment_ids, duration, delivery_zip } = req.body;
+  const { equipment_ids, duration, delivery_zip, wet } = req.body;
 
   if (!equipment_ids || !equipment_ids.length) {
     return res.status(400).json({ error: 'At least one equipment_id required' });
@@ -228,8 +231,10 @@ router.post('/get-quote', (req, res) => {
   for (const eqId of equipment_ids) {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
     if (!eq) continue;
-    const price = getPrice(eq, dur);
-    lineItems.push({ id: eq.id, name: eq.name, price, duration: dur });
+    let price = getPrice(eq, dur);
+    const useWet = wet === true && isWetCapable(eq);
+    if (useWet) price += getWetUpcharge(eq);
+    lineItems.push({ id: eq.id, name: useWet ? eq.name + ' (Wet)' : eq.name, price, duration: dur });
     subtotal += price;
   }
 
@@ -268,16 +273,18 @@ router.post('/create-and-send-link', async (req, res) => {
     event_date, event_start_time, event_end_time,
     delivery_address, delivery_city, delivery_zip,
     event_type, surface_type, discount_code,
-    power_available
+    power_available, wet
   } = req.body;
 
-  // Validate required fields
-  if (!first_name || !phone || !equipment_ids?.length || !event_date) {
+  // Validate required fields (street address + zip required for phone bookings)
+  if (!first_name || !phone || !equipment_ids?.length || !event_date || !delivery_address || !delivery_zip) {
     const missing = [];
     if (!first_name) missing.push('first name');
     if (!phone) missing.push('phone number');
     if (!equipment_ids?.length) missing.push('equipment selection');
     if (!event_date) missing.push('event date');
+    if (!delivery_address) missing.push('delivery street address');
+    if (!delivery_zip) missing.push('delivery zip code');
     return res.status(400).json({
       error: `Missing required info: ${missing.join(', ')}`,
       missing_fields: missing
@@ -287,14 +294,69 @@ router.post('/create-and-send-link', async (req, res) => {
   try {
     const dur = duration || 'daily';
 
-    // Calculate pricing
+    // -- Normalize date to ISO (YYYY-MM-DD) + canonical 24h slot times so Sarah's
+    //    bookings match the website format (blocked_dates, reminders, lead-time all read them). --
+    const eventDateISO = resolveDate(event_date);
+    if (!eventDateISO || !/^\d{4}-\d{2}-\d{2}$/.test(eventDateISO)) {
+      return res.json({ success: false, error: `I couldn't lock in that date. Could you say it like "June fourteenth"?` });
+    }
+    const to24h = t => {
+      if (!t) return null;
+      const m = String(t).trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+      if (!m) return null;
+      let h = parseInt(m[1]); const min = m[2] || '00'; const mer = (m[3] || '').toUpperCase();
+      if (mer === 'PM' && h !== 12) h += 12;
+      if (mer === 'AM' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${min}`;
+    };
+    let startTime, endTime;
+    if (dur === 'daily') { startTime = '09:00'; endTime = '19:00'; }
+    else if (dur === 'overnight') { startTime = '15:00'; endTime = '10:00'; }
+    else { // 4hr — morning vs afternoon from requested start time
+      const reqStart = to24h(event_start_time);
+      const startH = reqStart ? parseInt(reqStart.split(':')[0]) : 9;
+      if (startH >= 12) { startTime = '15:00'; endTime = '19:00'; }
+      else { startTime = '09:00'; endTime = '13:00'; }
+    }
+
+    // -- Booking guards (Sarah previously bypassed every calendar rule the website enforces) --
+    // 1. No Sundays
+    const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
+    if (dow === 0) {
+      return res.json({ success: false, error: `We're closed on Sundays — we run Monday through Saturday. Want to pick another day?` });
+    }
+    // 2. Season: April (3) through November (10) only
+    const monthIdx = parseInt(eventDateISO.slice(5, 7), 10) - 1;
+    if (monthIdx < 3 || monthIdx > 10) {
+      return res.json({ success: false, error: `We're closed for the season from December through March — we start back up in April. Want me to help you book a date then?` });
+    }
+    // 3. Minimum lead time: under 24h is a rush booking that needs owner approval
+    const nowCT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+    const eventStartDT = new Date(`${eventDateISO}T${startTime}:00`);
+    const leadHours = (eventStartDT - nowCT) / 36e5;
+    if (leadHours < 24) {
+      return res.json({
+        success: false,
+        requires_approval: true,
+        error: `Since that's less than twenty-four hours away, I'll need Nehemiah to approve a rush booking. Let me grab your info and have him call you right back to lock it in.`
+      });
+    }
+    // 4. Globally blocked dates
+    const blockedDay = db.prepare('SELECT reason FROM blocked_dates WHERE date = ? AND equipment_id IS NULL').get(eventDateISO);
+    if (blockedDay) {
+      return res.json({ success: false, error: blockedDay.reason || `Sorry, that date is fully booked. Want to try another day?` });
+    }
+
+    // Calculate pricing (wet upcharge applies to water-capable units when caller chose wet)
     let subtotal = 0;
     const lineItems = [];
     for (const eqId of equipment_ids) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
       if (!eq) continue;
-      const price = getPrice(eq, dur);
-      lineItems.push({ equipment_id: eq.id, item_name: eq.name, unit_price: price, total_price: price, duration_type: dur });
+      let price = getPrice(eq, dur);
+      const useWet = wet === true && isWetCapable(eq);
+      if (useWet) price += getWetUpcharge(eq);
+      lineItems.push({ equipment_id: eq.id, item_name: useWet ? eq.name + ' (Wet)' : eq.name, unit_price: price, total_price: price, duration_type: dur, wet_option: useWet ? 1 : 0 });
       subtotal += price;
     }
 
@@ -329,12 +391,12 @@ router.post('/create-and-send-link', async (req, res) => {
         SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
         WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
           AND b.event_start_time < ? AND b.event_end_time > ?
-      `).get(event_date, item.equipment_id, checkEnd, checkStart);
+      `).get(eventDateISO, item.equipment_id, checkEnd, checkStart);
       const qty = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id)?.quantity || 1;
       if (cnt >= qty) {
         return res.json({
           success: false,
-          error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(event_date)}. Want to try a different slot or date?`
+          error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(eventDateISO)}. Want to try a different slot or date?`
         });
       }
     }
@@ -384,10 +446,10 @@ router.post('/create-and-send-link', async (req, res) => {
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
       surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
-      damage_waiver_fee, total, deposit_amount, balance_due, payment_status
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      damage_waiver_fee, total, deposit_amount, balance_due, payment_status, source
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sarah')`).run(
       bookingId, bookingNumber, customerId,
-      event_date, event_start_time || '9:00 AM', event_end_time || '1:00 PM',
+      eventDateISO, startTime, endTime,
       event_type || 'birthday_party',
       delivery_address || '', delivery_city || '', delivery_zip || '',
       surface_type || 'grass',
@@ -398,8 +460,8 @@ router.post('/create-and-send-link', async (req, res) => {
 
     // Add line items
     for (const item of lineItems) {
-      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, item.equipment_id, item.item_name, item.unit_price, item.total_price, item.duration_type);
+      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, item.equipment_id, item.item_name, item.unit_price, item.total_price, item.duration_type, item.wet_option || 0);
     }
 
     // Update customer stats
@@ -414,7 +476,7 @@ router.post('/create-and-send-link', async (req, res) => {
       bookingNumber,
       depositAmount: deposit_amount,
       customerEmail: email || undefined,
-      description: `${itemNames} — ${fmtDate(event_date)} — Deposit`,
+      description: `${itemNames} — ${fmtDate(eventDateISO)} — Deposit`,
       successUrl: `${baseUrl.replace('/event', '')}/booking/lookup?booking_number=${bookingNumber}&paid=1`,
       cancelUrl: `${baseUrl.replace('/event', '')}/booking/lookup?booking_number=${bookingNumber}`
     });
@@ -433,7 +495,7 @@ router.post('/create-and-send-link', async (req, res) => {
         const content = (template.content || '')
           .replace(/\{\{customer_name\}\}/g, `${first_name} ${last_name || ''}`.trim())
           .replace(/\{\{booking_number\}\}/g, bookingNumber)
-          .replace(/\{\{event_date\}\}/g, fmtDate(event_date))
+          .replace(/\{\{event_date\}\}/g, fmtDate(eventDateISO))
           .replace(/\{\{equipment\}\}/g, lineItems.map(i => i.item_name).join(', '))
           .replace(/\{\{total\}\}/g, `$${total.toFixed(2)}`);
         db.prepare('INSERT INTO contracts (id, booking_id, customer_id, template_id, content) VALUES (?, ?, ?, ?, ?)')
@@ -453,7 +515,7 @@ router.post('/create-and-send-link', async (req, res) => {
     const paymentUrl = session.url;
 
     // Send booking confirmation SMS (A2P 10DLC campaign verified 2026-04-27)
-    const smsBody = `Hi ${first_name}! Here's your Bounce Man booking for ${fmtDate(event_date)}:\n\n` +
+    const smsBody = `Hi ${first_name}! Here's your Bounce Man booking for ${fmtDate(eventDateISO)}:\n\n` +
       `${itemNames}\n` +
       `Total: $${total.toFixed(2)}\n` +
       `Deposit due now: $${deposit_amount.toFixed(2)}\n\n` +

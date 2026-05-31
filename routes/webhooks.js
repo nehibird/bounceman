@@ -698,8 +698,41 @@ async function respondToSlack(response_url, payload) {
 const BM_NUMBER = '+15803089288'; // BounceMan's Twilio number — appears as SIP FROM on bridge legs
 
 // ── Internal tool executor: calls our sarah endpoints from within the webhook ──
+const TRANSFER_TARGET = '+15806281765'; // Nehemiah's cell
+
 async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
-  if (name === 'transferCall') return { result: 'TRANSFER_INITIATED to +15806281765' };
+  if (name === 'transferCall') {
+    // Vapi's transferCall over a SIP-bridged call can't reliably reach an external PSTN
+    // number, so we redirect the live Twilio call leg to Nehemiah instead. We look up the
+    // Twilio CallSid stored during twilio-gather (keyed by the real caller's phone).
+    try {
+      const db = getDb();
+      let realPhone = (callerPhone && callerPhone !== BM_NUMBER) ? callerPhone : null;
+      if (!realPhone && vapiCallId) {
+        try {
+          const row = db.prepare('SELECT real_caller_phone FROM sip_call_map WHERE vapi_call_id = ?').get(vapiCallId);
+          if (row && row.real_caller_phone && row.real_caller_phone !== BM_NUMBER) realPhone = row.real_caller_phone;
+        } catch (e) { /* ignore */ }
+      }
+      let callSid = null;
+      try {
+        const row = db.prepare(`SELECT call_sid FROM twilio_call_map WHERE caller_phone = ? AND created_at > datetime('now', '-15 minutes') ORDER BY created_at DESC LIMIT 1`).get(realPhone);
+        callSid = row && row.call_sid;
+      } catch (e) { /* ignore */ }
+      if (!callSid) {
+        console.error('[TRANSFER] No live Twilio CallSid for caller', realPhone, '— cannot transfer');
+        return { result: 'TRANSFER_FAILED: could not locate the live call to transfer' };
+      }
+      const twilio = require("twilio")(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to Nehemiah now.</Say><Dial callerId="${BM_NUMBER}" timeout="25">${TRANSFER_TARGET}</Dial></Response>`;
+      await twilio.calls(callSid).update({ twiml });
+      console.log('[TRANSFER] Redirected Twilio call', callSid, 'to', TRANSFER_TARGET, 'for caller', realPhone);
+      return { result: 'TRANSFER_INITIATED to ' + TRANSFER_TARGET };
+    } catch (err) {
+      console.error('[TRANSFER] error:', err.message);
+      return { result: 'TRANSFER_FAILED: ' + err.message };
+    }
+  }
   if (name === 'endCall') return { result: 'CALL_ENDED' };
 
   const pathMap = {
@@ -1035,7 +1068,21 @@ router.post('/twilio-gather', (req, res) => {
   res.type('text/xml');
   if (digit === '1') {
     const callerPhone = (req.body?.From || '+15803089288').trim();
-    console.log('[TWILIO GATHER] Digit=1, caller:', callerPhone, '-> SIP dial to sip:bounceman@sip.vapi.ai');
+    const callSid = (req.body?.CallSid || '').trim();
+    // Store the live Twilio CallSid keyed by caller phone so transferCall can redirect
+    // this exact call leg to Nehemiah later (Vapi can't reach external PSTN over the bridge).
+    if (callSid) {
+      try {
+        const db = getDb();
+        db.prepare(`CREATE TABLE IF NOT EXISTS twilio_call_map (
+          call_sid TEXT PRIMARY KEY,
+          caller_phone TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        )`).run();
+        db.prepare(`INSERT OR REPLACE INTO twilio_call_map (call_sid, caller_phone, created_at) VALUES (?, ?, datetime('now'))`).run(callSid, callerPhone);
+      } catch (e) { console.error('[TWILIO GATHER] call map store failed:', e.message); }
+    }
+    console.log('[TWILIO GATHER] Digit=1, caller:', callerPhone, 'CallSid:', callSid, '-> SIP dial to sip:bounceman@sip.vapi.ai');
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerPhone}"><Sip>sip:bounceman@sip.vapi.ai</Sip></Dial></Response>`);
   } else {
     console.log('[TWILIO GATHER] Digit=' + (digit || 'none') + ' -> hanging up');
