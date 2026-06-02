@@ -83,12 +83,6 @@ app.use('/auth', authRoutes);
 app.use('/booking', bookingRoutes);
 app.use('/admin', adminRoutes);
 
-// Google Ads OAuth callback — registered redirect URI is /api/ads/google/callback (no /admin prefix)
-// Forward to the admin router's handler via a simple redirect-proxy
-app.get('/api/ads/google/callback', (req, res) => {
-  const qs = new URLSearchParams(req.query).toString();
-  res.redirect('/admin/api/ads/google/callback' + (qs ? '?' + qs : ''));
-});
 app.use('/api/sarah', sarahRoutes);
 app.use('/api/call', callsRouter);
 app.use('/api/webhooks', webhookRoutes);

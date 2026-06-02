@@ -168,6 +168,20 @@ router.get('/products/feed.csv', (req, res) => {
   res.send(csv);
 });
 
+// GET /api/ads/google/callback — Google Ads OAuth callback (PUBLIC: before requireAuth so Google's session-less redirect reaches it)
+router.get('/ads/google/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.redirect('/admin/ads/google?error=' + encodeURIComponent(error));
+  if (!code)  return res.redirect('/admin/ads/google?error=no_code');
+  try {
+    const googleAds = require('../services/google-ads');
+    await googleAds.handleCallback(code);
+    res.redirect('/admin/ads/google?connected=1');
+  } catch (e) {
+    console.error('[GOOGLE ADS] callback error:', e.message);
+    res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
+  }
+});
 
 router.use(requireAuth);
 
@@ -265,22 +279,6 @@ router.post('/bookings/quick', (req, res) => {
   );
 
   res.json({ success: true, booking_id: bookingId, booking_number: bookingNumber });
-});
-
-
-// GET /api/ads/google/callback — Google Ads OAuth callback
-router.get('/ads/google/callback', async (req, res) => {
-  const { code, error } = req.query;
-  if (error) return res.redirect('/admin/ads/google?error=' + encodeURIComponent(error));
-  if (!code)  return res.redirect('/admin/ads/google?error=no_code');
-  try {
-    const googleAds = require('../services/google-ads');
-    await googleAds.handleCallback(code);
-    res.redirect('/admin/ads/google?connected=1');
-  } catch (e) {
-    console.error('[GOOGLE ADS] callback error:', e.message);
-    res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
-  }
 });
 
 module.exports = router;
