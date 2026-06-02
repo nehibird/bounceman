@@ -9,6 +9,7 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
 const CUSTOMER_ID = process.env.GOOGLE_ADS_CUSTOMER_ID; // no dashes
 const MCC_ID = process.env.GOOGLE_ADS_MCC_ID;           // no dashes
 const REDIRECT_URI = process.env.GOOGLE_ADS_REDIRECT_URI;
+const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v23'; // bump when Google sunsets a version
 const SCOPES = ['https://www.googleapis.com/auth/adwords'];
 
 function getOAuth2Client() {
@@ -85,7 +86,7 @@ function isConnected() {
 
 async function adsRequest(query) {
   const token = await getAccessToken();
-  const url = `https://googleads.googleapis.com/v18/customers/${CUSTOMER_ID}/googleAds:search`;
+  const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${CUSTOMER_ID}/googleAds:search`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -150,7 +151,7 @@ async function createCampaign(data) {
 
 async function updateCampaignStatus(campaignId, status) {
   const token = await getAccessToken();
-  const url = `https://googleads.googleapis.com/v18/customers/${CUSTOMER_ID}/campaigns:mutate`;
+  const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${CUSTOMER_ID}/campaigns:mutate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -184,7 +185,7 @@ async function updateCampaignBudget(campaignId, budgetDollars) {
   const budgetResource = (data.results || [])[0]?.campaign?.campaignBudget;
   if (!budgetResource) throw new Error('Campaign budget resource not found');
 
-  const url = `https://googleads.googleapis.com/v18/customers/${CUSTOMER_ID}/campaignBudgets:mutate`;
+  const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${CUSTOMER_ID}/campaignBudgets:mutate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
