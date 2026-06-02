@@ -76,6 +76,7 @@ app.set('views', path.join(__dirname, 'views'));
 // Static assets
 app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.static(path.join(__dirname, 'public'))); // serve /favicon.ico, /apple-touch-icon.png, etc. at root
 
 // Routes
 app.use('/', publicRoutes);
