@@ -1,5 +1,8 @@
 'use strict';
 
+const { getDb } = require('../db');
+const { v4: uuid } = require('uuid');
+
 let _client = null;
 
 function getClient() {
@@ -24,6 +27,23 @@ function formatPhone(phone) {
   return `+1${digits}`;
 }
 
+// Log an SMS (in or out) to the communications table for the admin chat. Non-fatal.
+function logSms(direction, otherNumber, body, status) {
+  try {
+    const db = getDb();
+    const recip = formatPhone(otherNumber) || String(otherNumber || '');
+    const digits = recip.replace(/\D/g, '').slice(-10);
+    let customerId = null;
+    if (digits.length === 10) {
+      const rows = db.prepare("SELECT id, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+      const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
+      if (m) customerId = m.id;
+    }
+    db.prepare("INSERT INTO communications (id, customer_id, type, direction, body, recipient, status, sent_at) VALUES (?, ?, 'sms', ?, ?, ?, ?, datetime('now'))")
+      .run(uuid(), customerId, direction, body, recip, status || 'sent');
+  } catch (e) { console.error('[SMS LOG] failed:', e.message); }
+}
+
 async function sendSms(to, body) {
   const toFormatted = formatPhone(to);
   if (!toFormatted) throw new Error(`Invalid phone number: ${to}`);
@@ -43,6 +63,7 @@ async function sendSms(to, body) {
 
   const message = await getClient().messages.create(params);
   console.log(`[SMS] Sent to ${toFormatted} via ${messagingServiceSid ? 'MsgSvc' : 'direct'} — SID: ${message.sid}`);
+  logSms('outbound', toFormatted, body, 'sent');
   return message;
 }
 
@@ -108,6 +129,7 @@ async function sendReviewRequest(phone, bookingNumber) {
 }
 
 module.exports = {
+  logSms,
   sendBookingConfirmation,
   sendDeliveryReminder,
   sendReviewRequest,

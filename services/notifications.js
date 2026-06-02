@@ -433,4 +433,10 @@ async function updateBookingSlackCard(bookingId) {
   }
 }
 
-module.exports = { notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };
+async function sendSlackMessage(opts) {
+  opts = opts || {};
+  const channel = opts.channel || BOOKINGS_CHANNEL;
+  return postToSlack(channel, opts.blocks, opts.text || 'Bounce Man notification');
+}
+
+module.exports = { sendSlackMessage, notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };

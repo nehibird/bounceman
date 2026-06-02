@@ -1034,6 +1034,26 @@ router.post('/vapi', async (req, res) => {
 // Twilio voice_url endpoint — spam filter before Vapi
 // Returns TwiML: hangup for spam, Redirect to Vapi for clean calls
 // ============================================================
+// Inbound SMS -> log to communications + ping Slack (chat UI reads communications)
+router.post('/twilio-sms', (req, res) => {
+  if (!guardTwilio(req, res)) return;
+  const from = req.body.From || '';
+  const body = (req.body.Body || '').trim();
+  try { require('../services/sms').logSms('inbound', from, body, 'received'); } catch (e) { console.error('[SMS IN] log failed:', e.message); }
+  try {
+    const db = getDb();
+    const digits = from.replace(/\D/g, '').slice(-10);
+    let who = from;
+    const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+    const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
+    if (m) who = ((m.first_name || '') + ' ' + (m.last_name || '')).trim() + ' (' + from + ')';
+    require('../services/notifications').sendSlackMessage({
+      text: ':incoming_envelope: *New text from ' + who + '*\n>' + body + '\n<https://bouncemanrentals.com/admin/messages|Open Messages>'
+    });
+  } catch (e) { console.error('[SMS IN] slack failed:', e.message); }
+  res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+});
+
 router.post('/twilio-entry', (req, res) => {
   if (!guardTwilio(req, res)) return;
   const from = (req.body?.From || '').trim();
