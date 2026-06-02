@@ -65,8 +65,8 @@ app.use('/api/', limiter);
 // Body parsing — webhooks need raw body
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use('/event/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
 // View engine

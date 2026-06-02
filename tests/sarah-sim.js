@@ -8,7 +8,8 @@
 const OPENAI_KEY   = process.env.OPENAI_API_KEY   || (() => { throw new Error('OPENAI_API_KEY not set'); })();
 const VAPI_KEY     = process.env.VAPI_API_KEY     || (() => { throw new Error('VAPI_API_KEY not set'); })();
 const ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c162c';
-const SARAH_KEY    = process.env.SARAH_API_KEY    || 'sarah-bm-k3y-2026-s3cur3';
+const SARAH_KEY    = process.env.SARAH_API_KEY;
+if (!SARAH_KEY) throw new Error('SARAH_API_KEY env var is required to run this test');
 const BASE_URL     = process.env.SARAH_BASE_URL   || 'https://bouncemanrentals.com/api/sarah';
 const CALLER_NUM   = '+15005550006'; // fake Twilio test number — prevents real SMS during test runs
 

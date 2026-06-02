@@ -3,7 +3,25 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
+const crypto = require('crypto');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c182c';
+
+// SECURITY: require SARAH_API_KEY (no insecure fallback) — used to auth internal /api/sarah/* calls
+const SARAH_API_KEY = process.env.SARAH_API_KEY;
+if (!SARAH_API_KEY) throw new Error('[SECURITY] SARAH_API_KEY environment variable is required');
+
+// SECURITY: verify Slack request signatures (v0 HMAC) with 5-min replay window
+const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
+function verifySlackSignature(req) {
+  if (!SLACK_SIGNING_SECRET) return false;
+  const sig = req.headers['x-slack-signature'];
+  const ts = req.headers['x-slack-request-timestamp'];
+  if (!sig || !ts) return false;
+  if (Math.abs(Math.floor(Date.now() / 1000) - Number(ts)) > 300) return false;
+  const body = req.rawBody ? req.rawBody.toString('utf8') : '';
+  const mine = 'v0=' + crypto.createHmac('sha256', SLACK_SIGNING_SECRET).update('v0:' + ts + ':' + body).digest('hex');
+  try { return crypto.timingSafeEqual(Buffer.from(mine), Buffer.from(sig)); } catch { return false; }
+}
 
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
@@ -203,6 +221,7 @@ router.post('/stripe', async (req, res) => {
 
 // === SLACK EVENTS (Sarah @mention in #bookings) ===
 router.post('/slack/events', async (req, res) => {
+  if (!verifySlackSignature(req)) return res.status(401).send('invalid signature');
   // Slack URL verification challenge
   if (req.body.type === 'url_verification') {
     return res.json({ challenge: req.body.challenge });
@@ -588,6 +607,7 @@ async function slackDeleteMessage(channel, ts) {
 // Slack interactivity endpoint (button clicks)
 router.post('/slack/interactivity', async (req, res) => {
   try {
+    if (!verifySlackSignature(req)) return res.status(401).send('invalid signature');
     // Slack sends payload as form-urlencoded
     const payload = JSON.parse(req.body.payload);
 
@@ -770,7 +790,7 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
     }
   }
 
-  const SARAH_KEY = process.env.SARAH_API_KEY || 'sarah-bm-k3y-2026-s3cur3';
+  const SARAH_KEY = SARAH_API_KEY;
   const PORT = process.env.PORT || 3200;
   const r = await fetch(`http://localhost:${PORT}/api/sarah/${path}`, {
     method: 'POST',
