@@ -827,6 +827,35 @@ router.get('/calls', (req, res) => {
   res.render('admin/calls', { title: 'Calls - Admin', user: req.user, settings, calls, page: 'calls' });
 });
 
+// SMS chat — threads grouped by number
+router.get('/messages', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const msgs = db.prepare("SELECT * FROM communications WHERE type='sms' ORDER BY sent_at ASC").all();
+  const customers = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+  const nameByDigits = {};
+  customers.forEach(c => { const d = String(c.phone).replace(/\D/g, '').slice(-10); if (d.length === 10) nameByDigits[d] = ((c.first_name || '') + ' ' + (c.last_name || '')).trim(); });
+  const fmtCT = (t) => { try { return new Date(String(t).replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch { return t; } };
+  const tmap = {};
+  msgs.forEach(m => {
+    const num = m.recipient || 'unknown';
+    if (!tmap[num]) tmap[num] = { number: num, name: nameByDigits[num.replace(/\D/g, '').slice(-10)] || '', messages: [], last: m.sent_at };
+    tmap[num].messages.push({ direction: m.direction, body: m.body, when: fmtCT(m.sent_at) });
+    tmap[num].last = m.sent_at;
+  });
+  const threads = Object.values(tmap).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
+  const active = req.query.to || (threads[0] && threads[0].number) || '';
+  const activeThread = threads.find(t => t.number === active) || null;
+  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, page: 'messages' });
+});
+
+router.post('/messages/send', async (req, res) => {
+  const { to, body } = req.body;
+  if (!to || !body) return res.redirect('/admin/messages');
+  try { await require('../services/sms').sendSms(to, body); } catch (e) { console.error('[MSG SEND] failed:', e.message); }
+  res.redirect('/admin/messages?to=' + encodeURIComponent(to));
+});
+
 // === MAINTENANCE LOG ===
 router.get('/maintenance', (req, res) => {
   const db = getDb();
