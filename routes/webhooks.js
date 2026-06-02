@@ -23,6 +23,47 @@ function verifySlackSignature(req) {
   try { return crypto.timingSafeEqual(Buffer.from(mine), Buffer.from(sig)); } catch { return false; }
 }
 
+// SECURITY: validate Twilio request signatures. Monitor-mode by default (logs valid/invalid);
+// set TWILIO_VALIDATE_ENFORCE=true to reject unsigned/invalid requests.
+const TWILIO_VALIDATE_ENFORCE = process.env.TWILIO_VALIDATE_ENFORCE === 'true';
+function guardTwilio(req, res) {
+  let ok = false;
+  try {
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const sig = req.headers['x-twilio-signature'];
+    if (authToken && sig) {
+      const base = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+      ok = require('twilio').validateRequest(authToken, sig, base + req.originalUrl, req.body || {});
+    }
+  } catch (e) { console.error('[TWILIO AUTH] validate error:', e.message); }
+  if (ok) {
+    console.log('[TWILIO AUTH] valid signature on ' + req.originalUrl);
+  } else {
+    console.warn('[TWILIO AUTH] INVALID signature on ' + req.originalUrl + ' (enforce=' + TWILIO_VALIDATE_ENFORCE + ')');
+    if (TWILIO_VALIDATE_ENFORCE) { res.status(403).type('text/xml').send('<Response><Reject/></Response>'); return false; }
+  }
+  return true;
+}
+
+// SECURITY: Vapi webhook auth via X-Vapi-Secret header. Monitor-mode by default;
+// set VAPI_VALIDATE_ENFORCE=true to reject calls without the matching secret.
+const VAPI_VALIDATE_ENFORCE = process.env.VAPI_VALIDATE_ENFORCE === 'true';
+function guardVapi(req, res) {
+  const expected = process.env.VAPI_SERVER_SECRET;
+  const got = req.headers['x-vapi-secret'];
+  let ok = false;
+  if (expected && got) {
+    try { ok = crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected)); } catch { ok = false; }
+  }
+  if (ok) {
+    console.log('[VAPI AUTH] valid secret');
+  } else {
+    console.warn('[VAPI AUTH] INVALID/missing secret (enforce=' + VAPI_VALIDATE_ENFORCE + ')');
+    if (VAPI_VALIDATE_ENFORCE) { res.status(401).json({ error: 'unauthorized' }); return false; }
+  }
+  return true;
+}
+
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
   const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
@@ -805,6 +846,7 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
 // POST /api/webhooks/vapi
 // ============================================================
 router.post('/vapi', async (req, res) => {
+  if (!guardVapi(req, res)) return;
   const msg = req.body?.message;
   if (!msg) return res.json({ received: true });
 
@@ -993,6 +1035,7 @@ router.post('/vapi', async (req, res) => {
 // Returns TwiML: hangup for spam, Redirect to Vapi for clean calls
 // ============================================================
 router.post('/twilio-entry', (req, res) => {
+  if (!guardTwilio(req, res)) return;
   const from = (req.body?.From || '').trim();
   const callId = req.body?.CallSid || '';
   const db = getDb();
@@ -1084,6 +1127,7 @@ router.post('/twilio-entry', (req, res) => {
 // <Dial><Sip> creates a fresh ringing leg that Vapi accepts.
 // ============================================================
 router.post('/twilio-gather', (req, res) => {
+  if (!guardTwilio(req, res)) return;
   const digit = (req.body?.Digits || '').trim();
   res.type('text/xml');
   if (digit === '1') {
