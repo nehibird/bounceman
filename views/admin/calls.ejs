@@ -1,0 +1,73 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1"><i class="fas fa-phone me-2"></i>Calls</h4>
+    <p class="text-muted mb-0">${calls.length} call${calls.length !== 1 ? 's' : ''} — newest first. Tap <strong>Call Back</strong> to ring your cell, then connect to the caller as Bounce Man.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Caller</th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${calls.length > 0 ? calls.map(c => `
+          <tr>
+            <td><small>${c.when || ''}</small></td>
+            <td><strong>${c.caller_number || ''}</strong></td>
+            <td>${c.customer_name ? c.customer_name : '<span class="text-muted">—</span>'}</td>
+            <td>${c.block_reason
+              ? '<span class="badge bg-danger" title="' + c.block_reason + '"><i class="fas fa-ban me-1"></i>Blocked</span>'
+              : '<span class="badge bg-success"><i class="fas fa-phone-alt me-1"></i>' + (c.status || 'received') + '</span>'}</td>
+            <td class="text-end text-nowrap">
+              ${c.caller_number ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + c.caller_number + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}
+            </td>
+          </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No calls logged yet</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+`, scripts: `
+<script>
+(function(){
+  var MY_PHONE_KEY = 'bm_my_phone';
+  document.querySelectorAll('.call-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var customerPhone = btn.getAttribute('data-phone');
+      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
+      myPhone = prompt('Your cell number to call from (we ring you first, then connect the customer):', myPhone);
+      if (!myPhone) return;
+      localStorage.setItem(MY_PHONE_KEY, myPhone);
+      var orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...';
+      fetch('/api/call/dial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: customerPhone, your_phone: myPhone })
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.success) {
+          btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing your phone!';
+          setTimeout(function(){ btn.disabled = false; btn.innerHTML = orig; }, 6000);
+        } else {
+          alert('Error: ' + (d.error || 'Unknown error'));
+          btn.disabled = false; btn.innerHTML = orig;
+        }
+      }).catch(function(){ alert('Request failed'); btn.disabled = false; btn.innerHTML = orig; });
+    });
+  });
+})();
+</script>
+` }) %>

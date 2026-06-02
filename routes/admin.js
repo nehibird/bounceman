@@ -811,6 +811,22 @@ router.post('/communications/:id/bot-resume', (req, res) => {
   res.redirect('/admin/communications');
 });
 
+// Call log + click-to-call back (uses /api/call/dial)
+router.get('/calls', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const calls = db.prepare("SELECT * FROM call_log ORDER BY called_at DESC LIMIT 200").all();
+  const customers = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+  const byPhone = {};
+  customers.forEach(c => { const d = String(c.phone).replace(/\D/g, '').slice(-10); if (d.length === 10) byPhone[d] = ((c.first_name || '') + ' ' + (c.last_name || '')).trim(); });
+  calls.forEach(cl => {
+    const d = String(cl.caller_number || '').replace(/\D/g, '').slice(-10);
+    cl.customer_name = byPhone[d] || '';
+    try { cl.when = new Date(String(cl.called_at).replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch { cl.when = cl.called_at; }
+  });
+  res.render('admin/calls', { title: 'Calls - Admin', user: req.user, settings, calls, page: 'calls' });
+});
+
 // === MAINTENANCE LOG ===
 router.get('/maintenance', (req, res) => {
   const db = getDb();
