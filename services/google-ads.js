@@ -92,7 +92,7 @@ async function adsRequest(query) {
     headers: {
       'Authorization': `Bearer ${token}`,
       'developer-token': DEVELOPER_TOKEN,
-      'login-customer-id': MCC_ID,
+      'login-customer-id': CUSTOMER_ID, // direct access to advertiser; MCC does not manage it
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ query }),
@@ -157,7 +157,7 @@ async function updateCampaignStatus(campaignId, status) {
     headers: {
       'Authorization': `Bearer ${token}`,
       'developer-token': DEVELOPER_TOKEN,
-      'login-customer-id': MCC_ID,
+      'login-customer-id': CUSTOMER_ID, // direct access to advertiser; MCC does not manage it
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -191,7 +191,7 @@ async function updateCampaignBudget(campaignId, budgetDollars) {
     headers: {
       'Authorization': `Bearer ${token}`,
       'developer-token': DEVELOPER_TOKEN,
-      'login-customer-id': MCC_ID,
+      'login-customer-id': CUSTOMER_ID, // direct access to advertiser; MCC does not manage it
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
