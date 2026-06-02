@@ -99,10 +99,10 @@ async function sendDeliveryReminder(phone, eventDate, setupTime) {
  * @param {string} bookingNumber
  */
 async function sendReviewRequest(phone, bookingNumber) {
-  const reviewLink = 'https://bouncemanrentals.com/reviews';
+  const reviewLink = 'https://g.page/r/CX8nHNzK_gVQEBM/review';
   const body =
-    `Thanks for choosing Bounce Man! We'd love your feedback. ` +
-    `Leave us a review: ${reviewLink} — Booking #${bookingNumber}`;
+    `Thanks for choosing Bounce Man! We'd love a quick Google review — ` +
+    `it really helps our local business get found: ${reviewLink} (Reply STOP to opt out)`;
 
   return sendSms(phone, body);
 }

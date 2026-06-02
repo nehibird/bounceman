@@ -200,7 +200,7 @@ We hope everyone had a blast at your event on ${fmtDate(booking.event_date)}! If
 </td></tr></table>
 
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:16px;">
-<a href="https://g.page/r/bouncemanrentals/review" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;">Leave a Review</a>
+<a href="https://g.page/r/CX8nHNzK_gVQEBM/review" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;">Leave a Review</a>
 </td></tr>
 <tr><td style="text-align:center;font-size:13px;color:#999;">Takes 30 seconds — we appreciate it!</td></tr></table>`;
 }
