@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
+const { requireAuth } = require('./auth');
 
 const VAPI_SIP_URI = 'sip:bounceman@sip.vapi.ai';
 
@@ -58,7 +59,7 @@ router.post('/connect', (req, res) => {
 });
 
 // POST /api/call/dial — Click-to-call from admin: Twilio calls your phone, then bridges to customer
-router.post('/dial', async (req, res) => {
+router.post('/dial', requireAuth, async (req, res) => {
   const { to, your_phone } = req.body;
   if (!to || !your_phone) return res.status(400).json({ error: 'Missing to or your_phone' });
 
