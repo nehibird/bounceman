@@ -672,6 +672,10 @@ router.post('/slack/interactivity', async (req, res) => {
     } else if (actionId === 'record_payment_modal') {
       // Future: Open modal for payment recording
       await respondToSlack(response_url, { text: 'Record Payment modal coming soon. For now, use Admin > Bookings > ' + value.booking_number });
+    } else if (actionId === 'toggle_sarah_sms') {
+      const sarahSms = require('../services/sarah-sms');
+      sarahSms.setEnabled(!sarahSms.isEnabled());
+      await respondToSlack(response_url, { replace_original: true, blocks: sarahCardBlocks(sarahSms.isEnabled()), text: 'Sarah text auto-reply is now ' + (sarahSms.isEnabled() ? 'ON' : 'OFF') });
     }
 
   } catch (err) {
@@ -731,29 +735,28 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
     ? issues.join('\n')
     : ':white_check_mark: All clear!';
 
-  const updatedBlocks = originalMessage.blocks.filter(b => b.type !== 'actions');
-  updatedBlocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: ':truck: *On My Way* sent by <@' + user.id + '> at ' + new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT' }]
-  });
-  updatedBlocks.push({
-    type: 'section',
-    text: { type: 'mrkdwn', text: statusText }
-  });
-
+  const sentTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT';
+  const banner = { type: 'section', text: { type: 'mrkdwn', text: ':truck::white_check_mark: *On the way!* Text sent to *' + (first_name || 'the customer') + '* (' + (customerPhone || 'no number') + ') at ' + sentTime + '.' } };
+  const updatedBlocks = [banner, ...originalMessage.blocks.filter(b => b.type !== 'actions'), { type: 'context', elements: [{ type: 'mrkdwn', text: 'Sent by <@' + user.id + '> \u00b7 ' + statusText }] }];
   await respondToSlack(response_url, {
     replace_original: true,
     blocks: updatedBlocks,
-    text: 'On My Way notification sent for ' + booking_number
+    text: ':truck: On My Way sent to ' + (first_name || 'customer')
   });
 }
 
 async function respondToSlack(response_url, payload) {
-  await fetch(response_url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const r = await fetch(response_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) console.error('[SLACK RESPOND] non-ok status', r.status);
+  } catch (e) { console.error('[SLACK RESPOND] failed:', e.message); }
+}
+
+function sarahCardBlocks(enabled) {
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: ':robot_face: *Sarah \u2014 Text Auto-Reply*\n' + (enabled ? ':large_green_circle: *ON* \u2014 Sarah replies to customer texts (answers questions, quotes, checks availability, books + sends deposit links).' : ':red_circle: *OFF* \u2014 incoming texts come to you only; Sarah stays quiet.') } },
+    { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: enabled ? 'Turn Sarah OFF' : 'Turn Sarah ON', emoji: true }, style: enabled ? 'danger' : 'primary', action_id: 'toggle_sarah_sms', value: 'toggle' }] }
+  ];
 }
 
 const BM_NUMBER = '+15803089288'; // BounceMan's Twilio number — appears as SIP FROM on bridge legs

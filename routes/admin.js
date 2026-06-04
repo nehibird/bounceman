@@ -844,8 +844,11 @@ router.get('/messages', (req, res) => {
     tmap[num].last = m.sent_at;
   });
   const threads = Object.values(tmap).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
+  const fmtPhone = (n) => { const d = String(n || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : (n || ''); };
+  threads.forEach(t => { t.display = fmtPhone(t.number); });
   const active = req.query.to || (threads[0] && threads[0].number) || '';
   const activeThread = threads.find(t => t.number === active) || null;
+  if (activeThread) activeThread.display = fmtPhone(activeThread.number);
   const sarahSms = require('../services/sarah-sms');
   res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, page: 'messages', sarahEnabled: sarahSms.isEnabled(), threadPaused: activeThread ? sarahSms.isThreadPaused(activeThread.number) : false });
 });
@@ -872,6 +875,11 @@ router.post('/messages/pause', (req, res) => {
 router.post('/messages/resume', (req, res) => {
   try { require('../services/sarah-sms').resumeThread(req.body.to); } catch (e) { /* */ }
   res.redirect('/admin/messages?to=' + encodeURIComponent(req.body.to || ''));
+});
+
+router.post('/messages/delete', (req, res) => {
+  try { getDb().prepare("DELETE FROM communications WHERE type='sms' AND recipient = ?").run(req.body.to); } catch (e) { console.error('[MSG DELETE]', e.message); }
+  res.redirect('/admin/messages');
 });
 
 // === MAINTENANCE LOG ===
