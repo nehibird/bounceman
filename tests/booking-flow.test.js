@@ -64,6 +64,27 @@ async function goToReview(page, date) {
   await page.waitForURL(/\/booking\/details/, { timeout: 8000 });
 }
 
+// Sign-before-pay: on the rental-agreement page, draw a signature, agree, and sign —
+// which forwards to the deposit checkout (Stripe). Assumes we're already on /contract/.
+async function signAgreementAndContinue(page) {
+  await page.waitForURL(/\/contract\//, { timeout: 15000 });
+  const sig = page.locator('#sigCanvas');
+  await sig.scrollIntoViewIfNeeded();
+  const box = await sig.boundingBox();
+  await page.mouse.move(box.x + 30, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 150, box.y + 60, { steps: 12 });
+  await page.mouse.move(box.x + 300, box.y + 150, { steps: 12 });
+  await page.mouse.move(box.x + 420, box.y + 90, { steps: 12 });
+  await page.mouse.up();
+  await page.locator('#agreeCheck').check();
+  await expect(page.locator('#signBtn')).toBeEnabled({ timeout: 5000 });
+  await Promise.all([
+    page.waitForURL(/checkout\.stripe\.com/, { timeout: 30000 }),
+    page.click('#signBtn'),
+  ]);
+}
+
 // ─── Step 1 ───────────────────────────────────────────────────────────────────
 test('Step 1 — date picker page loads', async ({ page }) => {
   await page.goto(`${BASE}/booking`);
@@ -105,10 +126,13 @@ test('Full booking flow — Stripe test card 4242', async ({ page }) => {
   await page.waitForURL(/\/booking\/review/, { timeout: 10000 });
 
   await page.locator('#agreeTerms').check();
+  // Review now forwards to the rental-agreement sign page (sign-before-pay).
   await Promise.all([
-    page.waitForURL(/checkout\.stripe\.com/, { timeout: 15000 }),
+    page.waitForURL(/\/contract\//, { timeout: 15000 }),
     page.click('#reviewForm button[type="submit"]'),
   ]);
+
+  await signAgreementAndContinue(page);
 
   // Wait for Stripe card iframe to be ready
   await page.waitForTimeout(3000);
@@ -117,7 +141,7 @@ test('Full booking flow — Stripe test card 4242', async ({ page }) => {
   const payBtn = page.locator('button[type="submit"]').last();
   await payBtn.scrollIntoViewIfNeeded();
   await Promise.all([
-    page.waitForURL(/localhost:3201\/booking\/confirmation/, { timeout: 30000 }),
+    page.waitForURL(/\/booking\/confirmation/, { timeout: 30000 }),
     payBtn.click(),
   ]);
 
@@ -138,10 +162,8 @@ test('Stripe declined card 4000000000000002 shows error', async ({ page }) => {
   await page.waitForURL(/\/booking\/review/, { timeout: 10000 });
 
   await page.locator('#agreeTerms').check();
-  await Promise.all([
-    page.waitForURL(/checkout\.stripe\.com/, { timeout: 15000 }),
-    page.click('#reviewForm button[type="submit"]'),
-  ]);
+  await page.click('#reviewForm button[type="submit"]');
+  await signAgreementAndContinue(page);
 
   await page.waitForTimeout(3000);
   await fillStripeCard(page, '4000000000000002');

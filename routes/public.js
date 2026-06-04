@@ -362,10 +362,15 @@ router.post('/contract/:id/sign', (req, res) => {
     } catch (e) { console.error('[CONTRACT] Slack card update failed:', e.message); }
   }, 0);
 
+  // Sign-before-pay: once signed, send them to the deposit checkout if it isn't
+  // paid yet; otherwise (e.g. signing later via the email link) show the signed page.
+  const bk = db.prepare('SELECT booking_number, deposit_paid FROM bookings WHERE id = ?').get(contract.booking_id);
+  const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
+
   if (req.headers['content-type']?.includes('json')) {
-    return res.json({ success: true, message: 'Contract signed successfully!' });
+    return res.json({ success: true, message: 'Contract signed successfully!', redirect: next });
   }
-  res.redirect('/contract/' + req.params.id);
+  res.redirect(next);
 });
 
 // ===== CITY LANDING PAGES =====

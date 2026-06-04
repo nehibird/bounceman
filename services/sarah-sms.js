@@ -53,26 +53,18 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'createAndSendLink',
-      description: 'Create the booking and text the customer a Stripe deposit link. Only call once you have the date, equipment, address/zip, and (for water units) wet-or-dry.',
+      name: 'sendCheckoutLink',
+      description: "Text the customer a pre-filled checkout link to the website, where they enter their own info + address and pay the deposit. Call this once they've picked a unit + date and (for water units) wet or dry. You do NOT need their name, address, email, or zip — the website collects all of that and calculates delivery + tax.",
       parameters: {
         type: 'object',
         properties: {
-          event_date: { type: 'string' },
+          event_date: { type: 'string', description: "The event date in the customer's words, e.g. 'July fourth'." },
           equipment_ids: { type: 'array', items: { type: 'string' }, description: 'Equipment IDs from checkAvailability results. Never guess IDs.' },
           duration: { type: 'string', enum: ['4hr', 'daily', 'overnight'] },
-          first_name: { type: 'string' },
-          last_name: { type: 'string' },
-          email: { type: 'string' },
-          delivery_address: { type: 'string' },
-          delivery_city: { type: 'string' },
-          delivery_zip: { type: 'string' },
-          power_available: { type: 'boolean' },
           wet: { type: 'boolean', description: 'True if a water unit set up wet.' },
-          discount_code: { type: 'string', description: "Use 'CHURCH' for church/VBS/ministry events." },
-          event_start_time: { type: 'string', description: '24hr HH:MM, default 09:00.' }
+          event_start_time: { type: 'string', description: 'Half-day only: 24hr HH:MM to pick morning (09:00) vs afternoon (15:00).' }
         },
-        required: ['event_date', 'equipment_ids', 'duration', 'first_name']
+        required: ['event_date', 'equipment_ids', 'duration']
       }
     }
   },
@@ -87,11 +79,11 @@ const TOOLS = [
 ];
 
 async function execTool(name, args, customerPhone) {
-  const map = { checkAvailability: 'check-availability', createAndSendLink: 'create-and-send-link', lookupBooking: 'lookup-booking' };
+  const map = { checkAvailability: 'check-availability', sendCheckoutLink: 'send-checkout-link', lookupBooking: 'lookup-booking' };
   const path = map[name];
   if (!path) return { error: 'unknown tool' };
   const body = Object.assign({}, args);
-  if (name === 'createAndSendLink') body.phone = customerPhone;
+  if (name === 'sendCheckoutLink') body.phone = customerPhone;
   if (name === 'lookupBooking' && !body.booking_number) body.phone = customerPhone;
   try {
     const r = await fetch(`http://localhost:${PORT}/api/sarah/${path}`, {
@@ -106,7 +98,7 @@ async function execTool(name, args, customerPhone) {
 function buildSystemPrompt(equipment, customerPhone) {
   const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const cat = equipment.map(e => `- ${e.name} (ID: ${e.id}): $${e.price_4hr} half day / $${e.price_daily} full day / $${e.price_overnight} overnight${e.price_wet != null ? ` — wet +$${e.price_wet}` : ''} [${e.category}]`).join('\n');
-  return `You are Sarah, the friendly booking agent for Bounce Man Rentals in Tonkawa, Oklahoma — now helping a customer over TEXT MESSAGE. You handle everything: availability, quotes, bookings, deposit links, and policy questions.
+  return `You are Sarah, the friendly booking agent for Bounce Man Rentals in Tonkawa, Oklahoma — now helping a customer over TEXT MESSAGE. You handle availability, quotes, checkout links, and policy questions.
 
 The customer's phone number is ${customerPhone} (already on file — never ask for it). Today is ${today}.
 
@@ -132,15 +124,15 @@ We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. I
 - $35: Medford, Kaw City, Morrison, some Ponca City zips. $100: Enid, Stillwater, Wichita area. Outside: we'll confirm the fee.
 - We deliver, set up, anchor, and pick up. Needs a standard outlet within 100ft or add our generator ($75).
 
-## Church discount: for church/VBS/youth/ministry events, apply discount_code "CHURCH" in createAndSendLink and tell them you've applied it.
+## Church discount: for church/VBS/youth/ministry events, tell them to enter code CHURCH at checkout for their discount.
 
-## Policies: Deposit 50% due at booking (Stripe link), balance on delivery. Cancel 48hr+ = full refund; under 48hr = deposit forfeited. Weather call-off = full reschedule or refund.
+## Policies: Deposit 50% due at checkout, balance on delivery day. They sign the rental agreement and pay the deposit on the website — once the deposit's in, the date is locked. Cancel 48hr+ = full refund; under 48hr = deposit forfeited. Weather call-off = full reschedule or refund. Answer deposit questions plainly and confidently.
 
 ## Booking workflow
-1. When ANY date is mentioned, call checkAvailability immediately with their words (don't confirm first). Add zip when you have it for the full total.
-2. Tell them what's open + starting price. Once they pick a unit, get their zip for the full total + deposit.
-3. For a water unit, ask wet or dry ("Wet is $20 more"). Get delivery address, and confirm a power outlet within 100ft.
-4. When you have date + equipment + address/zip + (wet?), call createAndSendLink. It texts them a deposit link. Tell them to check their texts for the link.
+1. When ANY date is mentioned, call checkAvailability immediately with their words (don't confirm first).
+2. Tell them what's open + the price. For a water unit, ask wet or dry ("Wet is $20 more").
+3. Once they've picked a unit + date (+ wet?), call sendCheckoutLink. It texts them a pre-filled checkout link. You do NOT need their name, address, email, or zip — the website collects all of that and calculates delivery + tax.
+4. Then tell them to check their texts: they fill out their info, sign the rental agreement, and pay the deposit to lock it in. Once the deposit's in, their date is reserved.
 5. Use equipment IDs from tool results only — never invent IDs.
 
 ## Handoff: If they ask for a person/owner/Nehemiah, or you can't help, say "I'll have Nehemiah reach out to you shortly!" — he sees every text. Never make promises he can't keep.`;

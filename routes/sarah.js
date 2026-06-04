@@ -575,6 +575,77 @@ router.post('/create-and-send-link', async (req, res) => {
   }
 });
 
+// POST /api/sarah/send-checkout-link
+// Texts the customer a PRE-FILLED website checkout link (unit + date/time + wet
+// already selected). The customer fills in their own info/address and pays the
+// deposit on the site, which calculates delivery + tax. No booking is created here.
+router.post('/send-checkout-link', async (req, res) => {
+  const db = getDb();
+  const { equipment_ids, duration, wet, event_date, event_start_time, phone } = req.body;
+
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+  if (!equipment_ids || !equipment_ids.length) {
+    return res.json({ success: false, error: 'I need to know which unit before I can send a link.' });
+  }
+
+  const eventDateISO = resolveDate(event_date);
+  if (!eventDateISO || !/^\d{4}-\d{2}-\d{2}$/.test(eventDateISO)) {
+    return res.json({ success: false, error: `I couldn't lock in that date — could you say it like "July fourth"?` });
+  }
+
+  // Sundays are full-day or overnight only — bump a half-day request up to full day.
+  const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
+  let dur = duration || 'daily';
+  if (dow === 0 && dur === '4hr') dur = 'daily';
+
+  // Time window by duration (matches the website + overnight 9->9 model).
+  let startTime, endTime;
+  if (dur === 'overnight') { startTime = '09:00'; endTime = '23:59'; }
+  else if (dur === 'daily') { startTime = '09:00'; endTime = '19:00'; }
+  else { // 4hr — morning vs afternoon from requested start hour
+    const sh = event_start_time ? parseInt(String(event_start_time).match(/\d{1,2}/)?.[0] || '9', 10) : 9;
+    if (sh >= 12) { startTime = '15:00'; endTime = '19:00'; }
+    else { startTime = '09:00'; endTime = '13:00'; }
+  }
+
+  // Validate units + figure out which are wet.
+  const validIds = [];
+  const wetIds = [];
+  const names = [];
+  for (const id of equipment_ids) {
+    const eq = db.prepare("SELECT * FROM equipment WHERE id = ? AND status = 'available'").get(id);
+    if (!eq) continue;
+    validIds.push(eq.id);
+    names.push(eq.name);
+    if (wet === true && isWetCapable(eq)) wetIds.push(eq.id);
+  }
+  if (!validIds.length) {
+    return res.json({ success: false, error: "I couldn't find that unit — want me to recheck what's available?" });
+  }
+
+  const publicBase = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
+  let q = `items=${validIds.join(',')}&event_date=${eventDateISO}&rental_duration=${dur}&event_start_time=${startTime}&event_end_time=${endTime}`;
+  if (wetIds.length) q += `&wet_items=${wetIds.join(',')}`;
+  const link = `${publicBase}/booking/details?${q}`;
+
+  const nameList = names.join(', ');
+  const smsBody = `Here's your checkout link for ${nameList} on ${fmtDate(eventDateISO)}! Fill out your info and pay the deposit to lock it in — once the deposit's in, your date is reserved:\n\n${link}\n\nQuestions? Call (580) 308-9288`;
+  try {
+    await smsService.sendSms(phone, smsBody);
+    console.log('[SARAH] checkout link sent to', phone, '->', link);
+  } catch (smsErr) {
+    console.error('[SARAH] checkout link SMS failed:', smsErr.message);
+    return res.status(500).json({ success: false, error: `Couldn't send the text: ${smsErr.message}` });
+  }
+
+  return res.json({
+    success: true,
+    link,
+    sms_sent: true,
+    message: `Sent! I just texted you a checkout link for ${nameList}. Fill out your info and pay the deposit and you're locked in — once the deposit's in, your date is reserved.`
+  });
+});
+
 // POST /api/sarah/check-payment
 // Vapi calls this to see if customer completed the Stripe payment
 router.post('/check-payment', async (req, res) => {

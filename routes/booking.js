@@ -457,6 +457,14 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${data.first_name} ${data.last_name}` }), req.ip
     );
 
+    // Sign-before-pay: send them to sign the rental agreement first; the contract
+    // page forwards to the deposit checkout once it's signed. (Falls through to the
+    // direct Stripe flow below only when there's no contract template.)
+    if (contractId) {
+      console.log('[BOOKING] Created', bookingNumber, '-> sign agreement', contractId);
+      return res.redirect(303, `/contract/${contractId}`);
+    }
+
     // Create Stripe checkout session for deposit
     const depositAmount = parseFloat(data.deposit_amount);
     const itemNames = equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', ');
@@ -610,6 +618,51 @@ router.post('/lookup', (req, res) => {
 // ============================================
 // PAY BALANCE ROUTES
 // ============================================
+
+// Pay the DEPOSIT (used by the sign-before-pay flow: after signing the rental
+// agreement, the customer lands here to pay the deposit via Stripe).
+router.get('/pay-deposit/:bookingNumber', async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const booking = db.prepare(`
+    SELECT b.*, c.email FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE b.booking_number = ?
+  `).get(req.params.bookingNumber);
+
+  if (!booking) {
+    return res.status(404).render('error', { title: 'Not Found', message: 'Booking not found', status: 404 });
+  }
+  // Deposit already paid — go straight to the confirmation page.
+  if (booking.deposit_paid) {
+    return res.redirect(`/booking/confirmation?booking_number=${booking.booking_number}`);
+  }
+
+  const depositAmount = parseFloat(booking.deposit_amount);
+  const itemNames = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id).map(i => i.item_name).join(', ');
+  const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+
+  try {
+    const session = await stripeService.createCheckoutSession({
+      bookingId: booking.id,
+      bookingNumber: booking.booking_number,
+      depositAmount,
+      customerEmail: booking.email,
+      description: `${itemNames} — Deposit for ${booking.booking_number}`,
+      successUrl: `${baseUrl}/booking/confirmation?booking_number=${booking.booking_number}`,
+      cancelUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}`
+    });
+    db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
+      .run(`stripe_session:${session.id}`, booking.id);
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error('[PAY DEPOSIT] Stripe error:', err.message);
+    // Stripe failed but the booking + signed agreement exist — show confirmation.
+    return res.render('public/booking/confirmation', {
+      title: 'Booking Confirmed! - Bounce Man',
+      settings, bookingNumber: booking.booking_number, bookingId: booking.id, page: 'booking'
+    });
+  }
+});
 
 // Pay remaining balance - shows amount and redirects to Stripe
 router.get('/pay/:bookingNumber', async (req, res) => {
