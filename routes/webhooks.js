@@ -848,6 +848,7 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
   const pathMap = {
     checkAvailability: 'check-availability',
     createAndSendLink: 'create-and-send-link',
+    sendCheckoutLink: 'send-checkout-link',
     lookupBooking: 'lookup-booking'
   };
   const path = pathMap[name];
@@ -869,7 +870,7 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
     return callerPhone;
   };
 
-  if (name === 'createAndSendLink') {
+  if (name === 'createAndSendLink' || name === 'sendCheckoutLink') {
     if (!args.phone || args.phone.includes('{{') || args.phone === BM_NUMBER) {
       args.phone = getRealPhone();
     }
