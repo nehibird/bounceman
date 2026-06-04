@@ -5,6 +5,9 @@
     <h4 class="mb-1"><i class="fas fa-comments me-2"></i>Messages</h4>
     <p class="text-muted mb-0">${threads.length} conversation${threads.length !== 1 ? 's' : ''} — text customers from the Bounce Man number</p>
   </div>
+  <form method="POST" action="/admin/sarah-sms/toggle" class="m-0">
+    <button class="btn btn-sm ${sarahEnabled ? 'btn-success' : 'btn-outline-secondary'}" type="submit" title="Master switch for Sarah auto-replying to all texts"><i class="fas fa-robot me-1"></i>Sarah auto-reply: ${sarahEnabled ? 'ON' : 'OFF'}</button>
+  </form>
 </div>
 
 <div class="row g-3">
@@ -27,7 +30,10 @@
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <div><strong>${activeThread.name || activeThread.number}</strong> ${activeThread.name ? '<small class="text-muted ms-1">' + activeThread.number + '</small>' : ''}</div>
-        <button class="btn btn-sm btn-outline-success call-btn" data-phone="${activeThread.number}"><i class="fas fa-phone-alt me-1"></i>Call</button>
+        <div class="d-flex gap-2">
+          ${sarahEnabled ? `<form method="POST" action="/admin/messages/${threadPaused ? 'resume' : 'pause'}" class="m-0"><input type="hidden" name="to" value="${activeThread.number}"><button class="btn btn-sm ${threadPaused ? 'btn-outline-secondary' : 'btn-success'}" type="submit" title="${threadPaused ? 'Sarah is paused here — click to let her reply' : 'Sarah is auto-replying — click to take over'}"><i class="fas fa-robot me-1"></i>${threadPaused ? 'Sarah off' : 'Sarah on'}</button></form>` : ''}
+          <button class="btn btn-sm btn-outline-success call-btn" data-phone="${activeThread.number}"><i class="fas fa-phone-alt me-1"></i>Call</button>
+        </div>
       </div>
       <div class="card-body" style="max-height:56vh;overflow:auto;background:#f1f3f5" id="convo">
         ${activeThread.messages.map(m => `

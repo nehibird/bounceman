@@ -1051,6 +1051,7 @@ router.post('/twilio-sms', (req, res) => {
       text: ':incoming_envelope: *New text from ' + who + '*\n>' + body + '\n<https://bouncemanrentals.com/admin/messages|Open Messages>'
     });
   } catch (e) { console.error('[SMS IN] slack failed:', e.message); }
+  try { require('../services/sarah-sms').handleInboundSms(from, body).catch(e => console.error('[SARAH-SMS]', e.message)); } catch (e) { console.error('[SARAH-SMS] trigger:', e.message); }
   res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 });
 

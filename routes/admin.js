@@ -846,14 +846,32 @@ router.get('/messages', (req, res) => {
   const threads = Object.values(tmap).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
   const active = req.query.to || (threads[0] && threads[0].number) || '';
   const activeThread = threads.find(t => t.number === active) || null;
-  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, page: 'messages' });
+  const sarahSms = require('../services/sarah-sms');
+  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, page: 'messages', sarahEnabled: sarahSms.isEnabled(), threadPaused: activeThread ? sarahSms.isThreadPaused(activeThread.number) : false });
 });
 
 router.post('/messages/send', async (req, res) => {
   const { to, body } = req.body;
   if (!to || !body) return res.redirect('/admin/messages');
   try { await require('../services/sms').sendSms(to, body); } catch (e) { console.error('[MSG SEND] failed:', e.message); }
+  try { require('../services/sarah-sms').pauseThread(to); } catch (e) { /* */ }
   res.redirect('/admin/messages?to=' + encodeURIComponent(to));
+});
+
+router.post('/sarah-sms/toggle', (req, res) => {
+  const sarahSms = require('../services/sarah-sms');
+  sarahSms.setEnabled(!sarahSms.isEnabled());
+  res.redirect(req.get('referer') || '/admin/messages');
+});
+
+router.post('/messages/pause', (req, res) => {
+  try { require('../services/sarah-sms').pauseThread(req.body.to); } catch (e) { /* */ }
+  res.redirect('/admin/messages?to=' + encodeURIComponent(req.body.to || ''));
+});
+
+router.post('/messages/resume', (req, res) => {
+  try { require('../services/sarah-sms').resumeThread(req.body.to); } catch (e) { /* */ }
+  res.redirect('/admin/messages?to=' + encodeURIComponent(req.body.to || ''));
 });
 
 // === MAINTENANCE LOG ===
