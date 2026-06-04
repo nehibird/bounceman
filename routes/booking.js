@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -54,7 +54,7 @@ router.get('/select', (req, res) => {
     FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
   `).all();
 
-  const bookedCounts = getBookedEquipmentIds(db, eventDate, eventStartTime, eventEndTime);
+  const bookedCounts = getBookedEquipmentIds(db, eventDate, eventStartTime, eventEndTime, rentalDuration);
   equipment.forEach(item => {
     const booked = bookedCounts.get(item.id) || 0;
     const qty = item.quantity || 1;
@@ -98,7 +98,7 @@ router.get('/select', (req, res) => {
 // Check availability for multiple items on a date
 router.post('/check-date', (req, res) => {
   const db = getDb();
-  const { date, equipment_ids, start_time, end_time } = req.body;
+  const { date, equipment_ids, start_time, end_time, duration } = req.body;
 
   if (!date || !equipment_ids?.length) {
     return res.json({ available: false, message: 'Date and equipment required' });
@@ -108,17 +108,22 @@ router.post('/check-date', (req, res) => {
   const blocked = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id IS NULL').get(date);
   if (blocked) return res.json({ available: false, message: blocked.reason || 'Date unavailable' });
 
+  // Overnight occupies all of day 1; any Sunday booking is whole-day.
+  const win = availabilityWindow(date, duration, start_time, end_time);
+  const extraHoldDate = overnightExtraHoldDate(date, duration); // Sunday, for a Saturday overnight
+  const spilloverIds = getSaturdayOvernightSpillover(db, date); // when `date` itself is a Sunday
+
   // Check each item (time-overlap aware)
   const unavailable = [];
   for (const eqId of equipment_ids) {
     let bookedCount;
-    if (start_time && end_time) {
+    if (win.start && win.end) {
       bookedCount = db.prepare(`
         SELECT COUNT(*) as cnt FROM bookings b
         JOIN booking_items bi ON bi.booking_id = b.id
         WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
           AND b.event_start_time < ? AND b.event_end_time > ?
-      `).get(date, eqId, end_time, start_time);
+      `).get(date, eqId, win.end, win.start);
     } else {
       bookedCount = db.prepare(`
         SELECT COUNT(*) as cnt FROM bookings b
@@ -127,7 +132,22 @@ router.post('/check-date', (req, res) => {
       `).get(date, eqId);
     }
     const eqInfo = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(eqId);
-    if (bookedCount && bookedCount.cnt >= (eqInfo?.quantity || 1)) unavailable.push(eqInfo?.name || 'Item');
+    let isUnavailable = (bookedCount && bookedCount.cnt >= (eqInfo?.quantity || 1));
+
+    // Saturday overnight also needs the following Sunday free.
+    if (!isUnavailable && extraHoldDate) {
+      const sunConflict = db.prepare(`
+        SELECT COUNT(*) as cnt FROM bookings b
+        JOIN booking_items bi ON bi.booking_id = b.id
+        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+      `).get(extraHoldDate, eqId);
+      const sunBlocked = db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(extraHoldDate, eqId);
+      if ((sunConflict && sunConflict.cnt >= (eqInfo?.quantity || 1)) || sunBlocked) isUnavailable = true;
+    }
+    // Booking a Sunday tied up by a prior Saturday overnight of this unit.
+    if (!isUnavailable && spilloverIds.has(eqId)) isUnavailable = true;
+
+    if (isUnavailable) unavailable.push(eqInfo?.name || 'Item');
 
     const blockedItem = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id = ?').get(date, eqId);
     if (blockedItem) {
@@ -308,18 +328,43 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
     data.discount_amount = recalcDiscountAmount;
 
-    // Availability guard: prevent double-booking (race condition protection)
+    // Normalize stored overnight window: 9 AM drop-off, held through the night (23:59 of
+    // day 1). The "9 AM next-day pickup" is display-only and does not block day 2.
+    if (submitDuration === 'overnight') {
+      data.event_start_time = '09:00';
+      data.event_end_time = '23:59';
+    }
+
+    // Availability guard: prevent double-booking (race condition protection).
+    // availabilityWindow() makes overnight occupy all of day 1, and treats any Sunday
+    // booking as whole-day (no half-day splitting on Sundays).
     const submitDate = data.event_date;
-    const submitStartTime = data.event_start_time;
-    const submitEndTime = data.event_end_time;
+    const checkWin = availabilityWindow(submitDate, submitDuration, data.event_start_time, data.event_end_time);
+    const extraHoldDate = overnightExtraHoldDate(submitDate, submitDuration); // Sunday, for a Saturday overnight
+    const spilloverIds = getSaturdayOvernightSpillover(db, submitDate); // when submitDate itself is a Sunday
     for (const eqId of submitItems) {
-      const conflict = db.prepare(`
+      let conflict = db.prepare(`
         SELECT b.booking_number FROM bookings b
         JOIN booking_items bi ON bi.booking_id = b.id
         WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
           AND b.event_start_time < ? AND b.event_end_time > ?
         LIMIT 1
-      `).get(submitDate, eqId, submitEndTime, submitStartTime);
+      `).get(submitDate, eqId, checkWin.end, checkWin.start);
+
+      // A Saturday overnight also needs the following Sunday free (delivered Sat, picked up Mon).
+      if (!conflict && extraHoldDate) {
+        conflict = db.prepare(`
+          SELECT b.booking_number FROM bookings b
+          JOIN booking_items bi ON bi.booking_id = b.id
+          WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+          LIMIT 1
+        `).get(extraHoldDate, eqId)
+          || db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(extraHoldDate, eqId);
+      }
+
+      // Booking a Sunday that's tied up by a prior Saturday overnight of this unit.
+      if (!conflict && spilloverIds.has(eqId)) conflict = { booking_number: 'overnight-hold' };
+
       if (conflict) {
         const eq = db.prepare('SELECT name FROM equipment WHERE id = ?').get(eqId);
         return res.status(409).render('error', {

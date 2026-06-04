@@ -97,7 +97,7 @@
             </div>
             <div class="review-row">
               <span class="label">Time</span>
-              <span class="value">${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_end_time)}${rental_duration === 'overnight' ? ' (next-day pickup)' : ''}</span>
+              <span class="value">${rental_duration === 'overnight' ? '9:00 AM - 9:00 AM (next-day pickup)' : (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_start_time) + ' - ' + (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_end_time)}</span>
             </div>
             <div class="review-row">
               <span class="label">Event Type</span>

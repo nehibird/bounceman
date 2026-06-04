@@ -105,7 +105,7 @@ ${rows}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
 <tr><td style="font-size:11px;letter-spacing:1px;color:#999;font-weight:bold;padding-bottom:8px;">EVENT DETAILS</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${fmtDate(booking.event_date)}</td></tr>
-<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Time:</strong> ${booking.event_start_time} - ${booking.event_end_time}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Time:</strong> ${((items||[]).some(function(i){return i.duration_type==='overnight';}) || (booking.event_end_time||'').slice(0,5)==='23:59') ? '9:00 AM - 9:00 AM (next-day pickup)' : booking.event_start_time + ' - ' + booking.event_end_time}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Address:</strong> ${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</td></tr>
 </table>
 

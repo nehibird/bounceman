@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -311,7 +311,9 @@ router.post('/create-and-send-link', async (req, res) => {
     };
     let startTime, endTime;
     if (dur === 'daily') { startTime = '09:00'; endTime = '19:00'; }
-    else if (dur === 'overnight') { startTime = '15:00'; endTime = '10:00'; }
+    // Overnight = full day + the night: 9 AM drop-off, held through the night (stored 23:59
+    // of day 1 so it occupies all of day 1); "9 AM next-day pickup" is display-only.
+    else if (dur === 'overnight') { startTime = '09:00'; endTime = '23:59'; }
     else { // 4hr — morning vs afternoon from requested start time
       const reqStart = to24h(event_start_time);
       const startH = reqStart ? parseInt(reqStart.split(':')[0]) : 9;
@@ -320,10 +322,10 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     // -- Booking guards (Sarah previously bypassed every calendar rule the website enforces) --
-    // 1. No Sundays
+    // 1. Sundays are open for full-day and overnight only — never half day.
     const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
-    if (dow === 0) {
-      return res.json({ success: false, error: `We're closed on Sundays — we run Monday through Saturday. Want to pick another day?` });
+    if (dow === 0 && dur === '4hr') {
+      return res.json({ success: false, error: `On Sundays we only do full-day or overnight rentals — no half days. Want me to set it up as a full day instead?` });
     }
     // 2. Season: April (3) through November (10) only
     const monthIdx = parseInt(eventDateISO.slice(5, 7), 10) - 1;
@@ -376,16 +378,24 @@ router.post('/create-and-send-link', async (req, res) => {
       return `${String(h).padStart(2,'0')}:${min}:${sec}`;
     };
     let checkStart, checkEnd;
-    if (duration === 'daily') {
+    if (dur === 'overnight') {
+      // Overnight occupies all of day 1.
+      checkStart = '09:00:00'; checkEnd = '23:59:59';
+    } else if (dow === 0) {
+      // Sunday: whole-day occupancy (no half-day splitting on Sundays).
+      checkStart = '00:00:00'; checkEnd = '23:59:59';
+    } else if (dur === 'daily') {
       checkStart = '09:00:00'; checkEnd = '19:00:00';
-    } else if (duration === 'overnight') {
-      checkStart = '15:00:00'; checkEnd = '23:59:59';
     } else { // 4hr — determine morning vs afternoon from event_start_time
       const normStart = norm24(event_start_time) || '09:00:00';
       const startH = parseInt(normStart.split(':')[0]);
       if (startH >= 12) { checkStart = '15:00:00'; checkEnd = '19:00:00'; }
       else               { checkStart = '09:00:00'; checkEnd = '13:00:00'; }
     }
+    // A Saturday overnight also needs the following Sunday free (delivered Sat, picked up Mon).
+    const sarahExtraHold = overnightExtraHoldDate(eventDateISO, dur);
+    // Booking a Sunday that's tied up by a prior Saturday overnight of a unit.
+    const sarahSpillover = getSaturdayOvernightSpillover(db, eventDateISO);
     for (const item of lineItems) {
       const { cnt } = db.prepare(`
         SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
@@ -393,7 +403,17 @@ router.post('/create-and-send-link', async (req, res) => {
           AND b.event_start_time < ? AND b.event_end_time > ?
       `).get(eventDateISO, item.equipment_id, checkEnd, checkStart);
       const qty = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id)?.quantity || 1;
-      if (cnt >= qty) {
+      let blocked = cnt >= qty;
+      if (!blocked && sarahSpillover.has(item.equipment_id)) blocked = true;
+      if (!blocked && sarahExtraHold) {
+        const sun = db.prepare(`
+          SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
+          WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
+        `).get(sarahExtraHold, item.equipment_id);
+        const sunBlocked = db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(sarahExtraHold, item.equipment_id);
+        if ((sun && sun.cnt >= qty) || sunBlocked) blocked = true;
+      }
+      if (blocked) {
         return res.json({
           success: false,
           error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(eventDateISO)}. Want to try a different slot or date?`

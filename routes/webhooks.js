@@ -435,6 +435,7 @@ Return a JSON object with these fields:
 Rules:
 - "all day" = daily duration, times 09:00-19:00
 - "half day" = 4hr duration
+- "overnight" = overnight duration, times 09:00-23:59 (full day of use plus the night; 9 AM next-day pickup)
 - Match equipment names loosely (e.g., "Blue Crush slide" = Blue Crush Slide)
 - If equipment not specified, leave equipment_ids empty and ask in confirmation_message
 - If date unclear, use the next occurrence of the mentioned day

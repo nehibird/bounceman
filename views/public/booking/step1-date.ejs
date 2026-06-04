@@ -98,7 +98,7 @@
               <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durOvernight">
                   <span class="dur-label">Overnight</span>
-                  <span class="dur-sub">Next day</span>
+                  <span class="dur-sub">Day + night</span>
                 </div>
               </div>
             </div>
@@ -119,8 +119,8 @@
               </div>
             </div>
 
-            <div id="saturdayNote" style="display:none;margin-top:12px;background:#e8f5e9;border-radius:10px;padding:12px;font-size:14px;color:#2e7d32">
-              <i class="fas fa-gift me-1"></i> <strong>Bonus!</strong> We don't pick up on Sundays, so your unit stays through the weekend and we'll pick up Monday. Enjoy the extra day!
+            <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
+              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day or overnight</strong> only.
             </div>
 
             <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
@@ -164,18 +164,29 @@
     disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
     onChange: function(sel, dateStr) {
       document.getElementById('eventDateInput').value = dateStr;
-      checkSaturdayOvernight();
+      applyDayRules();
     }
   });
 
-  function checkSaturdayOvernight() {
+  // Sundays are open for full-day and overnight only — never half day.
+  function applyDayRules() {
     var dateStr = document.getElementById('eventDateInput').value;
-    var dur = document.getElementById('hiddenDuration').value;
-    var note = document.getElementById('saturdayNote');
-    if (dateStr && dur === 'overnight') {
-      var d = new Date(dateStr + 'T12:00:00');
-      note.style.display = d.getDay() === 6 ? '' : 'none';
+    var note = document.getElementById('sundayNote');
+    var halfBtn = document.getElementById('durHalfDay');
+    var isSunday = dateStr ? (new Date(dateStr + 'T12:00:00').getDay() === 0) : false;
+    if (isSunday) {
+      halfBtn.classList.add('disabled');
+      halfBtn.style.opacity = '0.4';
+      halfBtn.style.pointerEvents = 'none';
+      note.style.display = '';
+      // If half day was already selected, bump up to full day.
+      if (document.getElementById('hiddenDuration').value === '4hr') {
+        selectDuration('fullday', document.getElementById('durFullDay'));
+      }
     } else {
+      halfBtn.classList.remove('disabled');
+      halfBtn.style.opacity = '';
+      halfBtn.style.pointerEvents = '';
       note.style.display = 'none';
     }
   }
@@ -196,10 +207,13 @@
     } else if (type === 'overnight') {
       halfChoice.style.display = 'none';
       document.getElementById('hiddenDuration').value = 'overnight';
-      document.getElementById('hiddenStart').value = '15:00';
-      document.getElementById('hiddenEnd').value = '10:00';
+      // Overnight = full day of use + the night. 9 AM drop-off, 9 AM next-day pickup.
+      // Stored end is 23:59 so the unit is held for all of day 1 by the existing
+      // time-overlap availability checks; the "next-day pickup" is display-only.
+      document.getElementById('hiddenStart').value = '09:00';
+      document.getElementById('hiddenEnd').value = '23:59';
     }
-    checkSaturdayOvernight();
+    applyDayRules();
   }
 
   function selectHalf(time, el) {

@@ -177,6 +177,15 @@ router.post('/bookings/create', (req, res) => {
   const total = parseFloat(data.total || 0);
   const depositAmount = Math.round(total * 0.5 * 100) / 100;
 
+  // Normalize overnight window so an admin-created overnight occupies all of day 1
+  // (9 AM drop-off, held through the night; 9 AM next-day pickup is display-only).
+  const adminEquipIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? [data.equipment_ids] : []);
+  const adminHasOvernight = adminEquipIds.some(id => (data['duration_' + id] || 'daily') === 'overnight');
+  if (adminHasOvernight) {
+    data.event_start_time = '09:00';
+    data.event_end_time = '23:59';
+  }
+
   db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
     event_start_time, event_end_time, event_type, surface_type,
     delivery_address, delivery_city, delivery_state, delivery_zip,

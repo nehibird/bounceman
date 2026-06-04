@@ -122,8 +122,8 @@ Blue Crush and Tropical Combo run wet or dry (wet +$20, includes water hookup). 
 We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. If asked, say what we do have.
 
 ## Availability rules
-- Open April–November (closed Dec–March). Monday–Saturday only, NO Sundays.
-- Half day = morning (9am-1pm) or afternoon (3pm-7pm). Full day = 9am-7pm. Overnight = 3pm drop-off to 10am next day (not Saturdays).
+- Open April–November (closed Dec–March). Open 7 days including Sundays. Sundays are full-day or overnight ONLY — no half days on Sundays.
+- Half day = morning (9am-1pm) or afternoon (3pm-7pm). Full day = 9am-7pm. Overnight = full day of use PLUS the night: 9am drop-off, 9am next-day pickup. Saturday overnights are fine (delivered Saturday, picked up Monday).
 - Need 24hr notice. Less than 24hr = rush booking Nehemiah must approve: take their info and say he'll text them right back. Book up to 6 months out.
 - Two Blue Crush Slides exist (two customers can each rent one same day).
 
