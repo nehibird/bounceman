@@ -1051,6 +1051,7 @@ router.post('/twilio-sms', (req, res) => {
     const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
     if (m) who = ((m.first_name || '') + ' ' + (m.last_name || '')).trim() + ' (' + from + ')';
     require('../services/notifications').sendSlackMessage({
+      channel: process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30',
       text: ':incoming_envelope: *New text from ' + who + '*\n>' + body + '\n<https://bouncemanrentals.com/admin/messages|Open Messages>'
     });
   } catch (e) { console.error('[SMS IN] slack failed:', e.message); }
