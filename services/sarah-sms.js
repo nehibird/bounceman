@@ -27,7 +27,7 @@ function setSetting(key, value) {
     getDb().prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')").run(key, String(value));
   } catch (e) { console.error('[SARAH-SMS] setSetting:', e.message); }
 }
-function isEnabled() { return getSetting('sarah_sms_enabled', '0') === '1'; }
+function isEnabled() { return getSetting('sarah_sms_enabled', '1') === '1'; } // default ON; toggle is to turn OFF
 function setEnabled(on) { setSetting('sarah_sms_enabled', on ? '1' : '0'); }
 function isThreadPaused(number) { return getSetting('sms_pause:' + normalize(number), '0') === '1'; }
 function pauseThread(number) { setSetting('sms_pause:' + normalize(number), '1'); }
@@ -155,9 +155,10 @@ async function handleInboundSms(from, body) {
     if (isThreadPaused(number)) return;
     const clean = (body || '').trim().toLowerCase().replace(/[^a-z]/g, '');
     if (STOP_WORDS.includes(clean)) return;
+    console.log('[SARAH-SMS] processing inbound from', number, '-', (body || '').slice(0, 50));
 
     const db = getDb();
-    const rows = db.prepare("SELECT direction, body FROM communications WHERE type='sms' AND recipient = ? ORDER BY sent_at DESC LIMIT 16").all(number).reverse();
+    const rows = db.prepare("SELECT direction, body FROM communications WHERE type='sms' AND recipient = ? AND sent_at >= datetime('now','-2 days') ORDER BY sent_at DESC LIMIT 16").all(number).reverse();
     const equipment = db.prepare("SELECT id, name, price_4hr, price_daily, price_overnight, price_wet, category FROM equipment WHERE status='available' AND category NOT IN ('add_ons','add-ons') ORDER BY sort_order").all();
 
     const messages = [{ role: 'system', content: buildSystemPrompt(equipment, number) }];
