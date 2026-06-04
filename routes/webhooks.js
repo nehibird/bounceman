@@ -676,6 +676,8 @@ router.post('/slack/interactivity', async (req, res) => {
       const sarahSms = require('../services/sarah-sms');
       sarahSms.setEnabled(!sarahSms.isEnabled());
       await respondToSlack(response_url, { replace_original: true, blocks: sarahCardBlocks(sarahSms.isEnabled()), text: 'Sarah text auto-reply is now ' + (sarahSms.isEnabled() ? 'ON' : 'OFF') });
+    } else if (actionId === 'call_back') {
+      await handleCallBack(value, user, response_url, message);
     }
 
   } catch (err) {
@@ -742,6 +744,49 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
     replace_original: true,
     blocks: updatedBlocks,
     text: ':truck: On My Way sent to ' + (first_name || 'customer')
+  });
+}
+
+// Maps a Slack user ID -> the cell phone we should ring when they click "Call Back".
+// Whoever clicks gets called on THEIR phone first, then bridged to the customer
+// (caller ID shows the Bounce Man business line, so personal cells stay private).
+const CALLBACK_AGENTS = {
+  'U0AQ2GH9XFD': '+15806281765', // Nehemiah Reese
+  'U0AQ2GGNY0K': '+19403678241'  // Brana (The Bounce Babe)
+};
+const CALLBACK_DEFAULT = '+15806281765'; // fallback -> Nehemiah
+
+async function handleCallBack(value, user, response_url, originalMessage) {
+  const customerNumber = value.caller;
+  const agentNumber = CALLBACK_AGENTS[user.id] || CALLBACK_DEFAULT;
+
+  if (!customerNumber || !/^\+1[2-9]\d{9}$/.test(customerNumber)) {
+    await respondToSlack(response_url, { replace_original: false, response_type: 'ephemeral', text: ':x: No valid customer number on this call to call back.' });
+    return;
+  }
+
+  try {
+    const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    // Leg 1: call the agent's cell. When they answer, the TwiML dials the customer
+    // (caller ID = Bounce Man business line so the customer recognizes it and the
+    //  agent's personal number is never exposed).
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to your Bounce Man customer now.</Say><Dial callerId="${BM_NUMBER}" timeout="30">${customerNumber}</Dial></Response>`;
+    await twilio.calls.create({ to: agentNumber, from: BM_NUMBER, twiml });
+    console.log('[CALL BACK] Ringing agent', agentNumber, '(slack', user.id + ') then bridging to', customerNumber);
+  } catch (err) {
+    console.error('[CALL BACK] error:', err.message);
+    await respondToSlack(response_url, { replace_original: false, response_type: 'ephemeral', text: ':x: Call back failed: ' + err.message });
+    return;
+  }
+
+  const agentLabel = user.id in CALLBACK_AGENTS ? '<@' + user.id + '>' : '<@' + user.id + '> (default → Nehemiah)';
+  const ringTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT';
+  const banner = { type: 'section', text: { type: 'mrkdwn', text: ':telephone_receiver::arrow_right: *Calling back ' + customerNumber + '* — ringing ' + agentLabel + ' first, then connecting the customer. (' + ringTime + ')' } };
+  const updatedBlocks = [banner, ...originalMessage.blocks.filter(b => b.type !== 'actions')];
+  await respondToSlack(response_url, {
+    replace_original: true,
+    blocks: updatedBlocks,
+    text: ':telephone_receiver: Calling back ' + customerNumber
   });
 }
 
@@ -1006,11 +1051,36 @@ router.post('/vapi', async (req, res) => {
 
     const slackText = `${headerLine}\n${metaLine}\n${recordingLine}${summarySection}${transcriptSection}`;
 
+    // Build a block card so we can attach a "Call Back" button. Slack section text
+    // caps at 3000 chars, so split the body across blocks safely.
+    const isCallable = /^\+1[2-9]\d{9}$/.test(callerNumber);
+    const blocks = [
+      { type: 'section', text: { type: 'mrkdwn', text: `${headerLine}\n${metaLine}\n${recordingLine}` } }
+    ];
+    if (summary) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Summary:*\n${summary}`.slice(0, 2999) } });
+    if (transcript) {
+      const MAX = 2700;
+      const t = transcript.length > MAX ? transcript.slice(0, MAX) + '\n…[truncated]' : transcript;
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Transcript:*\n\`\`\`${t}\`\`\`` } });
+    }
+    if (isCallable) {
+      blocks.push({
+        type: 'actions',
+        elements: [{
+          type: 'button',
+          text: { type: 'plain_text', text: '📞 Call Back', emoji: true },
+          style: 'primary',
+          action_id: 'call_back',
+          value: JSON.stringify({ caller: callerNumber })
+        }]
+      });
+    }
+
     try {
       await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: PHONE_CALLS_CHANNEL, text: slackText, unfurl_links: false })
+        body: JSON.stringify({ channel: PHONE_CALLS_CHANNEL, text: slackText, blocks, unfurl_links: false })
       });
       console.log('[VAPI] End-of-call report posted to Slack for', callerNumber);
     } catch (err) {
