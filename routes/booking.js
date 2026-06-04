@@ -440,6 +440,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         const bookingForEmail = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         const itemsForEmail = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
         emailService.sendBookingConfirmation(bookingForEmail, { first_name: data.first_name, last_name: data.last_name, email: data.email }, itemsForEmail, contractId)
+          .then(() => db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(bookingId))
           .catch(err => console.error('[EMAIL ERROR]', err.message));
       }
       res.render('public/booking/confirmation', {
