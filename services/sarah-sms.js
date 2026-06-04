@@ -120,8 +120,8 @@ We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. I
 - Two Blue Crush Slides exist (two customers can each rent one same day).
 
 ## Delivery
-- Free: Tonkawa, Ponca City, Blackwell, Newkirk, most of Kay County.
-- $35: Medford, Kaw City, Morrison, some Ponca City zips. $100: Enid, Stillwater, Wichita area. Outside: we'll confirm the fee.
+- Free: Tonkawa, Ponca City, Blackwell, most of Kay County.
+- $35: Medford, Newkirk, Kaw City, Morrison, some Ponca City zips. $100: Enid, Stillwater, Wichita area. Outside: we'll confirm the fee.
 - We deliver, set up, anchor, and pick up. Needs a standard outlet within 100ft or add our generator ($75).
 
 ## Church discount: for church/VBS/youth/ministry events, tell them to enter code CHURCH at checkout for their discount.
