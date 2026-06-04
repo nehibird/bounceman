@@ -146,7 +146,7 @@
   var HALFDAY_MORNING_END = '${settings.halfday_morning_end || '13:00'}';
   var HALFDAY_AFTERNOON_START = '${settings.halfday_afternoon_start || '15:00'}';
   var HALFDAY_AFTERNOON_END = '${settings.halfday_afternoon_end || '19:00'}';
-  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || '0'}'.split(',').map(Number).filter(function(n) { return !isNaN(n); });
+  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ''}'.split(',').map(Number).filter(function(n) { return !isNaN(n); });
 
   function fmt12(t) {
     var parts = t.split(':'); var h = parseInt(parts[0]); var m = parts[1] || '00';
