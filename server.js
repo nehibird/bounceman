@@ -139,7 +139,14 @@ app.listen(PORT, '0.0.0.0', () => {
     }, ms);
     console.log(`[BounceMan] Delivery reminders scheduled for ${target.toISOString()}`);
   }
-  scheduleReminders();
+  // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
+  // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,
+  // SMS, or Slack notifications to real customers.
+  if (process.env.DISABLE_SCHEDULER === 'true') {
+    console.log('[BounceMan] Scheduler DISABLED on this instance (DISABLE_SCHEDULER=true) — no reminders/emails/SMS sent from here');
+  } else {
+    scheduleReminders();
+  }
 });
 
 module.exports = app;
