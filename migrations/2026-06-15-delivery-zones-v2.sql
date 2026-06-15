@@ -12,8 +12,8 @@ BEGIN IMMEDIATE;
 DELETE FROM delivery_zones;
 
 INSERT INTO delivery_zones (id, name, zip_codes, delivery_fee, active) VALUES
-  (lower(hex(randomblob(16))), 'Kay County + Local', '74653,74631,74601,74602,74604,74632,74644,74646,74647,74641,74643,74630', 0, 1),
-  (lower(hex(randomblob(16))), 'Zone 2 ($60)',       '74636,74633,74651,73077,67140,73766,73757,74640,73738', 60, 1),
+  (lower(hex(randomblob(16))), 'Kay County + Local', '74653,74631,74601,74602,74604,74632,74644,74646,74647,74641,74643,74630,74636,74651', 0, 1),
+  (lower(hex(randomblob(16))), 'Zone 2 ($60)',       '74633,73077,67140,73766,73757,74640,73738', 60, 1),
   (lower(hex(randomblob(16))), 'Zone 3 ($95)',       '73730,73759,73073,73061,73736,67022,74637,74652,73753,67005,73761,73733,74650,73701,73703,67051,74075', 95, 1);
 
 COMMIT;
