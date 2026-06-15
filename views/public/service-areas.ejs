@@ -6,7 +6,7 @@
     <div class="row align-items-center">
       <div class="col-lg-7">
         <h1>Service <span>Areas</span></h1>
-        <p>FREE delivery to Ponca City, Tonkawa, Kaw City, Deer Creek, Braman, and surrounding areas!</p>
+        <p>FREE delivery across all of Kay County — Tonkawa, Ponca City, Blackwell, Newkirk, Kaw City, Braman &amp; more!</p>
       </div>
       <div class="col-lg-5 d-none d-lg-block text-center">
         <div style="font-size:140px;opacity:0.3">📍</div>
@@ -48,22 +48,29 @@
 
     ${(function() {
       var zipToTown = {
-        // Local (FREE)
-        '74653':'Tonkawa','74601':'Ponca City','74604':'Ponca City','74630':'Braman','74631':'Kaw City',
-        '74632':'Blackwell','74636':'Deer Creek','74643':'Lamont','74644':'Marland','74646':'Red Rock','74650':'Ponca City',
-        // Nearby ($35)
-        '73738':'Fairmont','73759':'Medford','74640':'Shidler','74647':'Newkirk','74651':'Perry',
-        // Extended ($100) - Oklahoma
-        '73056':'Lucien','73061':'Marshall','73073':'Orlando','73077':'Pawnee',
-        '73701':'Enid','73703':'Enid','73705':'Enid','73720':'Aline','73727':'Bison','73730':'Burlington',
-        '73733':'Carmen','73735':'Carrier','73736':'Cashion','73739':'Cleo Springs','73743':'Drummond',
-        '73749':'Fairview','73753':'Garber','73754':'Goltry','73757':'Helena','73758':'Hillsdale',
-        '73761':'Hunter','73766':'Kremlin','73771':'Lahoma','73773':'Meno',
-        '74032':'Glencoe','74045':'Jennings','74058':'Morrison','74075':'Stillwater',
-        '74633':'Billings','74637':'Burbank','74641':'Nardin','74652':'Ralston',
-        // Extended ($100) - Kansas
-        '67005':'Arkansas City, KS','67018':'Burden, KS','67022':'Cambridge, KS','67038':'Dexter, KS',
-        '67051':'Geuda Springs, KS','67102':'South Haven, KS','67140':'South Haven, KS','67156':'Wellington, KS'
+        // FREE — all of Kay County + immediate neighbors
+        '74653':'Tonkawa','74601':'Ponca City','74602':'Ponca City','74604':'Ponca City',
+        '74631':'Kaw City','74632':'Blackwell','74630':'Braman',
+        '74644':'Nardin','74646':'Newkirk','74647':'Newkirk','74641':'Nardin',
+        '74643':'Lamont',
+        // $60 flat — ~30-45 min out
+        '74633':'Burbank','74636':'Deer Creek','74651':'Marland','73077':'Perry',
+        '67140':'Caldwell, KS','73766':'Pond Creek','73757':'Lucien','74640':'Hunter','73738':'Garber',
+        // $95 flat — ~45-70 min out
+        '73730':'Covington','73759':'Medford','73073':'Mulhall','73061':'Marshall',
+        '73736':'Fairmont','67022':'Clearwater, KS','74637':'Fairfax','74652':'Shidler',
+        '73753':'Kremlin','67005':'Arkansas City, KS','73761':'Nash','73733':'Douglas',
+        '74650':'Ralston','73701':'Enid','73703':'Enid','67051':'Geuda Springs, KS',
+        '74075':'Stillwater',
+        // Legacy / extended - Oklahoma
+        '73056':'Lucien','73705':'Enid','73720':'Aline','73727':'Bison',
+        '73735':'Carrier','73739':'Cleo Springs','73743':'Drummond',
+        '73749':'Fairview','73754':'Goltry','73758':'Hillsdale',
+        '73771':'Lahoma','73773':'Meno',
+        '74032':'Glencoe','74045':'Jennings','74058':'Morrison',
+        // Legacy / extended - Kansas
+        '67018':'Burden, KS','67038':'Dexter, KS',
+        '67102':'South Haven, KS','67156':'Wellington, KS'
       };
       function zipsToTowns(zips) {
         if (!zips) return 'Contact for details';
@@ -87,9 +94,9 @@
           <i class="fas fa-map-location-dot" style="font-size:48px;color:var(--bm-orange);margin-bottom:15px"></i>
           <h4 style="color:var(--bm-blue);font-weight:700">Outside Our Listed Zones?</h4>
           <p style="color:#666;max-width:500px;margin:10px auto 20px;font-size:16px">
-            Do not see your area listed? We may still be able to deliver to you! We offer custom delivery quotes for locations outside our standard zones. Just reach out with your address and event details.
+            No problem — we deliver well beyond Kay County. Enter your ZIP on the booking page for an instant delivery quote on the spot. No need to call or wait.
           </p>
-          <a href="/contact" class="btn btn-book-now btn-lg"><i class="fas fa-envelope me-2"></i>Request a Custom Quote</a>
+          <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Get an Instant Quote</a>
         </div>
       </div>
     </div>
@@ -128,7 +135,7 @@
                 </div>
                 <h5 style="color:var(--bm-blue);font-weight:700;margin:0">Free Delivery Across Kay County</h5>
               </div>
-              <p style="color:#666;margin:0">Live in Ponca City, Tonkawa, Kaw City, Braman, Deer Creek, or Lamont? Delivery, setup, and pickup are completely free. Book with confidence knowing there are no hidden delivery costs.</p>
+              <p style="color:#666;margin:0">Live in Ponca City, Tonkawa, Blackwell, Newkirk, Kaw City, Braman, Nardin (or just-over-the-line Lamont)? Delivery, setup, and pickup are completely free. Book with confidence knowing there are no hidden delivery costs.</p>
             </div>
           </div>
           <div class="col-md-6">

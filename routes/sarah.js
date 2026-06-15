@@ -42,6 +42,7 @@ router.use((req, res, next) => {
 // POST /api/sarah/check-availability
 // Vapi calls this when customer asks about a date
 router.post('/check-availability', async (req, res) => {
+  try {
   const db = getDb();
   const { date: rawDate, zip } = req.body;
 
@@ -170,6 +171,10 @@ router.post('/check-availability', async (req, res) => {
     unavailable: unavailable.map(e => e.name),
     message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons: ${addonListing}.${deliveryNote}${unavailable.length > 0 ? ` Already booked that day: ${unavailable.map(e => e.name).join(', ')}.` : ''}`
   });
+  } catch (err) {
+    console.error('[sarah] check-availability error:', err);
+    return res.status(200).json({ result: 'Sorry, I had trouble checking that — let me try again.', available: false });
+  }
 });
 
 // POST /api/sarah/list-equipment
@@ -216,6 +221,7 @@ router.post('/list-equipment', (req, res) => {
 // POST /api/sarah/get-quote
 // Vapi calls this to calculate a total before sending payment link
 router.post('/get-quote', async (req, res) => {
+  try {
   const db = getDb();
   const settings = getSettings();
   const { equipment_ids, duration, delivery_zip, wet } = req.body;
@@ -260,6 +266,10 @@ router.post('/get-quote', async (req, res) => {
     duration: dur,
     message: `Here's your quote: ${itemList}. Subtotal $${subtotal.toFixed(2)}, delivery $${delivery_fee.toFixed(2)}, tax $${tax_amount.toFixed(2)}, total $${total.toFixed(2)}. To reserve, the deposit is $${deposit_amount.toFixed(2)} and the remaining $${(total - deposit_amount).toFixed(2)} is due on delivery day.`
   });
+  } catch (err) {
+    console.error('[sarah] get-quote error:', err);
+    return res.status(200).json({ error: 'quote_failed', message: 'Sorry, I had trouble building that quote.' });
+  }
 });
 
 // POST /api/sarah/create-and-send-link
