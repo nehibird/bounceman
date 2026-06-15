@@ -834,7 +834,12 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
         return { result: 'TRANSFER_FAILED: could not locate the live call to transfer' };
       }
       const twilio = require("twilio")(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to Nehemiah now.</Say><Dial callerId="${BM_NUMBER}" timeout="25">${TRANSFER_TARGET}</Dial></Response>`;
+      const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+      // Screened transfer: <Number url> plays a press-any-key whisper so voicemail
+      // (which can't press a key) is never bridged to the customer; the Dial action
+      // routes to a graceful callback message if Nehemiah doesn't pick up. No leading
+      // <Say> here — Vapi already spoke the request-start line (avoids double announce).
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${BASE}/api/webhooks/transfer-result?parent=${callSid}" method="POST" callerId="${BM_NUMBER}" timeout="25"><Number url="${BASE}/api/webhooks/transfer-screen?parent=${callSid}" method="POST">${TRANSFER_TARGET}</Number></Dial></Response>`;
       await twilio.calls(callSid).update({ twiml });
       console.log('[TRANSFER] Redirected Twilio call', callSid, 'to', TRANSFER_TARGET, 'for caller', realPhone);
       return { result: 'TRANSFER_INITIATED to ' + TRANSFER_TARGET };
@@ -1248,6 +1253,58 @@ router.post('/twilio-gather', (req, res) => {
   } else {
     console.log('[TWILIO GATHER] Digit=' + (digit || 'none') + ' -> hanging up');
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+  }
+});
+
+// ============================================================
+// Screened owner-transfer routes (used by the transferCall redirect)
+// ============================================================
+// Parent CallSids the owner actively ACCEPTED (pressed a key), so transfer-result
+// can distinguish a real connect from voicemail/no-answer. In-memory; the whole
+// transfer lifecycle is well under a minute.
+const transferAccepted = new Map(); // parentCallSid -> ms timestamp
+function _pruneTransfers() {
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  for (const [k, t] of transferAccepted) { if (t < cutoff) transferAccepted.delete(k); }
+}
+
+// Whisper played to the owner's phone when it answers. A human presses a key to
+// accept; voicemail can't, so it falls through to <Hangup/> and is never bridged.
+router.post('/transfer-screen', (req, res) => {
+  if (!guardTwilio(req, res)) return;
+  const parent = (req.query.parent || '').trim();
+  const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" timeout="8" action="${BASE}/api/webhooks/transfer-accept?parent=${encodeURIComponent(parent)}" method="POST"><Say>Bounce Man customer on the line. Press any key to connect.</Say></Gather><Hangup/></Response>`);
+});
+
+// Owner pressed a key -> mark accepted and bridge (the whisper sub-flow completes
+// without a hangup, so Twilio connects the two parties).
+router.post('/transfer-accept', (req, res) => {
+  if (!guardTwilio(req, res)) return;
+  const parent = (req.query.parent || '').trim();
+  if (parent) { _pruneTransfers(); transferAccepted.set(parent, Date.now()); }
+  console.log('[TRANSFER] Owner accepted transfer for parent', parent);
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting now.</Say></Response>`);
+});
+
+// Fires when the <Dial> to the owner ends. If he never accepted (no answer, busy,
+// or voicemail), tell the customer he'll call back instead of dropping them silently
+// or dumping them into his personal voicemail.
+router.post('/transfer-result', (req, res) => {
+  if (!guardTwilio(req, res)) return;
+  const parent = (req.query.parent || '').trim();
+  const status = (req.body && req.body.DialCallStatus) || '';
+  const accepted = !!parent && transferAccepted.has(parent);
+  if (parent) transferAccepted.delete(parent);
+  res.type('text/xml');
+  if (accepted) {
+    console.log('[TRANSFER] Result for', parent, 'status=' + status, '-> was connected, ending');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+  } else {
+    console.log('[TRANSFER] Result for', parent, 'status=' + status, '-> owner unavailable, callback message');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Nehemiah is not available to take your call right now. He will call you back as soon as he can. Thanks for calling Bounce Man. Goodbye.</Say><Hangup/></Response>`);
   }
 });
 
