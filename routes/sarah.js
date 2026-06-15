@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -41,7 +41,7 @@ router.use((req, res, next) => {
 
 // POST /api/sarah/check-availability
 // Vapi calls this when customer asks about a date
-router.post('/check-availability', (req, res) => {
+router.post('/check-availability', async (req, res) => {
   const db = getDb();
   const { date: rawDate, zip } = req.body;
 
@@ -100,7 +100,7 @@ router.post('/check-availability', (req, res) => {
   const settings = getSettings();
   let delivery_fee = 0, delivery_zone = null, sample_total = null, sample_deposit = null;
   if (zip) {
-    const zoneResult = getDeliveryFee(db, zip);
+    const zoneResult = await resolveDeliveryFee(db, zip);
     delivery_fee = zoneResult.fee;
     delivery_zone = zoneResult.zone;
     // Sample total using first available item (full day) so Sarah can quote a ballpark
@@ -124,7 +124,7 @@ router.post('/check-availability', (req, res) => {
   const addonListing = addons.map(a => `${a.name}: $${a.price_4hr} half day, $${a.price_daily} full day`).join('. ');
 
   const deliveryNote = zip
-    ? (delivery_zone ? ` Delivery to your area: ${delivery_fee === 0 ? 'FREE' : `$${delivery_fee}`} (${delivery_zone}).` : ' Your zip is outside our standard zones — we may still deliver, fee to be confirmed.')
+    ? ` Delivery to your area: ${delivery_fee === 0 ? 'FREE' : `$${delivery_fee}`}${delivery_zone ? ` (${delivery_zone})` : ''}.`
     : '';
 
   const equipmentWithIds = available.map(e => ({
@@ -215,7 +215,7 @@ router.post('/list-equipment', (req, res) => {
 
 // POST /api/sarah/get-quote
 // Vapi calls this to calculate a total before sending payment link
-router.post('/get-quote', (req, res) => {
+router.post('/get-quote', async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const { equipment_ids, duration, delivery_zip, wet } = req.body;
@@ -242,7 +242,7 @@ router.post('/get-quote', (req, res) => {
     return res.status(400).json({ error: 'No valid equipment found for those IDs' });
   }
 
-  const { fee: delivery_fee, zone: zone_name } = getDeliveryFee(db, delivery_zip);
+  const { fee: delivery_fee, zone: zone_name } = await resolveDeliveryFee(db, delivery_zip);
   const { taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee);
 
   const itemList = lineItems.map(i => `${i.name} ($${i.price})`).join(', ');
@@ -421,7 +421,7 @@ router.post('/create-and-send-link', async (req, res) => {
       }
     }
 
-    const { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
+    const { fee: delivery_fee } = await resolveDeliveryFee(db, delivery_zip);
 
     // Apply discount code if provided
     let discount_amount = 0;
@@ -713,7 +713,7 @@ router.post('/check-payment', async (req, res) => {
 
 // POST /api/sarah/delivery-zones
 // Vapi calls this when customer asks about delivery area / fees
-router.post('/delivery-zones', (req, res) => {
+router.post('/delivery-zones', async (req, res) => {
   const db = getDb();
   const { zip } = req.body;
 
@@ -731,9 +731,12 @@ router.post('/delivery-zones', (req, res) => {
         message: `Delivery to ${zip} is ${fee}! That falls in our ${match.name} zone.`
       });
     }
+    const r = await resolveDeliveryFee(db, zip);
     return res.json({
       found: false,
-      message: `Zip code ${zip} is outside our standard delivery zones. We can still deliver — there may be an extra fee. Let me get your info and the owner will confirm the delivery fee.`
+      fee: r.fee,
+      zone: r.zone,
+      message: `Delivery to ${zip} is $${r.fee}.`
     });
   }
 

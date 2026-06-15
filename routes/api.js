@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
+const { resolveDeliveryFee } = require('../lib/helpers');
 const { requireAuth } = require('./auth');
 const cookieParser = require('cookie-parser');
 const { v4: uuid } = require('uuid');
@@ -40,13 +41,12 @@ router.get('/equipment', (req, res) => {
 });
 
 // Public API: Delivery fee lookup
-router.get('/delivery-fee', (req, res) => {
+router.get('/delivery-fee', async (req, res) => {
   const db = getDb();
   const { zip } = req.query;
-  if (!zip) return res.json({ fee: 0, zone: 'unknown' });
-
-  const zone = db.prepare("SELECT * FROM delivery_zones WHERE active = 1 AND (',' || zip_codes || ',') LIKE ?").get(`%,${zip},%`);
-  res.json({ fee: zone ? zone.delivery_fee : null, zone: zone?.name || 'Outside service area', found: !!zone });
+  if (!zip) return res.json({ fee: 0, zone: 'unknown', found: false });
+  const r = await resolveDeliveryFee(db, zip);
+  res.json({ fee: r.fee, zone: r.zone, found: true, miles: r.miles, city: r.city, state: r.state });
 });
 
 // Public API: Validate discount code

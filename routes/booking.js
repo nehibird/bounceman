@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -168,16 +168,10 @@ router.get('/check-zip', async (req, res) => {
   const db = getDb();
   const zip = req.query.zip;
   if (!zip) return res.json({ valid: false, message: 'ZIP code required' });
-  const { fee, zone } = getDeliveryFee(db, zip);
-  if (fee >= 0) {
-    return res.json({ valid: true, fee, zone, message: fee === 0 ? 'Free delivery!' : 'Delivery fee: $' + fee.toFixed(0) });
-  }
-  // Out of zone — calculate by distance
-  const dist = await getDistanceFee(zip);
-  if (!dist) {
-    return res.json({ valid: false, fee: 0, message: 'We couldn\'t verify that ZIP code. Please call (580) 308-9288.' });
-  }
-  res.json({ valid: true, fee: dist.fee, zone: 'Extended (' + dist.miles + ' mi)', message: dist.city + ', ' + dist.state + ' is ' + dist.miles + ' miles away. Delivery fee: $' + dist.fee + ' ($1.50/mile round trip)' });
+  const r = await resolveDeliveryFee(db, zip);
+  if (r.fee === 0) return res.json({ valid: true, fee: 0, zone: r.zone, message: 'Free delivery!' });
+  if (r.miles) return res.json({ valid: true, fee: r.fee, zone: r.zone, message: `${r.city}, ${r.state} is ${r.miles} miles away. Delivery fee: $${r.fee}.` });
+  return res.json({ valid: true, fee: r.fee, zone: r.zone, message: 'Delivery fee: $' + r.fee.toFixed(0) });
 });
 
 // Step 3 — customer details & delivery
@@ -229,11 +223,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     subtotal += unitPrice;
   }
 
-  let { fee: delivery_fee } = getDeliveryFee(db, delivery_zip);
-  if (delivery_fee < 0) {
-    const dist = await getDistanceFee(delivery_zip);
-    delivery_fee = dist ? dist.fee : 100;
-  }
+  const { fee: delivery_fee } = await resolveDeliveryFee(db, delivery_zip);
 
   let discount_amount = 0;
   if (discount_code) {
@@ -299,11 +289,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       const basePrice = getPrice(eq, submitDuration);
       recalcSubtotal += isWet ? basePrice + getWetUpcharge(eq) : basePrice;
     }
-    let { fee: recalcDeliveryFee } = getDeliveryFee(db, data.delivery_zip);
-    if (recalcDeliveryFee < 0) {
-      const dist = await getDistanceFee(data.delivery_zip);
-      recalcDeliveryFee = dist ? dist.fee : 100;
-    }
+    const { fee: recalcDeliveryFee } = await resolveDeliveryFee(db, data.delivery_zip);
     let recalcDiscountAmount = 0;
     if (data.discount_code) {
       const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(data.discount_code.toUpperCase());
