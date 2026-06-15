@@ -48,29 +48,18 @@
 
     ${(function() {
       var zipToTown = {
-        // FREE — all of Kay County + immediate neighbors
-        '74653':'Tonkawa','74601':'Ponca City','74602':'Ponca City','74604':'Ponca City',
-        '74631':'Kaw City','74632':'Blackwell','74630':'Braman',
-        '74644':'Nardin','74646':'Newkirk','74647':'Newkirk','74641':'Nardin',
-        '74643':'Lamont',
-        // $60 flat — ~30-45 min out
-        '74633':'Burbank','74636':'Deer Creek','74651':'Marland','73077':'Perry',
-        '67140':'Caldwell, KS','73766':'Pond Creek','73757':'Lucien','74640':'Hunter','73738':'Garber',
-        // $95 flat — ~45-70 min out
-        '73730':'Covington','73759':'Medford','73073':'Mulhall','73061':'Marshall',
-        '73736':'Fairmont','67022':'Clearwater, KS','74637':'Fairfax','74652':'Shidler',
-        '73753':'Kremlin','67005':'Arkansas City, KS','73761':'Nash','73733':'Douglas',
-        '74650':'Ralston','73701':'Enid','73703':'Enid','67051':'Geuda Springs, KS',
-        '74075':'Stillwater',
-        // Legacy / extended - Oklahoma
-        '73056':'Lucien','73705':'Enid','73720':'Aline','73727':'Bison',
-        '73735':'Carrier','73739':'Cleo Springs','73743':'Drummond',
-        '73749':'Fairview','73754':'Goltry','73758':'Hillsdale',
-        '73771':'Lahoma','73773':'Meno',
-        '74032':'Glencoe','74045':'Jennings','74058':'Morrison',
-        // Legacy / extended - Kansas
-        '67018':'Burden, KS','67038':'Dexter, KS',
-        '67102':'South Haven, KS','67156':'Wellington, KS'
+        // FREE — Kay County + neighbors (<=25 mi)
+        '74653':'Tonkawa','74631':'Blackwell','74601':'Ponca City','74602':'Ponca City','74604':'Ponca City',
+        '74632':'Braman','74644':'Marland','74646':'Nardin','74647':'Newkirk','74641':'Kaw City',
+        '74643':'Lamont','74630':'Billings','74636':'Deer Creek','74651':'Red Rock',
+        // $60 zone
+        '74633':'Burbank','73077':'Perry','67140':'South Haven, KS','73766':'Pond Creek',
+        '73757':'Lucien','74640':'Hunter','73738':'Garber',
+        // $95 zone
+        '73730':'Covington','73759':'Medford','73073':'Orlando','73061':'Morrison','73736':'Fairmont',
+        '67022':'Caldwell, KS','74637':'Fairfax','74652':'Shidler','73753':'Kremlin','67005':'Arkansas City, KS',
+        '73761':'Nash','73733':'Douglas','74650':'Ralston','73701':'Enid','73703':'Enid',
+        '67051':'Geuda Springs, KS','74075':'Stillwater'
       };
       function zipsToTowns(zips) {
         if (!zips) return 'Contact for details';
