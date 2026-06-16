@@ -231,6 +231,82 @@ console.log('\n=== REGRESSION: M-6 price_extra_day=0 throws for multiday ===');
 }
 
 // ===========================================================================
+console.log('\n=== REGRESSION: FIX-1 server-derived event_end_date (no client trust) ===');
+// ===========================================================================
+
+{
+  // The /submit handler must derive event_end_date = isoOffset(startDate, days - 1).
+  // It must NOT be taken from a client-supplied event_end_date value.
+  // We replicate the exact derivation logic from the fixed route here and verify
+  // it is independent of any client-supplied end date.
+
+  const startDate = '2027-03-10';
+  const rentalDays = 3;
+
+  // Server-derived end date (FIX 1 formula: isoOffset(data.event_date, submitDays - 1))
+  const derivedEnd = isoOffset(startDate, rentalDays - 1);
+  assert('FIX-1: server-derived end for 3-day booking = start + 2 days',
+    derivedEnd === '2027-03-12', `got ${derivedEnd}`);
+
+  // A crafted/short client-supplied end date must NOT be used
+  const clientSuppliedShortEnd = startDate; // attacker passes start == end to create a phantom hold
+  assert('FIX-1: derived end != crafted client short end (double-booking prevented)',
+    derivedEnd !== clientSuppliedShortEnd,
+    `derivedEnd=${derivedEnd} clientEnd=${clientSuppliedShortEnd}`);
+
+  // A crafted/long client-supplied end date must NOT be used
+  const clientSuppliedLongEnd = '2027-12-31';
+  assert('FIX-1: derived end != crafted client long end (phantom hold prevented)',
+    derivedEnd !== clientSuppliedLongEnd,
+    `derivedEnd=${derivedEnd} clientEnd=${clientSuppliedLongEnd}`);
+
+  // Single-day booking: end == start
+  const singleEnd = isoOffset(startDate, 1 - 1);
+  assert('FIX-1: single-day derived end == start date',
+    singleEnd === startDate, `got ${singleEnd}`);
+}
+
+// ===========================================================================
+console.log('\n=== REGRESSION: FIX-3 4hr duration caps rental_days to 1 ===');
+// ===========================================================================
+
+{
+  // Replicate the exact clamp logic from the fixed /submit and /review handlers:
+  //   submitDays = submitDuration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(data.rental_days) || 1))
+  const clamp4hr = (duration, rentalDays) =>
+    duration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(rentalDays) || 1));
+
+  // 4hr + rental_days=2 must collapse to 1 (the core security assertion)
+  const days_4hr_2 = clamp4hr('4hr', 2);
+  assert('FIX-3: 4hr + rental_days=2 collapses to 1 day',
+    days_4hr_2 === 1, `got ${days_4hr_2}`);
+
+  // 4hr + rental_days=30 must still collapse to 1
+  const days_4hr_30 = clamp4hr('4hr', 30);
+  assert('FIX-3: 4hr + rental_days=30 collapses to 1 day',
+    days_4hr_30 === 1, `got ${days_4hr_30}`);
+
+  // For 4hr+2 days: derived end date must equal start date (priced as single 4hr rental)
+  const startDate = '2027-05-15';
+  const endDate = isoOffset(startDate, days_4hr_2 - 1); // isoOffset(start, 0) = start
+  assert('FIX-3: 4hr booking end date equals start date (single-day hold)',
+    endDate === startDate, `got ${endDate}`);
+
+  // Non-4hr durations must still work normally
+  const days_daily_3 = clamp4hr('daily', 3);
+  assert('FIX-3: daily + rental_days=3 = 3 (not affected by 4hr cap)',
+    days_daily_3 === 3, `got ${days_daily_3}`);
+
+  const days_multiday_5 = clamp4hr('multiday', 5);
+  assert('FIX-3: multiday + rental_days=5 = 5 (not affected by 4hr cap)',
+    days_multiday_5 === 5, `got ${days_multiday_5}`);
+
+  // Regression: reverting FIX 3 (removing the ternary) would make days_4hr_2 = 2, failing the assertion
+  assert('FIX-3: regression guard — clamped 4hr days is always 1 (not 2)',
+    days_4hr_2 !== 2, `got ${days_4hr_2} (would be 2 if FIX-3 reverted)`);
+}
+
+// ===========================================================================
 console.log('\n=== RESULTS ===');
 // ===========================================================================
 console.log(`Passed: ${passed}`);

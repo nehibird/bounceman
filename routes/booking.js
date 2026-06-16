@@ -250,7 +250,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
   const wetItemIds = new Set((wet_items || '').split(',').filter(Boolean));
   const duration = rental_duration || 'daily';
-  const days = Math.min(30, Math.max(1, parseInt(rental_days) || 1));
+  const days = duration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(rental_days) || 1));
 
   let subtotal = 0;
   const lineItems = [];
@@ -307,7 +307,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     wet_items: wet_items || '',
     rental_duration: duration,
     rental_days: days,
-    event_end_date: event_end_date || event_date,
+    event_end_date: isoOffset(event_date, days - 1),
     ready_by: ready_by || event_start_time,
     tax_exempt_claimed: taxExemptClaimed,
     page: 'booking'
@@ -338,8 +338,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const submitItems = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
     const submitWetIdsSet = new Set((data.wet_items || '').split(',').filter(Boolean));
     const submitDuration = data.rental_duration || 'daily';
-    const submitDays = Math.min(30, Math.max(1, parseInt(data.rental_days) || 1));
-    const submitEndDate = data.event_end_date || data.event_date;
+    const submitDays = submitDuration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(data.rental_days) || 1));
+    const submitEndDate = isoOffset(data.event_date, submitDays - 1);
 
     let recalcSubtotal = 0;
     for (const eqId of submitItems) {

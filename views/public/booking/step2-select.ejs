@@ -307,19 +307,19 @@
 
     var maxDays = Math.min(3, getMaxDaysForSelection());
 
+    if (selectedDaysS2 > maxDays) selectedDaysS2 = maxDays;
     document.querySelectorAll('.days-btn-s2').forEach(function(btn) {
       var d = parseInt(btn.dataset.days);
       btn.classList.toggle('selected', d === selectedDaysS2);
       btn.classList.toggle('disabled-day', d > maxDays);
     });
-    if (selectedDaysS2 > maxDays) selectedDaysS2 = maxDays;
 
     var extraCostDiv = document.getElementById('extraDayCost');
     var warnDiv = document.getElementById('extraDayWarning');
     if (selectedDaysS2 > 1) {
       var extra = getExtraCostForDays(selectedDaysS2);
       if (extra > 0) {
-        extraCostDiv.textContent = '+$' + extra.toFixed(0) + ' — ' + selectedDaysS2 + ' days total';
+        extraCostDiv.textContent = '+$' + (Number.isInteger(extra) ? extra : extra.toFixed(2)) + ' — ' + selectedDaysS2 + ' days total';
         extraCostDiv.style.display = '';
       } else {
         extraCostDiv.style.display = 'none';
