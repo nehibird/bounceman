@@ -826,12 +826,12 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
       }
       let callSid = null;
       try {
-        const row = db.prepare(`SELECT call_sid FROM twilio_call_map WHERE caller_phone = ? AND created_at > datetime('now', '-15 minutes') ORDER BY created_at DESC LIMIT 1`).get(realPhone);
+        const row = db.prepare(`SELECT call_sid FROM twilio_call_map WHERE caller_phone = ? AND created_at > datetime('now', '-60 minutes') ORDER BY created_at DESC LIMIT 1`).get(realPhone);
         callSid = row && row.call_sid;
       } catch (e) { /* ignore */ }
       if (!callSid) {
         console.error('[TRANSFER] No live Twilio CallSid for caller', realPhone, '— cannot transfer');
-        return { result: 'TRANSFER_FAILED: could not locate the live call to transfer' };
+        return { result: 'TRANSFER_UNAVAILABLE: Could not connect the caller to Nehemiah right now. Apologize briefly, tell them Nehemiah will call them right back, then end the call politely.' };
       }
       const twilio = require("twilio")(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
@@ -845,7 +845,7 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
       return { result: 'TRANSFER_INITIATED to ' + TRANSFER_TARGET };
     } catch (err) {
       console.error('[TRANSFER] error:', err.message);
-      return { result: 'TRANSFER_FAILED: ' + err.message };
+      return { result: 'TRANSFER_UNAVAILABLE: Could not connect the call (' + err.message + '). Apologize, tell the caller Nehemiah will call them right back, then end the call politely.' };
     }
   }
   if (name === 'endCall') return { result: 'CALL_ENDED' };
