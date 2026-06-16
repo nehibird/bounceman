@@ -433,19 +433,31 @@ router.get('/equipment/new', (req, res) => {
 router.post('/equipment', upload.array('images', 10), (req, res) => {
   const db = getDb();
   const data = req.body;
+
+  // Validate price_extra_day is required
+  if (!data.price_extra_day || parseFloat(data.price_extra_day) <= 0) {
+    const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order').all();
+    return res.status(422).render('admin/equipment/form', {
+      title: 'Add Equipment - Admin', user: req.user, settings: getSettings(), categories,
+      item: { ...data }, images: [], page: 'equipment',
+      formError: 'Extra Day Price is required and must be greater than $0.'
+    });
+  }
+
   const itemId = uuid();
   const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   db.prepare(`INSERT INTO equipment (id, name, slug, category, description, short_description,
     dimensions, weight_lbs, capacity_kids, age_range, setup_time_min, power_required,
-    price_hourly, price_4hr, price_daily, price_weekend, price_overnight, price_wet, deposit_amount,
+    price_hourly, price_4hr, price_daily, price_weekend, price_overnight, price_wet, price_extra_day, deposit_amount,
     replacement_cost, manufacturer, model, serial_number, purchase_date, condition, status, featured, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     itemId, data.name, slug, data.category, data.description, data.short_description,
     data.dimensions, data.weight_lbs || null, data.capacity_kids || null, data.age_range,
     data.setup_time_min || 15, data.power_required || '1 standard outlet',
     data.price_hourly || null, data.price_4hr || null, data.price_daily,
-    data.price_weekend || null, data.price_overnight || null, data.price_wet || null, data.deposit_amount || 50,
+    data.price_weekend || null, data.price_overnight || null, data.price_wet || null,
+    parseFloat(data.price_extra_day), data.deposit_amount || 50,
     data.replacement_cost || null, data.manufacturer, data.model, data.serial_number,
     data.purchase_date || null, data.condition || 'excellent', data.status || 'available',
     data.featured ? 1 : 0, data.sort_order || 0
@@ -464,7 +476,6 @@ router.post('/equipment', upload.array('images', 10), (req, res) => {
 
   res.redirect('/admin/equipment');
 });
-
 router.get('/equipment/:id/edit', (req, res) => {
   const db = getDb();
   const settings = getSettings();
@@ -482,11 +493,24 @@ router.get('/equipment/:id/edit', (req, res) => {
 router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
   const db = getDb();
   const data = req.body;
+
+  // Validate price_extra_day is required
+  if (!data.price_extra_day || parseFloat(data.price_extra_day) <= 0) {
+    const item = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id) || { ...data, id: req.params.id };
+    const images = db.prepare('SELECT * FROM equipment_images WHERE equipment_id = ? ORDER BY sort_order').all(req.params.id);
+    const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order').all();
+    return res.status(422).render('admin/equipment/form', {
+      title: `Edit Equipment - Admin`, user: req.user, settings: getSettings(),
+      item: { ...item, ...data }, images, categories, page: 'equipment',
+      formError: 'Extra Day Price is required and must be greater than $0.'
+    });
+  }
+
   const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   db.prepare(`UPDATE equipment SET name=?, slug=?, category=?, description=?, short_description=?,
     dimensions=?, weight_lbs=?, capacity_kids=?, age_range=?, setup_time_min=?, power_required=?,
-    price_hourly=?, price_4hr=?, price_daily=?, price_weekend=?, price_overnight=?, price_wet=?, deposit_amount=?,
+    price_hourly=?, price_4hr=?, price_daily=?, price_weekend=?, price_overnight=?, price_wet=?, price_extra_day=?, deposit_amount=?,
     replacement_cost=?, manufacturer=?, model=?, serial_number=?, purchase_date=?, condition=?,
     status=?, featured=?, sort_order=?, updated_at=datetime('now')
     WHERE id=?`).run(
@@ -494,7 +518,8 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
     data.dimensions, data.weight_lbs || null, data.capacity_kids || null, data.age_range,
     data.setup_time_min || 15, data.power_required || '1 standard outlet',
     data.price_hourly || null, data.price_4hr || null, data.price_daily,
-    data.price_weekend || null, data.price_overnight || null, data.price_wet || null, data.deposit_amount || 50,
+    data.price_weekend || null, data.price_overnight || null, data.price_wet || null,
+    parseFloat(data.price_extra_day), data.deposit_amount || 50,
     data.replacement_cost || null, data.manufacturer, data.model, data.serial_number,
     data.purchase_date || null, data.condition || 'excellent', data.status || 'available',
     data.featured ? 1 : 0, data.sort_order || 0, req.params.id
@@ -513,6 +538,7 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
 
   res.redirect('/admin/equipment/' + req.params.id + '/edit');
 });
+
 
 // Set image as primary/featured
 router.get('/equipment/image/:imgId/set-primary', (req, res) => {

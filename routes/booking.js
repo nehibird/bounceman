@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -40,6 +40,9 @@ router.get('/select', (req, res) => {
   const rentalDuration = req.query.rental_duration || 'daily';
   const eventStartTime = req.query.event_start_time || '09:00';
   const eventEndTime = req.query.event_end_time || '19:00';
+  const rentalDays = parseInt(req.query.rental_days) || 1;
+  const eventEndDate = req.query.event_end_date || isoOffset(eventDate, rentalDays - 1);
+  const readyBy = req.query.ready_by || eventStartTime;
 
   const equipment = db.prepare(`
     SELECT e.*,
@@ -55,18 +58,55 @@ router.get('/select', (req, res) => {
   `).all();
 
   const bookedCounts = getBookedEquipmentIds(db, eventDate, eventStartTime, eventEndTime, rentalDuration);
+
+  // For multiday: also check each additional day
+  const allDayBookedMaps = [bookedCounts];
+  if (rentalDays > 1 && eventDate) {
+    for (let d = 1; d < rentalDays; d++) {
+      const checkDate = isoOffset(eventDate, d);
+      const dayMap = getBookedEquipmentIds(db, checkDate, '00:00', '23:59:59', 'daily');
+      allDayBookedMaps.push(dayMap);
+    }
+  }
+
   equipment.forEach(item => {
-    const booked = bookedCounts.get(item.id) || 0;
+    let maxBooked = 0;
+    for (const dayMap of allDayBookedMaps) {
+      maxBooked = Math.max(maxBooked, dayMap.get(item.id) || 0);
+    }
     const qty = item.quantity || 1;
-    item.booked = booked >= qty;
-    item.availableQty = qty - booked;
+    item.booked = maxBooked >= qty;
+    item.availableQty = qty - (bookedCounts.get(item.id) || 0);
+
+    try {
+      item.computedPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: false, date: eventDate });
+    } catch(e) {
+      item.computedPrice = item.price_daily || 0;
+    }
+    try {
+      item.computedWetPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: true, date: eventDate });
+    } catch(e) {
+      item.computedWetPrice = null;
+    }
+
+    if (rentalDays > 1 && !item.booked && eventDate) {
+      const extraAvail = maxExtraDaysAvailable(db, item.id, eventDate, 1);
+      item.multidayUnavailable = extraAvail < (rentalDays - 1);
+    } else {
+      item.multidayUnavailable = false;
+    }
   });
+
   addons.forEach(item => {
     const booked = bookedCounts.get(item.id) || 0;
     item.booked = booked >= (item.quantity || 1);
+    try {
+      item.computedPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: false, date: eventDate });
+    } catch(e) {
+      item.computedPrice = item.price_daily || 0;
+    }
   });
 
-  // For booked equipment, find which other time windows still have availability
   const TIME_WINDOWS = [
     { label: 'Morning', start: '08:00', end: '12:00' },
     { label: 'Afternoon', start: '12:00', end: '17:00' },
@@ -90,51 +130,49 @@ router.get('/select', (req, res) => {
     title: 'Choose Your Rentals - Bounce Man',
     settings, equipment, categories, addons,
     eventDate, rentalDuration, eventStartTime, eventEndTime,
+    rentalDays, eventEndDate, readyBy,
     currentTimeLabel: currentTimeLabelStr,
     page: 'booking'
   });
 });
-
 // Check availability for multiple items on a date
 router.post('/check-date', (req, res) => {
   const db = getDb();
-  const { date, equipment_ids, start_time, end_time, duration } = req.body;
+  const { date, equipment_ids, start_time, end_time, duration, days } = req.body;
 
   if (!date || !equipment_ids?.length) {
     return res.json({ available: false, message: 'Date and equipment required' });
   }
 
-  // Check blocked dates
   const blocked = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id IS NULL').get(date);
   if (blocked) return res.json({ available: false, message: blocked.reason || 'Date unavailable' });
 
-  // Overnight occupies all of day 1; any Sunday booking is whole-day.
+  const rentalDays = parseInt(days) || 1;
   const win = availabilityWindow(date, duration, start_time, end_time);
-  const extraHoldDate = overnightExtraHoldDate(date, duration); // Sunday, for a Saturday overnight
-  const spilloverIds = getSaturdayOvernightSpillover(db, date); // when `date` itself is a Sunday
+  const extraHoldDate = overnightExtraHoldDate(date, duration);
+  const spilloverIds = getSaturdayOvernightSpillover(db, date);
 
-  // Check each item (time-overlap aware)
+  const datesToCheck = [{ date, win }];
+  if (rentalDays > 1) {
+    for (let d = 1; d < rentalDays; d++) {
+      const checkDate = isoOffset(date, d);
+      datesToCheck.push({ date: checkDate, win: { start: '00:00', end: '23:59:59' } });
+    }
+  }
+
   const unavailable = [];
   for (const eqId of equipment_ids) {
-    let bookedCount;
-    if (win.start && win.end) {
-      bookedCount = db.prepare(`
-        SELECT COUNT(*) as cnt FROM bookings b
-        JOIN booking_items bi ON bi.booking_id = b.id
-        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-          AND b.event_start_time < ? AND b.event_end_time > ?
-      `).get(date, eqId, win.end, win.start);
-    } else {
-      bookedCount = db.prepare(`
-        SELECT COUNT(*) as cnt FROM bookings b
-        JOIN booking_items bi ON bi.booking_id = b.id
-        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-      `).get(date, eqId);
-    }
     const eqInfo = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(eqId);
-    let isUnavailable = (bookedCount && bookedCount.cnt >= (eqInfo?.quantity || 1));
+    let isUnavailable = false;
 
-    // Saturday overnight also needs the following Sunday free.
+    for (const { date: checkDate, win: checkWin } of datesToCheck) {
+      const bookedCounts = getBookedEquipmentIds(db, checkDate, checkWin.start, checkWin.end, duration);
+      const bookedQty = bookedCounts.get(eqId) || 0;
+      if (bookedQty >= (eqInfo?.quantity || 1)) { isUnavailable = true; break; }
+      const blockedItem = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id = ?').get(checkDate, eqId);
+      if (blockedItem) { isUnavailable = true; break; }
+    }
+
     if (!isUnavailable && extraHoldDate) {
       const sunConflict = db.prepare(`
         SELECT COUNT(*) as cnt FROM bookings b
@@ -144,16 +182,9 @@ router.post('/check-date', (req, res) => {
       const sunBlocked = db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(extraHoldDate, eqId);
       if ((sunConflict && sunConflict.cnt >= (eqInfo?.quantity || 1)) || sunBlocked) isUnavailable = true;
     }
-    // Booking a Sunday tied up by a prior Saturday overnight of this unit.
     if (!isUnavailable && spilloverIds.has(eqId)) isUnavailable = true;
 
     if (isUnavailable) unavailable.push(eqInfo?.name || 'Item');
-
-    const blockedItem = db.prepare('SELECT * FROM blocked_dates WHERE date = ? AND equipment_id = ?').get(date, eqId);
-    if (blockedItem) {
-      const eq = db.prepare('SELECT name FROM equipment WHERE id = ?').get(eqId);
-      unavailable.push(eq?.name || 'Item');
-    }
   }
 
   if (unavailable.length > 0) {
@@ -162,7 +193,6 @@ router.post('/check-date', (req, res) => {
 
   res.json({ available: true, message: 'All items available!' });
 });
-
 // Check ZIP code against delivery zones
 router.get('/check-zip', async (req, res) => {
   const db = getDb();
@@ -196,12 +226,13 @@ router.post('/review', bookingLimiter, async (req, res) => {
     delivery_address, delivery_city, delivery_zip,
     event_type, venue_type, surface_type, power_available,
     delivery_notes, discount_code, rental_duration, wet_items,
-    tax_exempt_claimed
+    tax_exempt_claimed, rental_days, event_end_date, ready_by
   } = req.body;
 
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
   const wetItemIds = new Set((wet_items || '').split(',').filter(Boolean));
   const duration = rental_duration || 'daily';
+  const days = parseInt(rental_days) || 1;
 
   let subtotal = 0;
   const lineItems = [];
@@ -209,8 +240,13 @@ router.post('/review', bookingLimiter, async (req, res) => {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
     if (!eq) continue;
     const isWet = wetItemIds.has(eqId);
-    const basePrice = getPrice(eq, duration);
-    const unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+    let unitPrice;
+    try {
+      unitPrice = priceForBooking(db, eq, { duration, days, wet: isWet, date: event_date });
+    } catch(e) {
+      const basePrice = getPrice(eq, duration);
+      unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+    }
     lineItems.push({
       equipment_id: eqId,
       item_name: isWet ? eq.name + ' (Wet)' : eq.name,
@@ -252,6 +288,9 @@ router.post('/review', bookingLimiter, async (req, res) => {
     pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount },
     wet_items: wet_items || '',
     rental_duration: duration,
+    rental_days: days,
+    event_end_date: event_end_date || event_date,
+    ready_by: ready_by || event_start_time,
     tax_exempt_claimed: taxExemptClaimed,
     page: 'booking'
   });
@@ -277,17 +316,26 @@ router.post('/submit', bookingLimiter, async (req, res) => {
   }
 
   try {
-    // CRIT-1: Recalculate all pricing server-side — never trust form-submitted totals
+    // CRIT-1: Recalculate all pricing server-side
     const submitItems = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
     const submitWetIdsSet = new Set((data.wet_items || '').split(',').filter(Boolean));
     const submitDuration = data.rental_duration || 'daily';
+    const submitDays = parseInt(data.rental_days) || 1;
+    const submitEndDate = data.event_end_date || data.event_date;
+
     let recalcSubtotal = 0;
     for (const eqId of submitItems) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
       if (!eq) continue;
       const isWet = submitWetIdsSet.has(eqId);
-      const basePrice = getPrice(eq, submitDuration);
-      recalcSubtotal += isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+      let unitPrice;
+      try {
+        unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date });
+      } catch(e) {
+        const basePrice = getPrice(eq, submitDuration);
+        unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+      }
+      recalcSubtotal += unitPrice;
     }
     const { fee: recalcDeliveryFee } = await resolveDeliveryFee(db, data.delivery_zip);
     let recalcDiscountAmount = 0;
@@ -303,7 +351,6 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const taxExempt = (existingCustomer && existingCustomer.tax_exempt) || data.tax_exempt_claimed === '1';
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city, taxExempt);
     const recalcTotal = recalcPricing.total - recalcDiscountAmount;
-    // Override form data with server-calculated values
     data.subtotal = recalcSubtotal;
     data.delivery_fee = recalcDeliveryFee;
     data.tax_rate = recalcPricing.taxRate;
@@ -314,31 +361,37 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
     data.discount_amount = recalcDiscountAmount;
 
-    // Normalize stored overnight window: 9 AM drop-off, held through the night (23:59 of
-    // day 1). The "9 AM next-day pickup" is display-only and does not block day 2.
-    if (submitDuration === 'overnight') {
-      data.event_start_time = '09:00';
-      data.event_end_time = '23:59';
-    }
-
-    // Availability guard: prevent double-booking (race condition protection).
-    // availabilityWindow() makes overnight occupy all of day 1, and treats any Sunday
-    // booking as whole-day (no half-day splitting on Sundays).
+    // Availability guard: prevent double-booking
     const submitDate = data.event_date;
     const checkWin = availabilityWindow(submitDate, submitDuration, data.event_start_time, data.event_end_time);
-    const extraHoldDate = overnightExtraHoldDate(submitDate, submitDuration); // Sunday, for a Saturday overnight
-    const spilloverIds = getSaturdayOvernightSpillover(db, submitDate); // when submitDate itself is a Sunday
-    for (const eqId of submitItems) {
-      let conflict = db.prepare(`
-        SELECT b.booking_number FROM bookings b
-        JOIN booking_items bi ON bi.booking_id = b.id
-        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-          AND b.event_start_time < ? AND b.event_end_time > ?
-        LIMIT 1
-      `).get(submitDate, eqId, checkWin.end, checkWin.start);
+    const extraHoldDate = overnightExtraHoldDate(submitDate, submitDuration);
+    const spilloverIds = getSaturdayOvernightSpillover(db, submitDate);
 
-      // A Saturday overnight also needs the following Sunday free (delivered Sat, picked up Mon).
-      if (!conflict && extraHoldDate) {
+    const allCheckDates = [{ date: submitDate, win: checkWin }];
+    if (submitDays > 1) {
+      for (let d = 1; d < submitDays; d++) {
+        const cd = isoOffset(submitDate, d);
+        allCheckDates.push({ date: cd, win: { start: '00:00', end: '23:59:59' } });
+      }
+    }
+
+    for (const eqId of submitItems) {
+      for (const { date: checkDate, win: cWin } of allCheckDates) {
+        const bookedCounts = getBookedEquipmentIds(db, checkDate, cWin.start, cWin.end, submitDuration);
+        const bookedQty = bookedCounts.get(eqId) || 0;
+        const eqInfo = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(eqId);
+        if (bookedQty >= (eqInfo?.quantity || 1)) {
+          return res.status(409).render('error', {
+            title: 'Equipment No Longer Available',
+            message: `Sorry, ${eqInfo?.name || 'the selected equipment'} is not available for one or more days in your rental. Please go back and try different dates.`,
+            status: 409
+          });
+        }
+      }
+
+      // Overnight/Sunday spillover check on day 1
+      let conflict = null;
+      if (extraHoldDate) {
         conflict = db.prepare(`
           SELECT b.booking_number FROM bookings b
           JOIN booking_items bi ON bi.booking_id = b.id
@@ -347,10 +400,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         `).get(extraHoldDate, eqId)
           || db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(extraHoldDate, eqId);
       }
-
-      // Booking a Sunday that's tied up by a prior Saturday overnight of this unit.
       if (!conflict && spilloverIds.has(eqId)) conflict = { booking_number: 'overnight-hold' };
-
       if (conflict) {
         const eq = db.prepare('SELECT name FROM equipment WHERE id = ?').get(eqId);
         return res.status(409).render('error', {
@@ -361,99 +411,104 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       }
     }
 
-    // Create or find customer
-    let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
-    const customerId = customer?.id || uuid();
+    // Wrap all inserts in a transaction
+    let bookingId, bookingNumber, customerId, contractId = null;
 
-    if (!customer) {
-      db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, address, city, state, zip, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'OK', ?, 'website')`).run(
-        customerId, data.first_name, data.last_name, data.email, data.phone,
-        data.delivery_address, data.delivery_city, data.delivery_zip
+    const insertTxn = db.transaction(() => {
+      let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
+      customerId = customer?.id || uuid();
+
+      if (!customer) {
+        db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, address, city, state, zip, source)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'OK', ?, 'website')`).run(
+          customerId, data.first_name, data.last_name, data.email, data.phone,
+          data.delivery_address, data.delivery_city, data.delivery_zip
+        );
+      }
+
+      bookingId = uuid();
+      bookingNumber = generateBookingNumber();
+
+      db.prepare(`INSERT INTO bookings (
+        id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time,
+        event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
+        delivery_notes, surface_type, power_available, sms_consent,
+        subtotal, delivery_fee, tax_amount, tax_rate, discount_amount, discount_code,
+        damage_waiver_fee, total, deposit_amount, balance_due, payment_status, tax_exempt_claimed
+      ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        bookingId, bookingNumber, customerId,
+        data.event_date, submitEndDate, data.event_start_time, data.event_end_time,
+        data.event_type, data.venue_type,
+        data.delivery_address, data.delivery_city, data.delivery_zip,
+        data.delivery_notes, data.surface_type, data.power_available ? 1 : 0,
+        data.sms_consent ? 1 : 0,
+        parseFloat(data.subtotal), parseFloat(data.delivery_fee),
+        parseFloat(data.tax_amount), parseFloat(data.tax_rate),
+        parseFloat(data.discount_amount || 0), data.discount_code || null,
+        parseFloat(data.damage_waiver_fee || 0),
+        parseFloat(data.total), parseFloat(data.deposit_amount),
+        parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid',
+        taxExempt ? 1 : 0
       );
-    }
 
-    const bookingId = uuid();
-    const bookingNumber = generateBookingNumber();
+      // Add line items using priceForBooking
+      for (const eqId of submitItems) {
+        const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+        if (!eq) continue;
+        const isWet = submitWetIdsSet.has(eqId);
+        let unitPrice;
+        try {
+          unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date });
+        } catch(e) {
+          const basePrice = getPrice(eq, submitDuration);
+          unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+        }
+        const itemName = isWet ? eq.name + ' (Wet)' : eq.name;
+        db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option, rental_days)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, itemName, unitPrice, unitPrice, submitDuration, isWet ? 1 : 0, submitDays);
+      }
 
-    db.prepare(`INSERT INTO bookings (
-      id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
-      event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
-      delivery_notes, surface_type, power_available, sms_consent,
-      subtotal, delivery_fee, tax_amount, tax_rate, discount_amount, discount_code,
-      damage_waiver_fee, total, deposit_amount, balance_due, payment_status, tax_exempt_claimed
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      bookingId, bookingNumber, customerId,
-      data.event_date, data.event_start_time, data.event_end_time,
-      data.event_type, data.venue_type,
-      data.delivery_address, data.delivery_city, data.delivery_zip,
-      data.delivery_notes, data.surface_type, data.power_available ? 1 : 0,
-      data.sms_consent ? 1 : 0,
-      parseFloat(data.subtotal), parseFloat(data.delivery_fee),
-      parseFloat(data.tax_amount), parseFloat(data.tax_rate),
-      parseFloat(data.discount_amount || 0), data.discount_code || null,
-      parseFloat(data.damage_waiver_fee || 0),
-      parseFloat(data.total), parseFloat(data.deposit_amount),
-      parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid',
-      taxExempt ? 1 : 0
-    );
+      // Update customer stats
+      db.prepare('UPDATE customers SET total_bookings = total_bookings + 1 WHERE id = ?').run(customerId);
 
-    // Add line items
-    const equipmentIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
-    const submitWetIds = new Set((data.wet_items || '').split(',').filter(Boolean));
-    const bookingDuration = data.rental_duration || 'daily';
-    for (const eqId of equipmentIds) {
-      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
-      if (!eq) continue;
-      const isWet = submitWetIds.has(eqId);
-      const basePrice = getPrice(eq, bookingDuration);
-      const unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
-      const itemName = isWet ? eq.name + ' (Wet)' : eq.name;
-      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, eqId, itemName, unitPrice, unitPrice, bookingDuration, isWet ? 1 : 0);
-    }
+      // Create contract
+      const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
+      if (template) {
+        contractId = uuid();
+        let content2 = template.content
+          .replace(/\{\{booking_number\}\}/g, bookingNumber)
+          .replace(/\{\{event_date\}\}/g, data.event_date)
+          .replace(/\{\{event_start_time\}\}/g, data.event_start_time)
+          .replace(/\{\{event_end_time\}\}/g, data.event_end_time)
+          .replace(/\{\{delivery_address\}\}/g, `${data.delivery_address}, ${data.delivery_city}, OK ${data.delivery_zip}`)
+          .replace(/\{\{items_list\}\}/g, submitItems.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', '))
+          .replace(/\{\{total\}\}/g, parseFloat(data.total).toFixed(2))
+          .replace(/\{\{deposit_amount\}\}/g, parseFloat(data.deposit_amount).toFixed(2))
+          .replace(/\{\{customer_name\}\}/g, `${data.first_name} ${data.last_name}`)
+          .replace(/\{\{cancellation_hours\}\}/g, settings.cancellation_hours || '48');
 
-    // Update customer stats
-    db.prepare('UPDATE customers SET total_bookings = total_bookings + 1 WHERE id = ?').run(customerId);
+        db.prepare(`INSERT INTO contracts (id, booking_id, customer_id, template_id, content)
+          VALUES (?, ?, ?, ?, ?)`).run(contractId, bookingId, customerId, template.id, content2);
+      }
 
-    // Create contract
-    let contractId = null;
-    const template = db.prepare('SELECT * FROM contract_templates WHERE is_default = 1 AND active = 1').get();
-    if (template) {
-      contractId = uuid();
-      let content = template.content
-        .replace(/\{\{booking_number\}\}/g, bookingNumber)
-        .replace(/\{\{event_date\}\}/g, data.event_date)
-        .replace(/\{\{event_start_time\}\}/g, data.event_start_time)
-        .replace(/\{\{event_end_time\}\}/g, data.event_end_time)
-        .replace(/\{\{delivery_address\}\}/g, `${data.delivery_address}, ${data.delivery_city}, OK ${data.delivery_zip}`)
-        .replace(/\{\{items_list\}\}/g, equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', '))
-        .replace(/\{\{total\}\}/g, parseFloat(data.total).toFixed(2))
-        .replace(/\{\{deposit_amount\}\}/g, parseFloat(data.deposit_amount).toFixed(2))
-        .replace(/\{\{customer_name\}\}/g, `${data.first_name} ${data.last_name}`)
-        .replace(/\{\{cancellation_hours\}\}/g, settings.cancellation_hours || '48');
+      // Log activity
+      db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
+        VALUES (?, 'booking_created', 'booking', ?, ?, ?)`).run(
+        uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${data.first_name} ${data.last_name}` }), req.ip
+      );
+    });
 
-      db.prepare(`INSERT INTO contracts (id, booking_id, customer_id, template_id, content)
-        VALUES (?, ?, ?, ?, ?)`).run(contractId, bookingId, customerId, template.id, content);
-    }
+    insertTxn();
 
-    // Log activity
-    db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
-      VALUES (?, 'booking_created', 'booking', ?, ?, ?)`).run(
-      uuid(), bookingId, JSON.stringify({ booking_number: bookingNumber, customer: `${data.first_name} ${data.last_name}` }), req.ip
-    );
-
-    // Sign-before-pay: send them to sign the rental agreement first; the contract
-    // page forwards to the deposit checkout once it's signed. (Falls through to the
-    // direct Stripe flow below only when there's no contract template.)
+    // Sign-before-pay
     if (contractId) {
       console.log('[BOOKING] Created', bookingNumber, '-> sign agreement', contractId);
       return res.redirect(303, `/contract/${contractId}`);
     }
 
-    // Create Stripe checkout session for deposit
+    // Stripe checkout
     const depositAmount = parseFloat(data.deposit_amount);
-    const itemNames = equipmentIds.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', ');
+    const itemNames = submitItems.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', ');
     const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
 
     try {
@@ -474,7 +529,6 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       return res.redirect(303, session.url);
     } catch (stripeErr) {
       console.error('[STRIPE ERROR]', stripeErr.message);
-      // Stripe failed but booking was created — show confirmation without payment
       if (data.email) {
         const bookingForEmail = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         const itemsForEmail = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
@@ -493,6 +547,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     res.status(500).render('error', { title: 'Booking Error', message: 'Something went wrong. Please try again or call us.', status: 500 });
   }
 });
+
+;
 
 // Confirmation page (after Stripe success redirect)
 router.get('/confirmation', async (req, res) => {

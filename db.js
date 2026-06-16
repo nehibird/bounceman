@@ -714,6 +714,51 @@ function initialize() {
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`).run();
+
+  // -- Phase 1: Flexible Booking Migrations --
+
+  // Migration: add event_end_date to bookings (multiday support)
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN event_end_date TEXT').run(); } catch(e) {}
+
+  // Migration: add rental_days to booking_items
+  try { d.prepare('ALTER TABLE booking_items ADD COLUMN rental_days INTEGER DEFAULT 1').run(); } catch(e) {}
+
+  // Migration: add equipment.quantity (number of units owned)
+  try { d.prepare('ALTER TABLE equipment ADD COLUMN quantity INTEGER DEFAULT 1').run(); } catch(e) {}
+
+  // Migration: add price_extra_day to equipment
+  try { d.prepare('ALTER TABLE equipment ADD COLUMN price_extra_day REAL').run(); } catch(e) {}
+
+  // Migration: demand_dates table for demand pricing hook
+  d.prepare(`CREATE TABLE IF NOT EXISTS demand_dates (
+    id TEXT PRIMARY KEY,
+    date_start TEXT NOT NULL,
+    date_end TEXT NOT NULL,
+    multiplier REAL DEFAULT 1,
+    surcharge REAL DEFAULT 0,
+    label TEXT,
+    active INTEGER DEFAULT 1
+  )`).run();
+
+  // Seed new settings (idempotent via INSERT OR IGNORE)
+  insertSetting.run('buffer_min', '120');
+  insertSetting.run('wetdry_hours', '48');
+  insertSetting.run('extra_day_price', '0');
+
+  // Seed per-unit extra-day rates (only if not already set)
+  const extraDayRates = {
+    'The Gauntlet': 150,
+    'Buccaneer Bay': 150,
+    'Blue Crush Slide': 90,
+    'Tropical Combo Bounce & Slide': 75,
+    'Monkey Jumper': 50,
+    'Mini Castle Bounce House & Slide': 50,
+  };
+  const updateExtraDay = d.prepare('UPDATE equipment SET price_extra_day = ? WHERE name = ? AND price_extra_day IS NULL');
+  for (const [name, rate] of Object.entries(extraDayRates)) {
+    updateExtraDay.run(rate, name);
+  }
+
   console.log('[DB] Database initialized successfully');
 }
 

@@ -8,6 +8,8 @@
 
 <form method="POST" action="${item ? '/admin/equipment/' + item.id : '/admin/equipment'}" enctype="multipart/form-data">
 
+  ${typeof formError !== 'undefined' && formError ? '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + formError + '</div>' : ''}
+
   <!-- Basic Info -->
   <div class="card mb-4">
     <div class="card-header"><i class="fas fa-info-circle me-2"></i>Basic Information</div>
@@ -115,6 +117,14 @@
             <span class="input-group-text">$</span>
             <input type="number" name="price_wet" class="form-control" step="0.01" value="${item ? item.price_wet || '' : ''}">
           </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Extra Day Price <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_extra_day" class="form-control" step="0.01" min="1" required value="${item ? item.price_extra_day || '' : ''}">
+          </div>
+          <div class="form-text text-danger">Required for multi-day bookings.</div>
         </div>
         <div class="col-md-3">
           <label class="form-label">Deposit Amount</label>

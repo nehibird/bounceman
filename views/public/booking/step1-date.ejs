@@ -11,11 +11,6 @@
   .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
   .date-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
   .date-card-calendar { width: fit-content; margin: 0 auto; }
-  
-  
-  
-  
-  
   .dur-btn {
     padding: 16px 8px;
     border-radius: 12px;
@@ -36,9 +31,39 @@
   }
   .dur-btn.selected .dur-sub,
   .dur-btn.selected .dur-label,
-  .dur-btn.selected .small,
-  .dur-btn.selected .text-muted,
   .dur-btn.selected i { color: white !important; opacity: 1 !important; }
+  .days-btn {
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 15px;
+    border: 2px solid #e0e0e0;
+    background: #f8f8f8;
+    color: #555;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .days-btn.selected {
+    background: var(--bm-blue, #004E89) !important;
+    color: white !important;
+    border-color: var(--bm-blue, #004E89) !important;
+  }
+  .readyby-select {
+    font-size: 15px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+    width: 100%;
+    max-width: 260px;
+    font-weight: 600;
+    color: #333;
+  }
+  .readyby-select:focus {
+    border-color: var(--bm-blue, #004E89);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0,78,137,0.12);
+  }
 </style>
 
 <section class="py-5">
@@ -74,59 +99,63 @@
       <div class="col-lg-8">
         <form id="dateForm" action="/booking/select" method="GET">
 
+          <!-- 1. Date -->
           <div class="date-card mb-4">
             <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
             <div class="date-card-calendar"><div id="datePicker"></div></div>
             <input type="hidden" name="event_date" id="eventDateInput" required>
           </div>
 
+          <!-- 2. Duration -->
           <div class="date-card mb-4">
             <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
             <div class="row g-3">
-              <div class="col-4">
+              <div class="col-6">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay">
                   <span class="dur-label">Half Day</span>
                   <span class="dur-sub">4 hours</span>
                 </div>
               </div>
-              <div class="col-4">
+              <div class="col-6">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
-                  <span class="dur-label">Full Day</span>
-                  <span class="dur-sub">10 hours</span>
-                </div>
-              </div>
-              <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durOvernight">
-                  <span class="dur-label">Overnight</span>
-                  <span class="dur-sub">Day + night</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Morning/Afternoon sub-choice (only for half day) -->
-            <div id="halfDayChoice" class="row g-3 mt-3" style="display:none">
-              <div class="col-6">
-                <div class="btn btn-outline-secondary w-100 text-center dur-btn selected" id="halfMorning">
-                  <span class="dur-label"><i class="fas fa-sun me-1" style="color:#f59e0b"></i> Morning</span>
-                  <span class="dur-sub" id="morningTimeLabel"></span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="btn btn-outline-secondary w-100 text-center dur-btn" id="halfAfternoon">
-                  <span class="dur-label"><i class="fas fa-cloud-sun me-1" style="color:#f97316"></i> Afternoon</span>
-                  <span class="dur-sub" id="afternoonTimeLabel"></span>
+                  <span class="dur-label">All Day</span>
+                  <span class="dur-sub">~10 hours</span>
                 </div>
               </div>
             </div>
 
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
-              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day or overnight</strong> only.
+              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
             </div>
-
-            <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
-            <input type="hidden" name="event_start_time" id="hiddenStart" value="09:00">
-            <input type="hidden" name="event_end_time" id="hiddenEnd" value="19:00">
           </div>
+
+          <!-- 3. Ready-by time -->
+          <div class="date-card mb-4">
+            <h6 class="fw-bold mb-3"><i class="fas fa-sun me-2"></i>Ready By What Time?</h6>
+            <p class="text-muted small mb-3">We'll have everything set up and ready before this time.</p>
+            <select id="readyBySelect" class="readyby-select">
+              <option value="">Select a time...</option>
+            </select>
+          </div>
+
+          <!-- 4. How many days -->
+          <div class="date-card mb-4">
+            <h6 class="fw-bold mb-3"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h6>
+            <div class="d-flex gap-3">
+              <div class="days-btn selected" data-days="1">1 Day</div>
+              <div class="days-btn" data-days="2">2 Days</div>
+              <div class="days-btn" data-days="3">3 Days</div>
+            </div>
+            <p class="text-muted small mt-2" id="extraDayCostNote" style="display:none"></p>
+          </div>
+
+          <!-- Hidden fields -->
+          <input type="hidden" name="rental_duration" id="hiddenDuration" value="daily">
+          <input type="hidden" name="event_start_time" id="hiddenStart" value="09:00">
+          <input type="hidden" name="event_end_time" id="hiddenEnd" value="19:00">
+          <input type="hidden" name="rental_days" id="hiddenDays" value="1">
+          <input type="hidden" name="event_end_date" id="hiddenEndDate" value="">
+          <input type="hidden" name="ready_by" id="hiddenReadyBy" value="">
 
           <div class="text-center">
             <button type="submit" class="btn btn-book-now px-5 py-3">
@@ -141,34 +170,121 @@
 
 `, scripts: `
 <script>
-  // Settings from server
-  var HALFDAY_MORNING_START = '${settings.halfday_morning_start || '09:00'}';
-  var HALFDAY_MORNING_END = '${settings.halfday_morning_end || '13:00'}';
-  var HALFDAY_AFTERNOON_START = '${settings.halfday_afternoon_start || '15:00'}';
-  var HALFDAY_AFTERNOON_END = '${settings.halfday_afternoon_end || '19:00'}';
-  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ''}'.split(',').map(Number).filter(function(n) { return !isNaN(n); });
+  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ""}' .split(',').map(Number).filter(function(n) { return !isNaN(n) && n >= 0; });
 
-  function fmt12(t) {
-    var parts = t.split(':'); var h = parseInt(parts[0]); var m = parts[1] || '00';
-    var ampm = h >= 12 ? 'PM' : 'AM'; h = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-    return m === '00' ? h + ' ' + ampm : h + ':' + m + ' ' + ampm;
+  var HALFDAY_HOURS = 4;
+  var ALLDAY_HOURS = 10;
+  var MIN_READY_BY_H = 8;
+  var MAX_END_HOUR = 22;
+
+  var selectedDurationType = 'allday';
+  var selectedDays = 1;
+  var readyByHour = 9;
+  var readyByMin = 0;
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function fmt24(h, m) { return pad2(h) + ':' + pad2(m); }
+  function fmt12(h, m) {
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    return h12 + ':' + pad2(m) + ' ' + ampm;
+  }
+  function isoOffset(dateStr, days) {
+    if (!dateStr) return '';
+    var d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + days);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function getDurationHours() { return selectedDurationType === 'halfday' ? HALFDAY_HOURS : ALLDAY_HOURS; }
+  function getMaxReadyByHour() { return MAX_END_HOUR - getDurationHours(); }
+
+  function buildReadyByTimes() {
+    var maxH = getMaxReadyByHour();
+    var times = [];
+    for (var h = MIN_READY_BY_H; h <= maxH; h++) {
+      times.push({ h: h, m: 0 });
+      if (h < maxH) times.push({ h: h, m: 30 });
+    }
+    return times;
   }
 
-  document.getElementById('morningTimeLabel').textContent = fmt12(HALFDAY_MORNING_START) + ' \\u2013 ' + fmt12(HALFDAY_MORNING_END);
-  document.getElementById('afternoonTimeLabel').textContent = fmt12(HALFDAY_AFTERNOON_START) + ' \\u2013 ' + fmt12(HALFDAY_AFTERNOON_END);
-
-  flatpickr('#datePicker', {
-    inline: true,
-    minDate: 'today',
-    dateFormat: 'Y-m-d',
-    disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
-    onChange: function(sel, dateStr) {
-      document.getElementById('eventDateInput').value = dateStr;
-      applyDayRules();
+  function refreshReadyBySelect() {
+    var sel = document.getElementById('readyBySelect');
+    var times = buildReadyByTimes();
+    var maxTotal = getMaxReadyByHour() * 60;
+    if (readyByHour * 60 + readyByMin > maxTotal) {
+      readyByHour = 9; readyByMin = 0;
     }
-  });
+    sel.innerHTML = '<option value="">Select a time...</option>';
+    times.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = fmt24(t.h, t.m);
+      opt.textContent = fmt12(t.h, t.m);
+      if (t.h === readyByHour && t.m === readyByMin) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    updateHiddenFields();
+  }
 
-  // Sundays are open for full-day and overnight only — never half day.
+  function updateHiddenFields() {
+    var sel = document.getElementById('readyBySelect');
+    var val = sel.value;
+    document.getElementById('hiddenReadyBy').value = val;
+    if (!val) {
+      document.getElementById('hiddenStart').value = '';
+      document.getElementById('hiddenEnd').value = '';
+    } else {
+      var parts = val.split(':');
+      var rh = parseInt(parts[0]);
+      var rm = parseInt(parts[1]);
+      var durH = getDurationHours();
+      document.getElementById('hiddenStart').value = fmt24(rh, rm);
+      document.getElementById('hiddenEnd').value = fmt24(rh + durH, rm);
+    }
+    var durVal = selectedDurationType === 'halfday' ? '4hr' : (selectedDays > 1 ? 'multiday' : 'daily');
+    document.getElementById('hiddenDuration').value = durVal;
+    document.getElementById('hiddenDays').value = selectedDays;
+    var dateStr = document.getElementById('eventDateInput').value;
+    document.getElementById('hiddenEndDate').value = dateStr ? isoOffset(dateStr, selectedDays - 1) : '';
+  }
+
+  function selectDurationType(type) {
+    selectedDurationType = type;
+    document.getElementById('durHalfDay').classList.toggle('selected', type === 'halfday');
+    document.getElementById('durFullDay').classList.toggle('selected', type === 'allday');
+    if (type === 'halfday' && selectedDays > 1) { selectedDays = 1; refreshDaysUI(); }
+    refreshReadyBySelect();
+    applyDayRules();
+  }
+
+  function selectDays(days) {
+    if (selectedDurationType === 'halfday' && days > 1) return;
+    selectedDays = days;
+    refreshDaysUI();
+    updateHiddenFields();
+  }
+
+  function refreshDaysUI() {
+    document.querySelectorAll('.days-btn').forEach(function(btn) {
+      var d = parseInt(btn.dataset.days);
+      btn.classList.toggle('selected', d === selectedDays);
+      if (selectedDurationType === 'halfday' && d > 1) {
+        btn.style.opacity = '0.35';
+        btn.style.pointerEvents = 'none';
+      } else {
+        btn.style.opacity = '';
+        btn.style.pointerEvents = '';
+      }
+    });
+    var note = document.getElementById('extraDayCostNote');
+    if (selectedDays > 1) {
+      note.style.display = '';
+      note.textContent = 'Multi-day pricing: extra-day rates vary per item and are shown on the next page.';
+    } else {
+      note.style.display = 'none';
+    }
+  }
+
   function applyDayRules() {
     var dateStr = document.getElementById('eventDateInput').value;
     var note = document.getElementById('sundayNote');
@@ -179,10 +295,7 @@
       halfBtn.style.opacity = '0.4';
       halfBtn.style.pointerEvents = 'none';
       note.style.display = '';
-      // If half day was already selected, bump up to full day.
-      if (document.getElementById('hiddenDuration').value === '4hr') {
-        selectDuration('fullday', document.getElementById('durFullDay'));
-      }
+      if (selectedDurationType === 'halfday') { selectDurationType('allday'); return; }
     } else {
       halfBtn.classList.remove('disabled');
       halfBtn.style.opacity = '';
@@ -191,77 +304,65 @@
     }
   }
 
-  function selectDuration(type, el) {
-    document.querySelectorAll('#durHalfDay,#durFullDay,#durOvernight').forEach(function(b) { b.classList.remove('selected'); });
-    el.classList.add('selected');
-    var halfChoice = document.getElementById('halfDayChoice');
-
-    if (type === 'halfday') {
-      halfChoice.style.display = '';
-      selectHalf('morning', document.getElementById('halfMorning'));
-    } else if (type === 'fullday') {
-      halfChoice.style.display = 'none';
-      document.getElementById('hiddenDuration').value = 'daily';
-      document.getElementById('hiddenStart').value = '09:00';
-      document.getElementById('hiddenEnd').value = '19:00';
-    } else if (type === 'overnight') {
-      halfChoice.style.display = 'none';
-      document.getElementById('hiddenDuration').value = 'overnight';
-      // Overnight = full day of use + the night. 9 AM drop-off, 9 AM next-day pickup.
-      // Stored end is 23:59 so the unit is held for all of day 1 by the existing
-      // time-overlap availability checks; the "next-day pickup" is display-only.
-      document.getElementById('hiddenStart').value = '09:00';
-      document.getElementById('hiddenEnd').value = '23:59';
+  flatpickr('#datePicker', {
+    inline: true,
+    minDate: 'today',
+    dateFormat: 'Y-m-d',
+    disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
+    onChange: function(sel, dateStr) {
+      document.getElementById('eventDateInput').value = dateStr;
+      document.getElementById('hiddenEndDate').value = isoOffset(dateStr, selectedDays - 1);
+      applyDayRules();
+      updateHiddenFields();
     }
-    applyDayRules();
-  }
+  });
 
-  function selectHalf(time, el) {
-    document.getElementById('halfMorning').classList.remove('selected');
-    document.getElementById('halfAfternoon').classList.remove('selected');
-    el.classList.add('selected');
-    document.getElementById('hiddenDuration').value = '4hr';
-    if (time === 'morning') {
-      document.getElementById('hiddenStart').value = HALFDAY_MORNING_START;
-      document.getElementById('hiddenEnd').value = HALFDAY_MORNING_END;
-    } else {
-      document.getElementById('hiddenStart').value = HALFDAY_AFTERNOON_START;
-      document.getElementById('hiddenEnd').value = HALFDAY_AFTERNOON_END;
+  document.getElementById('readyBySelect').addEventListener('change', function() {
+    if (this.value) {
+      var p = this.value.split(':');
+      readyByHour = parseInt(p[0]);
+      readyByMin = parseInt(p[1]);
     }
-  }
+    updateHiddenFields();
+  });
 
-  // Carry forward preselect item ID from equipment detail page
+  document.getElementById('durHalfDay').addEventListener('click', function() { selectDurationType('halfday'); });
+  document.getElementById('durFullDay').addEventListener('click', function() { selectDurationType('allday'); });
+
+  document.querySelectorAll('.days-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { selectDays(parseInt(this.dataset.days)); });
+  });
+
+  // Carry forward preselect param
   (function() {
     var params = new URLSearchParams(window.location.search);
     var preselect = params.get('preselect');
     if (preselect) {
       var input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'preselect';
-      input.value = preselect;
+      input.type = 'hidden'; input.name = 'preselect'; input.value = preselect;
       document.getElementById('dateForm').appendChild(input);
     }
-    // If rental_duration was passed, pre-select it
     var dur = params.get('rental_duration');
-    if (dur === '4hr') {
-      selectDuration('halfday', document.getElementById('durHalfDay'));
-    } else if (dur === 'overnight') {
-      selectDuration('overnight', document.getElementById('durOvernight'));
-    }
+    if (dur === '4hr') { selectedDurationType = 'halfday'; document.getElementById('durHalfDay').classList.add('selected'); document.getElementById('durFullDay').classList.remove('selected'); }
   })();
 
   document.getElementById('dateForm').addEventListener('submit', function(e) {
     if (!document.getElementById('eventDateInput').value) {
       e.preventDefault();
-      showToast('Please select an event date.', 'warning');
+      if (typeof showToast === 'function') showToast('Please select an event date.', 'warning');
+      else alert('Please select an event date.');
+      return;
     }
+    if (!document.getElementById('readyBySelect').value) {
+      e.preventDefault();
+      if (typeof showToast === 'function') showToast('Please select a ready-by time.', 'warning');
+      else alert('Please select a ready-by time.');
+      return;
+    }
+    updateHiddenFields();
   });
 
-  // addEventListener replacements for inline onclick
-  document.getElementById('durHalfDay').addEventListener('click', function() { selectDuration('halfday', this); });
-  document.getElementById('durFullDay').addEventListener('click', function() { selectDuration('fullday', this); });
-  document.getElementById('durOvernight').addEventListener('click', function() { selectDuration('overnight', this); });
-  document.getElementById('halfMorning').addEventListener('click', function() { selectHalf('morning', this); });
-  document.getElementById('halfAfternoon').addEventListener('click', function() { selectHalf('afternoon', this); });
+  refreshReadyBySelect();
+  refreshDaysUI();
 </script>
 ` }) %>

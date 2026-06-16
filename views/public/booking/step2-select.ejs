@@ -76,6 +76,22 @@
       <p>Available for <strong>${eventDate ? (() => { var d = new Date(eventDate + 'T12:00:00'); return d.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}); })() : 'your selected date'}</strong></p>
     </div>
 
+    <!-- Rental summary bar -->
+    <div class="text-center mb-4">
+      <div style="background:#eef3f8;border-radius:12px;padding:14px 24px;display:inline-block;">
+        <span style="font-weight:700;color:#004E89;font-size:15px;">
+          <i class="fas fa-calendar me-1"></i>
+          ${eventDate ? (() => { var d = new Date(eventDate + 'T12:00:00'); return d.toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'}); })() : 'Your date'}
+          &nbsp;&bull;&nbsp;
+          <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=readyBy.split(':'); var h=parseInt(p[0]); var m=p[1]||'00'; var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
+          &nbsp;&bull;&nbsp;
+          ${rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'All Day (10 hrs)'}
+          &nbsp;&bull;&nbsp;
+          ${rentalDays} day${rentalDays > 1 ? 's' : ''}
+        </span>
+      </div>
+    </div>
+
     <!-- Category Filter Pills -->
     <div class="text-center mb-4" id="categoryFilters">
       <button class="btn filter-pill rounded-pill m-1 active" data-category="all">All</button>
@@ -87,7 +103,7 @@
       <div class="col-lg-12">
         <div class="row g-4" id="equipmentGrid">
           ${equipment.map(function(item) {
-            var itemPrice = rentalDuration === '4hr' ? (item.price_4hr || item.price_daily * 0.65) : rentalDuration === 'overnight' ? (item.price_overnight || item.price_daily * 1.15) : item.price_daily;
+            var itemPrice = item.computedPrice || (rentalDuration === '4hr' ? (item.price_4hr || item.price_daily * 0.65) : item.price_daily);
             if (item.booked) {
               // Has availability in other time windows — show card in color with info overlay
               if (item.availableSlots && item.availableSlots.length > 0) {
@@ -136,7 +152,7 @@
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                 (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
-                (item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
+                (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-ban me-1"></i>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
                 (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><i class="fas fa-tint"></i> Wet (+$' + wetUp + ')</div></div></div>' : '') +
               '</div>' +
             '</div>' +
@@ -145,7 +161,7 @@
 
         
         <!-- Add-Ons Section -->
-        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = rentalDuration === '4hr' ? addon.price_4hr : (rentalDuration === 'overnight' ? (addon.price_overnight || addon.price_daily) : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
+        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = addon.computedPrice || (rentalDuration === '4hr' ? addon.price_4hr : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
 
 
         ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
@@ -319,7 +335,7 @@
     if (ids.length === 0) return;
     var params = new URLSearchParams(window.location.search);
     var wetIds = Object.keys(wetItems).filter(function(id) { return wetItems[id]; });
-    window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_items=' + wetIds.join(',') + '&event_date=' + (params.get('event_date')||'') + '&rental_duration=' + (params.get('rental_duration')||'daily') + '&event_start_time=' + (params.get('event_start_time')||'09:00') + '&event_end_time=' + (params.get('event_end_time')||'19:00');
+    window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_items=' + wetIds.join(',') + '&event_date=' + (params.get('event_date')||'') + '&rental_duration=' + (params.get('rental_duration')||'daily') + '&event_start_time=' + (params.get('event_start_time')||'09:00') + '&event_end_time=' + (params.get('event_end_time')||'19:00') + '&rental_days=' + (params.get('rental_days')||'1') + '&event_end_date=' + (params.get('event_end_date')||params.get('event_date')||'') + '&ready_by=' + (params.get('ready_by')||params.get('event_start_time')||'09:00');
   }
 
   // Category filtering
