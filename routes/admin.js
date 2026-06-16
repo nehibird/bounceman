@@ -148,13 +148,133 @@ router.get('/bookings/new', (req, res) => {
   });
 });
 
-router.post('/bookings/create', (req, res) => {
+router.post('/bookings/create', async (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
-  const { generateBookingNumber } = require('../lib/helpers');
+  const helpersLib = require('../lib/helpers');
+  const { generateBookingNumber, getBookedEquipmentIds, isBlockedByWetDryRule, priceForBooking, isoOffset, calcPricing, resolveDeliveryFee, getPrice, getWetUpcharge } = helpersLib;
   const data = req.body;
 
+  const equipIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? [data.equipment_ids] : []);
+  if (!data.event_date || !equipIds.length) {
+    return res.status(400).render('admin/bookings/new', {
+      title: 'New Booking - Admin', user: req.user, settings: getSettings(),
+      equipment: db.prepare("SELECT * FROM equipment WHERE status = 'available' ORDER BY sort_order").all(),
+      error: 'Event date and at least one equipment item are required.', page: 'bookings'
+    });
+  }
+
+  const rentalDays = Math.max(1, parseInt(data.rental_days) || 1);
+  const eventEndDate = rentalDays > 1
+    ? (data.event_end_date || isoOffset(data.event_date, rentalDays - 1))
+    : null;
+
+  // Normalize overnight window so an admin-created overnight occupies all of day 1
+  // (9 AM drop-off, held through the night; 9 AM next-day pickup is display-only).
+  const adminHasOvernight = equipIds.some(id => (data['duration_' + id] || 'daily') === 'overnight');
+  if (adminHasOvernight) {
+    data.event_start_time = '09:00';
+    data.event_end_time = '23:59';
+  }
+
+  const checkStart = data.event_start_time || '09:00';
+  const checkEnd = data.event_end_time || '19:00';
+
+  // ── Availability guard inside transaction ─────────────────────────────────
+  let bookingConflict = null;
+  const txn = db.transaction(() => {
+    for (const eqId of equipIds) {
+      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+      if (!eq) continue;
+      const durationType = data['duration_' + eqId] || 'daily';
+      // Day 1
+      const bookedCounts = getBookedEquipmentIds(db, data.event_date, checkStart, checkEnd, durationType);
+      const totalQty = eq.quantity || 1;
+      if ((bookedCounts.get(eqId) || 0) >= totalQty) {
+        bookingConflict = `${eq.name} is already booked on ${data.event_date} at that time.`;
+        return;
+      }
+      // Wet/dry rule
+      const isWet = (data['wet_' + eqId] === '1');
+      if (!isWet && isBlockedByWetDryRule(db, eqId, data.event_date, checkStart, false)) {
+        bookingConflict = `${eq.name} cannot be booked dry within 48h of a wet rental.`;
+        return;
+      }
+      // Extra days for multiday
+      for (let d = 1; d < rentalDays; d++) {
+        const extraDate = isoOffset(data.event_date, d);
+        const extraCounts = getBookedEquipmentIds(db, extraDate, '00:00', '23:59:59', 'daily');
+        if ((extraCounts.get(eqId) || 0) >= totalQty) {
+          bookingConflict = `${eq.name} is not available on day ${d+1} (${extraDate}) of this ${rentalDays}-day rental.`;
+          return;
+        }
+      }
+    }
+  });
+  txn();
+
+  if (bookingConflict) {
+    return res.render('admin/bookings/new', {
+      title: 'New Booking - Admin', user: req.user, settings: getSettings(),
+      equipment: db.prepare("SELECT * FROM equipment WHERE status = 'available' ORDER BY sort_order").all(),
+      error: bookingConflict, page: 'bookings', formData: data
+    });
+  }
+
+  // ── Reprice using priceForBooking ──────────────────────────────────────────
+  let subtotal = 0;
+  const lineItemsForInsert = [];
+  for (const eqId of equipIds) {
+    const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+    if (!eq) continue;
+    const durationType = data['duration_' + eqId] || 'daily';
+    const isWet = (data['wet_' + eqId] === '1');
+    let unitPrice;
+    try {
+      unitPrice = priceForBooking(db, eq, { duration: durationType, days: rentalDays, wet: isWet, date: data.event_date });
+    } catch(e) {
+      const basePrice = getPrice(eq, durationType);
+      unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
+    }
+    subtotal += unitPrice;
+    lineItemsForInsert.push({ eqId, eq, durationType, isWet, unitPrice });
+  }
+
+  // Delivery
+  const deliveryZip = data.delivery_zip || null;
+  let delivery_fee = parseFloat(data.delivery_fee || 0);
+  // Recalc if zip provided and no manual override
+  if (deliveryZip && !data.delivery_fee_override) {
+    try {
+      const zr = await resolveDeliveryFee(db, deliveryZip);
+      if (zr.fee >= 0) delivery_fee = zr.fee;
+    } catch(e) {}
+  }
+
+  // Discount (canonical order — compute but don't subtract from subtotal)
+  let discount_amount = 0;
+  if (data.discount_code) {
+    const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(data.discount_code.toUpperCase());
+    if (code) {
+      discount_amount = code.type === 'percent'
+        ? Math.round(subtotal * (code.value / 100) * 100) / 100
+        : Math.min(code.value, subtotal);
+    }
+  }
+
+  // Tax + totals (canonical: tax on undiscounted subtotal, discount off final total)
+  const taxExempt = data.tax_exempt_claimed === '1';
+  const settings = getSettings();
+  const pricing = calcPricing(settings, subtotal, delivery_fee, data.delivery_city || null, taxExempt);
+  const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee } = pricing;
+  const total = Math.round((pricing.total - discount_amount) * 100) / 100;
+  const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
+  const deposit_amount = Math.floor(total * depositPercent * 100) / 100;
+  const balance_due = Math.round((total - deposit_amount) * 100) / 100;
+
   // Create or find customer
+  const bookingId = uuid();
+  const bookingNumber = generateBookingNumber();
   let customer = null;
   if (data.email) {
     customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
@@ -168,49 +288,29 @@ router.post('/bookings/create', (req, res) => {
     customer = { id: customerId };
   }
 
-  // Create booking
-  const bookingId = uuid();
-  const bookingNumber = generateBookingNumber();
-  const subtotal = parseFloat(data.subtotal || 0);
-  const deliveryFee = parseFloat(data.delivery_fee || 0);
-  const discount = parseFloat(data.discount_amount || 0);
-  const total = parseFloat(data.total || 0);
-  const depositAmount = Math.round(total * 0.5 * 100) / 100;
-
-  // Normalize overnight window so an admin-created overnight occupies all of day 1
-  // (9 AM drop-off, held through the night; 9 AM next-day pickup is display-only).
-  const adminEquipIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? [data.equipment_ids] : []);
-  const adminHasOvernight = adminEquipIds.some(id => (data['duration_' + id] || 'daily') === 'overnight');
-  if (adminHasOvernight) {
-    data.event_start_time = '09:00';
-    data.event_end_time = '23:59';
-  }
-
-  db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
+  db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date, event_end_date,
     event_start_time, event_end_time, event_type, surface_type,
     delivery_address, delivery_city, delivery_state, delivery_zip,
-    subtotal, delivery_fee, discount_amount, total, deposit_amount, balance_due,
-    payment_status, internal_notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
+    subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
+    total, deposit_amount, balance_due, payment_status, internal_notes,
+    created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
     bookingId, bookingNumber, customer.id, data.status || 'confirmed',
-    data.event_date, data.event_start_time || null, data.event_end_time || null,
+    data.event_date, eventEndDate,
+    data.event_start_time || null, data.event_end_time || null,
     data.event_type || null, data.surface_type || null,
     data.delivery_address || null, data.delivery_city || null,
-    data.delivery_state || 'OK', data.delivery_zip || null,
-    subtotal, deliveryFee, discount, total, depositAmount, total - (data.payment_status === 'paid' ? 0 : data.payment_status === 'deposit_paid' ? total - depositAmount : total),
+    data.delivery_state || 'OK', deliveryZip,
+    subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
+    total, deposit_amount, balance_due,
     data.payment_status || 'unpaid', data.internal_notes || null
   );
 
   // Add booking items
-  const equipIds = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids ? [data.equipment_ids] : []);
-  for (const eqId of equipIds) {
-    const equip = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
-    if (!equip) continue;
-    const durationType = data['duration_' + eqId] || 'daily';
-    const price = durationType === '4hr' ? equip.price_4hr : durationType === 'overnight' ? equip.price_overnight : equip.price_daily;
-    db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type)
-      VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?)`).run(
-      uuid(), bookingId, eqId, equip.name, price, price, durationType
+  for (const item of lineItemsForInsert) {
+    db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type, rental_days)
+      VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?, ?)`).run(
+      uuid(), bookingId, item.eqId, item.eq.name, item.unitPrice, item.unitPrice, item.durationType, rentalDays
     );
   }
 

@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, isBlockedByWetDryRule, isoOffset } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -70,9 +70,9 @@ router.post('/check-availability', async (req, res) => {
   const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
 
   // Check each time window separately for accurate per-slot availability
-  const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00');
-  const bookedAfternoon = getBookedEquipmentIds(db, date, '15:00:00', '19:00:00');
-  const bookedFullDay   = getBookedEquipmentIds(db, date, '09:00:00', '19:00:00');
+  const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00', '4hr');
+  const bookedAfternoon = getBookedEquipmentIds(db, date, '15:00:00', '19:00:00', '4hr');
+  const bookedFullDay   = getBookedEquipmentIds(db, date, '09:00:00', '19:00:00', 'daily');
 
   const slotAvail = (e, bookedMap) => (bookedMap.get(e.id) || 0) < (e.quantity || 1);
 
@@ -231,15 +231,15 @@ router.post('/get-quote', async (req, res) => {
   }
 
   const dur = duration || 'daily';
+  const reqDaysQuote = parseInt(req.body.days) || 1;
   let subtotal = 0;
   const lineItems = [];
 
   for (const eqId of equipment_ids) {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
     if (!eq) continue;
-    let price = getPrice(eq, dur);
     const useWet = wet === true && isWetCapable(eq);
-    if (useWet) price += getWetUpcharge(eq);
+    const price = priceForBooking(db, eq, { duration: dur, days: reqDaysQuote, wet: useWet, date: req.body.date || null });
     lineItems.push({ id: eq.id, name: useWet ? eq.name + ' (Wet)' : eq.name, price, duration: dur });
     subtotal += price;
   }
@@ -249,7 +249,7 @@ router.post('/get-quote', async (req, res) => {
   }
 
   const { fee: delivery_fee, zone: zone_name } = await resolveDeliveryFee(db, delivery_zip);
-  const { taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee);
+  const { taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee, req.body.delivery_city || null);
 
   const itemList = lineItems.map(i => `${i.name} ($${i.price})`).join(', ');
 
@@ -360,33 +360,23 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     // Calculate pricing (wet upcharge applies to water-capable units when caller chose wet)
+    const reqDays = parseInt(req.body.days) || 1;
     let subtotal = 0;
     const lineItems = [];
     for (const eqId of equipment_ids) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
       if (!eq) continue;
-      let price = getPrice(eq, dur);
       const useWet = wet === true && isWetCapable(eq);
-      if (useWet) price += getWetUpcharge(eq);
-      lineItems.push({ equipment_id: eq.id, item_name: useWet ? eq.name + ' (Wet)' : eq.name, unit_price: price, total_price: price, duration_type: dur, wet_option: useWet ? 1 : 0 });
-      subtotal += price;
+      const unitPrice = priceForBooking(db, eq, { duration: dur, days: reqDays, wet: useWet, date: eventDateISO });
+      lineItems.push({ equipment_id: eq.id, item_name: useWet ? eq.name + ' (Wet)' : eq.name, unit_price: unitPrice, total_price: unitPrice, duration_type: dur, wet_option: useWet ? 1 : 0 });
+      subtotal += unitPrice;
     }
 
     if (lineItems.length === 0) {
       return res.status(400).json({ error: 'None of the selected equipment is available' });
     }
 
-    // Verify date availability (time-aware, quantity-aware)
-    // Normalize event_start_time to HH:MM:SS 24-hour for comparison
-    const norm24 = t => {
-      if (!t) return null;
-      const m = String(t).trim().match(/^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(AM|PM)?$/i);
-      if (!m) return t;
-      let h = parseInt(m[1]), min = m[2] || '00', sec = m[3] || '00', mer = (m[4] || '').toUpperCase();
-      if (mer === 'PM' && h !== 12) h += 12;
-      if (mer === 'AM' && h === 12) h = 0;
-      return `${String(h).padStart(2,'0')}:${min}:${sec}`;
-    };
+    // Verify date availability using buffered getBookedEquipmentIds + wet/dry rule (same as website)
     let checkStart, checkEnd;
     if (dur === 'overnight') {
       // Overnight occupies all of day 1.
@@ -397,43 +387,42 @@ router.post('/create-and-send-link', async (req, res) => {
     } else if (dur === 'daily') {
       checkStart = '09:00:00'; checkEnd = '19:00:00';
     } else { // 4hr — determine morning vs afternoon from event_start_time
-      const normStart = norm24(event_start_time) || '09:00:00';
-      const startH = parseInt(normStart.split(':')[0]);
-      if (startH >= 12) { checkStart = '15:00:00'; checkEnd = '19:00:00'; }
-      else               { checkStart = '09:00:00'; checkEnd = '13:00:00'; }
+      const sh = event_start_time ? parseInt(String(event_start_time).match(/\d{1,2}/)?.[0] || '9', 10) : 9;
+      if (sh >= 12) { checkStart = '15:00:00'; checkEnd = '19:00:00'; }
+      else           { checkStart = '09:00:00'; checkEnd = '13:00:00'; }
     }
-    // A Saturday overnight also needs the following Sunday free (delivered Sat, picked up Mon).
-    const sarahExtraHold = overnightExtraHoldDate(eventDateISO, dur);
-    // Booking a Sunday that's tied up by a prior Saturday overnight of a unit.
-    const sarahSpillover = getSaturdayOvernightSpillover(db, eventDateISO);
+    // Use buffered getBookedEquipmentIds + wet/dry rule (same as website)
+    const bookedCounts = getBookedEquipmentIds(db, eventDateISO, checkStart, checkEnd, dur);
     for (const item of lineItems) {
-      const { cnt } = db.prepare(`
-        SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
-        WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-          AND b.event_start_time < ? AND b.event_end_time > ?
-      `).get(eventDateISO, item.equipment_id, checkEnd, checkStart);
-      const qty = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id)?.quantity || 1;
-      let blocked = cnt >= qty;
-      if (!blocked && sarahSpillover.has(item.equipment_id)) blocked = true;
-      if (!blocked && sarahExtraHold) {
-        const sun = db.prepare(`
-          SELECT COUNT(*) as cnt FROM bookings b JOIN booking_items bi ON bi.booking_id = b.id
-          WHERE b.event_date = ? AND bi.equipment_id = ? AND b.status NOT IN ('cancelled', 'declined')
-        `).get(sarahExtraHold, item.equipment_id);
-        const sunBlocked = db.prepare("SELECT id FROM blocked_dates WHERE date = ? AND (equipment_id = ? OR equipment_id IS NULL) LIMIT 1").get(sarahExtraHold, item.equipment_id);
-        if ((sun && sun.cnt >= qty) || sunBlocked) blocked = true;
+      const eq = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id);
+      const totalQty = eq ? (eq.quantity || 1) : 1;
+      const bookedQty = bookedCounts.get(item.equipment_id) || 0;
+      if (bookedQty >= totalQty) {
+        return res.json({ success: false, error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(eventDateISO)}. Want to try a different slot or date?` });
       }
-      if (blocked) {
-        return res.json({
-          success: false,
-          error: `Sorry, ${item.item_name} is fully booked for that time on ${fmtDate(eventDateISO)}. Want to try a different slot or date?`
-        });
+      const useWetItem = item.wet_option === 1;
+      if (!useWetItem && isBlockedByWetDryRule(db, item.equipment_id, eventDateISO, checkStart, false)) {
+        return res.json({ success: false, error: `Sorry, ${item.item_name} can't be booked dry within 48 hours of a wet rental. Want to try a different date?` });
+      }
+    }
+    // Multiday: check each extra day
+    if (reqDays > 1) {
+      for (let d = 1; d < reqDays; d++) {
+        const extraDate = isoOffset(eventDateISO, d);
+        const extraCounts = getBookedEquipmentIds(db, extraDate, '00:00', '23:59:59', 'daily');
+        for (const item of lineItems) {
+          const eq = db.prepare('SELECT quantity FROM equipment WHERE id = ?').get(item.equipment_id);
+          const totalQty = eq ? (eq.quantity || 1) : 1;
+          if ((extraCounts.get(item.equipment_id) || 0) >= totalQty) {
+            return res.json({ success: false, error: `Sorry, ${item.item_name} isn't available on day ${d+1} of your ${reqDays}-day rental. Want to try different dates?` });
+          }
+        }
       }
     }
 
     const { fee: delivery_fee } = await resolveDeliveryFee(db, delivery_zip);
 
-    // Apply discount code if provided
+    // Apply discount code if provided (canonical order: compute discount but DON'T subtract from subtotal yet)
     let discount_amount = 0;
     let applied_code = null;
     if (discount_code) {
@@ -444,11 +433,13 @@ router.post('/create-and-send-link', async (req, res) => {
           : Math.min(code.value, subtotal);
         applied_code = code.code;
         db.prepare('UPDATE discount_codes SET uses_count = uses_count + 1 WHERE id = ?').run(code.id);
-        subtotal = Math.max(0, subtotal - discount_amount);
+        // DO NOT subtract from subtotal yet — tax must be computed on undiscounted subtotal
       }
     }
 
-    const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee);
+    const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, delivery_city);
+    const total = Math.round((rawTotal - discount_amount) * 100) / 100;
+    const deposit_amount = Math.floor(total * (parseFloat(settings.deposit_percent || '50') / 100) * 100) / 100;
 
     // Create or find customer
     let customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(normalizePhone(phone));
@@ -485,7 +476,7 @@ router.post('/create-and-send-link', async (req, res) => {
       surface_type || 'grass',
       powerAvailable,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
-      damage_waiver_fee, total, deposit_amount, total, 'unpaid'
+      damage_waiver_fee, total, deposit_amount, Math.round((total - deposit_amount) * 100) / 100, 'unpaid'
     );
 
     // Add line items
