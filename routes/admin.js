@@ -164,7 +164,7 @@ router.post('/bookings/create', async (req, res) => {
     });
   }
 
-  const rentalDays = Math.max(1, parseInt(data.rental_days) || 1);
+  const rentalDays = Math.min(30, Math.max(1, parseInt(data.rental_days) || 1));
   const eventEndDate = rentalDays > 1
     ? (data.event_end_date || isoOffset(data.event_date, rentalDays - 1))
     : null;
@@ -180,38 +180,36 @@ router.post('/bookings/create', async (req, res) => {
   const checkStart = data.event_start_time || '09:00';
   const checkEnd = data.event_end_time || '19:00';
 
-  // ── Availability guard inside transaction ─────────────────────────────────
+  // ── Availability guard (pre-check, read-only) ────────────────────────────
   let bookingConflict = null;
-  const txn = db.transaction(() => {
-    for (const eqId of equipIds) {
-      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
-      if (!eq) continue;
-      const durationType = data['duration_' + eqId] || 'daily';
-      // Day 1
-      const bookedCounts = getBookedEquipmentIds(db, data.event_date, checkStart, checkEnd, durationType);
-      const totalQty = eq.quantity || 1;
-      if ((bookedCounts.get(eqId) || 0) >= totalQty) {
-        bookingConflict = `${eq.name} is already booked on ${data.event_date} at that time.`;
-        return;
-      }
-      // Wet/dry rule
-      const isWet = (data['wet_' + eqId] === '1');
-      if (!isWet && isBlockedByWetDryRule(db, eqId, data.event_date, checkStart, false)) {
-        bookingConflict = `${eq.name} cannot be booked dry within 48h of a wet rental.`;
-        return;
-      }
-      // Extra days for multiday
-      for (let d = 1; d < rentalDays; d++) {
-        const extraDate = isoOffset(data.event_date, d);
-        const extraCounts = getBookedEquipmentIds(db, extraDate, '00:00', '23:59:59', 'daily');
-        if ((extraCounts.get(eqId) || 0) >= totalQty) {
-          bookingConflict = `${eq.name} is not available on day ${d+1} (${extraDate}) of this ${rentalDays}-day rental.`;
-          return;
-        }
+  for (const eqId of equipIds) {
+    const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+    if (!eq) continue;
+    const durationType = data['duration_' + eqId] || 'daily';
+    // Day 1
+    const bookedCounts = getBookedEquipmentIds(db, data.event_date, checkStart, checkEnd, durationType);
+    const totalQty = eq.quantity || 1;
+    if ((bookedCounts.get(eqId) || 0) >= totalQty) {
+      bookingConflict = `${eq.name} is already booked on ${data.event_date} at that time.`;
+      break;
+    }
+    // Wet/dry rule
+    const isWet = (data['wet_' + eqId] === '1');
+    if (!isWet && isBlockedByWetDryRule(db, eqId, data.event_date, checkStart, false)) {
+      bookingConflict = `${eq.name} cannot be booked dry within 48h of a wet rental.`;
+      break;
+    }
+    // Extra days for multiday
+    for (let d = 1; d < rentalDays; d++) {
+      const extraDate = isoOffset(data.event_date, d);
+      const extraCounts = getBookedEquipmentIds(db, extraDate, '00:00', '23:59:59', 'daily');
+      if ((extraCounts.get(eqId) || 0) >= totalQty) {
+        bookingConflict = `${eq.name} is not available on day ${d+1} (${extraDate}) of this ${rentalDays}-day rental.`;
+        break;
       }
     }
-  });
-  txn();
+    if (bookingConflict) break;
+  }
 
   if (bookingConflict) {
     return res.render('admin/bookings/new', {
@@ -272,47 +270,66 @@ router.post('/bookings/create', async (req, res) => {
   const deposit_amount = Math.floor(total * depositPercent * 100) / 100;
   const balance_due = Math.round((total - deposit_amount) * 100) / 100;
 
-  // Create or find customer
-  const bookingId = uuid();
-  const bookingNumber = generateBookingNumber();
-  let customer = null;
-  if (data.email) {
-    customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
-  }
-  if (!customer) {
-    const customerId = uuid();
-    db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source)
-      VALUES (?, ?, ?, ?, ?, 'admin')`).run(
-      customerId, data.first_name, data.last_name, data.email || null, data.phone || null
-    );
-    customer = { id: customerId };
-  }
+  // H-2: Customer upsert + all INSERTs in ONE transaction to prevent TOCTOU double-booking race
+  let bookingId, bookingNumber;
+  db.transaction(() => {
+    // Re-check availability inside the write transaction (TOCTOU guard)
+    for (const eqId of equipIds) {
+      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
+      if (!eq) continue;
+      const durationType = data['duration_' + eqId] || 'daily';
+      const bookedCounts = getBookedEquipmentIds(db, data.event_date, checkStart, checkEnd, durationType);
+      const totalQty = eq.quantity || 1;
+      if ((bookedCounts.get(eqId) || 0) >= totalQty) throw new Error(`double-booking: ${eq.name}`);
+      for (let d = 1; d < rentalDays; d++) {
+        const extraDate = isoOffset(data.event_date, d);
+        const extraCounts = getBookedEquipmentIds(db, extraDate, '00:00', '23:59:59', 'daily');
+        if ((extraCounts.get(eqId) || 0) >= totalQty) throw new Error(`double-booking day ${d+1}: ${eq.name}`);
+      }
+    }
 
-  db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date, event_end_date,
-    event_start_time, event_end_time, event_type, surface_type,
-    delivery_address, delivery_city, delivery_state, delivery_zip,
-    subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
-    total, deposit_amount, balance_due, payment_status, internal_notes,
-    created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
-    bookingId, bookingNumber, customer.id, data.status || 'confirmed',
-    data.event_date, eventEndDate,
-    data.event_start_time || null, data.event_end_time || null,
-    data.event_type || null, data.surface_type || null,
-    data.delivery_address || null, data.delivery_city || null,
-    data.delivery_state || 'OK', deliveryZip,
-    subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
-    total, deposit_amount, balance_due,
-    data.payment_status || 'unpaid', data.internal_notes || null
-  );
+    // Create or find customer
+    bookingId = uuid();
+    bookingNumber = generateBookingNumber();
+    let customer = null;
+    if (data.email) {
+      customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
+    }
+    if (!customer) {
+      const customerId = uuid();
+      db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source)
+        VALUES (?, ?, ?, ?, ?, 'admin')`).run(
+        customerId, data.first_name, data.last_name, data.email || null, data.phone || null
+      );
+      customer = { id: customerId };
+    }
 
-  // Add booking items
-  for (const item of lineItemsForInsert) {
-    db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type, rental_days)
-      VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?, ?)`).run(
-      uuid(), bookingId, item.eqId, item.eq.name, item.unitPrice, item.unitPrice, item.durationType, rentalDays
+    db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date, event_end_date,
+      event_start_time, event_end_time, event_type, surface_type,
+      delivery_address, delivery_city, delivery_state, delivery_zip,
+      subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
+      total, deposit_amount, balance_due, payment_status, internal_notes,
+      created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
+      bookingId, bookingNumber, customer.id, data.status || 'confirmed',
+      data.event_date, eventEndDate,
+      data.event_start_time || null, data.event_end_time || null,
+      data.event_type || null, data.surface_type || null,
+      data.delivery_address || null, data.delivery_city || null,
+      data.delivery_state || 'OK', deliveryZip,
+      subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
+      total, deposit_amount, balance_due,
+      data.payment_status || 'unpaid', data.internal_notes || null
     );
-  }
+
+    // Add booking items
+    for (const item of lineItemsForInsert) {
+      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type, rental_days)
+        VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?, ?)`).run(
+        uuid(), bookingId, item.eqId, item.eq.name, item.unitPrice, item.unitPrice, item.durationType, rentalDays
+      );
+    }
+  })();
 
   console.log('[ADMIN] Booking created:', bookingNumber, 'for', data.first_name, data.last_name);
   res.redirect('/admin/bookings/' + bookingId);

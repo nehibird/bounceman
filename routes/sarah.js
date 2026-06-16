@@ -360,7 +360,7 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     // Calculate pricing (wet upcharge applies to water-capable units when caller chose wet)
-    const reqDays = parseInt(req.body.days) || 1;
+    const reqDays = Math.min(30, Math.max(1, parseInt(req.body.days) || 1));
     let subtotal = 0;
     const lineItems = [];
     for (const eqId of equipment_ids) {
@@ -462,15 +462,18 @@ router.post('/create-and-send-link', async (req, res) => {
     const bookingId = uuid();
     const bookingNumber = generateBookingNumber();
 
+    // H-4: compute event_end_date for multiday sarah bookings (days 2+ otherwise invisible to availability)
+    const sarahEndDate = reqDays > 1 ? require('../lib/helpers').isoOffset(eventDateISO, reqDays - 1) : null;
+
     db.prepare(`INSERT INTO bookings (
-      id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
+      id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time,
       event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
       surface_type, power_available,
       subtotal, delivery_fee, tax_amount, tax_rate, discount_amount,
       damage_waiver_fee, total, deposit_amount, balance_due, payment_status, source
-    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sarah')`).run(
+    ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, 'residential', ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sarah')`).run(
       bookingId, bookingNumber, customerId,
-      eventDateISO, startTime, endTime,
+      eventDateISO, sarahEndDate, startTime, endTime,
       event_type || 'birthday_party',
       delivery_address || '', delivery_city || '', delivery_zip || '',
       surface_type || 'grass',
@@ -481,8 +484,8 @@ router.post('/create-and-send-link', async (req, res) => {
 
     // Add line items
     for (const item of lineItems) {
-      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, item.equipment_id, item.item_name, item.unit_price, item.total_price, item.duration_type, item.wet_option || 0);
+      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type, wet_option, rental_days)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(uuid(), bookingId, item.equipment_id, item.item_name, item.unit_price, item.total_price, item.duration_type, item.wet_option || 0, reqDays);
     }
 
     // Update customer stats

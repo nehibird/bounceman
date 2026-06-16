@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -232,7 +232,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
   const wetItemIds = new Set((wet_items || '').split(',').filter(Boolean));
   const duration = rental_duration || 'daily';
-  const days = parseInt(rental_days) || 1;
+  const days = Math.min(30, Math.max(1, parseInt(rental_days) || 1));
 
   let subtotal = 0;
   const lineItems = [];
@@ -267,7 +267,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     if (code) {
       discount_amount = code.type === 'percent'
         ? Math.round(subtotal * (code.value / 100) * 100) / 100
-        : code.value;
+        : Math.min(code.value, subtotal);
     }
   }
 
@@ -320,7 +320,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const submitItems = Array.isArray(data.equipment_ids) ? data.equipment_ids : (data.equipment_ids || '').split(',').filter(Boolean);
     const submitWetIdsSet = new Set((data.wet_items || '').split(',').filter(Boolean));
     const submitDuration = data.rental_duration || 'daily';
-    const submitDays = parseInt(data.rental_days) || 1;
+    const submitDays = Math.min(30, Math.max(1, parseInt(data.rental_days) || 1));
     const submitEndDate = data.event_end_date || data.event_date;
 
     let recalcSubtotal = 0;
@@ -344,7 +344,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       if (code) {
         recalcDiscountAmount = code.type === 'percent'
           ? Math.round(recalcSubtotal * (code.value / 100) * 100) / 100
-          : code.value;
+          : Math.min(code.value, recalcSubtotal);
       }
     }
     const existingCustomer = data.email ? db.prepare('SELECT tax_exempt FROM customers WHERE email = ?').get(data.email) : null;
@@ -360,6 +360,12 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
     data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
     data.discount_amount = recalcDiscountAmount;
+
+    // H-3: Overnight time-normalization (defensive against crafted POSTs)
+    if (data.rental_duration === 'overnight') {
+      data.event_start_time = '09:00';
+      data.event_end_time = '23:59';
+    }
 
     // Availability guard: prevent double-booking
     const submitDate = data.event_date;
@@ -387,6 +393,17 @@ router.post('/submit', bookingLimiter, async (req, res) => {
             status: 409
           });
         }
+      }
+
+      // H-1: Wet->dry rule check (mirrors sarah.js ~line 404)
+      const submitWetThisItem = submitWetIdsSet.has(eqId);
+      if (!submitWetThisItem && isBlockedByWetDryRule(db, eqId, submitDate, checkWin.start, false)) {
+        const eqWdInfo = db.prepare('SELECT name FROM equipment WHERE id = ?').get(eqId);
+        return res.status(409).render('error', {
+          title: 'Equipment Unavailable',
+          message: `Sorry, ${eqWdInfo?.name || 'the selected equipment'} can't be booked dry within 48 hours of a wet rental. Please choose a different date.`,
+          status: 409
+        });
       }
 
       // Overnight/Sunday spillover check on day 1
@@ -447,7 +464,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         parseFloat(data.discount_amount || 0), data.discount_code || null,
         parseFloat(data.damage_waiver_fee || 0),
         parseFloat(data.total), parseFloat(data.deposit_amount),
-        parseFloat(data.total) - parseFloat(data.deposit_amount), 'unpaid',
+        Math.round((parseFloat(data.total) - parseFloat(data.deposit_amount)) * 100) / 100, 'unpaid',
         taxExempt ? 1 : 0
       );
 
@@ -548,7 +565,6 @@ router.post('/submit', bookingLimiter, async (req, res) => {
   }
 });
 
-;
 
 // Confirmation page (after Stripe success redirect)
 router.get('/confirmation', async (req, res) => {
