@@ -89,11 +89,29 @@ router.get('/select', (req, res) => {
       item.computedWetPrice = null;
     }
 
+    let extraAvail = 0;
+    if (!item.booked && eventDate) {
+      extraAvail = maxExtraDaysAvailable(db, item.id, eventDate, 1);
+    }
     if (rentalDays > 1 && !item.booked && eventDate) {
-      const extraAvail = maxExtraDaysAvailable(db, item.id, eventDate, 1);
       item.multidayUnavailable = extraAvail < (rentalDays - 1);
     } else {
       item.multidayUnavailable = false;
+    }
+    // Expose extra-day pricing + availability for step 2 upsell
+    if (!item.booked && eventDate) {
+      item.maxExtraDays = extraAvail;
+      try {
+        const price2 = priceForBooking(db, item, { duration: 'daily', days: 2, wet: false, date: eventDate });
+        const price1 = priceForBooking(db, item, { duration: 'daily', days: 1, wet: false, date: eventDate });
+        item.extraDayPrice = Math.round((price2 - price1) * 100) / 100;
+      } catch(e) {
+        item.extraDayPrice = null;
+        item.maxExtraDays = 0;
+      }
+    } else {
+      item.extraDayPrice = null;
+      item.maxExtraDays = 0;
     }
   });
 

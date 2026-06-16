@@ -118,10 +118,13 @@
               </div>
               <div class="col-6">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
-                  <span class="dur-label">All Day</span>
-                  <span class="dur-sub">~10 hours</span>
+                  <span class="dur-label">Full Day</span>
+                  <span class="dur-sub">9 AM – 7 PM</span>
                 </div>
               </div>
+            </div>
+            <div id="fulldayNote" style="margin-top:12px;font-size:13px;color:#004E89;display:block;">
+              <i class="fas fa-info-circle me-1"></i> 9 AM – 7 PM — we set up before 9.
             </div>
 
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
@@ -129,24 +132,13 @@
             </div>
           </div>
 
-          <!-- 3. Ready-by time -->
-          <div class="date-card mb-4">
-            <h6 class="fw-bold mb-3"><i class="fas fa-sun me-2"></i>Ready By What Time?</h6>
-            <p class="text-muted small mb-3">We'll have everything set up and ready before this time.</p>
+          <!-- 3. Ready-by time (half-day only) -->
+          <div class="date-card mb-4" id="timeCard" style="display:none;">
+            <h6 class="fw-bold mb-3"><i class="fas fa-sun me-2"></i>What time do you want to start?</h6>
+            <p class="text-muted small mb-3">Pick when your 4 hours begin.</p>
             <select id="readyBySelect" class="readyby-select">
               <option value="">Select a time...</option>
             </select>
-          </div>
-
-          <!-- 4. How many days -->
-          <div class="date-card mb-4">
-            <h6 class="fw-bold mb-3"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h6>
-            <div class="d-flex gap-3">
-              <div class="days-btn selected" data-days="1">1 Day</div>
-              <div class="days-btn" data-days="2">2 Days</div>
-              <div class="days-btn" data-days="3">3 Days</div>
-            </div>
-            <p class="text-muted small mt-2" id="extraDayCostNote" style="display:none"></p>
           </div>
 
           <!-- Hidden fields -->
@@ -173,7 +165,6 @@
   var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ""}' .split(',').map(Number).filter(function(n) { return !isNaN(n) && n >= 0; });
 
   var HALFDAY_HOURS = 4;
-  var ALLDAY_HOURS = 10;
   var MIN_READY_BY_H = 8;
   var MAX_END_HOUR = 22;
 
@@ -195,11 +186,9 @@
     d.setDate(d.getDate() + days);
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
-  function getDurationHours() { return selectedDurationType === 'halfday' ? HALFDAY_HOURS : ALLDAY_HOURS; }
-  function getMaxReadyByHour() { return MAX_END_HOUR - getDurationHours(); }
 
   function buildReadyByTimes() {
-    var maxH = getMaxReadyByHour();
+    var maxH = MAX_END_HOUR - HALFDAY_HOURS;
     var times = [];
     for (var h = MIN_READY_BY_H; h <= maxH; h++) {
       times.push({ h: h, m: 0 });
@@ -211,8 +200,8 @@
   function refreshReadyBySelect() {
     var sel = document.getElementById('readyBySelect');
     var times = buildReadyByTimes();
-    var maxTotal = getMaxReadyByHour() * 60;
-    if (readyByHour * 60 + readyByMin > maxTotal) {
+    var maxH = MAX_END_HOUR - HALFDAY_HOURS;
+    if (readyByHour * 60 + readyByMin > maxH * 60) {
       readyByHour = 9; readyByMin = 0;
     }
     sel.innerHTML = '<option value="">Select a time...</option>';
@@ -227,62 +216,53 @@
   }
 
   function updateHiddenFields() {
-    var sel = document.getElementById('readyBySelect');
-    var val = sel.value;
-    document.getElementById('hiddenReadyBy').value = val;
-    if (!val) {
-      document.getElementById('hiddenStart').value = '';
-      document.getElementById('hiddenEnd').value = '';
+    var durVal, startVal, endVal, readyByVal;
+    if (selectedDurationType === 'allday') {
+      durVal = 'daily';
+      startVal = '09:00';
+      endVal = '19:00';
+      readyByVal = '09:00';
     } else {
-      var parts = val.split(':');
-      var rh = parseInt(parts[0]);
-      var rm = parseInt(parts[1]);
-      var durH = getDurationHours();
-      document.getElementById('hiddenStart').value = fmt24(rh, rm);
-      document.getElementById('hiddenEnd').value = fmt24(rh + durH, rm);
+      durVal = '4hr';
+      var sel = document.getElementById('readyBySelect');
+      var val = sel.value;
+      readyByVal = val;
+      if (!val) {
+        startVal = '';
+        endVal = '';
+      } else {
+        var parts = val.split(':');
+        var rh = parseInt(parts[0]);
+        var rm = parseInt(parts[1]);
+        startVal = fmt24(rh, rm);
+        endVal = fmt24(rh + HALFDAY_HOURS, rm);
+      }
     }
-    var durVal = selectedDurationType === 'halfday' ? '4hr' : (selectedDays > 1 ? 'multiday' : 'daily');
     document.getElementById('hiddenDuration').value = durVal;
-    document.getElementById('hiddenDays').value = selectedDays;
+    document.getElementById('hiddenStart').value = startVal;
+    document.getElementById('hiddenEnd').value = endVal;
+    document.getElementById('hiddenReadyBy').value = readyByVal;
+    document.getElementById('hiddenDays').value = '1';
     var dateStr = document.getElementById('eventDateInput').value;
-    document.getElementById('hiddenEndDate').value = dateStr ? isoOffset(dateStr, selectedDays - 1) : '';
+    document.getElementById('hiddenEndDate').value = dateStr ? isoOffset(dateStr, 0) : '';
   }
 
   function selectDurationType(type) {
     selectedDurationType = type;
     document.getElementById('durHalfDay').classList.toggle('selected', type === 'halfday');
     document.getElementById('durFullDay').classList.toggle('selected', type === 'allday');
-    if (type === 'halfday' && selectedDays > 1) { selectedDays = 1; refreshDaysUI(); }
-    refreshReadyBySelect();
-    applyDayRules();
-  }
-
-  function selectDays(days) {
-    if (selectedDurationType === 'halfday' && days > 1) return;
-    selectedDays = days;
-    refreshDaysUI();
-    updateHiddenFields();
-  }
-
-  function refreshDaysUI() {
-    document.querySelectorAll('.days-btn').forEach(function(btn) {
-      var d = parseInt(btn.dataset.days);
-      btn.classList.toggle('selected', d === selectedDays);
-      if (selectedDurationType === 'halfday' && d > 1) {
-        btn.style.opacity = '0.35';
-        btn.style.pointerEvents = 'none';
-      } else {
-        btn.style.opacity = '';
-        btn.style.pointerEvents = '';
-      }
-    });
-    var note = document.getElementById('extraDayCostNote');
-    if (selectedDays > 1) {
-      note.style.display = '';
-      note.textContent = 'Multi-day pricing: extra-day rates vary per item and are shown on the next page.';
+    var timeCard = document.getElementById('timeCard');
+    var fulldayNote = document.getElementById('fulldayNote');
+    if (type === 'halfday') {
+      timeCard.style.display = '';
+      if (fulldayNote) fulldayNote.style.display = 'none';
+      refreshReadyBySelect();
     } else {
-      note.style.display = 'none';
+      timeCard.style.display = 'none';
+      if (fulldayNote) fulldayNote.style.display = 'block';
     }
+    updateHiddenFields();
+    applyDayRules();
   }
 
   function applyDayRules() {
@@ -311,7 +291,7 @@
     disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
     onChange: function(sel, dateStr) {
       document.getElementById('eventDateInput').value = dateStr;
-      document.getElementById('hiddenEndDate').value = isoOffset(dateStr, selectedDays - 1);
+      document.getElementById('hiddenEndDate').value = isoOffset(dateStr, 0);
       applyDayRules();
       updateHiddenFields();
     }
@@ -329,10 +309,6 @@
   document.getElementById('durHalfDay').addEventListener('click', function() { selectDurationType('halfday'); });
   document.getElementById('durFullDay').addEventListener('click', function() { selectDurationType('allday'); });
 
-  document.querySelectorAll('.days-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() { selectDays(parseInt(this.dataset.days)); });
-  });
-
   // Carry forward preselect param
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -343,7 +319,7 @@
       document.getElementById('dateForm').appendChild(input);
     }
     var dur = params.get('rental_duration');
-    if (dur === '4hr') { selectedDurationType = 'halfday'; document.getElementById('durHalfDay').classList.add('selected'); document.getElementById('durFullDay').classList.remove('selected'); }
+    if (dur === '4hr') { selectDurationType('halfday'); }
   })();
 
   document.getElementById('dateForm').addEventListener('submit', function(e) {
@@ -353,16 +329,16 @@
       else alert('Please select an event date.');
       return;
     }
-    if (!document.getElementById('readyBySelect').value) {
+    if (selectedDurationType === 'halfday' && !document.getElementById('readyBySelect').value) {
       e.preventDefault();
-      if (typeof showToast === 'function') showToast('Please select a ready-by time.', 'warning');
-      else alert('Please select a ready-by time.');
+      if (typeof showToast === 'function') showToast('Please select a start time.', 'warning');
+      else alert('Please select a start time.');
       return;
     }
     updateHiddenFields();
   });
 
-  refreshReadyBySelect();
-  refreshDaysUI();
+  // Initialize — full day is default, time card hidden
+  updateHiddenFields();
 </script>
 ` }) %>

@@ -39,6 +39,27 @@
   .wd-btn.wd-active i { color: white !important; }
   .filter-pill { border: 2px solid var(--bm-blue); color: var(--bm-blue); background: transparent; font-weight: 600; transition: all 0.2s; }
   .filter-pill:hover, .filter-pill.active { background: var(--bm-blue); color: white; border-color: var(--bm-blue); }
+  .days-btn-s2 {
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 15px;
+    border: 2px solid #e0e0e0;
+    background: #f8f8f8;
+    color: #555;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .days-btn-s2.selected {
+    background: var(--bm-blue, #004E89) !important;
+    color: white !important;
+    border-color: var(--bm-blue, #004E89) !important;
+  }
+  .days-btn-s2.disabled-day {
+    opacity: 0.35;
+    pointer-events: none;
+  }
 
   @media (max-width: 991px) {
     .sticky-summary { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); }
@@ -85,7 +106,7 @@
           &nbsp;&bull;&nbsp;
           <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=readyBy.split(':'); var h=parseInt(p[0]); var m=p[1]||'00'; var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
           &nbsp;&bull;&nbsp;
-          ${rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'All Day (10 hrs)'}
+          ${rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'Full Day (9 AM–7 PM)'}
           &nbsp;&bull;&nbsp;
           ${rentalDays} day${rentalDays > 1 ? 's' : ''}
         </span>
@@ -142,7 +163,7 @@
             }
             var wetUp = (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '') ? Number(item.price_wet) : 20;
             var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '');
-            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '">' +
+            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '" data-extra-day="' + (item.extraDayPrice !== null && item.extraDayPrice !== undefined ? item.extraDayPrice : '') + '" data-max-extra="' + (item.maxExtraDays || 0) + '">' +
             '<div class="equipment-card select-card">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.category === 'add_ons' || item.category === 'add-ons') ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
@@ -169,7 +190,24 @@
 
     </div>
 
-    <!-- Selection Summary (below all options) -->
+    <!-- Multi-day upsell (full-day only, shown after equipment selection) -->
+    <div id="multiDayBlock" style="display:none;" class="row mt-4">
+      <div class="col-lg-6 mx-auto">
+        <div style="background:white;border-radius:16px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+          <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h5>
+          <p class="text-muted small mb-3">Add extra days to your rental. Pricing shown per item.</p>
+          <div class="d-flex gap-3 mb-3" id="dayBtns">
+            <div class="days-btn-s2 selected" data-days="1">1 Day</div>
+            <div class="days-btn-s2" data-days="2">2 Days</div>
+            <div class="days-btn-s2" data-days="3">3 Days</div>
+          </div>
+          <div id="extraDayCost" style="display:none;background:#eef3f8;border-radius:10px;padding:10px 14px;font-size:14px;color:#004E89;font-weight:600;"></div>
+          <div id="extraDayWarning" style="display:none;margin-top:8px;background:#fff3cd;border-radius:10px;padding:10px 14px;font-size:13px;color:#856404;"></div>
+        </div>
+      </div>
+    </div>
+
+        <!-- Selection Summary (below all options) -->
     <div class="row mt-4">
       <div class="col-lg-6 mx-auto">
         <div class="selection-summary" id="selectionSummary" style="border-radius:16px;padding:24px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
@@ -198,10 +236,109 @@
 <script>
   var selectedItems = {};
   var wetItems = {}; // track wet/dry per item ID
+  var rentalDays = parseInt('${rentalDays}') || 1;
+  var rentalDurationParam = '${rentalDuration}';
+  var selectedDaysS2 = 1;
+
+  function isFullDayBooking() { return rentalDurationParam !== '4hr'; }
+
+  function getMaxDaysForSelection() {
+    var ids = Object.keys(selectedItems);
+    if (ids.length === 0) return 1;
+    var minExtra = Infinity;
+    ids.forEach(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (!el) return;
+      var cat = el.dataset.category || '';
+      if (cat === 'add_ons' || cat === 'add-ons') return;
+      var maxExtra = parseInt(el.dataset.maxExtra || '0');
+      if (maxExtra < minExtra) minExtra = maxExtra;
+    });
+    if (minExtra === Infinity) return 1;
+    return 1 + minExtra;
+  }
+
+  function getExtraCostForDays(days) {
+    if (days <= 1) return 0;
+    var extraDays = days - 1;
+    var ids = Object.keys(selectedItems);
+    var total = 0;
+    ids.forEach(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (!el) return;
+      var cat = el.dataset.category || '';
+      if (cat === 'add_ons' || cat === 'add-ons') return;
+      var extraDay = parseFloat(el.dataset.extraDay || '0');
+      if (!isNaN(extraDay) && extraDay > 0) total += extraDay * extraDays;
+    });
+    return total;
+  }
+
+  function getUnavailableForDays(days) {
+    if (days <= 1) return [];
+    var extraDays = days - 1;
+    var unavail = [];
+    Object.keys(selectedItems).forEach(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (!el) return;
+      var cat = el.dataset.category || '';
+      if (cat === 'add_ons' || cat === 'add-ons') return;
+      var maxExtra = parseInt(el.dataset.maxExtra || '0');
+      if (maxExtra < extraDays) unavail.push(selectedItems[id].name);
+    });
+    return unavail;
+  }
+
+  function refreshMultiDayBlock() {
+    var block = document.getElementById('multiDayBlock');
+    if (!block) return;
+    var ids = Object.keys(selectedItems).filter(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (!el) return false;
+      var cat = el.dataset.category || '';
+      return cat !== 'add_ons' && cat !== 'add-ons';
+    });
+    if (!isFullDayBooking() || ids.length === 0) {
+      block.style.display = 'none';
+      selectedDaysS2 = 1;
+      return;
+    }
+    block.style.display = '';
+
+    var maxDays = Math.min(3, getMaxDaysForSelection());
+
+    document.querySelectorAll('.days-btn-s2').forEach(function(btn) {
+      var d = parseInt(btn.dataset.days);
+      btn.classList.toggle('selected', d === selectedDaysS2);
+      btn.classList.toggle('disabled-day', d > maxDays);
+    });
+    if (selectedDaysS2 > maxDays) selectedDaysS2 = maxDays;
+
+    var extraCostDiv = document.getElementById('extraDayCost');
+    var warnDiv = document.getElementById('extraDayWarning');
+    if (selectedDaysS2 > 1) {
+      var extra = getExtraCostForDays(selectedDaysS2);
+      if (extra > 0) {
+        extraCostDiv.textContent = '+$' + extra.toFixed(0) + ' — ' + selectedDaysS2 + ' days total';
+        extraCostDiv.style.display = '';
+      } else {
+        extraCostDiv.style.display = 'none';
+      }
+      var unavail = getUnavailableForDays(selectedDaysS2);
+      if (unavail.length > 0) {
+        warnDiv.textContent = 'Not available for ' + selectedDaysS2 + ' days: ' + unavail.join(', ');
+        warnDiv.style.display = '';
+      } else {
+        warnDiv.style.display = 'none';
+      }
+    } else {
+      extraCostDiv.style.display = 'none';
+      warnDiv.style.display = 'none';
+    }
+  }
 
   // Event delegation: equipment card click (toggleItem)
   document.getElementById('equipmentGrid').addEventListener('click', function(e) {
-    // Handle wet/dry button clicks first (stop propagation to card)
     var wdBtn = e.target.closest('.wd-btn');
     if (wdBtn) {
       e.stopPropagation();
@@ -212,13 +349,10 @@
       setWetDry(itemId, isWet, wdBtn);
       return;
     }
-    // Handle card toggle
     var card = e.target.closest('.select-card');
     if (!card) return;
-    // Find item data from parent equipment-item div
     var itemDiv = card.closest('.equipment-item');
     if (!itemDiv) {
-      // fallback for add-ons in col-md-6 without equipment-item class
       itemDiv = card.closest('[data-id]');
     }
     if (!itemDiv) return;
@@ -228,10 +362,19 @@
     if (id && name && !isNaN(price)) toggleItem(card, id, name, price);
   });
 
-  // continueBtn click
   document.getElementById('continueBtn').addEventListener('click', function(e) {
     goToStep2(e);
   });
+
+  var dayBtnsEl = document.getElementById('dayBtns');
+  if (dayBtnsEl) {
+    dayBtnsEl.addEventListener('click', function(e) {
+      var btn = e.target.closest('.days-btn-s2');
+      if (!btn || btn.classList.contains('disabled-day')) return;
+      selectedDaysS2 = parseInt(btn.dataset.days);
+      refreshMultiDayBlock();
+    });
+  }
 
   function setWetDry(itemId, isWet, btn) {
     wetItems[itemId] = isWet;
@@ -254,8 +397,6 @@
     });
   }
 
-
-  // Pre-select items from query params (preselect from detail page, or items if returning)
   (function() {
     var params = new URLSearchParams(window.location.search);
     var preItems = params.get('items') || params.get('preselect');
@@ -264,7 +405,7 @@
         var el = document.querySelector('[data-id="' + id + '"]');
         if (el) {
           var card = el.querySelector('.select-card');
-          if (!card) return; // skip booked items (no .select-card)
+          if (!card) return;
           var name = el.dataset.name;
           var price = parseFloat(el.dataset.price);
           toggleItem(card, id, name, price);
@@ -304,6 +445,7 @@
       showHideWetDry();
       continueBtn.disabled = true;
       continueBtn.style.opacity = '0.5';
+      refreshMultiDayBlock();
       return;
     }
 
@@ -327,6 +469,7 @@
     countEl.textContent = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' selected';
     continueBtn.disabled = false;
     continueBtn.style.opacity = '1';
+    refreshMultiDayBlock();
   }
 
   function goToStep2(e) {
@@ -335,10 +478,27 @@
     if (ids.length === 0) return;
     var params = new URLSearchParams(window.location.search);
     var wetIds = Object.keys(wetItems).filter(function(id) { return wetItems[id]; });
-    window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_items=' + wetIds.join(',') + '&event_date=' + (params.get('event_date')||'') + '&rental_duration=' + (params.get('rental_duration')||'daily') + '&event_start_time=' + (params.get('event_start_time')||'09:00') + '&event_end_time=' + (params.get('event_end_time')||'19:00') + '&rental_days=' + (params.get('rental_days')||'1') + '&event_end_date=' + (params.get('event_end_date')||params.get('event_date')||'') + '&ready_by=' + (params.get('ready_by')||params.get('event_start_time')||'09:00');
+    var eventDateParam = params.get('event_date') || '';
+    var endDateParam = eventDateParam;
+    if (selectedDaysS2 > 1 && eventDateParam) {
+      var d = new Date(eventDateParam + 'T12:00:00');
+      d.setDate(d.getDate() + (selectedDaysS2 - 1));
+      var y = d.getFullYear();
+      var mo = String(d.getMonth() + 1).padStart(2, '0');
+      var da = String(d.getDate()).padStart(2, '0');
+      endDateParam = y + '-' + mo + '-' + da;
+    }
+    var effectiveDays = isFullDayBooking() ? selectedDaysS2 : 1;
+    window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_items=' + wetIds.join(',') +
+      '&event_date=' + eventDateParam +
+      '&rental_duration=' + (params.get('rental_duration') || 'daily') +
+      '&event_start_time=' + (params.get('event_start_time') || '09:00') +
+      '&event_end_time=' + (params.get('event_end_time') || '19:00') +
+      '&rental_days=' + effectiveDays +
+      '&event_end_date=' + endDateParam +
+      '&ready_by=' + (params.get('ready_by') || params.get('event_start_time') || '09:00');
   }
 
-  // Category filtering
   document.getElementById('categoryFilters').addEventListener('click', function(e) {
     if (!e.target.matches('.filter-pill')) return;
     document.querySelectorAll('.filter-pill').forEach(function(b) { b.classList.remove('active'); });
@@ -353,7 +513,8 @@
     });
   });
 
-  // Initialize summary state
   updateSummary();
+  refreshMultiDayBlock();
+
 </script>
 ` }) %>
