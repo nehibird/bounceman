@@ -18,25 +18,32 @@
 
   .selection-summary { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
 
+  /* Wet/Dry chooser — required, visually distinct (amber = dry, blue = wet) */
+  .wet-dry-inline { margin-top: 14px; border-top: 1px solid #eef0f3; padding-top: 14px; }
+  .wd-q { font-size: 14.5px; font-weight: 700; color: #1c2733; margin-bottom: 11px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .wd-req { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #b9521f; background: #fdecdf; border: 1px solid #f6cda9; padding: 3px 9px; border-radius: 20px; }
+  .wd-req.wd-chosen { color: #1f7a3d; background: #e4f6ea; border-color: #bce5c9; }
+  .wd-req.wd-flash { animation: wdflash 0.55s ease; }
+  @keyframes wdflash { 0%,100%{ transform: scale(1); } 35%{ transform: scale(1.12); color:#fff; background:#e0492f; border-color:#e0492f; } }
+  .wd-row { display: flex; gap: 12px; }
   .wd-btn {
-    flex: 1;
-    text-align: center;
-    padding: 10px 8px;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 14px;
-    cursor: pointer;
-    border: 2px solid #e0e0e0;
-    background: #f8f8f8;
-    color: #555;
-    transition: all 0.2s;
+    flex: 1; display: flex; align-items: center; gap: 11px;
+    padding: 12px 13px; border-radius: 13px; cursor: pointer;
+    border: 2px solid #e3e7ec; background: #f7f9fb; text-align: left;
+    transition: all 0.18s;
   }
-  .wd-btn.wd-active {
-    background: var(--bm-blue, #004E89) !important;
-    color: white !important;
-    border-color: var(--bm-blue, #004E89) !important;
-  }
-  .wd-btn.wd-active i { color: white !important; }
+  .wd-btn:hover { border-color: #cfd6de; }
+  .wd-ic { width: 38px; height: 38px; min-width: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; font-size: 16px; }
+  .wd-t { font-size: 15.5px; font-weight: 700; color: #1c2733; line-height: 1.1; }
+  .wd-s { font-size: 12px; color: #6b7480; margin-top: 2px; }
+  .wd-btn[data-mode="dry"] .wd-ic i { color: #F39C12; }
+  .wd-btn[data-mode="wet"] .wd-ic i { color: #1C8FE0; }
+  .wd-btn[data-mode="dry"].wd-active { background: linear-gradient(135deg,#FBB034,#F39C12); border-color: #F39C12; box-shadow: 0 6px 16px rgba(243,156,18,.32); }
+  .wd-btn[data-mode="wet"].wd-active { background: linear-gradient(135deg,#27A9E5,#0E6BB8); border-color: #0E6BB8; box-shadow: 0 6px 16px rgba(14,107,184,.32); }
+  .wd-btn.wd-active .wd-ic { background: rgba(255,255,255,.25); }
+  .wd-btn.wd-active .wd-ic i { color: #fff; }
+  .wd-btn.wd-active .wd-t { color: #fff; }
+  .wd-btn.wd-active .wd-s { color: rgba(255,255,255,.92); }
   .filter-pill { border: 2px solid var(--bm-blue); color: var(--bm-blue); background: transparent; font-weight: 600; transition: all 0.2s; }
   .filter-pill:hover, .filter-pill.active { background: var(--bm-blue); color: white; border-color: var(--bm-blue); }
   .days-btn-s2 {
@@ -174,7 +181,12 @@
                 (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
                 (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-ban me-1"></i>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
-                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none;margin-top:12px"><div style="display:flex;gap:8px"><div class="wd-btn wd-active" data-mode="dry" id="wd-dry-' + item.id + '"><i class="fas fa-sun"></i> Dry</div><div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><i class="fas fa-tint"></i> Wet (+$' + wetUp + ')</div></div></div>' : '') +
+                (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none">' +
+                  '<div class="wd-q">Do you need it wet or dry? <span class="wd-req" id="wdreq-' + item.id + '">Choose one</span></div>' +
+                  '<div class="wd-row">' +
+                    '<div class="wd-btn" data-mode="dry" id="wd-dry-' + item.id + '"><div class="wd-ic"><i class="fas fa-sun"></i></div><div><div class="wd-t">Dry</div><div class="wd-s">No water — keep it dry</div></div></div>' +
+                    '<div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><div class="wd-ic"><i class="fas fa-tint"></i></div><div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide (+$' + wetUp + ')</div></div></div>' +
+                  '</div></div>' : '') +
               '</div>' +
             '</div>' +
           '</div>'; }).join('')}
@@ -222,6 +234,7 @@
             <span class="fw-bold" style="color:var(--bm-orange);font-size:20px;" id="subtotal">$0</span>
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
+          <div id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><i class="fas fa-circle-info me-1"></i><span id="wetChoiceWarnText"></span></div>
           <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
             <i class="fas fa-arrow-right me-2"></i>Continue to Your Details
           </button>
@@ -382,7 +395,32 @@
     var wetBtn = document.getElementById('wd-wet-' + itemId);
     if (dryBtn) { dryBtn.classList.toggle('wd-active', !isWet); }
     if (wetBtn) { wetBtn.classList.toggle('wd-active', isWet); }
+    var req = document.getElementById('wdreq-' + itemId);
+    if (req) {
+      req.textContent = isWet ? '✓ Wet selected' : '✓ Dry selected';
+      req.classList.add('wd-chosen');
+      req.classList.remove('wd-flash');
+    }
     updateSummary();
+  }
+
+  // Reset a card's wet/dry chooser back to its unchosen state
+  function resetWetDryUI(itemId) {
+    var dryBtn = document.getElementById('wd-dry-' + itemId);
+    var wetBtn = document.getElementById('wd-wet-' + itemId);
+    if (dryBtn) dryBtn.classList.remove('wd-active');
+    if (wetBtn) wetBtn.classList.remove('wd-active');
+    var req = document.getElementById('wdreq-' + itemId);
+    if (req) { req.textContent = 'Choose one'; req.classList.remove('wd-chosen', 'wd-flash'); }
+  }
+
+  // Selected, wet-capable items that still need a wet/dry choice
+  function getUnchosenWetItems() {
+    return Object.keys(selectedItems).filter(function(id) {
+      var el = document.querySelector('[data-id="' + id + '"]');
+      if (!el || el.dataset.hasWet !== '1') return false;
+      return typeof wetItems[id] === 'undefined';
+    });
   }
 
   function showHideWetDry() {
@@ -393,6 +431,7 @@
       } else {
         el.style.display = 'none';
         delete wetItems[itemId];
+        resetWetDryUI(itemId);
       }
     });
   }
@@ -435,6 +474,8 @@
     var subtotalEl = document.getElementById('subtotal');
     var countEl = document.getElementById('itemCount');
     var continueBtn = document.getElementById('continueBtn');
+    var wetWarnEl = document.getElementById('wetChoiceWarn');
+    var wetWarnTextEl = document.getElementById('wetChoiceWarnText');
     var subtotal = 0;
 
     listEl.innerHTML = '';
@@ -445,6 +486,7 @@
       showHideWetDry();
       continueBtn.disabled = true;
       continueBtn.style.opacity = '0.5';
+      if (wetWarnEl) wetWarnEl.style.display = 'none';
       refreshMultiDayBlock();
       return;
     }
@@ -467,8 +509,20 @@
 
     subtotalEl.textContent = '$' + subtotal.toFixed(0);
     countEl.textContent = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' selected';
+
+    // Button stays clickable so the click can guide them to the unmade choice
     continueBtn.disabled = false;
     continueBtn.style.opacity = '1';
+
+    // Surface a hint when a wet-capable item still needs a wet/dry choice
+    var unchosen = getUnchosenWetItems();
+    if (unchosen.length > 0 && wetWarnEl && wetWarnTextEl) {
+      var names = unchosen.map(function(id) { return selectedItems[id].name; });
+      wetWarnTextEl.textContent = 'Choose wet or dry for: ' + names.join(', ');
+      wetWarnEl.style.display = '';
+    } else if (wetWarnEl) {
+      wetWarnEl.style.display = 'none';
+    }
     refreshMultiDayBlock();
   }
 
@@ -476,6 +530,19 @@
     e.preventDefault();
     var ids = Object.keys(selectedItems);
     if (ids.length === 0) return;
+
+    // Block until every wet-capable item has a wet/dry choice; nudge toward it
+    var unchosen = getUnchosenWetItems();
+    if (unchosen.length > 0) {
+      unchosen.forEach(function(id) {
+        var req = document.getElementById('wdreq-' + id);
+        if (req) { req.classList.remove('wd-flash'); void req.offsetWidth; req.classList.add('wd-flash'); }
+      });
+      var firstEl = document.getElementById('wetdry-' + unchosen[0]);
+      if (firstEl) firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
     var params = new URLSearchParams(window.location.search);
     var wetIds = Object.keys(wetItems).filter(function(id) { return wetItems[id]; });
     var eventDateParam = params.get('event_date') || '';
