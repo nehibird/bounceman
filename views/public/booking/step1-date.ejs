@@ -49,6 +49,17 @@
     color: white !important;
     border-color: var(--bm-blue, #004E89) !important;
   }
+  .day-stepper { display: flex; align-items: center; gap: 18px; }
+  .day-step-btn {
+    width: 48px; height: 48px; border-radius: 12px;
+    border: 2px solid var(--bm-blue, #004E89); background: #fff; color: var(--bm-blue, #004E89);
+    font-size: 26px; font-weight: 700; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all .15s;
+  }
+  .day-step-btn:hover:not(:disabled) { background: var(--bm-blue, #004E89); color: #fff; }
+  .day-step-btn:disabled { opacity: .3; cursor: not-allowed; }
+  .day-count { font-size: 22px; font-weight: 800; color: #1c2733; min-width: 96px; text-align: center; }
+  .day-count-unit { font-size: 15px; font-weight: 600; color: #6b7480; }
   .readyby-select {
     font-size: 15px;
     padding: 10px 16px;
@@ -110,16 +121,22 @@
           <div class="date-card mb-4">
             <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
             <div class="row g-3">
-              <div class="col-6">
+              <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay">
                   <span class="dur-label">Half Day</span>
                   <span class="dur-sub">4 hours</span>
                 </div>
               </div>
-              <div class="col-6">
+              <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
                   <span class="dur-label">Full Day</span>
                   <span class="dur-sub">9 AM – 7 PM</span>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durMultiDay">
+                  <span class="dur-label">Multi Day</span>
+                  <span class="dur-sub">2–7 days</span>
                 </div>
               </div>
             </div>
@@ -130,6 +147,18 @@
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
               <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
             </div>
+          </div>
+
+          <!-- 2b. How many days? (multi-day only) -->
+          <div class="date-card mb-4" id="daysCard" style="display:none;">
+            <h6 class="fw-bold mb-3"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h6>
+            <p class="text-muted small mb-3">Keep it for the whole weekend or event — you'll see each unit's multi-day total on the next step.</p>
+            <div class="day-stepper">
+              <button type="button" class="day-step-btn" id="dayMinus" aria-label="Fewer days">&minus;</button>
+              <div class="day-count"><span id="dayCountNum">2</span> <span class="day-count-unit">days</span></div>
+              <button type="button" class="day-step-btn" id="dayPlus" aria-label="More days">+</button>
+            </div>
+            <div class="text-muted small mt-3" id="daysHint"><i class="fas fa-info-circle me-1"></i>From 2 up to 7 days.</div>
           </div>
 
           <!-- 3. Ready-by time (half-day only) -->
@@ -167,6 +196,8 @@
   var HALFDAY_HOURS = 4;
   var MIN_READY_BY_H = 8;
   var MAX_END_HOUR = 22;
+  var MAX_DAYS = 7;
+  var MIN_MULTI = 2;
 
   var selectedDurationType = 'allday';
   var selectedDays = 1;
@@ -217,7 +248,8 @@
 
   function updateHiddenFields() {
     var durVal, startVal, endVal, readyByVal;
-    if (selectedDurationType === 'allday') {
+    if (selectedDurationType !== 'halfday') {
+      // Full Day and Multi Day both bill the full-day rate per day
       durVal = 'daily';
       startVal = '09:00';
       endVal = '19:00';
@@ -242,25 +274,57 @@
     document.getElementById('hiddenStart').value = startVal;
     document.getElementById('hiddenEnd').value = endVal;
     document.getElementById('hiddenReadyBy').value = readyByVal;
-    document.getElementById('hiddenDays').value = '1';
+    var days = (selectedDurationType === 'multiday') ? selectedDays : 1;
+    document.getElementById('hiddenDays').value = String(days);
     var dateStr = document.getElementById('eventDateInput').value;
-    document.getElementById('hiddenEndDate').value = dateStr ? isoOffset(dateStr, 0) : '';
+    document.getElementById('hiddenEndDate').value = dateStr ? isoOffset(dateStr, days - 1) : '';
+  }
+
+  // Number-of-days stepper (full-day only)
+  function renderDays() {
+    var num = document.getElementById('dayCountNum');
+    if (num) num.textContent = selectedDays;
+    var unit = document.querySelector('#daysCard .day-count-unit');
+    if (unit) unit.textContent = selectedDays === 1 ? 'day' : 'days';
+    var minus = document.getElementById('dayMinus');
+    var plus = document.getElementById('dayPlus');
+    if (minus) minus.disabled = selectedDays <= MIN_MULTI;
+    if (plus) plus.disabled = selectedDays >= MAX_DAYS;
+  }
+
+  function setDays(n) {
+    selectedDays = Math.max(MIN_MULTI, Math.min(MAX_DAYS, n));
+    renderDays();
+    updateHiddenFields();
   }
 
   function selectDurationType(type) {
     selectedDurationType = type;
     document.getElementById('durHalfDay').classList.toggle('selected', type === 'halfday');
     document.getElementById('durFullDay').classList.toggle('selected', type === 'allday');
+    document.getElementById('durMultiDay').classList.toggle('selected', type === 'multiday');
     var timeCard = document.getElementById('timeCard');
     var fulldayNote = document.getElementById('fulldayNote');
+    var daysCard = document.getElementById('daysCard');
     if (type === 'halfday') {
       timeCard.style.display = '';
       if (fulldayNote) fulldayNote.style.display = 'none';
+      if (daysCard) daysCard.style.display = 'none';
+      selectedDays = 1;
       refreshReadyBySelect();
+    } else if (type === 'multiday') {
+      timeCard.style.display = 'none';
+      if (fulldayNote) fulldayNote.style.display = 'none';
+      if (daysCard) daysCard.style.display = '';
+      if (selectedDays < MIN_MULTI) selectedDays = MIN_MULTI;
     } else {
+      // Full Day
       timeCard.style.display = 'none';
       if (fulldayNote) fulldayNote.style.display = 'block';
+      if (daysCard) daysCard.style.display = 'none';
+      selectedDays = 1;
     }
+    renderDays();
     updateHiddenFields();
     applyDayRules();
   }
@@ -308,6 +372,10 @@
 
   document.getElementById('durHalfDay').addEventListener('click', function() { selectDurationType('halfday'); });
   document.getElementById('durFullDay').addEventListener('click', function() { selectDurationType('allday'); });
+  document.getElementById('durMultiDay').addEventListener('click', function() { selectDurationType('multiday'); });
+
+  document.getElementById('dayMinus').addEventListener('click', function() { setDays(selectedDays - 1); });
+  document.getElementById('dayPlus').addEventListener('click', function() { setDays(selectedDays + 1); });
 
   // Carry forward preselect param
   (function() {
@@ -338,7 +406,8 @@
     updateHiddenFields();
   });
 
-  // Initialize — full day is default, time card hidden
+  // Initialize — full day is default, time card hidden, days stepper visible
+  renderDays();
   updateHiddenFields();
 </script>
 ` }) %>
