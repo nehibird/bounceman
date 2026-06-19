@@ -18,6 +18,8 @@
 
   .selection-summary { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
 
+  .price-days-note { margin-left: 8px; font-size: 13px; font-weight: 700; color: #6b7480; vertical-align: middle; }
+
   /* Wet/Dry chooser — required, visually distinct (amber = dry, blue = wet) */
   .wet-dry-inline { margin-top: 14px; border-top: 1px solid #eef0f3; padding-top: 14px; }
   .wd-q { font-size: 14.5px; font-weight: 700; color: #1c2733; margin-bottom: 11px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -113,7 +115,7 @@
           &nbsp;&bull;&nbsp;
           <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=readyBy.split(':'); var h=parseInt(p[0]); var m=p[1]||'00'; var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
           &nbsp;&bull;&nbsp;
-          ${rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'Full Day (9 AM–7 PM)'}
+          ${rentalDays > 1 ? 'Multi-Day' : (rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'Full Day (9 AM–7 PM)')}
           &nbsp;&bull;&nbsp;
           ${rentalDays} day${rentalDays > 1 ? 's' : ''}
         </span>
@@ -149,6 +151,7 @@
                       '<h5 class="card-title mt-2">' + item.name + '</h5>' +
                       '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                       '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
+                      (rentalDays > 1 ? '<span class="price-days-note">for ' + rentalDays + ' days</span>' : '') +
                       '<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center"><i class="fas fa-clock me-1"></i>Switch to ' + otherSlots + ' to book this</div>' +
                     '</div>' +
                   '</div>' +
@@ -180,6 +183,7 @@
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                 (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
+                (rentalDays > 1 ? '<span class="price-days-note">for ' + rentalDays + ' days</span>' : '') +
                 (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-ban me-1"></i>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
                 (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none">' +
                   '<div class="wd-q">Do you need it wet or dry? <span class="wd-req" id="wdreq-' + item.id + '">Choose one</span></div>' +
@@ -202,22 +206,8 @@
 
     </div>
 
-    <!-- Multi-day upsell (full-day only, shown after equipment selection) -->
-    <div id="multiDayBlock" style="display:none;" class="row mt-4">
-      <div class="col-lg-6 mx-auto">
-        <div style="background:white;border-radius:16px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-          <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h5>
-          <p class="text-muted small mb-3">Add extra days to your rental. Pricing shown per item.</p>
-          <div class="d-flex gap-3 mb-3" id="dayBtns">
-            <div class="days-btn-s2 selected" data-days="1">1 Day</div>
-            <div class="days-btn-s2" data-days="2">2 Days</div>
-            <div class="days-btn-s2" data-days="3">3 Days</div>
-          </div>
-          <div id="extraDayCost" style="display:none;background:#eef3f8;border-radius:10px;padding:10px 14px;font-size:14px;color:#004E89;font-weight:600;"></div>
-          <div id="extraDayWarning" style="display:none;margin-top:8px;background:#fff3cd;border-radius:10px;padding:10px 14px;font-size:13px;color:#856404;"></div>
-        </div>
-      </div>
-    </div>
+    <!-- Multi-day note (day count is chosen up front on step 1) -->
+    ${rentalDays > 1 ? '<div class="row mt-4"><div class="col-lg-8 mx-auto"><div style="background:#eef3f8;border-radius:12px;padding:14px 20px;text-align:center;font-size:14px;color:#004E89;font-weight:600"><i class="fas fa-calendar-week me-2"></i>Prices below are the total for your ' + rentalDays + '-day rental. <a href="/booking" style="color:#004E89;text-decoration:underline">Change days</a></div></div></div>' : ''}
 
         <!-- Selection Summary (below all options) -->
     <div class="row mt-4">
@@ -546,16 +536,10 @@
     var params = new URLSearchParams(window.location.search);
     var wetIds = Object.keys(wetItems).filter(function(id) { return wetItems[id]; });
     var eventDateParam = params.get('event_date') || '';
-    var endDateParam = eventDateParam;
-    if (selectedDaysS2 > 1 && eventDateParam) {
-      var d = new Date(eventDateParam + 'T12:00:00');
-      d.setDate(d.getDate() + (selectedDaysS2 - 1));
-      var y = d.getFullYear();
-      var mo = String(d.getMonth() + 1).padStart(2, '0');
-      var da = String(d.getDate()).padStart(2, '0');
-      endDateParam = y + '-' + mo + '-' + da;
-    }
-    var effectiveDays = isFullDayBooking() ? selectedDaysS2 : 1;
+    // Day count is chosen up front on step 1 — pass it straight through
+    var rentalDaysParam = parseInt(params.get('rental_days')) || 1;
+    var effectiveDays = isFullDayBooking() ? Math.max(1, rentalDaysParam) : 1;
+    var endDateParam = params.get('event_end_date') || eventDateParam;
     window.location.href = '/booking/details?items=' + ids.join(',') + '&wet_items=' + wetIds.join(',') +
       '&event_date=' + eventDateParam +
       '&rental_duration=' + (params.get('rental_duration') || 'daily') +
