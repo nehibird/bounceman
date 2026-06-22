@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
+const plaidSync = require('../lib/plaid-sync');
 const { requireAuth, requireAdmin } = require('./auth');
 const multer = require('multer');
 const path = require('path');
@@ -74,6 +75,7 @@ router.get('/', (req, res) => {
   const cashCollected = db.prepare("SELECT COALESCE(SUM(total - balance_due), 0) as r FROM bookings WHERE deposit_paid = 1 AND status NOT IN ('cancelled', 'declined')").get().r;
   const balanceOwed = db.prepare("SELECT COALESCE(SUM(balance_due), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
   const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses').get().t;
+  const reimburseOwed = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses WHERE reimbursable = 1 AND reimbursed = 0').get().t;
   const netPosition = totalRevenue - totalExpenses;
   const recoveryPct = totalExpenses > 0 ? (totalRevenue / totalExpenses * 100) : 0;
   const avgTicketRow = db.prepare("SELECT COALESCE(AVG(total), 350) as a FROM bookings WHERE status NOT IN ('cancelled', 'declined') AND total > 0").get();
@@ -106,11 +108,13 @@ router.get('/', (req, res) => {
     GROUP BY e.id ORDER BY bookings DESC LIMIT 8
   `).all();
 
+  const bankAccounts = db.prepare('SELECT * FROM bank_accounts ORDER BY sort_order, name').all();
+
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
-    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt },
-    monthlyRevenue, equipmentUtil
+    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed },
+    monthlyRevenue, equipmentUtil, bankAccounts
   });
 });
 
@@ -1575,7 +1579,24 @@ router.get('/expenses', (req, res) => {
   ).all().map(r => r.y);
 
   const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
-  res.render('admin/expenses', { title: 'Expenses - Admin', user: req.user, settings, expenses, totals, grandTotal, monthTotal, totalRevenue, years, filter: { category, year }, page: 'expenses' });
+
+  // Reimbursement tracking: owner-paid business costs awaiting / done reimbursement from the BounceMan account
+  const reimburseOwed = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE reimbursable = 1 AND reimbursed = 0').get().t;
+  const reimburseDone = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE reimbursable = 1 AND reimbursed = 1').get().t;
+
+  res.render('admin/expenses', { title: 'Expenses - Admin', user: req.user, settings, expenses, totals, grandTotal, monthTotal, totalRevenue, years, reimburseOwed, reimburseDone, filter: { category, year }, page: 'expenses' });
+});
+
+// Toggle whether a reimbursable expense has been reimbursed
+router.post('/expenses/:id/reimburse', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT reimbursed FROM expenses WHERE id = ?').get(req.params.id);
+  if (row) {
+    const now = row.reimbursed ? 0 : 1;
+    db.prepare('UPDATE expenses SET reimbursable = 1, reimbursed = ?, reimbursed_date = ? WHERE id = ?')
+      .run(now, now ? dayjs().format('YYYY-MM-DD') : null, req.params.id);
+  }
+  res.redirect('/admin/expenses');
 });
 
 router.post('/expenses', (req, res) => {
@@ -1600,6 +1621,25 @@ router.post('/expenses/:id/edit', (req, res) => {
   db.prepare('UPDATE expenses SET date=?, category=?, vendor=?, description=?, amount=?, payment_method=?, notes=? WHERE id=?')
     .run(date, category, vendor || null, description, parseFloat(amount), payment_method || 'card', notes || null, req.params.id);
   res.redirect('/admin/expenses');
+});
+
+// === BANKS (Plaid) ===
+router.get('/banks', (req, res) => {
+  const db = getDb();
+  const items = db.prepare('SELECT * FROM plaid_items ORDER BY institution_name').all();
+  res.render('admin/banks', { title: 'Connected Banks - Bounce Man Admin', user: req.user, settings: getSettings(), items, page: 'banks' });
+});
+router.post('/banks/link-token', async (req, res) => {
+  try { res.json({ link_token: await plaidSync.createLinkToken((req.user && req.user.id) || 'owner') }); }
+  catch (e) { res.json({ error: e.message }); }
+});
+router.post('/banks/exchange', async (req, res) => {
+  try { res.json(await plaidSync.exchangeAndStore(req.body.public_token)); }
+  catch (e) { res.json({ error: e.message }); }
+});
+router.post('/banks/sync', async (req, res) => {
+  try { res.json(await plaidSync.syncAll()); }
+  catch (e) { res.json({ error: e.message }); }
 });
 
 module.exports = router;

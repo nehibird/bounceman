@@ -695,6 +695,10 @@ function initialize() {
   try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
+  // Reimbursement tracking on expenses (owner-paid business costs reimbursed from the BounceMan account)
+  try { d.prepare('ALTER TABLE expenses ADD COLUMN reimbursable INTEGER DEFAULT 0').run(); } catch {}
+  try { d.prepare('ALTER TABLE expenses ADD COLUMN reimbursed INTEGER DEFAULT 0').run(); } catch {}
+  try { d.prepare('ALTER TABLE expenses ADD COLUMN reimbursed_date TEXT').run(); } catch {}
   d.prepare(`CREATE TABLE IF NOT EXISTS pending_slack_cards (
     phone TEXT PRIMARY KEY,
     channel TEXT,
@@ -758,6 +762,45 @@ function initialize() {
   for (const [name, rate] of Object.entries(extraDayRates)) {
     updateExtraDay.run(rate, name);
   }
+  // --- Bank balance feed (feat/bank-balance-feed) ---
+  d.prepare(`CREATE TABLE IF NOT EXISTS bank_accounts (
+    id TEXT PRIMARY KEY,
+    bank TEXT NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'checking',
+    mask TEXT,
+    balance REAL,
+    available REAL,
+    currency TEXT DEFAULT 'USD',
+    status TEXT DEFAULT 'ok',
+    last_synced TEXT,
+    last_error TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  d.prepare(`CREATE TABLE IF NOT EXISTS bank_transactions (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    posted_date TEXT,
+    description TEXT,
+    amount REAL,
+    category TEXT,
+    pending INTEGER DEFAULT 0,
+    raw TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(account_id, posted_date, description, amount)
+  )`).run();
+
+  d.prepare(`CREATE TABLE IF NOT EXISTS plaid_items (
+    item_id TEXT PRIMARY KEY,
+    institution_id TEXT,
+    institution_name TEXT,
+    access_token_enc TEXT NOT NULL,
+    cursor TEXT,
+    status TEXT DEFAULT 'ok',
+    last_synced TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
 
   console.log('[DB] Database initialized successfully');
 }

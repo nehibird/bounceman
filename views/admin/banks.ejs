@@ -1,0 +1,45 @@
+<%- include('../layouts/admin', { body: `
+<div class="row g-4 mb-4"><div class="col-12">
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="fas fa-university me-2"></i>Connected Banks</span>
+      <div>
+        <button id="syncBtn" class="btn btn-sm btn-outline-secondary me-2"><i class="fas fa-rotate me-1"></i>Sync now</button>
+        <button id="connectBtn" class="btn btn-sm btn-bm"><i class="fas fa-plus me-1"></i>Connect a bank</button>
+      </div>
+    </div>
+    <div class="card-body">
+      ${items.length ? `
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Bank</th><th>Status</th><th>Last synced</th></tr></thead>
+        <tbody>
+          ${items.map(i => `<tr>
+            <td><strong>${i.institution_name || i.institution_id}</strong></td>
+            <td>${i.status === 'ok' ? '<span class="badge bg-success">ok</span>' : `<span class="badge bg-warning text-dark">${i.status}</span>`}</td>
+            <td>${i.last_synced ? new Date(i.last_synced).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'never'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : `<div class="text-muted text-center py-4">No banks connected yet. Click <strong>Connect a bank</strong> to link Chase, Schwab, or FNBOK.</div>`}
+      <div id="msg" class="small text-muted mt-3"></div>
+    </div>
+  </div>
+</div></div>
+`, scripts: `
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+async function api(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+const msg=document.getElementById('msg');
+document.getElementById('connectBtn').onclick=async()=>{
+  msg.textContent='Opening Plaid…';
+  const r=await api('/admin/banks/link-token');
+  if(!r.link_token){msg.textContent='Error: '+(r.error||'could not start');return;}
+  Plaid.create({token:r.link_token,onSuccess:async(pt)=>{
+    msg.textContent='Connecting & syncing…';
+    const ex=await api('/admin/banks/exchange',{public_token:pt});
+    msg.textContent=ex.error?('Error: '+ex.error):('Connected '+(ex.institution||'')+' — syncing…');
+    setTimeout(()=>location.reload(),1800);
+  },onExit:(err)=>{msg.textContent=err?'Cancelled / error':'Closed';}}).open();
+};
+document.getElementById('syncBtn').onclick=async()=>{msg.textContent='Syncing all banks…';const r=await api('/admin/banks/sync');msg.textContent='Done: '+JSON.stringify(r);setTimeout(()=>location.reload(),1800);};
+</script>
+` }) %>

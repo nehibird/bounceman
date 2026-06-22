@@ -56,6 +56,41 @@
   </div>
 </div>
 
+<!-- Bank Accounts (live balances from titan bank sync) -->
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header fw-semibold"><i class="fas fa-university me-2"></i>Bank Accounts</div>
+      <div class="card-body">
+        ${bankAccounts && bankAccounts.length ? `
+        <div class="row g-3">
+          ${bankAccounts.map(a => {
+            const isCredit = a.type === 'credit';
+            const fmt = (v, d=2) => v == null ? '—' : '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+            const sub = isCredit
+              ? (a.available == null ? '' : 'Avail. credit ' + fmt(a.available, 0))
+              : (a.available == null ? '' : 'Available ' + fmt(a.available));
+            const synced = a.last_synced ? new Date(a.last_synced).toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'never';
+            const stale = a.status && a.status !== 'ok';
+            return `
+            <div class="col-md-4">
+              <div class="border rounded p-3 h-100">
+                <div class="d-flex justify-content-between align-items-start mb-1">
+                  <span class="fw-semibold">${a.name}</span>
+                  ${stale ? `<span class="badge bg-warning text-dark">${a.status}</span>` : ''}
+                </div>
+                <div class="fs-4 fw-bold ${isCredit ? 'text-danger' : 'text-success'}">${isCredit && a.balance != null ? '-' : ''}${fmt(a.balance)}</div>
+                <div class="text-muted small">${sub}</div>
+                <div class="text-muted small mt-1"><i class="far fa-clock me-1"></i>Synced ${synced}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : `<div class="text-muted text-center py-3">No bank accounts synced yet — balances will appear here once the bank sync runs.</div>`}
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Analytics Row 1: Financial Health + Pipeline + CC Debt -->
 <div class="row g-4 mb-4">
   <div class="col-md-4">
@@ -95,6 +130,13 @@
             <div class="fw-bold small text-warning">${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
         </div>
+        ${analytics.reimburseOwed > 0 ? `
+        <a href="/admin/expenses" class="text-decoration-none">
+          <div class="d-flex justify-content-between align-items-center border border-warning rounded px-3 py-2">
+            <span class="small"><i class="fas fa-hand-holding-usd me-1 text-warning"></i>Reimbursements owed</span>
+            <strong class="text-warning">$${parseFloat(analytics.reimburseOwed).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+          </div>
+        </a>` : ''}
         <hr class="my-2">
         <div class="d-flex justify-content-between small">
           <span class="text-muted">Avg ticket</span>

@@ -40,6 +40,25 @@
   </div>
 </div>
 
+<!-- Reimbursements (owner-paid business costs to repay from the BounceMan account) -->
+${(reimburseOwed > 0 || reimburseDone > 0) ? `
+<div class="card mb-4 border-warning">
+  <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center">
+    <div>
+      <div class="fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-warning"></i>Reimbursements to Owner</div>
+      <div class="text-muted small">Business costs paid from a personal account — repay these from the BounceMan account, then check them off.</div>
+    </div>
+    <div class="text-end">
+      <div class="text-muted small">Owed</div>
+      <div class="fs-4 fw-bold text-warning">$${reimburseOwed.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    </div>
+    <div class="text-end">
+      <div class="text-muted small">Reimbursed</div>
+      <div class="fs-5 fw-semibold text-success">$${reimburseDone.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    </div>
+  </div>
+</div>` : ''}
+
 <!-- By Category Breakdown -->
 ${totals.length > 0 ? `
 <div class="card mb-4">
@@ -173,6 +192,7 @@ ${totals.length > 0 ? `
             <th>Amount</th>
             <th>Method</th>
             <th>Notes</th>
+            <th>Reimburse</th>
             <th></th>
           </tr>
         </thead>
@@ -187,6 +207,13 @@ ${totals.length > 0 ? `
             <td><small class="text-muted text-capitalize">${(e.payment_method||'').replace(/_/g,' ')}</small></td>
             <td><small class="text-muted">${e.notes || ''}</small></td>
             <td>
+              ${e.reimbursable ? (e.reimbursed
+                ? `<span class="badge bg-success">Reimbursed</span>${e.reimbursed_date ? `<div class="text-muted small">${e.reimbursed_date}</div>` : ''}
+                   <form method="POST" action="/admin/expenses/${e.id}/reimburse" class="d-inline"><button class="btn btn-sm btn-link text-muted p-0" title="Mark as not yet reimbursed">undo</button></form>`
+                : `<form method="POST" action="/admin/expenses/${e.id}/reimburse" class="d-inline"><button class="btn btn-sm btn-warning" title="Mark this reimbursed"><i class="fas fa-check me-1"></i>Mark paid</button></form>`)
+                : '<span class="text-muted">—</span>'}
+            </td>
+            <td>
               <button class="btn btn-sm btn-outline-secondary" type="button"
                 data-bs-toggle="collapse" data-bs-target="#edit-${e.id}">
                 <i class="fas fa-pencil-alt"></i>
@@ -198,7 +225,7 @@ ${totals.length > 0 ? `
             </td>
           </tr>
           <tr class="collapse" id="edit-${e.id}">
-            <td colspan="8" class="bg-light p-3">
+            <td colspan="9" class="bg-light p-3">
               <form method="POST" action="/admin/expenses/${e.id}/edit">
                 <div class="row g-2">
                   <div class="col-md-2"><input type="date" name="date" class="form-control form-control-sm" value="${e.date}" required></div>
@@ -225,7 +252,7 @@ ${totals.length > 0 ? `
               </form>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No expenses yet. Add your first one above.</td></tr>'}
+          `).join('') : '<tr><td colspan="9" class="text-center text-muted py-4">No expenses yet. Add your first one above.</td></tr>'}
         </tbody>
       </table>
     </div>

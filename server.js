@@ -15,6 +15,7 @@ const webhookRoutes = require('./routes/webhooks');
 const eventRoutes = require('./routes/event');
 const sarahRoutes = require('./routes/sarah');
 const callsRouter = require('./routes/calls');
+const bankRoutes = require('./routes/bank');
 
 const cookieParser = require('cookie-parser');
 const app = express();
@@ -87,6 +88,7 @@ app.use('/admin', adminRoutes);
 app.use('/api/sarah', sarahRoutes);
 app.use('/api/call', callsRouter);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/bank', bankRoutes);
 app.use('/api', apiRoutes);
 app.use('/event', eventRoutes);
 
