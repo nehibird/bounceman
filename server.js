@@ -162,6 +162,26 @@ app.listen(PORT, '0.0.0.0', () => {
   } else {
     console.log('[BounceMan] Google reviews sync skipped (GOOGLE_REVIEWS_* not configured)');
   }
+
+  // Google Posts — auto-publish the weekend's availability every Thursday ~10 AM CT.
+  // PRODUCTION ONLY: gated on DISABLE_SCHEDULER so the dev instance never posts to the live listing.
+  if (process.env.DISABLE_SCHEDULER !== 'true') {
+    const googlePosts = require('./lib/google-posts');
+    if (googlePosts.configured()) {
+      const runWeekendPost = () => googlePosts.publishWeekendPost(db.getDb(), {})
+        .then((r) => console.log('[BounceMan] Google weekend post:', JSON.stringify(r)))
+        .catch((e) => console.error('[BounceMan] Google weekend post failed:', e.message));
+      const scheduleWeekendPost = () => {
+        const now = new Date();
+        const target = new Date(now);
+        target.setUTCHours(15, 0, 0, 0); // ~10 AM CT
+        while (target.getUTCDay() !== 4 || target <= now) target.setUTCDate(target.getUTCDate() + 1); // next Thursday
+        setTimeout(() => { runWeekendPost(); setInterval(runWeekendPost, 7 * 24 * 60 * 60 * 1000); }, target - now);
+        console.log(`[BounceMan] Google weekend post scheduled for ${target.toISOString()}`);
+      };
+      scheduleWeekendPost();
+    }
+  }
 });
 
 module.exports = app;
