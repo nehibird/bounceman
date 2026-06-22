@@ -585,7 +585,8 @@ router.post('/create-and-send-link', async (req, res) => {
 // deposit on the site, which calculates delivery + tax. No booking is created here.
 router.post('/send-checkout-link', async (req, res) => {
   const db = getDb();
-  const { equipment_ids, duration, wet, event_date, event_start_time, phone } = req.body;
+  const { equipment_ids, duration, wet, event_date, event_start_time, phone, days } = req.body;
+  const reqDays = Math.min(30, Math.max(1, parseInt(days) || 1));
 
   if (!phone) return res.status(400).json({ error: 'phone required' });
   if (!equipment_ids || !equipment_ids.length) {
@@ -601,6 +602,7 @@ router.post('/send-checkout-link', async (req, res) => {
   const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
   let dur = duration || 'daily';
   if (dow === 0 && dur === '4hr') dur = 'daily';
+  if (reqDays > 1 && dur === '4hr') dur = 'daily'; // multi-day is billed as full days
 
   // Time window by duration (matches the website + overnight 9->9 model).
   let startTime, endTime;
@@ -630,6 +632,7 @@ router.post('/send-checkout-link', async (req, res) => {
   const publicBase = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
   let q = `items=${validIds.join(',')}&event_date=${eventDateISO}&rental_duration=${dur}&event_start_time=${startTime}&event_end_time=${endTime}`;
   if (wetIds.length) q += `&wet_items=${wetIds.join(',')}`;
+  if (reqDays > 1) q += `&rental_days=${reqDays}&event_end_date=${isoOffset(eventDateISO, reqDays - 1)}`;
   const link = `${publicBase}/booking/details?${q}`;
 
   const nameList = names.join(', ');

@@ -198,6 +198,8 @@
             <input type="hidden" name="event_type" value="${event.event_type}">
             <input type="hidden" name="rental_duration" value="${rental_duration || 'daily'}">
             <input type="hidden" name="wet_items" value="${wet_items || ''}">
+            <input type="hidden" name="rental_days" value="${rental_days || 1}">
+            <input type="hidden" name="event_end_date" value="${event_end_date || event.event_date}">
             <input type="hidden" name="subtotal" value="${pricing.subtotal}">
             <input type="hidden" name="delivery_fee" value="${pricing.delivery_fee}">
             <input type="hidden" name="tax_amount" value="${pricing.tax_amount}">

@@ -58,6 +58,8 @@
       <input type="hidden" name="event_end_time" id="hiddenEnd">
       <input type="hidden" name="rental_duration" id="hiddenDuration">
       <input type="hidden" name="wet_items" id="hiddenWetItems">
+      <input type="hidden" name="rental_days" id="hiddenDays">
+      <input type="hidden" name="event_end_date" id="hiddenEndDate">
 
       <div class="row justify-content-center">
         <div class="col-lg-8">
@@ -235,6 +237,10 @@
 
     var wetItems = params.get('wet_items') || '';
     document.getElementById('hiddenWetItems').value = wetItems;
+
+    // Carry the multi-day count forward so checkout charges/blocks the full rental
+    document.getElementById('hiddenDays').value = params.get('rental_days') || '1';
+    document.getElementById('hiddenEndDate').value = params.get('event_end_date') || date;
 
     // Show water checkbox if any wet items selected
     if (wetItems && wetItems.length > 0) {
