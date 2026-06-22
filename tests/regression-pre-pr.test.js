@@ -307,6 +307,26 @@ console.log('\n=== REGRESSION: FIX-3 4hr duration caps rental_days to 1 ===');
 }
 
 // ===========================================================================
+// MD-CHECKOUT: online checkout must forward rental_days / event_end_date all the
+// way to /submit (bug: steps 3 & 4 dropped them, so multi-day booked as 1 day).
+// ===========================================================================
+{
+  const fs = require('fs');
+  const path = require('path');
+  const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
+  const step3 = read('views/public/booking/step3-details.ejs');
+  const step4 = read('views/public/booking/step4-review.ejs');
+  const sarah = read('routes/sarah.js');
+
+  assert('MD-CHECKOUT: step3 has a rental_days hidden field', /name="rental_days"/.test(step3));
+  assert('MD-CHECKOUT: step3 reads rental_days from the URL', /params\.get\(['"]rental_days['"]\)/.test(step3));
+  assert('MD-CHECKOUT: step3 has an event_end_date hidden field', /name="event_end_date"/.test(step3));
+  assert('MD-CHECKOUT: step4 forwards rental_days to /submit', /name="rental_days"/.test(step4));
+  assert('MD-CHECKOUT: step4 forwards event_end_date to /submit', /name="event_end_date"/.test(step4));
+  assert('MD-CHECKOUT: Sarah send-checkout-link appends rental_days', /rental_days=\$\{reqDays\}/.test(sarah));
+}
+
+// ===========================================================================
 console.log('\n=== RESULTS ===');
 // ===========================================================================
 console.log(`Passed: ${passed}`);
