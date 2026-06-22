@@ -118,6 +118,7 @@ ${featured.length > 0 ? featured.map(item => `
           <div class="stars mb-2">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
           <p>"${r.comment || 'Great experience!'}"</p>
           <strong>${r.customer_name || 'Happy Customer'}</strong>
+          ${r.source === 'google' ? `<div style="margin-top:6px;font-size:12px;color:#888"><i class="fab fa-google"></i> Posted on Google</div>` : ''}
         </div>
       </div>
       `).join('') : `

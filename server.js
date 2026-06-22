@@ -149,6 +149,19 @@ app.listen(PORT, '0.0.0.0', () => {
   } else {
     scheduleReminders();
   }
+
+  // Google Business Profile reviews — sync on startup + daily.
+  // Safe on any instance: read-only pull from Google, writes only the local reviews table.
+  const googleReviews = require('./lib/google-reviews');
+  if (googleReviews.configured()) {
+    const runReviewSync = () => googleReviews.syncGoogleReviews(db.getDb())
+      .then((r) => console.log(`[BounceMan] Google reviews synced: ${r.stored} shown / ${r.fetched} total`))
+      .catch((e) => console.error('[BounceMan] Google reviews sync failed:', e.message));
+    setTimeout(runReviewSync, 8000);
+    setInterval(runReviewSync, 24 * 60 * 60 * 1000);
+  } else {
+    console.log('[BounceMan] Google reviews sync skipped (GOOGLE_REVIEWS_* not configured)');
+  }
 });
 
 module.exports = app;

@@ -695,6 +695,9 @@ function initialize() {
   try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
+  // Migration: track review source (internal vs google) + external id for Google reviews sync
+  try { d.prepare("ALTER TABLE reviews ADD COLUMN source TEXT DEFAULT 'internal'").run(); } catch {}
+  try { d.prepare('ALTER TABLE reviews ADD COLUMN external_id TEXT').run(); } catch {}
   // Reimbursement tracking on expenses (owner-paid business costs reimbursed from the BounceMan account)
   try { d.prepare('ALTER TABLE expenses ADD COLUMN reimbursable INTEGER DEFAULT 0').run(); } catch {}
   try { d.prepare('ALTER TABLE expenses ADD COLUMN reimbursed INTEGER DEFAULT 0').run(); } catch {}
