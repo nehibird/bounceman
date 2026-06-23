@@ -433,6 +433,19 @@ router.post('/bookings/:id/payment', (req, res) => {
     }).catch(e => console.error('[SLACK] Payment notification failed:', e.message));
   }
 
+  // Send the booking confirmation if it never went out (covers manually/fully-paid bookings
+  // that bypass the Stripe deposit-checkout webhook). Guarded + non-blocking.
+  if (!booking.confirmation_email_sent && booking.email && totalPaid > 0) {
+    const emailService = require('../services/email');
+    const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
+    let contractId = null;
+    try { const ct = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(bookingId); if (ct) contractId = ct.id; } catch (e) { /* no contracts table */ }
+    const fresh = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+    emailService.sendBookingConfirmation(fresh, { first_name: booking.first_name, last_name: booking.last_name, email: booking.email }, items, contractId)
+      .then(() => db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(bookingId))
+      .catch(e => console.error('[EMAIL] Admin-payment confirmation failed:', e.message));
+  }
+
   console.log('[PAYMENT] Recorded $' + paymentAmount.toFixed(2) + ' ' + payment_method + ' for ' + booking.booking_number);
   res.redirect('/admin/bookings/' + bookingId + '?success=Payment+recorded');
 });

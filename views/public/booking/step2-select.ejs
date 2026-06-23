@@ -185,6 +185,7 @@
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
                 (rentalDays > 1 ? '<span class="price-days-note">for ' + rentalDays + ' days</span>' : '') +
                 (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-ban me-1"></i>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
+                (rentalDays > 1 && /generator/i.test(item.name) ? '<div style="margin-top:8px;background:#fff3cd;border-radius:8px;padding:8px 12px"><span style="color:#856404;font-size:12px;font-weight:600"><i class="fas fa-gas-pump me-1"></i>You provide the gas for multi-day rentals.</span></div>' : '') +
                 (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none">' +
                   '<div class="wd-q">Do you need it wet or dry? <span class="wd-req" id="wdreq-' + item.id + '">Choose one</span></div>' +
                   '<div class="wd-row">' +
