@@ -1,8 +1,8 @@
 <%- include('../layouts/admin', { body: `
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <h4 class="mb-0">Calendar</h4>
-  <div class="d-flex gap-2 align-items-center">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
     <span class="badge bg-warning text-dark"><i class="fas fa-circle me-1" style="font-size:8px"></i> Pending</span>
     <span class="badge bg-success"><i class="fas fa-circle me-1" style="font-size:8px"></i> Confirmed</span>
     <span class="badge bg-primary"><i class="fas fa-circle me-1" style="font-size:8px"></i> Completed</span>
@@ -37,9 +37,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }).join(',')}
   ];
 
+  // On phones the month grid is unreadable — default to a clean list view
+  // with a simplified toolbar; desktop keeps the full month/week/day grid.
+  var isMobile = window.matchMedia('(max-width: 767px)').matches;
   var calendar = new FullCalendar.Calendar(calendarEl, {
-    initialView: 'dayGridMonth',
-    headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
+    initialView: isMobile ? 'listMonth' : 'dayGridMonth',
+    headerToolbar: isMobile
+      ? { left: 'prev,next', center: 'title', right: 'today' }
+      : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
+    footerToolbar: isMobile ? { left: '', center: '', right: 'listMonth,dayGridMonth' } : false,
     events: bookingEvents.concat(blockedEvents),
     eventClick: function(info) {
       if (info.event.url) { info.jsEvent.preventDefault(); window.location.href = info.event.url; }
@@ -47,7 +53,13 @@ document.addEventListener('DOMContentLoaded', function() {
     height: 'auto',
     navLinks: true,
     editable: false,
-    dayMaxEvents: true
+    dayMaxEvents: true,
+    noEventsContent: 'No bookings this period',
+    windowResize: function() {
+      var m = window.matchMedia('(max-width: 767px)').matches;
+      if (m && calendar.view.type === 'dayGridMonth') calendar.changeView('listMonth');
+      else if (!m && calendar.view.type === 'listMonth') calendar.changeView('dayGridMonth');
+    }
   });
   calendar.render();
 });
