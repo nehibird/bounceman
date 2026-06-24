@@ -84,6 +84,21 @@ router.get('/', (req, res) => {
   const pipeline = db.prepare("SELECT COALESCE(SUM(total), 0) as r, COUNT(*) as c FROM bookings WHERE event_date > ? AND status IN ('confirmed', 'pending')").get(today);
   const creditCardDebt = parseFloat(settings.credit_card_debt || '0');
 
+  // Live break-even projection by booking pace (stable vs. lumpy one-time capital like equipment/insurance).
+  // remaining deficit -> # more bookings at the recent avg ticket -> calendar time at the recent booking pace,
+  // stretched for the ~5-month OK off-season (~6.5 active months/yr).
+  const deficit = Math.max(0, totalExpenses - totalRevenue);
+  const bk120 = db.prepare("SELECT COUNT(*) as c, COALESCE(SUM(total),0) as r FROM bookings WHERE status NOT IN ('cancelled','declined') AND event_date >= ?").get(dayjs().subtract(120, 'day').format('YYYY-MM-DD'));
+  const bookingsPerMonth = bk120.c / 4;
+  const recentTicket = bk120.c > 0 ? bk120.r / bk120.c : avgTicket;
+  let breakEven;
+  if (deficit <= 0) breakEven = { status: 'reached' };
+  else if (bookingsPerMonth > 0 && recentTicket > 0) {
+    const bookingsNeeded = Math.ceil(deficit / recentTicket);
+    const calMonths = Math.round((bookingsNeeded / bookingsPerMonth) * (12 / 6.5));
+    breakEven = { status: 'projected', months: calMonths, date: dayjs().add(calMonths, 'month').format('MMM YYYY'), bookingsNeeded };
+  } else breakEven = { status: 'building' };
+
   // Monthly revenue — last 6 months
   const sixMonthsAgo = dayjs().subtract(5, 'month').startOf('month').format('YYYY-MM-DD');
   const rawMonthly = db.prepare(`
@@ -113,7 +128,7 @@ router.get('/', (req, res) => {
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
-    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed },
+    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven },
     monthlyRevenue, equipmentUtil, bankAccounts
   });
 });
