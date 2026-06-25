@@ -822,8 +822,9 @@ router.get('/calendar', (req, res) => {
   const settings = getSettings();
 
   const bookings = db.prepare(`
-    SELECT b.id, b.booking_number, b.event_date, b.event_start_time, b.event_end_time, b.status,
+    SELECT b.id, b.booking_number, b.event_date, b.event_end_date, b.event_start_time, b.event_end_time, b.status,
       c.first_name, c.last_name,
+      MAX(bi.rental_days) as rental_days,
       GROUP_CONCAT(bi.item_name, ', ') as items
     FROM bookings b
     JOIN customers c ON c.id = b.customer_id

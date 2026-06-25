@@ -27,7 +27,9 @@ document.addEventListener('DOMContentLoaded', function() {
     ${bookings.map(function(b) {
       var name = (b.first_name + ' ' + b.last_name).replace(/'/g, '');
       var items = b.items || '';
-      return "{title:'" + name + (items ? ' - ' + items.replace(/'/g, '') : '') + "',start:'" + b.event_date + "T" + (b.event_start_time || '08:00') + "',end:'" + b.event_date + "T" + (b.event_end_time || '17:00') + "',url:'/admin/bookings/" + b.id + "',backgroundColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',borderColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',textColor:'#fff'}";
+      var days = parseInt(b.rental_days) || 1;
+      var endDate = (b.event_end_date && b.event_end_date !== b.event_date) ? b.event_end_date : b.event_date;
+      return "{title:'" + name + (items ? ' - ' + items.replace(/'/g, '') : '') + (days > 1 ? ' (' + days + ' days)' : '') + "',start:'" + b.event_date + "T" + (b.event_start_time || '08:00') + "',end:'" + endDate + "T" + (b.event_end_time || '17:00') + "',url:'/admin/bookings/" + b.id + "',backgroundColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',borderColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',textColor:'#fff'}";
     }).join(',')}
   ];
 
