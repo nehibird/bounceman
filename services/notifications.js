@@ -38,14 +38,14 @@ async function postToSlack(channel, blocks, text) {
     });
     const data = await resp.json();
     if (!data.ok) console.error('[SLACK] Post failed:', data.error);
-    return data.ok;
+    return data.ok ? data : null;
   } catch (e) {
     console.error('[SLACK] Error:', e.message);
-    return false;
+    return null;
   }
 }
 
-async function notifyNewBooking(booking, customer, items) {
+function buildBookingBlocks(booking, customer, items) {
   // Comprehensive booking notification - all data preserved in Slack
   const days = Math.max(1, ...items.map(i => parseInt(i.rental_days) || 1));
   const itemList = items.map(i => {
@@ -161,7 +161,19 @@ async function notifyNewBooking(booking, customer, items) {
     ]
   });
 
-  await postToSlack(BOOKINGS_CHANNEL, blocks, 'New booking ' + booking.booking_number + ' from ' + customer.first_name + ' ' + (customer.last_name || '') + ' — $' + parseFloat(booking.total).toFixed(2));
+  return blocks;
+}
+
+async function notifyNewBooking(booking, customer, items) {
+  const blocks = buildBookingBlocks(booking, customer, items);
+  const fallback = 'New booking ' + booking.booking_number + ' from ' + customer.first_name + ' ' + (customer.last_name || '') + ' — $' + parseFloat(booking.total).toFixed(2);
+  const resp = await postToSlack(BOOKINGS_CHANNEL, blocks, fallback);
+  // Save the message ts so the card can be edited later (status changes, corrections, etc.)
+  if (resp && resp.ts) {
+    try {
+      require('../db').getDb().prepare("UPDATE bookings SET slack_message_ts = ?, slack_message_channel = ? WHERE id = ?").run(resp.ts, BOOKINGS_CHANNEL, booking.id);
+    } catch (e) { console.error('[SLACK] store ts failed:', e.message); }
+  }
   console.log('[SLACK] Comprehensive booking notification sent for', booking.booking_number);
 }
 
@@ -441,4 +453,4 @@ async function sendSlackMessage(opts) {
   return postToSlack(channel, opts.blocks, opts.text || 'Bounce Man notification');
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };
