@@ -47,9 +47,11 @@ async function postToSlack(channel, blocks, text) {
 
 async function notifyNewBooking(booking, customer, items) {
   // Comprehensive booking notification - all data preserved in Slack
+  const days = Math.max(1, ...items.map(i => parseInt(i.rental_days) || 1));
   const itemList = items.map(i => {
     const wet = i.wet_or_dry === 'wet' ? ' (WET)' : (i.wet_or_dry === 'dry' ? ' (DRY)' : '');
-    return '• ' + i.item_name + wet + ' — $' + parseFloat(i.unit_price).toFixed(2);
+    const d = (parseInt(i.rental_days) || 1) > 1 ? ' ×' + i.rental_days + ' days' : '';
+    return '• ' + i.item_name + wet + d + ' — $' + parseFloat(i.unit_price).toFixed(2);
   }).join('\n');
 
   const blocks = [
@@ -82,7 +84,7 @@ async function notifyNewBooking(booking, customer, items) {
         { type: 'mrkdwn', text: '*Date:*\n' + fmtDate(booking.event_date) },
         { type: 'mrkdwn', text: '*Time:*\n' + fmtTime(booking.event_start_time) + ' - ' + fmtTime(booking.event_end_time) },
         { type: 'mrkdwn', text: '*Event Type:*\n' + (booking.event_type || 'N/A') },
-        { type: 'mrkdwn', text: '*Duration:*\n' + (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') }
+        { type: 'mrkdwn', text: '*Duration:*\n' + (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + ' – ' + fmtDate(booking.event_end_date) + ')' : '') : '') }
       ]
     },
     // Delivery info block
