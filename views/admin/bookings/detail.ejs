@@ -25,7 +25,7 @@
         <div class="row g-3">
           <div class="col-sm-4">
             <small class="text-muted d-block">Event Date</small>
-            <strong>${booking.event_date}</strong>
+            <strong>${booking.event_date}${booking.event_end_date && booking.event_end_date !== booking.event_date ? ' – ' + booking.event_end_date : ''}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Time</small>
@@ -33,7 +33,7 @@
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Duration</small>
-            <strong>${items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day'}</strong>
+            <strong>${items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day'}${(parseInt(items[0]?.rental_days) || 1) > 1 ? ' · ' + items[0].rental_days + ' days' : ''}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Event Type</small>
