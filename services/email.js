@@ -278,6 +278,44 @@ async function sendPaymentReceipt(booking, customer, amount) {
   console.log('[EMAIL] Payment receipt sent to ' + customer.email);
 }
 
+function depositLinkBody(booking, customer, link) {
+  return `
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">You're almost done!</td></tr>
+<tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:8px;">One last step</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;font-size:15px;color:#555;padding-bottom:20px;line-height:1.5;">
+Thanks for signing your rental agreement${customer && customer.first_name ? ', ' + customer.first_name : ''}! To lock in your date, please pay your deposit below.
+</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;">
+<tr><td style="padding:20px;text-align:center;">
+<div style="font-size:12px;letter-spacing:1px;color:${ORANGE};font-weight:bold;">BOOKING #${booking.booking_number}</div>
+<div style="font-size:13px;color:#666;padding-top:6px;">Deposit due to confirm</div>
+<div style="font-size:36px;font-weight:bold;color:${NAVY};padding:4px 0;">$${fmtMoney(booking.deposit_amount)}</div>
+<div style="font-size:13px;color:#666;">Event: ${formatRentalPeriod(booking)}</div>
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;"><tr><td align="center">
+<a href="${link}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 36px;border-radius:8px;">Pay Deposit</a>
+</td></tr>
+<tr><td style="text-align:center;font-size:12px;color:#999;padding-top:8px;">or copy this link: ${link}</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+<tr><td style="font-size:14px;color:#333;">Questions? Call <strong>${PHONE}</strong></td></tr>
+</table>`;
+}
+
+async function sendDepositLink(booking, customer, link) {
+  await getTransporter().sendMail({
+    from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
+    to: customer.email,
+    subject: 'Finish your booking — pay your deposit (#' + booking.booking_number + ')',
+    html: wrap('Finish Your Booking', depositLinkBody(booking, customer, link)),
+  });
+  console.log('[EMAIL] Deposit link sent to ' + customer.email);
+}
+
 async function sendTestEmail(to) {
   var b = {booking_number:'BM-TEST-001',event_date:'2026-05-15',event_start_time:'9:00 AM',event_end_time:'1:00 PM',delivery_address:'123 Main St',delivery_city:'Tonkawa',delivery_zip:'74653',total:350,deposit_amount:87.50,balance_due:262.50};
   var c = {first_name:'Sarah',last_name:'Smith',email:to};
@@ -325,4 +363,4 @@ async function forwardContactForm(data) {
   console.log('[EMAIL] Contact form forwarded for ' + data.name);
 }
 
-module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendTestEmail, forwardContactForm };
+module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendDepositLink, sendTestEmail, forwardContactForm };
