@@ -17,8 +17,8 @@
           <div style="font-weight:700;font-size:18px">${contract.first_name} ${contract.last_name}</div>
         </div>
         <div class="col-sm-6 text-sm-end">
-          <div class="text-muted small">Event Date</div>
-          <div style="font-weight:700;font-size:18px">${contract.event_date}</div>
+          <div class="text-muted small">Rental Period</div>
+          <div style="font-weight:700;font-size:18px">${contract.rental_period || contract.event_date}</div>
         </div>
       </div>
     </div>

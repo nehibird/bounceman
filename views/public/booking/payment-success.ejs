@@ -11,7 +11,7 @@
             \${booking ? \`
             <div class="bg-light rounded p-3 mb-4">
               <p class="mb-1"><strong>Booking:</strong> \${booking.booking_number}</p>
-              <p class="mb-1"><strong>Event Date:</strong> \${booking.event_date}</p>
+              <p class="mb-1"><strong>Event Date:</strong> \${booking.rental_period || booking.event_date}</p>
               <p class="mb-0 text-success"><strong>Status:</strong> Paid in Full</p>
             </div>
             \` : ""}

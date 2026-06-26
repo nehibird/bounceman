@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -685,6 +685,9 @@ router.post('/lookup', (req, res) => {
   const payments = db.prepare('SELECT * FROM payments WHERE booking_id = ? ORDER BY created_at DESC').all(booking.id);
   const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
 
+  booking.rental_period = formatRentalPeriod(booking);
+  booking.time_display = fmtTime12(booking.event_start_time) + ' - ' + fmtTime12(booking.event_end_time) + (rentalDays(booking) > 1 ? ' (each day)' : '');
+
   res.render('public/booking/lookup', {
     title: `Booking ${booking.booking_number}`, settings, page: 'booking',
     booking, items, payments, contract, error: null
@@ -847,6 +850,7 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
     }
   }
 
+  if (booking) booking.rental_period = formatRentalPeriod(booking);
   res.render('public/booking/payment-success', { title: 'Payment Complete!', settings, booking });
 });
 
@@ -876,6 +880,8 @@ router.get('/manage/:bookingNumber', (req, res) => {
   const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id);
   const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
   const itemList = items.map(i => i.item_name).join(', ');
+
+  booking.rental_period = formatRentalPeriod(booking);
 
   res.render('public/booking/manage', { title: 'Your Booking', settings, booking, contract, itemList, page: 'booking' });
 });

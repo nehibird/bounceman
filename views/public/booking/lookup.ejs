@@ -86,11 +86,11 @@
           '<h5><i class="fas fa-calendar me-2"></i>Event Details</h5>' +
           '<div class="detail-row">' +
             '<span class="label">Event Date</span>' +
-            '<span class="value">' + (booking.event_date || '') + '</span>' +
+            '<span class="value">' + (booking.rental_period || booking.event_date || '') + '</span>' +
           '</div>' +
           '<div class="detail-row">' +
             '<span class="label">Time</span>' +
-            '<span class="value">' + (booking.event_start_time || '') + ' - ' + (booking.event_end_time || '') + '</span>' +
+            '<span class="value">' + (booking.time_display || ((booking.event_start_time || '') + ' - ' + (booking.event_end_time || ''))) + '</span>' +
           '</div>' +
           '<div class="detail-row">' +
             '<span class="label">Event Type</span>' +
@@ -102,8 +102,9 @@
         '<div class="result-card">' +
           '<h5><i class="fas fa-box me-2"></i>Rental Items</h5>' +
           (items && items.length > 0 ? items.map(function(item) {
+            var dayNote = (parseInt(item.rental_days) || 1) > 1 ? ' <small class="text-muted">(' + item.rental_days + '-day rental)</small>' : '';
             return '<div class="detail-row">' +
-              '<span class="label">' + item.item_name + '</span>' +
+              '<span class="label">' + item.item_name + dayNote + '</span>' +
               '<span class="value">$' + parseFloat(item.unit_price).toFixed(2) + '</span>' +
             '</div>';
           }).join('') : '<p class="text-muted">No items on record</p>') +

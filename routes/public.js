@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
+const { formatRentalPeriod } = require('../lib/helpers');
 
 // Helper: get settings as object
 function getSettings() {
@@ -319,7 +320,7 @@ router.get('/contract/:id', (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const contract = db.prepare(`
-    SELECT c.*, b.booking_number, b.event_date,
+    SELECT c.*, b.booking_number, b.event_date, b.event_end_date,
       cu.first_name, cu.last_name
     FROM contracts c
     JOIN bookings b ON b.id = c.booking_id
@@ -328,6 +329,7 @@ router.get('/contract/:id', (req, res) => {
   `).get(req.params.id);
 
   if (!contract) return res.status(404).render('public/404', { title: 'Not Found', settings, page: '404' });
+  contract.rental_period = formatRentalPeriod(contract);
   if (contract.signed) return res.render('public/contract-signed', { title: 'Rental Agreement Signed', settings, contract, page: 'contract' });
 
   res.render('public/contract', { title: 'Sign Rental Agreement', settings, contract, page: 'contract' });

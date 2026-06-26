@@ -62,7 +62,7 @@
               <div>${b.first_name} ${b.last_name}</div>
               <small class="text-muted">${b.email || ''}</small>
             </td>
-            <td>${b.event_date}</td>
+            <td>${b.event_date}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
             <td>${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>
             <td><span class="badge-status badge-${b.status}">${b.status}</span></td>
             <td>
