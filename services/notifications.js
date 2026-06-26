@@ -1,5 +1,6 @@
 'use strict';
 
+const { fmtTime12 } = require('../lib/helpers');
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const BOOKINGS_CHANNEL = process.env.SLACK_NEW_BOOKING_CHANNEL || 'C0AQF8ZAEBE'; // #bookings (not #phonecalls)
 
@@ -192,7 +193,7 @@ function buildDeliveryCardBlocks(booking, customer, items) {
       fields: [
         { type: 'mrkdwn', text: '*Customer:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
         { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') },
-        { type: 'mrkdwn', text: '*Time:*\n' + (booking.event_start_time || 'TBD') + ' - ' + (booking.event_end_time || 'TBD') },
+        { type: 'mrkdwn', text: '*Time:*\n' + (booking.event_start_time ? fmtTime12(booking.event_start_time) : 'TBD') + ' - ' + (booking.event_end_time ? fmtTime12(booking.event_end_time) : 'TBD') },
         { type: 'mrkdwn', text: '*Items:*\n' + itemList }
       ]
     },
