@@ -13,6 +13,11 @@ const { getDb } = require('../db');
 const emailService = require('./email');
 const smsService = require('./sms');
 const notifyService = require('./notifications');
+const { fmtDate } = require('../lib/helpers');
+
+// Unpaid online holds: remind ~1h before expiry, release (free the unit) after this many hours.
+const HOLD_RELEASE_HOURS = 5;
+const HOLD_REMIND_HOURS = 4;
 
 function getTomorrow() {
   const d = new Date();
@@ -123,10 +128,63 @@ async function sendReviewRequests() {
   return bookings.length;
 }
 
+/**
+ * Free inventory tied up by abandoned checkouts. A booking sitting in 'pending'
+ * with nothing paid holds its equipment (the availability check counts any
+ * non-cancelled booking). After HOLD_RELEASE_HOURS we cancel it so the unit
+ * frees up; ~1h before that we text a last-chance deposit reminder.
+ *
+ * Safe by construction: only touches status='pending' + deposit_paid=0 +
+ * payment_status='unpaid'. If the customer later pays, the Stripe webhook
+ * flips the booking back to 'confirmed' automatically.
+ */
+async function releaseExpiredHolds() {
+  const db = getDb();
+  const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+  let released = 0, reminded = 0;
+
+  const candidates = db.prepare(`
+    SELECT b.*, c.first_name, c.last_name, c.phone, c.email,
+           (julianday('now') - julianday(b.created_at)) * 24.0 AS age_hours
+    FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE b.status = 'pending' AND b.deposit_paid = 0 AND b.payment_status = 'unpaid'
+  `).all();
+
+  for (const b of candidates) {
+    const link = `${baseUrl}/booking/pay-deposit/${b.booking_number}`;
+
+    if (b.age_hours >= HOLD_RELEASE_HOURS) {
+      db.prepare(`UPDATE bookings SET status = 'cancelled', updated_at = datetime('now'),
+        internal_notes = COALESCE(internal_notes, '') || ' | Auto-released: deposit unpaid after ${HOLD_RELEASE_HOURS}h' WHERE id = ?`).run(b.id);
+      released++;
+      console.log('[HOLD] Released', b.booking_number, '(unpaid ' + b.age_hours.toFixed(1) + 'h) — unit freed');
+      try {
+        const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(b.id).map(i => i.item_name).join(', ');
+        await notifyService.sendSlackMessage({
+          text: 'Hold released: ' + b.booking_number,
+          blocks: [{ type: 'section', text: { type: 'mrkdwn',
+            text: ':hourglass_flowing_sand: *Hold released — unit freed*\n*' + b.first_name + ' ' + (b.last_name || '') + '* never paid the deposit (held ' + Math.round(b.age_hours) + 'h).\n' + (items || 'items') + ' · ' + fmtDate(b.event_date) + '\nBooking `' + b.booking_number + '` set to cancelled; the equipment is available again.' } }]
+        });
+      } catch (e) { console.error('[HOLD] release notify failed:', e.message); }
+    } else if (b.age_hours >= HOLD_REMIND_HOURS && !b.hold_reminder_sent && b.phone) {
+      db.prepare('UPDATE bookings SET hold_reminder_sent = 1 WHERE id = ?').run(b.id);
+      reminded++;
+      try {
+        const deposit = parseFloat(b.deposit_amount || 0).toFixed(2);
+        await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`);
+        console.log('[HOLD] Last-chance reminder sent', b.booking_number);
+      } catch (e) { console.error('[HOLD] reminder failed:', e.message); }
+    }
+  }
+  if (released || reminded) console.log(`[HOLD] ${released} released, ${reminded} reminded`);
+  return { released, reminded };
+}
+
 async function runScheduler() {
   try {
     const reminders = await sendDeliveryReminders();
     const reviews = await sendReviewRequests();
+    await releaseExpiredHolds();
     if (reminders > 0 || reviews > 0) {
       console.log(`[SCHEDULER] Run complete: ${reminders} delivery reminders, ${reviews} review requests`);
     }
@@ -146,6 +204,8 @@ function start() {
     // Then every hour
     setInterval(runScheduler, 60 * 60 * 1000);
   }, 30 * 1000);
+  // Hold release/reminders run more frequently (every 20 min) so the 5h window is tight.
+  setInterval(() => { releaseExpiredHolds().catch(e => console.error('[HOLD] run failed:', e.message)); }, 20 * 60 * 1000);
 }
 
-module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests };
+module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds };
