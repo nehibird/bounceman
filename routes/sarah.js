@@ -11,6 +11,18 @@ const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedE
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
 
+// Find a customer by phone regardless of how the number was stored. Website bookings
+// save formatted numbers ("(580) 884-7806") while Sarah saves digits-only, so an exact
+// `WHERE phone = ?` match misses most customers. This strips formatting from the stored
+// value and matches on the last 10 digits.
+function findCustomerByPhone(db, phone) {
+  const n = normalizePhone(phone);
+  if (!n || n.length < 10) return null;
+  return db.prepare(
+    "SELECT * FROM customers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+',''),'.','') LIKE '%' || ? LIMIT 1"
+  ).get(n);
+}
+
 function getTwilio() {
   return require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
@@ -441,8 +453,8 @@ router.post('/create-and-send-link', async (req, res) => {
     const total = Math.round((rawTotal - discount_amount) * 100) / 100;
     const deposit_amount = Math.floor(total * (parseFloat(settings.deposit_percent || '50') / 100) * 100) / 100;
 
-    // Create or find customer
-    let customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(normalizePhone(phone));
+    // Create or find customer (format-agnostic so returning website customers aren't duplicated)
+    let customer = findCustomerByPhone(db, phone);
     if (!customer && email) {
       customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
     }
@@ -840,8 +852,7 @@ router.post('/lookup-booking', (req, res) => {
       FROM bookings b JOIN customers c ON c.id = b.customer_id
       WHERE b.booking_number = ?`).get(booking_number.toUpperCase());
   } else if (phone) {
-    const normalized = normalizePhone(phone);
-    const customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(normalized);
+    const customer = findCustomerByPhone(db, phone);
     if (customer) {
       booking = db.prepare(`SELECT b.* FROM bookings b
         WHERE b.customer_id = ? AND b.status NOT IN ('cancelled','declined')

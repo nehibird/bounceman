@@ -656,7 +656,14 @@ async function slackDeleteMessage(channel, ts) {
 // Slack interactivity endpoint (button clicks)
 router.post('/slack/interactivity', async (req, res) => {
   try {
-    if (!verifySlackSignature(req)) return res.status(401).send('invalid signature');
+    // Diagnostic: log every hit + whether the signature verifies, so silent button
+    // failures (request never arrives vs signature rejected) can be told apart.
+    console.log('[SLACK INTERACT] endpoint hit | sig:', req.headers['x-slack-signature'] ? 'present' : 'MISSING',
+      '| ts:', req.headers['x-slack-request-timestamp'] || 'none', '| body.payload:', req.body && req.body.payload ? 'present' : 'MISSING');
+    if (!verifySlackSignature(req)) {
+      console.log('[SLACK INTERACT] signature REJECTED (check SLACK_SIGNING_SECRET vs Slack app)');
+      return res.status(401).send('invalid signature');
+    }
     // Slack sends payload as form-urlencoded
     const payload = JSON.parse(req.body.payload);
 
