@@ -338,38 +338,64 @@ router.get('/contract/:id', (req, res) => {
 // Sign contract POST
 router.post('/contract/:id/sign', (req, res) => {
   const db = getDb();
-  const settings = getSettings();
   const { signature_data, signer_name } = req.body;
   const ip = req.ip;
+  const wantsJson = req.headers['content-type']?.includes('json');
 
-  const contract = db.prepare('SELECT * FROM contracts WHERE id = ? AND signed = 0').get(req.params.id);
+  // Look up by id only (NOT "AND signed = 0") so a retry / double-tap on an
+  // already-signed contract is idempotent instead of stranding the customer
+  // with a 404 and no path to payment.
+  const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!contract) {
-    if (req.headers['content-type']?.includes('json')) {
-      return res.status(404).json({ error: 'Contract not found or already signed' });
-    }
-    return res.redirect('/contract/' + req.params.id);
+    if (wantsJson) return res.status(404).json({ error: 'Contract not found' });
+    return res.status(404).render('public/404', { title: 'Not Found', settings: getSettings(), page: '404' });
   }
 
-  db.prepare(`UPDATE contracts SET signed = 1, signature_data = ?, signed_at = datetime('now'),
-    signer_ip = ?, signer_name = ? WHERE id = ?`).run(signature_data, ip, signer_name, req.params.id);
+  const justSigned = !contract.signed;
+  if (justSigned) {
+    db.prepare(`UPDATE contracts SET signed = 1, signature_data = ?, signed_at = datetime('now'),
+      signer_ip = ?, signer_name = ? WHERE id = ?`).run(signature_data, ip, signer_name, req.params.id);
 
-  db.prepare(`UPDATE bookings SET contract_signed = 1, contract_signed_at = datetime('now'),
-    contract_signature = ? WHERE id = ?`).run(signature_data, contract.booking_id);
+    db.prepare(`UPDATE bookings SET contract_signed = 1, contract_signed_at = datetime('now'),
+      contract_signature = ? WHERE id = ?`).run(signature_data, contract.booking_id);
 
-  // Update Slack live card if one exists for this booking
-  setTimeout(async () => {
-    try {
-      const { updateBookingSlackCard } = require('../services/notifications');
-      await updateBookingSlackCard(contract.booking_id);
-    } catch (e) { console.error('[CONTRACT] Slack card update failed:', e.message); }
-  }, 0);
+    // Update Slack live card if one exists for this booking
+    setTimeout(async () => {
+      try {
+        const { updateBookingSlackCard } = require('../services/notifications');
+        await updateBookingSlackCard(contract.booking_id);
+      } catch (e) { console.error('[CONTRACT] Slack card update failed:', e.message); }
+    }, 0);
+  }
 
   // Sign-before-pay: once signed, send them to the deposit checkout if it isn't
   // paid yet; otherwise (e.g. signing later via the email link) show the signed page.
   const bk = db.prepare('SELECT booking_number, deposit_paid FROM bookings WHERE id = ?').get(contract.booking_id);
   const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
 
-  if (req.headers['content-type']?.includes('json')) {
+  // Safety net: the instant a contract is signed, also email + text the customer a
+  // deposit link. If the live redirect to Stripe fails on their device (in-app
+  // browsers commonly block it), they still have a working link to finish paying.
+  if (justSigned && bk && !bk.deposit_paid) {
+    const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+    const link = `${baseUrl}/booking/pay-deposit/${bk.booking_number}`;
+    setTimeout(async () => {
+      try {
+        const cust = db.prepare('SELECT first_name, last_name, email, phone FROM customers WHERE id = ?').get(contract.customer_id);
+        const bkFull = db.prepare('SELECT * FROM bookings WHERE id = ?').get(contract.booking_id);
+        const deposit = parseFloat(bkFull.deposit_amount || 0).toFixed(2);
+        if (cust && cust.email) {
+          await require('../services/email').sendDepositLink(bkFull, cust, link).catch(e => console.error('[CONTRACT] deposit email failed:', e.message));
+        }
+        if (cust && cust.phone) {
+          const msg = `Hi ${cust.first_name}! Thanks for signing your Bounce Man agreement. To lock in your date, finish by paying your $${deposit} deposit here: ${link}\n\nQuestions? (580) 308-9288`;
+          await require('../services/sms').sendSms(cust.phone, msg).catch(e => console.error('[CONTRACT] deposit SMS failed:', e.message));
+        }
+      } catch (e) { console.error('[CONTRACT] deposit link send failed:', e.message); }
+    }, 0);
+  }
+
+  if (wantsJson) {
     return res.json({ success: true, message: 'Contract signed successfully!', redirect: next });
   }
   res.redirect(next);
