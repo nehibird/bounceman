@@ -93,8 +93,9 @@ async function sendBookingConfirmation(phone, bookingNumber, eventDate) {
  * @param {string} phone
  * @param {string} eventDate
  * @param {string} setupTime  optional estimated arrival window
+ * @param {string} endDate    optional rental end date (for multi-day rentals)
  */
-async function sendDeliveryReminder(phone, eventDate, setupTime) {
+async function sendDeliveryReminder(phone, eventDate, setupTime, endDate) {
   let dateStr = eventDate;
   try {
     dateStr = new Date(eventDate + 'T12:00:00').toLocaleDateString('en-US', {
@@ -102,12 +103,24 @@ async function sendDeliveryReminder(phone, eventDate, setupTime) {
     });
   } catch (e) { /* use raw */ }
 
+  // Multi-day rentals: note the day count + pickup date so they expect us back.
+  let multiDayNote = '';
+  if (endDate && endDate !== eventDate) {
+    try {
+      const d1 = new Date(eventDate + 'T12:00:00');
+      const d2 = new Date(endDate + 'T12:00:00');
+      const days = Math.round((d2 - d1) / 86400000) + 1;
+      const pickup = d2.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      multiDayNote = ` This is a ${days}-day rental — we'll pick up on ${pickup}.`;
+    } catch (e) { /* skip note */ }
+  }
+
   const timeNote = setupTime
     ? `We'll arrive around ${setupTime}.`
     : `We'll call when we're on our way!`;
 
   const body =
-    `Reminder: Your Bounce Man delivery is tomorrow (${dateStr})! ${timeNote} ` +
+    `Reminder: Your Bounce Man delivery is tomorrow (${dateStr})! ${timeNote}${multiDayNote} ` +
     `Make sure the setup area is clear with a power outlet nearby. ` +
     `Questions? (580) 308-9288`;
 

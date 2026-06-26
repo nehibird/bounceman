@@ -1,5 +1,6 @@
 'use strict';
 const nodemailer = require('nodemailer');
+const { rentalDays, formatRentalPeriod, fmtTime12 } = require('../lib/helpers');
 
 let _transporter = null;
 
@@ -76,8 +77,14 @@ function fmtMoney(a) { return parseFloat(a||0).toFixed(2); }
 
 function bookingConfirmationBody(booking, customer, items, contractId) {
   var rows = items.map(function(i) {
-    return '<tr><td style="padding:8px 12px;font-size:14px;border-bottom:1px solid #f0f0f0;">' + i.item_name + '</td><td style="padding:8px 12px;font-size:14px;text-align:right;border-bottom:1px solid #f0f0f0;">$' + fmtMoney(i.unit_price) + '</td></tr>';
+    var d = parseInt(i.rental_days) || 1;
+    var dayNote = d > 1 ? '<div style="font-size:12px;color:#888;margin-top:2px;">' + d + '-day rental</div>' : '';
+    return '<tr><td style="padding:8px 12px;font-size:14px;border-bottom:1px solid #f0f0f0;">' + i.item_name + dayNote + '</td><td style="padding:8px 12px;font-size:14px;text-align:right;border-bottom:1px solid #f0f0f0;">$' + fmtMoney(i.unit_price) + '</td></tr>';
   }).join('');
+
+  var isOvernight = (items||[]).some(function(i){return i.duration_type==='overnight';}) || (booking.event_end_time||'').slice(0,5)==='23:59';
+  var multiDay = rentalDays(booking) > 1;
+  var timeLine = isOvernight ? '9:00 AM - 9:00 AM (next-day pickup)' : (fmtTime12(booking.event_start_time) + ' - ' + fmtTime12(booking.event_end_time) + (multiDay ? ' (each day)' : ''));
 
   return `
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">Thank you for your booking.</td></tr>
@@ -104,8 +111,8 @@ ${rows}
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
 <tr><td style="font-size:11px;letter-spacing:1px;color:#999;font-weight:bold;padding-bottom:8px;">EVENT DETAILS</td></tr>
-<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${fmtDate(booking.event_date)}</td></tr>
-<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Time:</strong> ${((items||[]).some(function(i){return i.duration_type==='overnight';}) || (booking.event_end_time||'').slice(0,5)==='23:59') ? '9:00 AM - 9:00 AM (next-day pickup)' : booking.event_start_time + ' - ' + booking.event_end_time}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${formatRentalPeriod(booking)}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Time:</strong> ${timeLine}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Address:</strong> ${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</td></tr>
 </table>
 
@@ -163,7 +170,7 @@ function deliveryReminderBody(booking, customer, contractId) {
 <tr><td style="padding:20px;">
 <table width="100%" cellpadding="0" cellspacing="0">
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Booking #:</strong> ${booking.booking_number}</td></tr>
-<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${fmtDate(booking.event_date)}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Date:</strong> ${formatRentalPeriod(booking)}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Address:</strong> ${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</td></tr>
 ${hasBalance ? `<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Balance Due:</strong> $${fmtMoney(booking.balance_due)}</td></tr>` : `<tr><td style="font-size:14px;color:${GREEN};padding:4px 0;"><strong>Status:</strong> Paid in Full</td></tr>`}
 ${needsSignature ? `<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Waiver:</strong> Please sign before delivery</td></tr>` : booking.contract_signed ? `<tr><td style="font-size:14px;color:${GREEN};padding:4px 0;"><strong>Waiver:</strong> Signed</td></tr>` : ''}
@@ -219,7 +226,7 @@ function paymentReceiptBody(booking, customer, amount) {
 </table>
 
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
-<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Event Date:</strong> ${fmtDate(booking.event_date)}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Event Date:</strong> ${formatRentalPeriod(booking)}</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Payment:</strong> Credit/Debit Card</td></tr>
 <tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Remaining Balance:</strong> $${fmtMoney(booking.balance_due)}</td></tr>
 </table>

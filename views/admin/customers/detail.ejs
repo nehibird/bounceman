@@ -104,7 +104,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
               ${bookings.length > 0 ? bookings.map(b => `
               <tr>
                 <td><strong>${b.booking_number}</strong></td>
-                <td>${b.event_date}</td>
+                <td>${b.event_date}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
                 <td><span class="badge-status badge-${b.status}">${b.status}</span></td>
                 <td>$${parseFloat(b.total || 0).toFixed(2)}</td>
                 <td><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
