@@ -177,18 +177,16 @@ async function notifyNewBooking(booking, customer, items) {
   console.log('[SLACK] Comprehensive booking notification sent for', booking.booking_number);
 }
 
-async function notifyDeliveryReminder(booking, customer, items, contract) {
-  const itemList = items.map(i => i.item_name).join(', ');
-  const flags = [];
-  if (!contract || !contract.signed) flags.push(':warning: Rental agreement NOT signed');
-  if (booking.payment_status !== 'deposit_paid' && booking.deposit_paid !== 1) flags.push(':warning: Deposit NOT paid');
-  if (parseFloat(booking.balance_due) > 0) flags.push(':moneybag: Balance due on delivery: $' + parseFloat(booking.balance_due).toFixed(2));
+// Builds the "Delivery Tomorrow" card. Reflects current contract/payment state so the
+// same builder is used to post it AND to refresh it in place when status changes.
+function buildDeliveryCardBlocks(booking, customer, items) {
+  const itemList = (items || []).map(i => i.item_name).join(', ');
+  const signed = booking.contract_signed === 1 || booking.contract_signed === true;
+  const balance = parseFloat(booking.balance_due) || 0;
+  const paid = balance <= 0;
 
   const blocks = [
-    {
-      type: 'header',
-      text: { type: 'plain_text', text: 'Delivery Tomorrow - ' + booking.booking_number }
-    },
+    { type: 'header', text: { type: 'plain_text', text: 'Delivery Tomorrow - ' + booking.booking_number } },
     {
       type: 'section',
       fields: [
@@ -204,47 +202,97 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
     }
   ];
 
-  if (flags.length > 0) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: flags.join('\n') }
-    });
+  // Payment Status box — flips to Completed once the balance is cleared.
+  let payText;
+  if (paid) {
+    payText = '*Payment Status:* :white_check_mark: *COMPLETED* — Paid in Full ($' + parseFloat(booking.total).toFixed(2) + ')';
+  } else if (booking.payment_status === 'deposit_paid' || booking.deposit_paid === 1) {
+    payText = '*Payment Status:* Deposit paid · :moneybag: *$' + balance.toFixed(2) + '* balance due on delivery';
   } else {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: ':white_check_mark: Contract signed, deposit paid. Ready to go!' }
-    });
+    payText = '*Payment Status:* :moneybag: *$' + balance.toFixed(2) + '* due';
+  }
+  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: payText } });
+
+  // Readiness line
+  if (!signed) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: ':warning: Rental agreement NOT signed' } });
+  } else if (paid) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: ':white_check_mark: Contract signed, paid in full. Ready to go!' } });
+  } else {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: ':white_check_mark: Contract signed. Collect balance on delivery.' } });
   }
 
-  // Add "On My Way" button for delivery day
-  blocks.push({
-    type: 'actions',
-    elements: [
-      {
-        type: 'button',
-        text: { type: 'plain_text', text: ':truck: On My Way', emoji: true },
-        style: 'primary',
-        action_id: 'on_my_way',
-        value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, phone: customer.phone, first_name: customer.first_name })
-      },
-      {
-        type: 'button',
-        text: { type: 'plain_text', text: ':clipboard: Record Payment', emoji: true },
-        action_id: 'record_payment_modal',
-        value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, balance: booking.balance_due })
+  // Buttons: On My Way always; Record Payment only while a balance is owed.
+  const elements = [
+    {
+      type: 'button',
+      text: { type: 'plain_text', text: ':truck: On My Way', emoji: true },
+      style: 'primary',
+      action_id: 'on_my_way',
+      value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, phone: customer.phone, first_name: customer.first_name })
+    }
+  ];
+  if (!paid) {
+    elements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: ':clipboard: Record Payment', emoji: true },
+      action_id: 'record_payment',
+      value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, balance: balance }),
+      confirm: {
+        title: { type: 'plain_text', text: 'Record balance as paid?' },
+        text: { type: 'mrkdwn', text: 'Mark the remaining *$' + balance.toFixed(2) + '* for ' + customer.first_name + ' as paid (cash or check collected)?' },
+        confirm: { type: 'plain_text', text: 'Yes, mark paid' },
+        deny: { type: 'plain_text', text: 'Cancel' }
       }
-    ]
-  });
+    });
+  }
+  blocks.push({ type: 'actions', elements });
 
   blocks.push({
     type: 'context',
     elements: [
-      { type: 'mrkdwn', text: booking.event_type + ' | ' + booking.venue_type + ' | ' + booking.surface_type + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
+      { type: 'mrkdwn', text: (booking.event_type || '') + ' | ' + (booking.venue_type || '') + ' | ' + (booking.surface_type || '') + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
     ]
   });
 
-  await postToSlack(BOOKINGS_CHANNEL, blocks, 'Delivery tomorrow for ' + customer.first_name + ' - ' + booking.booking_number);
+  return blocks;
+}
+
+async function notifyDeliveryReminder(booking, customer, items, contract) {
+  // Reflect contract-signed onto the booking object so the builder can read it.
+  if (contract && booking.contract_signed == null) booking.contract_signed = contract.signed ? 1 : 0;
+  const blocks = buildDeliveryCardBlocks(booking, customer, items);
+  const resp = await postToSlack(BOOKINGS_CHANNEL, blocks, 'Delivery tomorrow for ' + customer.first_name + ' - ' + booking.booking_number);
+  // Save this card's ts so its Payment Status can be flipped in place when they pay.
+  if (resp && resp.ts) {
+    try {
+      require('../db').getDb().prepare('UPDATE bookings SET slack_reminder_ts = ?, slack_reminder_channel = ? WHERE id = ?').run(resp.ts, BOOKINGS_CHANNEL, booking.id);
+    } catch (e) { console.error('[SLACK] store reminder ts failed:', e.message); }
+  }
   console.log('[SLACK] Delivery reminder sent for', booking.booking_number);
+}
+
+// Re-render the delivery-reminder card in place (no new card) to reflect current payment state.
+async function refreshDeliveryCard(bookingId) {
+  const { getDb } = require('../db');
+  const db = getDb();
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+  if (!booking || !booking.slack_reminder_ts || !booking.slack_reminder_channel) return false;
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+  if (!customer) return false;
+  const items = db.prepare('SELECT bi.*, COALESCE(bi.item_name, e.name) AS item_name FROM booking_items bi LEFT JOIN equipment e ON e.id = bi.equipment_id WHERE bi.booking_id = ?').all(bookingId);
+  const blocks = buildDeliveryCardBlocks(booking, customer, items);
+  try {
+    const resp = await fetch('https://slack.com/api/chat.update', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: booking.slack_reminder_channel, ts: booking.slack_reminder_ts, blocks, text: 'Delivery for ' + customer.first_name + ' - ' + booking.booking_number })
+    });
+    const data = await resp.json();
+    if (!data.ok) { console.error('[SLACK] Delivery card refresh failed:', data.error); return false; }
+    console.log('[SLACK] Delivery card refreshed for', booking.booking_number, '- balance:', booking.balance_due);
+    return true;
+  } catch (e) { console.error('[SLACK] Delivery card refresh error:', e.message); return false; }
 }
 
 // Check for tomorrow's deliveries and send Slack + customer email reminders
@@ -453,4 +501,4 @@ async function sendSlackMessage(opts) {
   return postToSlack(channel, opts.blocks, opts.text || 'Bounce Man notification');
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };

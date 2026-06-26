@@ -203,6 +203,13 @@ router.post('/stripe', async (req, res) => {
         console.log('[Stripe Webhook] checkout.session.completed: booking', bookingId,
           'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
 
+        // Flip the existing Slack card(s) Payment Status in place (no new card).
+        try {
+          const notif = require('../services/notifications');
+          await notif.refreshDeliveryCard(bookingId);
+          await notif.updateBookingSlackCard(bookingId);
+        } catch (e) { console.error('[Stripe Webhook] card refresh failed:', e.message); }
+
         // Send confirmation email (webhook is reliable path; page redirect may never fire)
         setTimeout(async () => {
           try {
@@ -670,9 +677,8 @@ router.post('/slack/interactivity', async (req, res) => {
 
     if (actionId === 'on_my_way') {
       await handleOnMyWay(value, user, response_url, message);
-    } else if (actionId === 'record_payment_modal') {
-      // Future: Open modal for payment recording
-      await respondToSlack(response_url, { text: 'Record Payment modal coming soon. For now, use Admin > Bookings > ' + value.booking_number });
+    } else if (actionId === 'record_payment' || actionId === 'record_payment_modal') {
+      await handleRecordPayment(value, user, response_url);
     } else if (actionId === 'toggle_sarah_sms') {
       const sarahSms = require('../services/sarah-sms');
       sarahSms.setEnabled(!sarahSms.isEnabled());
@@ -685,6 +691,48 @@ router.post('/slack/interactivity', async (req, res) => {
     console.error('[SLACK INTERACT] Error:', err.message);
   }
 });
+
+// Record a cash/check payment collected on delivery, then flip the card's Payment Status in place.
+async function handleRecordPayment(value, user, response_url) {
+  const { getDb } = require('../db');
+  const notif = require('../services/notifications');
+  const db = getDb();
+  const { booking_id, booking_number } = value;
+
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
+  if (!booking) {
+    await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: Booking not found' });
+    return;
+  }
+  const balance = parseFloat(booking.balance_due) || 0;
+  if (balance <= 0) {
+    await respondToSlack(response_url, { response_type: 'ephemeral', text: ':white_check_mark: ' + booking_number + ' is already paid in full.' });
+    return;
+  }
+
+  try {
+    const crypto = require('crypto');
+    db.prepare("INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, status, notes, created_at) VALUES (?, ?, ?, ?, 'charge', 'check', 'completed', ?, datetime('now'))")
+      .run(crypto.randomUUID(), booking.id, booking.customer_id, balance, 'Cash/check collected on delivery - recorded via Slack by ' + (user.name || user.id));
+    db.prepare("UPDATE bookings SET balance_due = 0, payment_status = 'paid', deposit_paid = 1, updated_at = datetime('now') WHERE id = ?").run(booking.id);
+    try { db.prepare('UPDATE customers SET total_revenue = total_revenue + ? WHERE id = ?').run(balance, booking.customer_id); } catch (e) { /* non-critical */ }
+    try {
+      db.prepare('INSERT INTO activity_log (id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)')
+        .run(crypto.randomUUID(), 'payment_received', 'booking', booking.id, JSON.stringify({ amount: balance, method: 'check', source: 'slack_record_payment', by: user.id }));
+    } catch (e) { /* activity_log optional */ }
+    console.log('[RECORD PAYMENT] $' + balance.toFixed(2) + ' (cash/check) recorded for', booking_number, 'by', user.id);
+  } catch (err) {
+    console.error('[RECORD PAYMENT] failed:', err.message);
+    await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: Failed to record payment: ' + err.message });
+    return;
+  }
+
+  // Flip the existing card(s) to Paid in Full — no new card.
+  try { await notif.refreshDeliveryCard(booking.id); } catch (e) { console.error('[RECORD PAYMENT] card refresh failed:', e.message); }
+  try { await notif.updateBookingSlackCard(booking.id); } catch (e) { /* new-booking card optional */ }
+
+  await respondToSlack(response_url, { response_type: 'ephemeral', text: ':white_check_mark: Recorded *$' + balance.toFixed(2) + '* as paid for ' + booking_number + '. Card updated to *Paid in Full*.' });
+}
 
 async function handleOnMyWay(value, user, response_url, originalMessage) {
   const { getDb } = require('../db');

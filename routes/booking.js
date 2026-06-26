@@ -809,34 +809,29 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
 
       if (session.payment_status === 'paid') {
         const amountPaid = session.amount_total / 100;
+        const intentId = (session.payment_intent && session.payment_intent.id) ? session.payment_intent.id : (session.payment_intent || session.id);
 
-        // Record the payment
-        const paymentId = require('crypto').randomUUID();
-        db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, created_at) 
-          VALUES (?, ?, ?, ?, charge, card, ?, completed, datetime(now))`).run(paymentId, booking.id, booking.cust_id, amountPaid, session.payment_intent?.id || session.id);
+        // Record the payment — idempotent: the Stripe webhook may have recorded it first
+        // (both paths dedup on stripe_payment_id, so the balance is only ever counted once).
+        const existing = db.prepare('SELECT id FROM payments WHERE stripe_payment_id = ?').get(intentId);
+        if (!existing) {
+          const paymentId = require('crypto').randomUUID();
+          db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, created_at)
+            VALUES (?, ?, ?, ?, 'charge', 'card', ?, 'completed', datetime('now'))`).run(paymentId, booking.id, booking.customer_id, amountPaid, intentId);
 
-        // Update booking balance
-        const newBalance = Math.max(0, parseFloat(booking.balance_due) - amountPaid);
-        const newStatus = newBalance <= 0 ? 'paid' : 'partial';
-        db.prepare('UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime(now) WHERE id = ?')
-          .run(newBalance, newStatus, booking.id);
-
-        // Send Slack notification
-        const slack = require('../services/notifications');
-        if (slack.sendSlackMessage) {
-          slack.sendSlackMessage({
-            text: ':white_check_mark: *Balance Paid Online* - ' + booking.booking_number,
-            blocks: [
-              { type: 'section', text: { type: 'mrkdwn', text: ':white_check_mark: *Balance Paid Online*\n*' + booking.first_name + ' ' + booking.last_name + '* paid remaining balance' } },
-              { type: 'section', fields: [
-                { type: 'mrkdwn', text: '*Booking:*\n' + booking.booking_number },
-                { type: 'mrkdwn', text: '*Amount:*\n$' + amountPaid.toFixed(2) },
-                { type: 'mrkdwn', text: '*Event Date:*\n' + booking.event_date },
-                { type: 'mrkdwn', text: '*Status:*\n:white_check_mark: ' + newStatus.toUpperCase() }
-              ]}
-            ]
-          }).catch(e => console.error('[SLACK] Balance payment notification failed:', e.message));
+          const newBalance = Math.max(0, parseFloat(booking.balance_due) - amountPaid);
+          const newStatus = newBalance <= 0 ? 'paid' : 'partial';
+          db.prepare("UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime('now') WHERE id = ?")
+            .run(newBalance, newStatus, booking.id);
+          try { db.prepare('UPDATE customers SET total_revenue = total_revenue + ? WHERE id = ?').run(amountPaid, booking.customer_id); } catch (e) { /* non-critical */ }
         }
+
+        // Flip the existing Slack card(s) Payment Status in place — no new card.
+        try {
+          const notif = require('../services/notifications');
+          await notif.refreshDeliveryCard(booking.id);
+          await notif.updateBookingSlackCard(booking.id);
+        } catch (e) { console.error('[PAY BALANCE] card refresh failed:', e.message); }
 
         // Send receipt email
         const email = require('../services/email');

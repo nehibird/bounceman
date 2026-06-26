@@ -692,6 +692,9 @@ function initialize() {
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN slack_message_channel TEXT').run();
   } catch {} // column already exists
+  // Migration: track the delivery-reminder card so we can update its Payment Status in place
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_ts TEXT').run(); } catch {}
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_channel TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
