@@ -695,6 +695,8 @@ function initialize() {
   // Migration: track the delivery-reminder card so we can update its Payment Status in place
   try { d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_channel TEXT').run(); } catch {}
+  // Migration: track last-chance deposit reminder before an unpaid hold auto-releases
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN hold_reminder_sent INTEGER DEFAULT 0').run(); } catch {}
   try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}
