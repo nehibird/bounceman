@@ -148,6 +148,12 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('[BounceMan] Scheduler DISABLED on this instance (DISABLE_SCHEDULER=true) — no reminders/emails/SMS sent from here');
   } else {
     scheduleReminders();
+    // Auto-release abandoned unpaid holds so they stop reserving inventory: reminder at
+    // ~4h, release at 5h. Runs every 20 min (first pass 60s after boot).
+    const { releaseExpiredHolds } = require('./services/scheduler');
+    const runHoldRelease = () => releaseExpiredHolds().catch((e) => console.error('[HOLD] run failed:', e.message));
+    setTimeout(() => { runHoldRelease(); setInterval(runHoldRelease, 20 * 60 * 1000); }, 60 * 1000);
+    console.log('[BounceMan] Hold auto-release scheduled (every 20 min)');
   }
 
   // Google Business Profile reviews — sync on startup + daily.
