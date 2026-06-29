@@ -147,6 +147,10 @@
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
               <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
             </div>
+
+            <div id="weekdaySpecialNote" style="display:none;margin-top:12px;background:#FFF3E8;border:1px solid #E8833A;border-radius:10px;padding:12px;font-size:14px;color:#15263A">
+              <i class="fas fa-sun me-1" style="color:#E8833A"></i> <strong>${settings.weekday_special_label || 'Weekday Special'}!</strong> On this weekday you get a <strong>Full Day for the Half-Day price</strong> — see your deal on the next step. 🎉
+            </div>
           </div>
 
           <!-- 2b. How many days? (multi-day only) -->
@@ -192,6 +196,19 @@
 `, scripts: `
 <script>
   var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ""}' .split(',').map(Number).filter(function(n) { return !isNaN(n) && n >= 0; });
+
+  var WEEKDAY_SPECIAL = {
+    active: '${settings.weekday_special_active || ""}' === '1',
+    start: '${settings.weekday_special_start || ""}',
+    end: '${settings.weekday_special_end || ""}',
+    days: '${settings.weekday_special_days || "1,2,3,4,5"}'.split(',').map(Number).filter(function(n){ return !isNaN(n); })
+  };
+  function isWeekdaySpecialDate(dateStr) {
+    if (!WEEKDAY_SPECIAL.active || !dateStr) return false;
+    if (WEEKDAY_SPECIAL.start && dateStr < WEEKDAY_SPECIAL.start) return false;
+    if (WEEKDAY_SPECIAL.end && dateStr > WEEKDAY_SPECIAL.end) return false;
+    return WEEKDAY_SPECIAL.days.indexOf(new Date(dateStr + 'T12:00:00').getDay()) !== -1;
+  }
 
   var HALFDAY_HOURS = 4;
   var MIN_READY_BY_H = 8;
@@ -332,19 +349,25 @@
   function applyDayRules() {
     var dateStr = document.getElementById('eventDateInput').value;
     var note = document.getElementById('sundayNote');
+    var specialNote = document.getElementById('weekdaySpecialNote');
     var halfBtn = document.getElementById('durHalfDay');
     var isSunday = dateStr ? (new Date(dateStr + 'T12:00:00').getDay() === 0) : false;
-    if (isSunday) {
+    var isSpecial = isWeekdaySpecialDate(dateStr);
+
+    note.style.display = isSunday ? '' : 'none';
+    if (specialNote) specialNote.style.display = isSpecial ? '' : 'none';
+
+    // Half-day is disabled on Sundays (full-day only) and on weekday-special days
+    // (Full Day is the same price as a half day, so there's no reason to pick it).
+    if (isSunday || isSpecial) {
       halfBtn.classList.add('disabled');
       halfBtn.style.opacity = '0.4';
       halfBtn.style.pointerEvents = 'none';
-      note.style.display = '';
       if (selectedDurationType === 'halfday') { selectDurationType('allday'); return; }
     } else {
       halfBtn.classList.remove('disabled');
       halfBtn.style.opacity = '';
       halfBtn.style.pointerEvents = '';
-      note.style.display = 'none';
     }
   }
 

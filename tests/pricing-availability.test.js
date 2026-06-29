@@ -294,6 +294,45 @@ console.log('\n=== SECTION 6: demandMultiplierFor ===');
 }
 
 // ===========================================================================
+console.log('\n=== SECTION 7: weekday special (full day at half-day price) ===');
+// ===========================================================================
+{
+  const { weekdaySpecialApplies } = require('../lib/helpers');
+  // Clear any demand windows from earlier sections so these assertions isolate the special.
+  db.prepare('DELETE FROM demand_dates').run();
+  const setS = (k, v) => db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(k, v);
+  setS('weekday_special_active', '1');
+  setS('weekday_special_start', '2026-08-01');
+  setS('weekday_special_end', '2026-08-31');
+  setS('weekday_special_days', '1,2,3,4,5');
+
+  const monday = '2026-08-03';    // Monday in window
+  const saturday = '2026-08-01';  // Saturday (weekend)
+  const julyMon = '2026-07-06';   // Monday but outside window
+
+  assert('special applies on Aug weekday', weekdaySpecialApplies(db, monday) === true);
+  assert('special NOT on Aug weekend', weekdaySpecialApplies(db, saturday) === false);
+  assert('special NOT outside window', weekdaySpecialApplies(db, julyMon) === false);
+
+  const wk = priceForBooking(db, gauntlet, { duration: 'daily', days: 1, wet: false, date: monday });
+  assert('weekday full-day = half-day price', wk === 375, `got ${wk}`);
+
+  const weekend = priceForBooking(db, gauntlet, { duration: 'daily', days: 1, wet: false, date: saturday });
+  assert('weekend full-day = normal daily', weekend === 450, `got ${weekend}`);
+
+  const multi = priceForBooking(db, gauntlet, { duration: 'multiday', days: 2, wet: false, date: monday });
+  assert('multi-day weekday NOT discounted', multi === 600, `got ${multi}`);
+
+  const reg = priceForBooking(db, gauntlet, { duration: 'daily', days: 1, wet: false, date: monday, ignoreSpecial: true });
+  assert('ignoreSpecial returns regular daily', reg === 450, `got ${reg}`);
+
+  setS('weekday_special_active', '0');
+  const off = priceForBooking(db, gauntlet, { duration: 'daily', days: 1, wet: false, date: monday });
+  assert('inactive special = no discount', off === 450, `got ${off}`);
+  setS('weekday_special_active', '1');
+}
+
+// ===========================================================================
 console.log('\n=== RESULTS ===');
 // ===========================================================================
 console.log(`Passed: ${passed}`);
