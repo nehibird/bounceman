@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -87,6 +87,15 @@ router.get('/select', (req, res) => {
       item.computedWetPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: true, date: eventDate });
     } catch(e) {
       item.computedWetPrice = null;
+    }
+
+    // Weekday special: single full-day booking on a qualifying weekday is priced at the
+    // half-day rate. Expose the original (struck-through) full-day price for the badge.
+    item.specialApplies = (rentalDuration === 'daily' && rentalDays <= 1 && eventDate)
+      ? weekdaySpecialApplies(db, eventDate) : false;
+    if (item.specialApplies) {
+      try { item.regularPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: false, date: eventDate, ignoreSpecial: true }); } catch(e) { item.regularPrice = null; }
+      try { item.regularWetPrice = priceForBooking(db, item, { duration: rentalDuration, days: rentalDays, wet: true, date: eventDate, ignoreSpecial: true }); } catch(e) { item.regularWetPrice = null; }
     }
 
     let extraAvail = 0;
