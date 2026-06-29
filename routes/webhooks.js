@@ -826,7 +826,9 @@ async function handleCallBack(value, user, response_url, originalMessage) {
     // Leg 1: call the agent's cell. When they answer, the TwiML dials the customer
     // (caller ID = Bounce Man business line so the customer recognizes it and the
     //  agent's personal number is never exposed).
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to your Bounce Man customer now.</Say><Dial callerId="${BM_NUMBER}" timeout="30">${customerNumber}</Dial></Response>`;
+    const recBase = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+    const recCb = `${recBase}/api/webhooks/callback-recording?customer=${encodeURIComponent(customerNumber)}`;
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to your Bounce Man customer now.</Say><Dial callerId="${BM_NUMBER}" timeout="30" record="record-from-answer-dual" recordingStatusCallback="${recCb}" recordingStatusCallbackEvent="completed">${customerNumber}</Dial></Response>`;
     await twilio.calls.create({ to: agentNumber, from: BM_NUMBER, twiml });
     console.log('[CALL BACK] Ringing agent', agentNumber, '(slack', user.id + ') then bridging to', customerNumber);
   } catch (err) {
@@ -892,9 +894,10 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
       const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
       // Screened transfer: <Number url> plays a press-any-key whisper so voicemail
       // (which can't press a key) is never bridged to the customer; the Dial action
-      // routes to a graceful callback message if Nehemiah doesn't pick up. No leading
-      // <Say> here — Vapi already spoke the request-start line (avoids double announce).
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${BASE}/api/webhooks/transfer-result?parent=${callSid}" method="POST" callerId="${BM_NUMBER}" timeout="25"><Number url="${BASE}/api/webhooks/transfer-screen?parent=${callSid}" method="POST">${TRANSFER_TARGET}</Number></Dial></Response>`;
+      // routes to a graceful callback message if Nehemiah doesn't pick up.
+      // A short leading <Say> bridges the dead-air gap between Vapi's request-start line
+      // and this redirect taking effect — callers were hanging up into silence (~8s).
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Please hold while I connect you.</Say><Dial action="${BASE}/api/webhooks/transfer-result?parent=${callSid}" method="POST" callerId="${BM_NUMBER}" timeout="25"><Number url="${BASE}/api/webhooks/transfer-screen?parent=${callSid}" method="POST">${TRANSFER_TARGET}</Number></Dial></Response>`;
       await twilio.calls(callSid).update({ twiml });
       console.log('[TRANSFER] Redirected Twilio call', callSid, 'to', TRANSFER_TARGET, 'for caller', realPhone);
       return { result: 'TRANSFER_INITIATED to ' + TRANSFER_TARGET };
@@ -1361,6 +1364,26 @@ router.post('/transfer-result', (req, res) => {
     console.log('[TRANSFER] Result for', parent, 'status=' + status, '-> owner unavailable, callback message');
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Nehemiah is not available to take your call right now. He will call you back as soon as he can. Thanks for calling Bounce Man. Goodbye.</Say><Hangup/></Response>`);
   }
+});
+
+// Twilio fires this when a Call Back (click-to-dial) recording finishes.
+// Posts a "Listen" link to the bookings channel, mirroring the inbound call cards.
+router.post('/callback-recording', async (req, res) => {
+  res.status(204).end();
+  try {
+    const recUrl = req.body && req.body.RecordingUrl;
+    if (!recUrl) return;
+    const customer = req.query.customer || 'customer';
+    const token = process.env.SLACK_BOT_TOKEN;
+    const channel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
+    if (!token) { console.log('[CALLBACK REC] recorded', recUrl, '(no SLACK_BOT_TOKEN to post)'); return; }
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, text: ':headphones: Call-back with ' + customer + ' recorded — <' + recUrl + '.mp3|Listen to recording>' })
+    });
+    console.log('[CALLBACK REC] posted recording for', customer, recUrl);
+  } catch (e) { console.error('[CALLBACK REC] error:', e.message); }
 });
 
 module.exports = router;
