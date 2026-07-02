@@ -715,6 +715,11 @@ router.post('/slack/interactivity', async (req, res) => {
       const sarahSms = require('../services/sarah-sms');
       sarahSms.setEnabled(!sarahSms.isEnabled());
       await respondToSlack(response_url, { replace_original: true, blocks: sarahCardBlocks(sarahSms.isEnabled()), text: 'Sarah text auto-reply is now ' + (sarahSms.isEnabled() ? 'ON' : 'OFF') });
+    } else if (actionId === 'sms_send_suggested') {
+      const r = await require('../services/sarah-sms').actOnSuggestion(value.id, 'send', user && (user.name || user.id));
+      if (!r.ok) await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: ' + r.error });
+    } else if (actionId === 'sms_dismiss_suggested') {
+      await require('../services/sarah-sms').actOnSuggestion(value.id, 'dismiss', user && (user.name || user.id));
     } else if (actionId === 'call_back') {
       await handleCallBack(value, user, response_url, message);
     }

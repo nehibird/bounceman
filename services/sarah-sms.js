@@ -8,6 +8,7 @@ const MODEL = process.env.SARAH_SMS_MODEL || 'anthropic/claude-sonnet-4';
 const BM_NUMBER = process.env.TWILIO_PHONE_NUMBER || '+15803089288';
 const OWNER_CELL = process.env.OWNER_CELL || '+15806281765';
 const SARAH_API_KEY = process.env.SARAH_API_KEY;
+const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const PORT = process.env.PORT || 3200;
 const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'optout'];
 
@@ -32,6 +33,13 @@ function setEnabled(on) { setSetting('sarah_sms_enabled', on ? '1' : '0'); }
 function isThreadPaused(number) { return getSetting('sms_pause:' + normalize(number), '0') === '1'; }
 function pauseThread(number) { setSetting('sms_pause:' + normalize(number), '1'); }
 function resumeThread(number) { setSetting('sms_pause:' + normalize(number), '0'); }
+function getMode() {
+  const m = getSetting('sarah_sms_mode', '');
+  if (m === 'off' || m === 'auto' || m === 'suggest') return m;
+  return isEnabled() ? 'auto' : 'off'; // backward-compat with sarah_sms_enabled
+}
+function setMode(m) { setSetting('sarah_sms_mode', m); }
+
 
 // ---- tool schemas (OpenAI/OpenRouter format) ----
 const TOOLS = [
@@ -143,7 +151,7 @@ async function handleInboundSms(from, body) {
     if (!OPENROUTER_KEY || !SARAH_API_KEY) return;
     const number = normalize(from);
     if (number === normalize(BM_NUMBER) || number === normalize(OWNER_CELL)) return;
-    if (!isEnabled()) return;
+    const mode = getMode(); if (mode === 'off') return;
     if (isThreadPaused(number)) return;
     const clean = (body || '').trim().toLowerCase().replace(/[^a-z]/g, '');
     if (STOP_WORDS.includes(clean)) return;
@@ -182,12 +190,82 @@ async function handleInboundSms(from, body) {
     }
 
     if (reply) {
-      await smsService.sendSms(number, reply);
-      console.log('[SARAH-SMS] replied to', number, '->', reply.slice(0, 80));
+      if (mode === 'suggest') { await postSuggestion(number, reply); console.log('[SARAH-SMS] suggested reply to', number, '->', reply.slice(0, 80)); }
+      else { await smsService.sendSms(number, reply); console.log('[SARAH-SMS] replied to', number, '->', reply.slice(0, 80)); }
     }
   } catch (e) {
     console.error('[SARAH-SMS] handler error:', e.message);
   }
 }
 
-module.exports = { handleInboundSms, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread };
+// ---- Suggested-reply mode: draft into the Slack thread, send only on button click ----
+function _customerName(db, phone10) {
+  try {
+    const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+    const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === phone10);
+    if (m) return ((m.first_name || '') + ' ' + (m.last_name || '')).trim() || null;
+  } catch (e) {}
+  return null;
+}
+
+async function postSuggestion(number, replyText) {
+  try {
+    const db = getDb();
+    const { v4: uuid } = require('uuid');
+    const notif = require('./notifications');
+    const phone10 = String(number).replace(/\D/g, '').slice(-10);
+    const name = _customerName(db, phone10);
+    const thread = await notif.ensureSmsThread(number, name);
+    if (!thread) { console.error('[SARAH-SMS] no thread for suggestion'); return; }
+    const id = uuid();
+    db.prepare("INSERT INTO suggested_replies (id, phone10, channel, thread_ts, body, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', datetime('now'))")
+      .run(id, phone10, thread.channel, thread.thread_ts, replyText);
+    const quoted = replyText.replace(/\n/g, '\n>');
+    const blocks = [
+      { type: 'section', text: { type: 'mrkdwn', text: ':bulb: *Suggested reply* (Sarah — tap Send or type your own)\n>' + quoted } },
+      { type: 'actions', elements: [
+        { type: 'button', style: 'primary', text: { type: 'plain_text', text: 'Send' }, action_id: 'sms_send_suggested', value: JSON.stringify({ id }) },
+        { type: 'button', text: { type: 'plain_text', text: 'Dismiss' }, action_id: 'sms_dismiss_suggested', value: JSON.stringify({ id }) }
+      ] }
+    ];
+    const r = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: thread.channel, thread_ts: thread.thread_ts, text: 'Suggested reply: ' + replyText, blocks })
+    });
+    const d = await r.json();
+    if (d.ok) db.prepare('UPDATE suggested_replies SET msg_ts = ? WHERE id = ?').run(d.ts, id);
+    else console.error('[SARAH-SMS] suggestion post failed:', d.error);
+  } catch (e) { console.error('[SARAH-SMS] postSuggestion:', e.message); }
+}
+
+// Called from the Slack interactivity endpoint when a Send/Dismiss button is clicked.
+async function actOnSuggestion(id, act, actedBy) {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM suggested_replies WHERE id = ?').get(id);
+    if (!row) return { ok: false, error: 'Suggestion not found' };
+    if (row.status !== 'pending') return { ok: false, error: 'Already ' + row.status };
+    const label = _customerName(db, row.phone10) || ('+1' + row.phone10);
+    let newText;
+    if (act === 'send') {
+      await smsService.sendSms('+1' + row.phone10, row.body, { skipMirror: true });
+      db.prepare("UPDATE suggested_replies SET status = 'sent', acted_by = ?, acted_at = datetime('now') WHERE id = ?").run(actedBy || '', id);
+      newText = ':outbox_tray: *You → ' + label + ':*\n' + row.body;
+    } else {
+      db.prepare("UPDATE suggested_replies SET status = 'dismissed', acted_by = ?, acted_at = datetime('now') WHERE id = ?").run(actedBy || '', id);
+      newText = ':wastebasket: _Dismissed suggestion:_ ' + row.body;
+    }
+    try {
+      await fetch('https://slack.com/api/chat.update', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: row.channel, ts: row.msg_ts, text: newText, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: newText } }] })
+      });
+    } catch (e) {}
+    return { ok: true };
+  } catch (e) { console.error('[SARAH-SMS] actOnSuggestion:', e.message); return { ok: false, error: e.message }; }
+}
+
+
+module.exports = { handleInboundSms, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };

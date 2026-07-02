@@ -68,7 +68,9 @@ async function sendSms(to, body, opts) {
   // Mirror into the customer's Slack #texts thread (two-way visibility)
   try {
     const notif = require('./notifications');
-    if (opts.fromSlack) {
+    if (opts.skipMirror) {
+      // caller handles Slack display (e.g. suggested-reply send updates the card in place)
+    } else if (opts.fromSlack) {
       // Reply originated in the Slack thread — it's already visible there; just confirm delivery.
       notif.reactToSlack(opts.fromSlack.channel, opts.fromSlack.ts, 'white_check_mark').catch(function () {});
     } else {

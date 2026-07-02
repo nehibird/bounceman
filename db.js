@@ -828,6 +828,18 @@ function initialize() {
       event_key TEXT PRIMARY KEY,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS suggested_replies (
+      id TEXT PRIMARY KEY,
+      phone10 TEXT NOT NULL,
+      channel TEXT,
+      thread_ts TEXT,
+      msg_ts TEXT,
+      body TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      acted_by TEXT,
+      acted_at TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   console.log('[DB] Database initialized successfully');
