@@ -1413,4 +1413,43 @@ router.post('/callback-recording', async (req, res) => {
   } catch (e) { console.error('[CALLBACK REC] error:', e.message); }
 });
 
+// === Slash command: /text <phone|first-name> <message> — start a NEW conversation as Bounce Man ===
+router.post('/slack/command', async (req, res) => {
+  if (!verifySlackSignature(req)) return res.status(401).send('invalid signature');
+  const raw = (req.body.text || '').trim();
+  const usage = 'Usage: `/text <phone or first name> <message>`\nExample: `/text 5806281765 Hey! It’s Bounce Man.`';
+  if (!raw) return res.json({ response_type: 'ephemeral', text: usage });
+  const sp = raw.indexOf(' ');
+  if (sp < 0) return res.json({ response_type: 'ephemeral', text: ':warning: Add a message after the number/name.\n' + usage });
+  const target = raw.slice(0, sp).trim();
+  const message = raw.slice(sp + 1).trim();
+  if (!message) return res.json({ response_type: 'ephemeral', text: ':warning: The message was empty.\n' + usage });
+
+  const db = getDb();
+  const digits = target.replace(/\D/g, '');
+  let phone = null, who = null;
+  if (digits.length === 10 || (digits.length === 11 && digits[0] === '1')) {
+    phone = digits.length === 10 ? '+1' + digits : '+' + digits;
+    const p10 = digits.slice(-10);
+    const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+    const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === p10);
+    who = m ? (((m.first_name || '') + ' ' + (m.last_name || '')).trim() || phone) : phone;
+  } else {
+    const matches = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != '' AND lower(first_name) = lower(?)").all(target);
+    if (matches.length === 0) return res.json({ response_type: 'ephemeral', text: ':x: No customer named *' + target + '* with a phone on file. Try their number: `/text 5806281765 ...`' });
+    if (matches.length > 1) return res.json({ response_type: 'ephemeral', text: ':grey_question: Multiple people named *' + target + '*. Use a number instead — ' + matches.map(m => (((m.first_name || '') + ' ' + (m.last_name || '')).trim()) + ' (' + m.phone + ')').join(', ') });
+    phone = matches[0].phone;
+    who = ((matches[0].first_name || '') + ' ' + (matches[0].last_name || '')).trim();
+  }
+
+  res.json({ response_type: 'ephemeral', text: ':outbox_tray: Sending to *' + who + '*…' });
+  const TEXTS = process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30';
+  try {
+    await require('../services/sms').sendSms(phone, message);
+    await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':white_check_mark: Sent to *' + who + '*. It’s a thread in <#' + TEXTS + '> now — their reply comes back there.' });
+  } catch (e) {
+    await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':x: Couldn’t send to ' + who + ': ' + e.message });
+  }
+});
+
 module.exports = router;
