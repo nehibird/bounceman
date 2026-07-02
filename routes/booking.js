@@ -298,8 +298,12 @@ router.post('/review', bookingLimiter, async (req, res) => {
     }
   }
 
+  // B8: a self-claimed exemption only zeros tax when backed by a certificate on file.
+  // The bare claim is still recorded (below) so an admin can review/verify it.
   const taxExemptClaimed = tax_exempt_claimed === '1';
-  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptClaimed);
+  const certCustomer = email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(email) : null;
+  const taxExemptHonored = !!(certCustomer && certCustomer.tax_exempt && certCustomer.tax_exempt_cert);
+  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptHonored);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
   const total = rawTotal - discount_amount;
   const reviewDepositPct = parseFloat(settings.deposit_percent || '50') / 100;
@@ -374,8 +378,10 @@ router.post('/submit', bookingLimiter, async (req, res) => {
           : Math.min(code.value, recalcSubtotal);
       }
     }
-    const existingCustomer = data.email ? db.prepare('SELECT tax_exempt FROM customers WHERE email = ?').get(data.email) : null;
-    const taxExempt = (existingCustomer && existingCustomer.tax_exempt) || data.tax_exempt_claimed === '1';
+    // B8: only honor an exemption backed by a certificate on file. A bare self-claim
+    // does NOT zero the tax — it's recorded as tax_exempt_claimed for admin to review.
+    const existingCustomer = data.email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(data.email) : null;
+    const taxExempt = !!(existingCustomer && existingCustomer.tax_exempt && existingCustomer.tax_exempt_cert);
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city, taxExempt);
     const recalcTotal = recalcPricing.total - recalcDiscountAmount;
     data.subtotal = recalcSubtotal;
@@ -492,7 +498,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         parseFloat(data.damage_waiver_fee || 0),
         parseFloat(data.total), parseFloat(data.deposit_amount),
         Math.round((parseFloat(data.total) - parseFloat(data.deposit_amount)) * 100) / 100, 'unpaid',
-        taxExempt ? 1 : 0
+        (data.tax_exempt_claimed === '1') ? 1 : 0 // record the exemption REQUEST (honored only if cert-backed above)
       );
 
       // Add line items using priceForBooking

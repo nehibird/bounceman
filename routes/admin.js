@@ -897,10 +897,34 @@ router.get('/reports', (req, res) => {
     SELECT status, COUNT(*) as c FROM bookings WHERE created_at >= ? GROUP BY status
   `).all(dateFilter);
 
+  // B9: sales tax collected, bucketed by EVENT month (the correct OkTAP remittance basis).
+  const taxByMonth = db.prepare(`
+    SELECT strftime('%Y-%m', event_date) as month,
+           COALESCE(SUM(tax_amount),0) as tax, COALESCE(SUM(total),0) as total, COUNT(*) as bookings
+    FROM bookings
+    WHERE status NOT IN ('cancelled','declined') AND tax_amount IS NOT NULL AND event_date >= date('now','-18 months')
+    GROUP BY month ORDER BY month DESC
+  `).all();
+  // Tax collected on bookings whose event hasn't happened yet (collected, not yet due).
+  const taxCollectedFuture = db.prepare(`
+    SELECT COALESCE(SUM(tax_amount),0) as tax FROM bookings
+    WHERE status NOT IN ('cancelled','declined') AND event_date > date('now')
+  `).get().tax;
+
+  // B8: exemptions — flag any claim not backed by a certificate on file.
+  const exemptions = db.prepare(`
+    SELECT b.booking_number, c.first_name, c.last_name, c.tax_exempt_cert,
+           b.total, b.tax_amount, b.event_date, b.status
+    FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE b.tax_exempt_claimed = 1 AND b.status NOT IN ('cancelled','declined')
+    ORDER BY b.event_date DESC
+  `).all();
+
   res.render('admin/reports', {
     title: 'Reports - Admin', user: req.user, settings,
     revenue: revenue.total, bookingCount: bookingCount.c, avgTicket: avgTicket.avg,
-    topItems, revenueByMonth, statusBreakdown, period, page: 'reports'
+    topItems, revenueByMonth, statusBreakdown, period, page: 'reports',
+    taxByMonth, taxCollectedFuture, exemptions
   });
 });
 
