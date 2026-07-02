@@ -333,6 +333,37 @@ console.log('\n=== SECTION 7: weekday special (full day at half-day price) ===')
 }
 
 // ===========================================================================
+console.log('\n=== SECTION 8: sales-tax jurisdiction resolution ===');
+// ===========================================================================
+{
+  const { getTaxRate, calcPricing } = require('../lib/helpers');
+  const near = (a, b) => a != null && Math.abs(a - b) < 0.00001;
+
+  assert('Tonkawa = 10.25%',    near(getTaxRate('Tonkawa'), 0.1025), getTaxRate('Tonkawa'));
+  assert('Blackwell = 10.75%',  near(getTaxRate('Blackwell'), 0.1075), getTaxRate('Blackwell'));
+  assert('Ponca City = 9.583%', near(getTaxRate('Ponca City'), 0.09583), getTaxRate('Ponca City'));
+  assert('ponca city (lowercase) same', near(getTaxRate('ponca city'), 0.09583), getTaxRate('ponca city'));
+  assert('Newkirk = 9.75%',     near(getTaxRate('Newkirk'), 0.0975), getTaxRate('Newkirk'));
+  // B4: city with no city tax = state + county only
+  assert('Nardin = 5.75% (no city tax)', near(getTaxRate('Nardin'), 0.0575), getTaxRate('Nardin'));
+  // B3: Cherokee is in Alfalfa county (2%), not Kay
+  assert('Cherokee = 9.75% (Alfalfa county)', near(getTaxRate('Cherokee'), 0.0975), getTaxRate('Cherokee'));
+  // B2: unknown / empty city => null (no Tonkawa guess)
+  assert('unknown city => null', getTaxRate('Nowheresville') === null);
+  assert('empty city => null', getTaxRate('') === null);
+  assert('null city => null', getTaxRate(null) === null);
+
+  // calcPricing uses per-city rate; unresolved => state+Kay fallback (5.75%), never the old flat setting
+  const s = { damage_waiver_fee: '0', deposit_percent: '50', tax_rate: '0.085' };
+  const pNardin = calcPricing(s, 100, 0, 'Nardin', false);
+  assert('calcPricing Nardin taxAmount = 5.75', near(pNardin.taxAmount, 5.75), pNardin.taxAmount);
+  const pUnknown = calcPricing(s, 100, 0, 'Nowheresville', false);
+  assert('calcPricing unknown -> 5.75% fallback (not 8.5)', near(pUnknown.taxAmount, 5.75), pUnknown.taxAmount);
+  const pExempt = calcPricing(s, 100, 0, 'Tonkawa', true);
+  assert('calcPricing exempt = 0 tax', pExempt.taxAmount === 0);
+}
+
+// ===========================================================================
 console.log('\n=== RESULTS ===');
 // ===========================================================================
 console.log(`Passed: ${passed}`);
