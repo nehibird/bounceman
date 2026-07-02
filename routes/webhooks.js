@@ -386,6 +386,31 @@ router.post('/slack/events', async (req, res) => {
     return;
   }
 
+  // === Text-thread reply in #texts -> send an SMS back to that customer ===
+  const TEXTS_CHANNEL = process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30';
+  if (event.type === 'message' && event.channel === TEXTS_CHANNEL) {
+    if (event.bot_id || event.subtype || event.app_id) return;      // ignore our own echoes / edits
+    if (!event.thread_ts || event.thread_ts === event.ts) return;   // only replies inside a customer thread
+    const outText = String(event.text || '')
+      .replace(/<([^|>]+)\|([^>]+)>/g, '$2')   // <url|label> -> label
+      .replace(/<([^>]+)>/g, '$1')             // <url> -> url
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .trim();
+    if (!outText) return;
+    try {
+      const db = getDb();
+      const key = req.body.event_id || event.client_msg_id || (event.channel + ':' + event.ts);
+      try { db.prepare('INSERT INTO slack_events_seen (event_key) VALUES (?)').run(key); }
+      catch (dup) { return; }  // duplicate delivery (Slack retry) — already handled
+      const notif = require('../services/notifications');
+      const phone = notif.threadPhone(event.channel, event.thread_ts);
+      if (!phone) { console.warn('[SMS THREAD] no phone mapped for thread', event.thread_ts); return; }
+      await require('../services/sms').sendSms('+1' + phone, outText, { fromSlack: { channel: event.channel, ts: event.ts } });
+      console.log('[SMS THREAD] Slack reply -> SMS to +1' + phone);
+    } catch (e) { console.error('[SMS THREAD] handler error:', e.message); }
+    return;
+  }
+
   const isDm = event.type === 'message' && event.channel_type === 'im';
   if (event.type !== 'app_mention' && !isDm) return;
 
@@ -1185,10 +1210,7 @@ router.post('/twilio-sms', (req, res) => {
     const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
     const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
     if (m) who = ((m.first_name || '') + ' ' + (m.last_name || '')).trim() + ' (' + from + ')';
-    require('../services/notifications').sendSlackMessage({
-      channel: process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30',
-      text: ':incoming_envelope: *New text from ' + who + '*\n>' + body + '\n<https://bouncemanrentals.com/admin/messages|Open Messages>'
-    });
+    require('../services/notifications').postSmsToThread(from, body, 'inbound').catch(e => console.error('[SMS IN] thread post:', e.message));
   } catch (e) { console.error('[SMS IN] slack failed:', e.message); }
   try { require('../services/sarah-sms').handleInboundSms(from, body).catch(e => console.error('[SARAH-SMS]', e.message)); } catch (e) { console.error('[SARAH-SMS] trigger:', e.message); }
   res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');

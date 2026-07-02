@@ -44,7 +44,8 @@ function logSms(direction, otherNumber, body, status) {
   } catch (e) { console.error('[SMS LOG] failed:', e.message); }
 }
 
-async function sendSms(to, body) {
+async function sendSms(to, body, opts) {
+  opts = opts || {};
   const toFormatted = formatPhone(to);
   if (!toFormatted) throw new Error(`Invalid phone number: ${to}`);
 
@@ -64,6 +65,16 @@ async function sendSms(to, body) {
   const message = await getClient().messages.create(params);
   console.log(`[SMS] Sent to ${toFormatted} via ${messagingServiceSid ? 'MsgSvc' : 'direct'} — SID: ${message.sid}`);
   logSms('outbound', toFormatted, body, 'sent');
+  // Mirror into the customer's Slack #texts thread (two-way visibility)
+  try {
+    const notif = require('./notifications');
+    if (opts.fromSlack) {
+      // Reply originated in the Slack thread — it's already visible there; just confirm delivery.
+      notif.reactToSlack(opts.fromSlack.channel, opts.fromSlack.ts, 'white_check_mark').catch(function () {});
+    } else {
+      await notif.postSmsToThread(toFormatted, body, 'outbound');
+    }
+  } catch (e) { console.error('[SMS->SLACK] mirror failed:', e.message); }
   return message;
 }
 

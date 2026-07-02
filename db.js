@@ -815,6 +815,21 @@ function initialize() {
     created_at TEXT DEFAULT (datetime('now'))
   )`).run();
 
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS sms_threads (
+      phone10 TEXT PRIMARY KEY,
+      channel TEXT NOT NULL,
+      thread_ts TEXT NOT NULL,
+      customer_name TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS slack_events_seen (
+      event_key TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   console.log('[DB] Database initialized successfully');
 }
 

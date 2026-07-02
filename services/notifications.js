@@ -30,12 +30,12 @@ function fmtCentral(sqlTs) {
   } catch { return sqlTs; }
 }
 
-async function postToSlack(channel, blocks, text) {
+async function postToSlack(channel, blocks, text, thread_ts) {
   try {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, blocks, text: text || 'Bounce Man notification' })
+      body: JSON.stringify(Object.assign({ channel, text: text || 'Bounce Man notification' }, blocks ? { blocks } : {}, thread_ts ? { thread_ts } : {}))
     });
     const data = await resp.json();
     if (!data.ok) console.error('[SLACK] Post failed:', data.error);
@@ -502,4 +502,69 @@ async function sendSlackMessage(opts) {
   return postToSlack(channel, opts.blocks, opts.text || 'Bounce Man notification');
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard };
+// ===== SMS <-> Slack threading: one thread per customer in #texts =====
+const TEXTS_CHANNEL = process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30';
+function _phone10(p) { return String(p || '').replace(/\D/g, '').slice(-10); }
+function _lookupCustomerName(phone) {
+  try {
+    const { getDb } = require('../db');
+    const db = getDb();
+    const key = _phone10(phone);
+    if (key.length !== 10) return null;
+    const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
+    const m = rows.find(r => _phone10(r.phone) === key);
+    if (m) return ((m.first_name || '') + ' ' + (m.last_name || '')).trim() || null;
+  } catch (e) {}
+  return null;
+}
+// Find (or create) the Slack thread root for a customer's phone number.
+async function ensureSmsThread(phone, displayName) {
+  const { getDb } = require('../db');
+  const db = getDb();
+  const key = _phone10(phone);
+  if (key.length !== 10) return null;
+  const row = db.prepare('SELECT channel, thread_ts FROM sms_threads WHERE phone10 = ?').get(key);
+  if (row) return { channel: row.channel, thread_ts: row.thread_ts };
+  const pretty = '+1' + key;
+  const header = ':speech_balloon: *Texts with ' + (displayName || pretty) + '*\n' + pretty + '  ·  <https://bouncemanrentals.com/admin/messages|Open in admin>';
+  const data = await postToSlack(TEXTS_CHANNEL, undefined, header);
+  if (!data || !data.ts) return null;
+  db.prepare("INSERT OR REPLACE INTO sms_threads (phone10, channel, thread_ts, customer_name, updated_at) VALUES (?, ?, ?, ?, datetime('now'))")
+    .run(key, data.channel || TEXTS_CHANNEL, data.ts, displayName || null);
+  return { channel: data.channel || TEXTS_CHANNEL, thread_ts: data.ts };
+}
+// Post an inbound/outbound SMS line into the customer's thread.
+async function postSmsToThread(phone, body, direction, displayName) {
+  try {
+    const name = displayName || _lookupCustomerName(phone);
+    const thread = await ensureSmsThread(phone, name);
+    if (!thread) return null;
+    const label = name || ('+1' + _phone10(phone));
+    const marker = direction === 'inbound' ? ':inbox_tray: *' + label + '*' : ':outbox_tray: *You → ' + label + '*';
+    return await postToSlack(thread.channel, undefined, marker + '\n' + body, thread.thread_ts);
+  } catch (e) { console.error('[SMS THREAD] post failed:', e.message); return null; }
+}
+// Reverse lookup: which customer phone owns this Slack thread?
+function threadPhone(channel, thread_ts) {
+  try {
+    const { getDb } = require('../db');
+    const db = getDb();
+    const row = db.prepare('SELECT phone10 FROM sms_threads WHERE thread_ts = ? AND channel = ?').get(thread_ts, channel);
+    return row ? row.phone10 : null;
+  } catch (e) { return null; }
+}
+async function reactToSlack(channel, timestamp, name) {
+  try {
+    const resp = await fetch('https://slack.com/api/reactions.add', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, timestamp, name })
+    });
+    const d = await resp.json();
+    if (!d.ok && d.error !== 'already_reacted') console.error('[SLACK react]', d.error);
+    return d.ok;
+  } catch (e) { return false; }
+}
+
+
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread };
