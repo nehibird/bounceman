@@ -780,12 +780,7 @@ router.post('/text-pricing', async (req, res) => {
   const pricingText = settings.pricing_info || 'Contact us for pricing at bouncemanrentals.com';
 
   try {
-    const client = getTwilio();
-    await client.messages.create({
-      body: pricingText,
-      from: process.env.TWILIO_PHONE,
-      to: normalizePhone(phone)
-    });
+    await require('../services/sms').sendSms(phone, pricingText);
     res.json({ success: true, message: `Pricing texted to ${phone}` });
   } catch (err) {
     console.error('[SARAH] Text pricing error:', err.message);
@@ -809,12 +804,7 @@ router.post('/walkin-link', async (req, res) => {
   const url = `${baseUrl}?event=${event.id}`;
 
   try {
-    const client = getTwilio();
-    await client.messages.create({
-      body: `Hey! Sign your waiver and pay for your kids to bounce at ${event.name}: ${url}`,
-      from: process.env.TWILIO_PHONE,
-      to: normalizePhone(phone)
-    });
+    await require('../services/sms').sendSms(phone, `Hey! Sign your waiver and pay for your kids to bounce at ${event.name}: ${url}`);
     res.json({ success: true, message: `Walk-up link sent to ${phone} for "${event.name}"` });
   } catch (err) {
     console.error('[SARAH] Walkin link error:', err.message);

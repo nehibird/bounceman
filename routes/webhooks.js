@@ -708,7 +708,7 @@ router.post('/slack/interactivity', async (req, res) => {
     console.log('[SLACK INTERACT]', actionId, value);
 
     if (actionId === 'on_my_way') {
-      await handleOnMyWay(value, user, response_url, message);
+      await handleOnMyWay(value, user, response_url, message, payload);
     } else if (actionId === 'record_payment' || actionId === 'record_payment_modal') {
       await handleRecordPayment(value, user, response_url);
     } else if (actionId === 'toggle_sarah_sms') {
@@ -771,44 +771,33 @@ async function handleRecordPayment(value, user, response_url) {
   await respondToSlack(response_url, { response_type: 'ephemeral', text: ':white_check_mark: Recorded *$' + balance.toFixed(2) + '* as paid for ' + booking_number + '. Card updated to *Paid in Full*.' });
 }
 
-async function handleOnMyWay(value, user, response_url, originalMessage) {
+async function handleOnMyWay(value, user, response_url, originalMessage, payload) {
   const { getDb } = require('../db');
   const smsService = require('../services/sms');
   const db = getDb();
 
   const { booking_id, booking_number, phone, first_name } = value;
+  const channel = (payload && payload.channel && payload.channel.id) || (payload && payload.container && payload.container.channel_id) || null;
+  const ts = (originalMessage && originalMessage.ts) || (payload && payload.message && payload.message.ts) || null;
 
-  // Get current booking status
-  const booking = db.prepare(`
-    SELECT b.*, c.signed as contract_signed, c.id as contract_id
-    FROM bookings b
-    LEFT JOIN contracts c ON c.booking_id = b.id
-    WHERE b.id = ?
-  `).get(booking_id);
-
-  if (!booking) {
-    await respondToSlack(response_url, { text: ':x: Booking not found' });
-    return;
-  }
+  const booking = db.prepare('SELECT b.*, c.signed as contract_signed, c.id as contract_id FROM bookings b LEFT JOIN contracts c ON c.booking_id = b.id WHERE b.id = ?').get(booking_id);
+  if (!booking) { await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: Booking not found' }); return; }
 
   const issues = [];
   if (!booking.contract_signed) issues.push(':warning: Contract NOT signed');
   if (parseFloat(booking.balance_due) > 0) issues.push(':moneybag: $' + parseFloat(booking.balance_due).toFixed(2) + ' balance due');
 
-  // Send SMS to customer
   const customerPhone = phone || booking.phone;
+  let smsOk = false;
   if (customerPhone) {
     try {
       const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
       let smsMsg = 'Bounce Man is on the way! ' + first_name + ', we should arrive within 30-60 minutes.';
-      if (!booking.contract_signed && booking.contract_id) {
-        smsMsg += '\n\nPlease sign your rental agreement before we arrive: ' + baseUrl + '/contract/' + booking.contract_id;
-      }
-      if (parseFloat(booking.balance_due) > 0) {
-        smsMsg += '\n\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + '/booking/pay/' + booking_number;
-      }
-      smsMsg += '\n\nSee you soon!';
+      if (!booking.contract_signed && booking.contract_id) smsMsg += '\\n\\nPlease sign your rental agreement before we arrive: ' + baseUrl + '/contract/' + booking.contract_id;
+      if (parseFloat(booking.balance_due) > 0) smsMsg += '\\n\\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + '/booking/pay/' + booking_number;
+      smsMsg += '\\n\\nSee you soon!';
       await smsService.sendSms(customerPhone, smsMsg);
+      smsOk = true;
       console.log('[ON MY WAY] SMS sent to', customerPhone, 'for', booking_number);
     } catch (err) {
       console.error('[ON MY WAY] SMS failed:', err.message);
@@ -818,19 +807,32 @@ async function handleOnMyWay(value, user, response_url, originalMessage) {
     issues.push(':warning: No phone number for SMS');
   }
 
-  // Update the Slack message with confirmation
-  const statusText = issues.length > 0
-    ? issues.join('\n')
-    : ':white_check_mark: All clear!';
-
   const sentTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT';
-  const banner = { type: 'section', text: { type: 'mrkdwn', text: ':truck::white_check_mark: *On the way!* Text sent to *' + (first_name || 'the customer') + '* (' + (customerPhone || 'no number') + ') at ' + sentTime + '.' } };
-  const updatedBlocks = [banner, ...originalMessage.blocks.filter(b => b.type !== 'actions'), { type: 'context', elements: [{ type: 'mrkdwn', text: 'Sent by <@' + user.id + '> \u00b7 ' + statusText }] }];
-  await respondToSlack(response_url, {
-    replace_original: true,
-    blocks: updatedBlocks,
-    text: ':truck: On My Way sent to ' + (first_name || 'customer')
+  const srcBlocks = Array.isArray(originalMessage && originalMessage.blocks) ? originalMessage.blocks : [];
+  // Swap the "On My Way" button for a sent-state button; keep any other buttons (e.g. Record Payment).
+  const newBlocks = srcBlocks.map(function (b) {
+    if (b.type !== 'actions') return b;
+    const els = (b.elements || []).filter(function (e) { return e.action_id !== 'on_my_way'; });
+    els.unshift({ type: 'button', text: { type: 'plain_text', text: ':white_check_mark: On My Way — Sent ' + sentTime, emoji: true }, action_id: 'omw_sent_noop', value: '{}' });
+    return { type: 'actions', elements: els };
   });
+  const banner = { type: 'section', text: { type: 'mrkdwn', text: ':truck::white_check_mark: *On the way!* Text ' + (smsOk ? 'sent to' : 'attempted for') + ' *' + (first_name || 'the customer') + '* (' + (customerPhone || 'no number') + ') at ' + sentTime + (issues.length ? '\\n' + issues.join('\\n') : '') } };
+  const finalBlocks = [banner].concat(newBlocks, [{ type: 'context', elements: [{ type: 'mrkdwn', text: 'Sent by <@' + user.id + '>' }] }]);
+  const fallbackText = ':truck: On My Way sent to ' + (first_name || 'customer');
+
+  // Reliable update via chat.update (response_url expires after ~30 min / 5 uses).
+  let updated = false;
+  if (channel && ts) {
+    try {
+      const r = await fetch('https://slack.com/api/chat.update', { method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.SLACK_BOT_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: channel, ts: ts, text: fallbackText, blocks: finalBlocks }) });
+      const d = await r.json();
+      updated = !!d.ok;
+      if (!d.ok) console.error('[ON MY WAY] chat.update failed:', d.error);
+    } catch (e) { console.error('[ON MY WAY] chat.update error:', e.message); }
+  }
+  if (!updated) {
+    await respondToSlack(response_url, { replace_original: true, text: fallbackText, blocks: finalBlocks });
+  }
 }
 
 // Maps a Slack user ID -> the cell phone we should ring when they click "Call Back".
