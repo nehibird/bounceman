@@ -567,4 +567,31 @@ async function reactToSlack(channel, timestamp, name) {
 }
 
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread };
+// Upload an MMS attachment (image, etc.) into the customer's #texts thread.
+async function uploadFileToThread(phone, buffer, filename, contentType, comment, displayName) {
+  try {
+    const name = displayName || _lookupCustomerName(phone);
+    const thread = await ensureSmsThread(phone, name);
+    if (!thread) return null;
+    const up = await fetch('https://slack.com/api/files.getUploadURLExternal', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ filename, length: String(buffer.length) })
+    });
+    const upd = await up.json();
+    if (!upd.ok) { console.error('[MMS] getUploadURL:', upd.error); return null; }
+    const fd = new FormData();
+    fd.append('file', new Blob([buffer], { type: contentType || 'application/octet-stream' }), filename);
+    await fetch(upd.upload_url, { method: 'POST', body: fd });
+    const comp = await fetch('https://slack.com/api/files.completeUploadExternal', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: [{ id: upd.file_id, title: filename }], channel_id: thread.channel, thread_ts: thread.thread_ts, initial_comment: comment || '' })
+    });
+    const compd = await comp.json();
+    if (!compd.ok) console.error('[MMS] completeUpload:', compd.error);
+    return compd.ok ? compd : null;
+  } catch (e) { console.error('[MMS] uploadFileToThread:', e.message); return null; }
+}
+
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread };

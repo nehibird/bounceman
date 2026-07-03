@@ -1207,17 +1207,31 @@ router.post('/twilio-sms', (req, res) => {
   if (!guardTwilio(req, res)) return;
   const from = req.body.From || '';
   const body = (req.body.Body || '').trim();
-  try { require('../services/sms').logSms('inbound', from, body, 'received'); } catch (e) { console.error('[SMS IN] log failed:', e.message); }
+  const numMedia = parseInt(req.body.NumMedia || '0', 10);
+  try { require('../services/sms').logSms('inbound', from, body || (numMedia > 0 ? '[photo]' : ''), 'received'); } catch (e) { console.error('[SMS IN] log failed:', e.message); }
   try {
-    const db = getDb();
-    const digits = from.replace(/\D/g, '').slice(-10);
-    let who = from;
-    const rows = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
-    const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
-    if (m) who = ((m.first_name || '') + ' ' + (m.last_name || '')).trim() + ' (' + from + ')';
-    require('../services/notifications').postSmsToThread(from, body, 'inbound').catch(e => console.error('[SMS IN] thread post:', e.message));
+    if (body) require('../services/notifications').postSmsToThread(from, body, 'inbound').catch(e => console.error('[SMS IN] thread post:', e.message));
   } catch (e) { console.error('[SMS IN] slack failed:', e.message); }
-  try { require('../services/sarah-sms').handleInboundSms(from, body).catch(e => console.error('[SARAH-SMS]', e.message)); } catch (e) { console.error('[SARAH-SMS] trigger:', e.message); }
+  // MMS: pull each attachment from Twilio (needs Basic auth) and upload it into the customer's #texts thread
+  if (numMedia > 0) {
+    const SID = process.env.TWILIO_ACCOUNT_SID, TOK = process.env.TWILIO_AUTH_TOKEN;
+    const auth = 'Basic ' + Buffer.from(SID + ':' + TOK).toString('base64');
+    const notif = require('../services/notifications');
+    for (let i = 0; i < numMedia; i++) {
+      const url = req.body['MediaUrl' + i];
+      const ctype = req.body['MediaContentType' + i] || 'application/octet-stream';
+      if (!url) continue;
+      (async () => {
+        try {
+          const r = await fetch(url, { headers: { Authorization: auth } });
+          const buf = Buffer.from(await r.arrayBuffer());
+          const ext = (ctype.split('/')[1] || 'bin').split(';')[0];
+          await notif.uploadFileToThread(from, buf, 'mms-' + i + '-' + Date.now() + '.' + ext, ctype, ':camera: Attachment from customer');
+        } catch (e) { console.error('[MMS IN] media', i, e.message); }
+      })();
+    }
+  }
+  if (body) { try { require('../services/sarah-sms').handleInboundSms(from, body).catch(e => console.error('[SARAH-SMS]', e.message)); } catch (e) { console.error('[SARAH-SMS] trigger:', e.message); } }
   res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 });
 
