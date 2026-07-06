@@ -102,6 +102,7 @@ router.get('/equipment/:slug', (req, res) => {
 
   res.render('public/equipment-detail', {
     title: `${item.name} - Bounce Man Rentals`,
+    canonicalPath: '/equipment/' + req.params.slug,
     settings,
     item,
     images,
@@ -239,7 +240,7 @@ router.get('/reviews', (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const reviews = db.prepare('SELECT * FROM reviews WHERE approved = 1 ORDER BY created_at DESC').all();
-  res.render('public/reviews', { title: 'Reviews - Bounce Man Rentals', settings, reviews, page: 'reviews' });
+  res.render('public/reviews', { title: 'Reviews - Bounce Man Rentals', canonicalPath: '/reviews', settings, reviews, page: 'reviews' });
 });
 
 // Submit review
