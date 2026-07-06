@@ -10,47 +10,47 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
+      <table class="table table-hover mb-0 rtable">
         <thead>
           <tr>
             <th>Date</th>
             <th>Type</th>
-            <th>Direction</th>
+            <th class="d-none d-md-table-cell">Direction</th>
             <th>Subject</th>
             <th>Customer</th>
-            <th>Recipient</th>
-            <th>Bot</th>
+            <th class="d-none d-md-table-cell">Recipient</th>
+            <th class="d-none d-md-table-cell">Bot</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           ${comms.length > 0 ? comms.map(c => `
           <tr>
-            <td><small>${c.sent_at || c.created_at || ''}</small></td>
-            <td>
+            <td data-label="Date"><small>${c.sent_at || c.created_at || ''}</small></td>
+            <td data-label="Type">
               <span class="badge bg-${c.type === 'email' ? 'primary' : c.type === 'sms' ? 'success' : c.type === 'contact_form' ? 'info' : 'secondary'}">
                 <i class="fas fa-${c.type === 'email' ? 'envelope' : c.type === 'sms' ? 'sms' : c.type === 'contact_form' ? 'file-alt' : 'comment'} me-1"></i>
                 ${c.type || 'other'}
               </span>
             </td>
-            <td>
+            <td class="d-none d-md-table-cell">
               ${c.direction === 'outbound'
                 ? '<span class="text-primary"><i class="fas fa-arrow-up me-1"></i>Sent</span>'
                 : '<span class="text-success"><i class="fas fa-arrow-down me-1"></i>Received</span>'}
             </td>
-            <td>
+            <td class="rt-primary">
               <strong>${c.subject || 'No subject'}</strong>
             </td>
-            <td>${c.first_name || c.last_name ? (c.first_name || '') + ' ' + (c.last_name || '') : ''}</td>
-            <td><small>${c.recipient || ''}</small></td>
-            <td>
+            <td data-label="Customer">${c.first_name || c.last_name ? (c.first_name || '') + ' ' + (c.last_name || '') : ''}</td>
+            <td class="d-none d-md-table-cell"><small>${c.recipient || ''}</small></td>
+            <td class="d-none d-md-table-cell">
               ${c.type === 'contact_form' ? (
                 c.bot_paused
                   ? '<form method="POST" action="/admin/communications/' + c.id + '/bot-resume" style="display:inline"><button class="btn btn-sm btn-outline-success" type="submit" title="Resume bot"><i class="fas fa-robot me-1"></i>Off</button></form>'
                   : '<form method="POST" action="/admin/communications/' + c.id + '/bot-pause" style="display:inline"><button class="btn btn-sm btn-success" type="submit" title="Pause bot — take over manually"><i class="fas fa-robot me-1"></i>On</button></form>'
               ) : ''}
             </td>
-            <td class="text-nowrap">
+            <td class="rt-actions text-nowrap">
               <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comm-body-${c.id}">
                 <i class="fas fa-eye"></i>
               </button>

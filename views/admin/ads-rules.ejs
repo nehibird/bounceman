@@ -13,49 +13,51 @@
 <div class="card">
   <div class="card-header"><i class="fas fa-list-alt me-2"></i>Automation Rules</div>
   <div class="card-body p-0">
-    <table class="table table-hover mb-0">
-      <thead>
-        <tr>
-          <th style="width:30px"></th>
-          <th>Rule</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Last Triggered</th>
-          <th style="width:100px">Enabled</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rules.length > 0 ? rules.map(r => `
-        <tr id="rule-row-${r.id}">
-          <td>
-            ${r.rule_type === 'availability'
-              ? '<i class="fas fa-castle text-warning"></i>'
-              : r.rule_type === 'schedule'
-              ? '<i class="fas fa-calendar-alt text-primary"></i>'
-              : '<i class="fas fa-boxes text-danger"></i>'
-            }
-          </td>
-          <td>
-            <strong>${r.name}</strong>
-          </td>
-          <td>
-            <span class="badge bg-light text-dark border">${r.rule_type}</span>
-          </td>
-          <td class="text-muted small" style="max-width:280px">${r.description || '—'}</td>
-          <td class="text-muted small">${r.last_triggered ? r.last_triggered : 'Never'}</td>
-          <td>
-            <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" id="toggle-${r.id}"
-                ${r.enabled ? 'checked' : ''}
-                data-rule-id="${r.id}">
-            </div>
-          </td>
-        </tr>
-        `).join('') : `
-        <tr><td colspan="6" class="text-center text-muted py-4">No rules defined</td></tr>
-        `}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 rtable">
+        <thead>
+          <tr>
+            <th style="width:30px"></th>
+            <th>Rule</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th class="d-none d-md-table-cell">Last Triggered</th>
+            <th style="width:100px">Enabled</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rules.length > 0 ? rules.map(r => `
+          <tr id="rule-row-${r.id}">
+            <td class="rt-hide">
+              ${r.rule_type === 'availability'
+                ? '<i class="fas fa-castle text-warning"></i>'
+                : r.rule_type === 'schedule'
+                ? '<i class="fas fa-calendar-alt text-primary"></i>'
+                : '<i class="fas fa-boxes text-danger"></i>'
+              }
+            </td>
+            <td class="rt-primary">
+              <strong>${r.name}</strong>
+            </td>
+            <td data-label="Type">
+              <span class="badge bg-light text-dark border">${r.rule_type}</span>
+            </td>
+            <td class="text-muted small" style="max-width:280px" data-label="Description">${r.description || '—'}</td>
+            <td class="text-muted small d-none d-md-table-cell">${r.last_triggered ? r.last_triggered : 'Never'}</td>
+            <td data-label="Enabled">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="toggle-${r.id}"
+                  ${r.enabled ? 'checked' : ''}
+                  data-rule-id="${r.id}">
+              </div>
+            </td>
+          </tr>
+          `).join('') : `
+          <tr><td colspan="6" class="text-center text-muted py-4">No rules defined</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 

@@ -9,15 +9,15 @@
 <div class="card mb-4">
   <div class="card-body">
     <div class="row g-3 align-items-end">
-      <div class="col-md-3">
+      <div class="col-6 col-md-3">
         <label class="form-label small text-muted">From Date</label>
         <input type="date" class="form-control form-control-sm" id="fromDate">
       </div>
-      <div class="col-md-3">
+      <div class="col-6 col-md-3">
         <label class="form-label small text-muted">To Date</label>
         <input type="date" class="form-control form-control-sm" id="toDate">
       </div>
-      <div class="col-md-3">
+      <div class="col-6 col-md-3">
         <label class="form-label small text-muted">Channel</label>
         <select class="form-select form-select-sm" id="channelFilter">
           <option value="all">All Channels</option>
@@ -25,7 +25,7 @@
           <option value="facebook">Facebook / Instagram</option>
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-6 col-md-3">
         <button class="btn btn-sm btn-bm w-100" id="applyFiltersBtn">
           <i class="fas fa-filter me-1"></i>Apply Filters
         </button>
@@ -66,25 +66,25 @@ ${rows.length === 0 ? `
   <div class="card-header"><i class="fas fa-table me-2"></i>Performance Data</div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover table-sm mb-0" id="perfTable">
+      <table class="table table-hover table-sm mb-0 rtable" id="perfTable">
         <thead>
           <tr>
             <th>Date</th>
             <th>Channel</th>
             <th>Campaign</th>
-            <th class="text-end">Impressions</th>
-            <th class="text-end">Clicks</th>
+            <th class="text-end d-none d-md-table-cell">Impressions</th>
+            <th class="text-end d-none d-md-table-cell">Clicks</th>
             <th class="text-end">Spend</th>
             <th class="text-end">Conversions</th>
-            <th class="text-end">CPC</th>
+            <th class="text-end d-none d-md-table-cell">CPC</th>
             <th class="text-end">Cost/Booking</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(r => `
           <tr class="channel-row" data-channel="${r.platform || 'unknown'}">
-            <td>${r.date}</td>
-            <td>
+            <td class="rt-primary">${r.date}</td>
+            <td data-label="Channel">
               ${r.platform === 'google'
                 ? '<i class="fab fa-google text-primary me-1"></i>Google'
                 : r.platform === 'facebook'
@@ -92,13 +92,13 @@ ${rows.length === 0 ? `
                 : r.platform || '—'
               }
             </td>
-            <td class="text-muted small">${r.campaign_name || '—'}</td>
-            <td class="text-end">${(r.impressions||0).toLocaleString()}</td>
-            <td class="text-end">${(r.clicks||0).toLocaleString()}</td>
-            <td class="text-end">$${parseFloat(r.spend||0).toFixed(2)}</td>
-            <td class="text-end">${r.conversions||0}</td>
-            <td class="text-end">$${parseFloat(r.cost_per_click||0).toFixed(2)}</td>
-            <td class="text-end">${r.cost_per_conversion > 0 ? '$'+parseFloat(r.cost_per_conversion).toFixed(2) : '—'}</td>
+            <td class="text-muted small" data-label="Campaign">${r.campaign_name || '—'}</td>
+            <td class="text-end d-none d-md-table-cell">${(r.impressions||0).toLocaleString()}</td>
+            <td class="text-end d-none d-md-table-cell">${(r.clicks||0).toLocaleString()}</td>
+            <td class="text-end" data-label="Spend">$${parseFloat(r.spend||0).toFixed(2)}</td>
+            <td class="text-end" data-label="Conversions">${r.conversions||0}</td>
+            <td class="text-end d-none d-md-table-cell">$${parseFloat(r.cost_per_click||0).toFixed(2)}</td>
+            <td class="text-end" data-label="Cost/Booking">${r.cost_per_conversion > 0 ? '$'+parseFloat(r.cost_per_conversion).toFixed(2) : '—'}</td>
           </tr>
           `).join('')}
         </tbody>

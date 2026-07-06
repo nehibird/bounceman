@@ -1,7 +1,7 @@
 <%- include('../layouts/admin', { body: `
 
 <!-- Event Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div>
     <a href="/admin/events" class="text-muted small text-decoration-none"><i class="fas fa-arrow-left me-1"></i>Back to Events</a>
     <h3 class="mt-2 mb-0" style="font-weight:700;color:var(--bm-dark)">${event.name}</h3>
@@ -53,10 +53,10 @@
 <!-- Walk-Up Link -->
 <div class="card mb-4">
   <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
         <strong><i class="fas fa-link me-2" style="color:var(--bm-primary)"></i>Walk-Up Link</strong>
-        <div class="text-muted small mt-1" id="eventLink">${settings.event_base_url || '/event'}?event=${event.id}</div>
+        <div class="text-muted small text-break mt-1" id="eventLink">${settings.event_base_url || '/event'}?event=${event.id}</div>
       </div>
       <div>
         <button class="btn btn-sm btn-outline-primary rounded-pill me-2" id="copyLinkBtn">
@@ -73,7 +73,7 @@
 <!-- Registrations Table -->
 <form method="POST" action="/admin/events/${event.id}/registrations/delete" id="deleteRegsForm">
 <div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <span><i class="fas fa-list me-2"></i>Registrations (${registrations.length})</span>
     <div class="d-flex align-items-center gap-2">
       <span class="text-muted small me-2">Wristbands issued: ${event.wristband_counter}</span>
@@ -83,19 +83,19 @@
     </div>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover mb-0">
+    <table class="table table-hover mb-0 rtable">
       <thead>
         <tr style="background:#f8f9fa">
-          <th style="padding:12px 20px;width:40px"><input type="checkbox" id="selectAll" title="Select all"></th>
+          <th class="rt-hide" style="padding:12px 20px;width:40px"><input type="checkbox" id="selectAll" title="Select all"></th>
           <th>Wristband</th>
           <th>Parent</th>
           <th>Phone</th>
           <th>Kids</th>
           <th>Paid</th>
-          <th>Method</th>
+          <th class="d-none d-md-table-cell">Method</th>
           <th>Waiver</th>
           <th>Status</th>
-          <th>Time</th>
+          <th class="d-none d-md-table-cell">Time</th>
         </tr>
       </thead>
       <tbody>
@@ -105,16 +105,16 @@
           try { kids = JSON.parse(r.kid_names || '[]'); } catch(e) {}
           var wristband = r.wristband_start ? (r.wristband_start === r.wristband_end ? '#' + r.wristband_start : '#' + r.wristband_start + '-#' + r.wristband_end) : '-';
           return '<tr>' +
-            '<td style="padding:12px 20px"><input type="checkbox" name="ids" value="' + r.id + '" class="reg-checkbox"></td>' +
-            '<td><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
-            '<td>' + r.parent_name + '</td>' +
-            '<td>' + (r.parent_phone || '-') + '</td>' +
-            '<td>' + r.kid_count + ' <span class="text-muted small">(' + kids.join(', ') + ')</span></td>' +
-            '<td><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
-            '<td>' + (r.payment_method === 'cash' ? '💵 Cash' : r.payment_method === 'google_review' ? '⭐ Review' : r.payment_method === 'card' ? '💳 Card' : '—') + '</td>' +
-            '<td>' + (r.waiver_signed ? '<i class="fas fa-check-circle text-success me-2"></i><a href="/uploads/waivers/waiver-' + r.id + '.html" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:11px;padding:2px 8px">View</a>' : '<i class="fas fa-times-circle text-danger"></i>') + '</td>' +
-            '<td><span class="badge-status ' + (r.payment_status === 'completed' ? 'badge-confirmed' : 'badge-pending') + '">' + r.payment_status + '</span></td>' +
-            '<td class="text-muted small">' + (r.created_at || '') + '</td>' +
+            '<td class="rt-hide" style="padding:12px 20px"><input type="checkbox" name="ids" value="' + r.id + '" class="reg-checkbox"></td>' +
+            '<td data-label="Wristband"><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
+            '<td class="rt-primary">' + r.parent_name + '</td>' +
+            '<td data-label="Phone">' + (r.parent_phone || '-') + '</td>' +
+            '<td data-label="Kids">' + r.kid_count + ' <span class="text-muted small">(' + kids.join(', ') + ')</span></td>' +
+            '<td data-label="Paid"><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
+            '<td data-label="Method" class="d-none d-md-table-cell">' + (r.payment_method === 'cash' ? '💵 Cash' : r.payment_method === 'google_review' ? '⭐ Review' : r.payment_method === 'card' ? '💳 Card' : '—') + '</td>' +
+            '<td data-label="Waiver">' + (r.waiver_signed ? '<i class="fas fa-check-circle text-success me-2"></i><a href="/uploads/waivers/waiver-' + r.id + '.html" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:11px;padding:2px 8px">View</a>' : '<i class="fas fa-times-circle text-danger"></i>') + '</td>' +
+            '<td data-label="Status"><span class="badge-status ' + (r.payment_status === 'completed' ? 'badge-confirmed' : 'badge-pending') + '">' + r.payment_status + '</span></td>' +
+            '<td data-label="Time" class="d-none d-md-table-cell text-muted small">' + (r.created_at || '') + '</td>' +
           '</tr>';
         }).join('')}
       </tbody>
