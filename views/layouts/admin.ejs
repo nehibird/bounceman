@@ -85,6 +85,41 @@
     .btn-bm:hover { background: #e55a2b; color: white; }
     .btn-bm-outline { border: 2px solid var(--bm-primary); color: var(--bm-primary); }
     .btn-bm-outline:hover { background: var(--bm-primary); color: white; }
+
+    /* ── Shared mobile helper: responsive table → stacked cards ──
+       Add class "rtable" to a Bootstrap .table and data-label="Column" to each <td>.
+       Under 768px the header hides and every row becomes a labeled card. Extras:
+       td.rt-actions = full-width button row (no label); td.rt-hide = hidden on mobile
+       (e.g. bulk-select checkbox); td.rt-primary = larger, no label (card title). */
+    @media (max-width: 767.98px) {
+      .admin-content { padding: 16px; }
+      table.rtable thead { display: none; }
+      table.rtable, table.rtable tbody, table.rtable tr, table.rtable td { display: block; width: 100%; }
+      table.rtable tr {
+        background: #fff; border: 1px solid #e6e6e6; border-radius: 12px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05); margin-bottom: 12px; padding: 6px 14px;
+      }
+      table.rtable td {
+        border: 0 !important; padding: 7px 0 !important; min-height: 34px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: right;
+      }
+      table.rtable td + td { border-top: 1px solid #f1f1f1 !important; }
+      table.rtable td::before {
+        content: attr(data-label); font-weight: 700; color: #6c757d;
+        text-transform: uppercase; letter-spacing: .3px; font-size: 11px;
+        text-align: left; flex: 0 0 auto; margin-right: auto;
+      }
+      table.rtable td:empty { display: none; }
+      table.rtable td.rt-primary { text-align: left; }
+      table.rtable td.rt-primary::before { display: none; }
+      table.rtable td.rt-primary { font-weight: 700; font-size: 1.05rem; }
+      table.rtable td.rt-actions { border-top: 1px solid #f1f1f1 !important; padding-top: 10px !important; }
+      table.rtable td.rt-actions::before { display: none; }
+      table.rtable td.rt-actions { justify-content: stretch; gap: 8px; }
+      table.rtable td.rt-actions > * { flex: 1 1 auto; }
+      table.rtable td.rt-hide { display: none; }
+    }
+
     @media (max-width: 768px) {
       .admin-sidebar { transform: translateX(-100%); }
       .admin-sidebar.open { transform: translateX(0); }
