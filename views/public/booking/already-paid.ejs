@@ -1,4 +1,4 @@
-<%- include("../../layouts/public", { body: \`
+<%- include("../../layouts/public", { body: `
 <section class="py-5">
   <div class="container">
     <div class="row justify-content-center">
@@ -7,7 +7,7 @@
           <div class="card-body py-5">
             <i class="fas fa-check-circle text-success" style="font-size:64px;margin-bottom:20px"></i>
             <h2 style="color:var(--bm-blue)">Already Paid!</h2>
-            <p class="text-muted mb-4">Booking <strong>\${booking.booking_number}</strong> has no remaining balance.</p>
+            <p class="text-muted mb-4">Booking <strong>${booking.booking_number}</strong> has no remaining balance.</p>
             <p class="lead text-success">Balance Due: $0.00</p>
             <a href="/booking/lookup" class="btn btn-bm mt-3"><i class="fas fa-search me-2"></i>View Your Booking</a>
           </div>
@@ -16,4 +16,4 @@
     </div>
   </div>
 </section>
-\`, scripts: "" }) %>
+`, scripts: "" }) %>
