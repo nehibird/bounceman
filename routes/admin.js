@@ -1059,7 +1059,7 @@ router.get('/messages', (req, res) => {
   const activeThread = threads.find(t => t.number === active) || null;
   if (activeThread) activeThread.display = fmtPhone(activeThread.number);
   const sarahSms = require('../services/sarah-sms');
-  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, page: 'messages', sarahEnabled: sarahSms.isEnabled(), threadPaused: activeThread ? sarahSms.isThreadPaused(activeThread.number) : false });
+  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, explicitSelection: !!req.query.to, page: 'messages', sarahEnabled: sarahSms.isEnabled(), threadPaused: activeThread ? sarahSms.isThreadPaused(activeThread.number) : false });
 });
 
 router.post('/messages/send', async (req, res) => {

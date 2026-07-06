@@ -21,7 +21,7 @@
 <!-- Search -->
 <div class="card mb-4">
   <div class="card-body">
-    <form method="GET" action="/admin/customers" class="d-flex gap-2">
+    <form method="GET" action="/admin/customers" class="d-flex gap-2 flex-wrap">
       <div class="input-group">
         <span class="input-group-text"><i class="fas fa-search"></i></span>
         <input type="text" name="q" class="form-control" placeholder="Search by name, email, or phone..." value="${search || ''}">
@@ -36,7 +36,7 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
+      <table class="table table-hover mb-0 rtable">
         <thead>
           <tr>
             <th style="width:40px"><input type="checkbox" class="form-check-input" id="selAll"></th>
@@ -52,14 +52,14 @@
         <tbody id="custBody">
           ${customers.length > 0 ? customers.map(c => `
           <tr data-href="/admin/customers/${c.id}">
-            <td><input type="checkbox" class="form-check-input rowCb" value="${c.id}" data-name="${c.first_name} ${c.last_name}" data-bookings="${c.total_bookings || 0}"></td>
-            <td><strong>${c.first_name} ${c.last_name}</strong></td>
-            <td>${c.email || ''}</td>
-            <td>${c.phone || ''}</td>
-            <td><span class="badge bg-primary">${c.total_bookings || 0}</span></td>
-            <td>$${parseFloat(c.total_revenue || 0).toFixed(2)}</td>
-            <td>${c.created_at || ''}</td>
-            <td>
+            <td class="rt-hide"><input type="checkbox" class="form-check-input rowCb" value="${c.id}" data-name="${c.first_name} ${c.last_name}" data-bookings="${c.total_bookings || 0}"></td>
+            <td class="rt-primary"><strong>${c.first_name} ${c.last_name}</strong></td>
+            <td data-label="Email">${c.email || ''}</td>
+            <td data-label="Phone">${c.phone || ''}</td>
+            <td data-label="Bookings"><span class="badge bg-primary">${c.total_bookings || 0}</span></td>
+            <td data-label="Total Revenue">$${parseFloat(c.total_revenue || 0).toFixed(2)}</td>
+            <td data-label="Joined">${c.created_at || ''}</td>
+            <td class="rt-actions">
               <a href="/admin/customers/${c.id}" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-eye"></i> View
               </a>

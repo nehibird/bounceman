@@ -11,7 +11,7 @@
 </div>
 
 <div class="row g-3">
-  <div class="col-md-4">
+  <div class="col-md-4 ${explicitSelection ? 'd-none d-md-block' : ''}">
     <div class="card">
       <div class="list-group list-group-flush" style="max-height:72vh;overflow:auto">
         ${threads.length ? threads.map(t => `
@@ -25,8 +25,9 @@
       </div>
     </div>
   </div>
-  <div class="col-md-8">
+  <div class="col-md-8 ${explicitSelection ? '' : 'd-none d-md-block'}">
     ${activeThread ? `
+    <a href="/admin/messages" class="btn btn-sm btn-outline-secondary d-md-none mb-2"><i class="fas fa-arrow-left me-1"></i>Back to conversations</a>
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <div><strong>${activeThread.name || activeThread.display}</strong> ${activeThread.name ? '<small class="text-muted ms-1">' + activeThread.display + '</small>' : ''}</div>
@@ -45,7 +46,7 @@
           </div>
         </div>`).join('')}
       </div>
-      <div class="card-footer">
+      <div class="card-footer" style="position:sticky;bottom:0;z-index:5;background:#fff">
         <form method="POST" action="/admin/messages/send" class="d-flex gap-2">
           <input type="hidden" name="to" value="${activeThread.number}">
           <input type="text" name="body" class="form-control" placeholder="Type a reply…" autocomplete="off" maxlength="1000" required>

@@ -13,7 +13,7 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0" id="equipmentTable">
+      <table class="table table-hover mb-0 rtable" id="equipmentTable">
         <thead>
           <tr>
             <th style="width:64px"></th>
@@ -29,26 +29,26 @@
         <tbody>
           ${equipment.length > 0 ? equipment.map(e => `
           <tr style="cursor:pointer" data-row-href="/admin/equipment/${e.id}/edit">
-            <td>
+            <td class="rt-hide">
               ${e.image ? '<img src="' + e.image + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px">' : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;display:flex;align-items:center;justify-content:center"><i class="fas fa-image text-muted"></i></div>'}
             </td>
-            <td>
-              <strong>${e.name}</strong>
+            <td class="rt-primary">
+              ${e.name}
               ${e.dimensions ? '<br><small class="text-muted">' + e.dimensions + '</small>' : ''}
               ${e.capacity_kids ? '<br><small class="text-muted"><i class="fas fa-child"></i> Up to ' + e.capacity_kids + ' kids</small>' : ''}
             </td>
-            <td><span class="badge bg-secondary">${e.category || 'Uncategorized'}</span></td>
-            <td><strong>$${parseFloat(e.price_daily || 0).toFixed(2)}</strong></td>
-            <td>
+            <td data-label="Category"><span class="badge bg-secondary">${e.category || 'Uncategorized'}</span></td>
+            <td data-label="Daily Price"><strong>$${parseFloat(e.price_daily || 0).toFixed(2)}</strong></td>
+            <td data-label="Status">
               <span class="badge bg-${e.status === 'available' ? 'success' : e.status === 'maintenance' ? 'warning' : 'danger'}">
                 ${e.status || 'unknown'}
               </span>
             </td>
-            <td>${e.condition || 'N/A'}</td>
-            <td>
+            <td data-label="Condition">${e.condition || 'N/A'}</td>
+            <td data-label="Featured">
               ${e.featured ? '<i class="fas fa-star text-warning"></i>' : '<i class="far fa-star text-muted"></i>'}
             </td>
-            <td>
+            <td class="rt-actions">
               <a href="/admin/equipment/${e.id}/edit" class="btn btn-sm btn-outline-secondary me-1">
                 <i class="fas fa-edit"></i> Edit
               </a>

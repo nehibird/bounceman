@@ -58,16 +58,17 @@ ${typeof query !== 'undefined' && query.error ? `
   </div>
   <div class="card-body p-0">
     ${campaigns.length > 0 ? `
-    <table class="table table-hover mb-0">
-      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th>Keywords</th><th></th></tr></thead>
+    <div class="table-responsive">
+    <table class="table table-hover mb-0 rtable">
+      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th class="d-none d-md-table-cell">Keywords</th><th></th></tr></thead>
       <tbody>
         ${campaigns.map(c => `
         <tr>
-          <td><strong>${c.name}</strong></td>
-          <td><span class="badge bg-secondary">${c.status}</span></td>
-          <td>$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
-          <td class="text-muted small">${c.target_keywords ? c.target_keywords.substring(0,60)+'...' : '—'}</td>
-          <td>
+          <td class="rt-primary"><strong>${c.name}</strong></td>
+          <td data-label="Status"><span class="badge bg-secondary">${c.status}</span></td>
+          <td data-label="Daily Budget">$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
+          <td class="text-muted small d-none d-md-table-cell">${c.target_keywords ? c.target_keywords.substring(0,60)+'...' : '—'}</td>
+          <td class="rt-actions">
             <button class="btn btn-sm btn-outline-secondary" data-delete-campaign="${c.id}">
               <i class="fas fa-trash"></i>
             </button>
@@ -76,6 +77,7 @@ ${typeof query !== 'undefined' && query.error ? `
         `).join('')}
       </tbody>
     </table>
+    </div>
     ` : `
     <div class="text-center py-5 text-muted">
       <i class="fas fa-bullhorn fa-3x mb-3" style="opacity:0.2"></i>
@@ -179,15 +181,15 @@ async function loadGoogleCampaigns() {
       el.innerHTML = '<div class="text-center py-4 text-muted">No campaigns found in Google Ads account.</div>';
       return;
     }
-    el.innerHTML = '<table class="table table-hover mb-0"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th>Type</th></tr></thead><tbody>' +
+    el.innerHTML = '<div class="table-responsive"><table class="table table-hover mb-0 rtable"><thead><tr><th class="d-none d-md-table-cell">ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th class="d-none d-md-table-cell">Type</th></tr></thead><tbody>' +
       d.campaigns.map(c => '<tr>' +
-        '<td class="text-muted small">' + c.id + '</td>' +
-        '<td><strong>' + c.name + '</strong></td>' +
-        '<td><span class="badge ' + (c.status === 'ENABLED' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
-        '<td>' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
-        '<td class="text-muted small">' + (c.type || '—') + '</td>' +
+        '<td class="text-muted small d-none d-md-table-cell">' + c.id + '</td>' +
+        '<td class="rt-primary"><strong>' + c.name + '</strong></td>' +
+        '<td data-label="Status"><span class="badge ' + (c.status === 'ENABLED' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
+        '<td data-label="Daily Budget">' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
+        '<td class="text-muted small d-none d-md-table-cell">' + (c.type || '—') + '</td>' +
       '</tr>').join('') +
-      '</tbody></table>';
+      '</tbody></table></div>';
   } catch(e) {
     document.getElementById('googleApiCampaignsList').innerHTML = '<div class="p-3 text-danger">Failed to load campaigns: ' + e.message + '</div>';
   }

@@ -4,7 +4,7 @@
 
 
 <!-- Tab Navigation -->
-<ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+<ul class="nav nav-tabs mb-4 flex-nowrap overflow-auto" id="settingsTabs" role="tablist">
   <li class="nav-item">
     <button class="nav-link active" id="business-tab" data-bs-toggle="tab" data-bs-target="#business" type="button">
       <i class="fas fa-building me-1"></i> Business
@@ -160,10 +160,10 @@
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Uses</th><th>Expiry</th><th>Active</th><th></th></tr></thead>
+          <table class="table table-hover mb-0 rtable">
+            <thead><tr><th>Code</th><th>Type</th><th>Value</th><th class="d-none d-md-table-cell">Uses</th><th class="d-none d-md-table-cell">Expiry</th><th>Active</th><th></th></tr></thead>
             <tbody>
-              ${codes.length > 0 ? codes.map(function(c) { return '<tr><td><code class="fw-bold">' + c.code + '</code></td><td>' + (c.type || '') + '</td><td>' + (c.type === 'percent' ? c.value + '%' : '$' + parseFloat(c.value || 0).toFixed(2)) + '</td><td>' + (c.uses_count || 0) + (c.max_uses ? ' / ' + c.max_uses : '') + '</td><td>' + (c.expires_at || 'Never') + '</td><td><span class="badge bg-' + (c.active ? 'success' : 'secondary') + '">' + (c.active ? 'Active' : 'Inactive') + '</span></td><td class="text-end"><form method="POST" action="/admin/settings/codes/' + c.id + '/toggle" style="display:inline"><button type="submit" class="btn btn-sm btn-outline-' + (c.active ? 'warning' : 'success') + ' me-1"><i class="fas fa-' + (c.active ? 'pause' : 'play') + '"></i></button></form><form method="POST" action="/admin/settings/codes/' + c.id + '/delete" style="display:inline" class="confirm-delete" data-confirm="Are you sure?"><button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></form></td></tr>'; }).join('') : '<tr><td colspan="7" class="text-center text-muted py-3">No discount codes</td></tr>'}
+              ${codes.length > 0 ? codes.map(function(c) { return '<tr><td class="rt-primary"><code class="fw-bold">' + c.code + '</code></td><td data-label="Type">' + (c.type || '') + '</td><td data-label="Value">' + (c.type === 'percent' ? c.value + '%' : '$' + parseFloat(c.value || 0).toFixed(2)) + '</td><td class="d-none d-md-table-cell">' + (c.uses_count || 0) + (c.max_uses ? ' / ' + c.max_uses : '') + '</td><td class="d-none d-md-table-cell">' + (c.expires_at || 'Never') + '</td><td data-label="Active"><span class="badge bg-' + (c.active ? 'success' : 'secondary') + '">' + (c.active ? 'Active' : 'Inactive') + '</span></td><td class="rt-actions"><form method="POST" action="/admin/settings/codes/' + c.id + '/toggle" style="display:inline"><button type="submit" class="btn btn-sm btn-outline-' + (c.active ? 'warning' : 'success') + ' me-1"><i class="fas fa-' + (c.active ? 'pause' : 'play') + '"></i></button></form><form method="POST" action="/admin/settings/codes/' + c.id + '/delete" style="display:inline" class="confirm-delete" data-confirm="Are you sure?"><button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></form></td></tr>'; }).join('') : '<tr><td colspan="7" class="text-center text-muted py-3">No discount codes</td></tr>'}
             </tbody>
           </table>
         </div>

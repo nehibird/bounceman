@@ -10,7 +10,7 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0 align-middle">
+      <table class="table table-hover mb-0 align-middle rtable">
         <thead>
           <tr>
             <th>When</th>
@@ -23,13 +23,13 @@
         <tbody>
           ${calls.length > 0 ? calls.map(c => `
           <tr>
-            <td><small>${c.when || ''}</small></td>
-            <td><strong>${c.caller_number || ''}</strong></td>
-            <td>${c.customer_name ? c.customer_name : '<span class="text-muted">—</span>'}</td>
-            <td>${c.block_reason
+            <td data-label="When"><small>${c.when || ''}</small></td>
+            <td class="rt-primary">${c.caller_number || ''}</td>
+            <td data-label="Customer">${c.customer_name ? c.customer_name : '<span class="text-muted">—</span>'}</td>
+            <td data-label="Status">${c.block_reason
               ? '<span class="badge bg-danger" title="' + c.block_reason + '"><i class="fas fa-ban me-1"></i>Blocked</span>'
               : '<span class="badge bg-success"><i class="fas fa-phone-alt me-1"></i>' + (c.status || 'received') + '</span>'}</td>
-            <td class="text-end text-nowrap">
+            <td class="rt-actions">
               ${c.caller_number ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + c.caller_number + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}
             </td>
           </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No calls logged yet</td></tr>'}

@@ -16,13 +16,13 @@
       </div>
       <div class="col-md-6">
         <div class="row g-2">
-          <div class="col-6">
+          <div class="col-12 col-md-6">
             <div class="text-muted small">Ad Account</div>
-            <code class="small">${process.env.FB_AD_ACCOUNT_ID || 'not set'}</code>
+            <code class="small text-break">${process.env.FB_AD_ACCOUNT_ID || 'not set'}</code>
           </div>
-          <div class="col-6">
+          <div class="col-12 col-md-6">
             <div class="text-muted small">Pixel ID</div>
-            <code class="small">${process.env.FB_PIXEL_ID || 'not set'}</code>
+            <code class="small text-break">${process.env.FB_PIXEL_ID || 'not set'}</code>
           </div>
         </div>
       </div>
@@ -79,16 +79,17 @@
   </div>
   <div class="card-body p-0">
     ${campaigns.length > 0 ? `
-    <table class="table table-hover mb-0">
-      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th>Audience</th><th></th></tr></thead>
+    <div class="table-responsive">
+    <table class="table table-hover mb-0 rtable">
+      <thead><tr><th>Name</th><th>Status</th><th>Daily Budget</th><th class="d-none d-md-table-cell">Audience</th><th></th></tr></thead>
       <tbody>
         ${campaigns.map(c => `
         <tr>
-          <td><strong>${c.name}</strong></td>
-          <td><span class="badge bg-secondary">${c.status}</span></td>
-          <td>$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
-          <td class="text-muted small">${c.target_audience ? c.target_audience.substring(0,60) : '—'}</td>
-          <td>
+          <td class="rt-primary"><strong>${c.name}</strong></td>
+          <td data-label="Status"><span class="badge bg-secondary">${c.status}</span></td>
+          <td data-label="Daily Budget">$${parseFloat(c.daily_budget).toFixed(2)}/day</td>
+          <td class="text-muted small d-none d-md-table-cell">${c.target_audience ? c.target_audience.substring(0,60) : '—'}</td>
+          <td class="rt-actions">
             <button class="btn btn-sm btn-outline-danger" data-delete-fb-campaign="${c.id}">
               <i class="fas fa-trash"></i>
             </button>
@@ -97,6 +98,7 @@
         `).join('')}
       </tbody>
     </table>
+    </div>
     ` : `
     <div class="text-center py-4 text-muted">
       <i class="fab fa-facebook fa-3x mb-3" style="opacity:0.2"></i>
@@ -206,15 +208,15 @@ async function loadFbCampaigns() {
       el.innerHTML = '<div class="text-center py-4 text-muted">No campaigns in Facebook ad account.</div>';
       return;
     }
-    el.innerHTML = '<table class="table table-hover mb-0"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th>Objective</th></tr></thead><tbody>' +
+    el.innerHTML = '<div class="table-responsive"><table class="table table-hover mb-0 rtable"><thead><tr><th class="d-none d-md-table-cell">ID</th><th>Name</th><th>Status</th><th>Daily Budget</th><th class="d-none d-md-table-cell">Objective</th></tr></thead><tbody>' +
       d.campaigns.map(c => '<tr>' +
-        '<td class="text-muted small">' + c.id + '</td>' +
-        '<td><strong>' + c.name + '</strong></td>' +
-        '<td><span class="badge ' + (c.status === 'ACTIVE' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
-        '<td>' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
-        '<td class="text-muted small">' + (c.objective || '—') + '</td>' +
+        '<td class="text-muted small d-none d-md-table-cell">' + c.id + '</td>' +
+        '<td class="rt-primary"><strong>' + c.name + '</strong></td>' +
+        '<td data-label="Status"><span class="badge ' + (c.status === 'ACTIVE' ? 'bg-success' : 'bg-secondary') + '">' + c.status + '</span></td>' +
+        '<td data-label="Daily Budget">' + (c.daily_budget ? '$' + c.daily_budget + '/day' : '—') + '</td>' +
+        '<td class="text-muted small d-none d-md-table-cell">' + (c.objective || '—') + '</td>' +
       '</tr>').join('') +
-      '</tbody></table>';
+      '</tbody></table></div>';
   } catch(e) {
     document.getElementById('fbCampaignsList').innerHTML = '<div class="p-3 text-danger">Failed to load campaigns: ' + e.message + '</div>';
   }

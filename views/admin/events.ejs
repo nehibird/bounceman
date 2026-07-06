@@ -2,7 +2,7 @@
 
 <!-- Stats Row -->
 <div class="row g-4 mb-4">
-  <div class="col-md-3">
+  <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
         <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:var(--bm-primary)"><i class="fas fa-calendar-alt"></i></div>
@@ -13,7 +13,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
         <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-child"></i></div>
@@ -24,7 +24,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
         <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:var(--bm-secondary)"><i class="fas fa-users"></i></div>
@@ -35,7 +35,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
         <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-dollar-sign"></i></div>
@@ -49,7 +49,7 @@
 </div>
 
 <!-- Actions -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h4 class="mb-0" style="font-weight:700;color:var(--bm-dark)"><i class="fas fa-ticket-alt me-2"></i>Walk-Up Events</h4>
   <button class="btn btn-bm rounded-pill" data-bs-toggle="modal" data-bs-target="#createEventModal">
     <i class="fas fa-plus me-1"></i>Create Event
@@ -59,7 +59,7 @@
 <!-- Events Table -->
 <div class="card">
   <div class="table-responsive">
-    <table class="table table-hover mb-0">
+    <table class="table table-hover mb-0 rtable">
       <thead>
         <tr style="background:#f8f9fa">
           <th style="padding:14px 20px">Event</th>
@@ -76,14 +76,14 @@
         ${events.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-calendar-times me-2"></i>No events yet</td></tr>' : ''}
         ${events.map(function(e) {
           return '<tr style="cursor:pointer" data-row-href="/admin/events/' + e.id + '">' +
-            '<td style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + e.name + '</a></td>' +
-            '<td>' + e.event_date + '</td>' +
-            '<td>' + (e.location || '-') + '</td>' +
-            '<td><strong>$' + parseFloat(e.price_per_kid).toFixed(0) + '</strong></td>' +
-            '<td>' + (e.total_kids || 0) + '</td>' +
-            '<td><strong>$' + (e.total_revenue || 0).toFixed(2) + '</strong></td>' +
-            '<td><span class="badge-status ' + (e.active ? 'badge-confirmed' : 'badge-cancelled') + '">' + (e.active ? 'Active' : 'Inactive') + '</span></td>' +
-            '<td style="white-space:nowrap">' +
+            '<td class="rt-primary" style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + e.name + '</a></td>' +
+            '<td data-label="Date">' + e.event_date + '</td>' +
+            '<td data-label="Location">' + (e.location || '-') + '</td>' +
+            '<td data-label="Price/Kid"><strong>$' + parseFloat(e.price_per_kid).toFixed(0) + '</strong></td>' +
+            '<td data-label="Kids">' + (e.total_kids || 0) + '</td>' +
+            '<td data-label="Revenue"><strong>$' + (e.total_revenue || 0).toFixed(2) + '</strong></td>' +
+            '<td data-label="Status"><span class="badge-status ' + (e.active ? 'badge-confirmed' : 'badge-cancelled') + '">' + (e.active ? 'Active' : 'Inactive') + '</span></td>' +
+            '<td class="rt-actions">' +
               '<form method="POST" action="/admin/events/' + e.id + '/toggle" style="display:inline">' +
                 '<button class="btn btn-sm btn-outline-secondary rounded-pill me-1" title="' + (e.active ? 'Deactivate' : 'Activate') + '">' +
                   '<i class="fas fa-' + (e.active ? 'pause' : 'play') + '"></i>' +

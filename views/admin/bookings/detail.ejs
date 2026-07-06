@@ -76,18 +76,18 @@
       <div class="card-header"><i class="fas fa-castle me-2"></i>Booked Items</div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead><tr><th></th><th>Item</th><th>Category</th><th>Unit Price</th><th>Total</th></tr></thead>
+          <table class="table table-hover mb-0 rtable">
+            <thead><tr><th></th><th>Item</th><th class="d-none d-md-table-cell">Category</th><th>Unit Price</th><th>Total</th></tr></thead>
             <tbody>
               ${items.length > 0 ? items.map(item => `
               <tr>
-                <td style="width:60px">
+                <td class="rt-hide" style="width:60px">
                   ${item.image ? '<img src="' + item.image + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px">' : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;display:flex;align-items:center;justify-content:center"><i class="fas fa-image text-muted"></i></div>'}
                 </td>
-                <td><strong>${item.item_name}</strong></td>
-                <td>${item.category || ''}</td>
-                <td>$${parseFloat(item.unit_price || 0).toFixed(2)}</td>
-                <td>$${parseFloat(item.total_price || 0).toFixed(2)}</td>
+                <td class="rt-primary"><strong>${item.item_name}</strong></td>
+                <td class="d-none d-md-table-cell">${item.category || ''}</td>
+                <td data-label="Unit Price">$${parseFloat(item.unit_price || 0).toFixed(2)}</td>
+                <td data-label="Total">$${parseFloat(item.total_price || 0).toFixed(2)}</td>
               </tr>
               `).join('') : '<tr><td colspan="5" class="text-center text-muted py-3">No items</td></tr>'}
             </tbody>
@@ -229,14 +229,14 @@
       <div class="collapse" id="recordPaymentForm">
         <div class="card-body border-bottom" style="background:#f8f9fa">
           <form method="POST" action="/admin/bookings/${booking.id}/payment" class="row g-2 align-items-end">
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
               <label class="form-label small mb-1">Amount</label>
               <div class="input-group input-group-sm">
                 <span class="input-group-text">$</span>
-                <input type="number" step="0.01" name="amount" class="form-control" value="${parseFloat(booking.balance_due || 0).toFixed(2)}" required style="width:100px">
+                <input type="number" step="0.01" name="amount" class="form-control" value="${parseFloat(booking.balance_due || 0).toFixed(2)}" required>
               </div>
             </div>
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
               <label class="form-label small mb-1">Method</label>
               <select name="payment_method" class="form-select form-select-sm">
                 <option value="cash">Cash</option>
@@ -246,11 +246,11 @@
                 <option value="zelle">Zelle</option>
               </select>
             </div>
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
               <label class="form-label small mb-1">Notes</label>
-              <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional" style="width:120px">
+              <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
             </div>
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
               <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check me-1"></i>Save</button>
             </div>
           </form>
