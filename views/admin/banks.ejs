@@ -1,7 +1,7 @@
 <%- include('../layouts/admin', { body: `
 <div class="row g-4 mb-4"><div class="col-12">
   <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><i class="fas fa-university me-2"></i>Connected Banks</span>
       <div>
         <button id="syncBtn" class="btn btn-sm btn-outline-secondary me-2"><i class="fas fa-rotate me-1"></i>Sync now</button>
@@ -10,16 +10,18 @@
     </div>
     <div class="card-body">
       ${items.length ? `
-      <table class="table table-hover mb-0">
+      <div class="table-responsive">
+      <table class="table table-hover mb-0 rtable">
         <thead><tr><th>Bank</th><th>Status</th><th>Last synced</th></tr></thead>
         <tbody>
           ${items.map(i => `<tr>
-            <td><strong>${i.institution_name || i.institution_id}</strong></td>
-            <td>${i.status === 'ok' ? '<span class="badge bg-success">ok</span>' : `<span class="badge bg-warning text-dark">${i.status}</span>`}</td>
-            <td>${i.last_synced ? new Date(i.last_synced).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'never'}</td>
+            <td class="rt-primary"><strong>${i.institution_name || i.institution_id}</strong></td>
+            <td data-label="Status">${i.status === 'ok' ? '<span class="badge bg-success">ok</span>' : `<span class="badge bg-warning text-dark">${i.status}</span>`}</td>
+            <td data-label="Last synced">${i.last_synced ? new Date(i.last_synced).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'never'}</td>
           </tr>`).join('')}
         </tbody>
-      </table>` : `<div class="text-muted text-center py-4">No banks connected yet. Click <strong>Connect a bank</strong> to link Chase, Schwab, or FNBOK.</div>`}
+      </table>
+      </div>` : `<div class="text-muted text-center py-4">No banks connected yet. Click <strong>Connect a bank</strong> to link Chase, Schwab, or FNBOK.</div>`}
       <div id="msg" class="small text-muted mt-3"></div>
     </div>
   </div>
