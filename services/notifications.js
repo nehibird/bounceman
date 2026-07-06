@@ -55,112 +55,42 @@ function buildBookingBlocks(booking, customer, items) {
     return '• ' + i.item_name + wet + d + ' — $' + parseFloat(i.unit_price).toFixed(2);
   }).join('\n');
 
+  const address = [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ');
+  const durationTxt = (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + '–' + fmtDate(booking.event_end_date) + ')' : '') : '');
+  const bal = parseFloat(booking.balance_due || 0);
+
   const blocks = [
-    {
-      type: 'header',
-      text: { type: 'plain_text', text: '🎉 New Booking: ' + booking.booking_number }
-    },
-    // Customer info block
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*CUSTOMER*' }
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*Name:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
-        { type: 'mrkdwn', text: '*Email:*\n' + (customer.email || 'N/A') },
-        { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') },
-        { type: 'mrkdwn', text: '*Customer ID:*\n`' + customer.id + '`' }
-      ]
-    },
-    // Event info block
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*EVENT DETAILS*' }
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*Date:*\n' + fmtDate(booking.event_date) },
-        { type: 'mrkdwn', text: '*Time:*\n' + fmtTime(booking.event_start_time) + ' - ' + fmtTime(booking.event_end_time) },
-        { type: 'mrkdwn', text: '*Event Type:*\n' + (booking.event_type || 'N/A') },
-        { type: 'mrkdwn', text: '*Duration:*\n' + (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + ' – ' + fmtDate(booking.event_end_date) + ')' : '') : '') }
-      ]
-    },
-    // Delivery info block
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*DELIVERY*' }
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*Address:*\n' + [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ') },
-        { type: 'mrkdwn', text: '*Venue:*\n' + (booking.venue_type || 'N/A') },
-        { type: 'mrkdwn', text: '*Surface:*\n' + (booking.surface_type || 'N/A') },
-        { type: 'mrkdwn', text: '*Power:*\n' + (booking.power_available ? 'Yes' : 'No/Unknown') }
-      ]
-    },
-    // Equipment block
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*EQUIPMENT*\n' + itemList }
-    },
-    // Pricing block
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*PRICING*' }
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*Subtotal:*\n$' + parseFloat(booking.subtotal || 0).toFixed(2) },
-        { type: 'mrkdwn', text: '*Delivery Fee:*\n$' + parseFloat(booking.delivery_fee || 0).toFixed(2) },
-        { type: 'mrkdwn', text: '*Tax (' + ((booking.tax_rate || 0) * 100).toFixed(1) + '%):*\n$' + parseFloat(booking.tax_amount || 0).toFixed(2) },
-        { type: 'mrkdwn', text: '*Damage Waiver:*\n$' + parseFloat(booking.damage_waiver_fee || 0).toFixed(2) }
-      ]
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*TOTAL:*\n*$' + parseFloat(booking.total).toFixed(2) + '*' },
-        { type: 'mrkdwn', text: '*Deposit:*\n$' + parseFloat(booking.deposit_amount).toFixed(2) },
-        { type: 'mrkdwn', text: '*Balance Due:*\n$' + parseFloat(booking.balance_due || 0).toFixed(2) },
-        { type: 'mrkdwn', text: '*Payment Status:*\n' + (booking.payment_status || 'unpaid') }
-      ]
-    }
+    { type: 'header', text: { type: 'plain_text', text: '🎉 New Booking: ' + booking.booking_number } },
+    { type: 'section', text: { type: 'mrkdwn', text:
+      '*' + customer.first_name + ' ' + (customer.last_name || '') + '*  ·  ' + (customer.email || 'no email') +
+      '\n📞 ' + (customer.phone || 'N/A') } },
+    { type: 'section', text: { type: 'mrkdwn', text:
+      '📅 *' + fmtDate(booking.event_date) + '*  ·  ' + fmtTime(booking.event_start_time) + '–' + fmtTime(booking.event_end_time) +
+      '\n⏱ ' + durationTxt } },
+    { type: 'section', text: { type: 'mrkdwn', text:
+      '📍 *' + address + '*' +
+      '\n' + (booking.venue_type || 'N/A') + ' · ' + (booking.surface_type || 'N/A') + ' surface · Power: ' + (booking.power_available ? 'Yes' : 'No/Unknown') } },
+    { type: 'section', text: { type: 'mrkdwn', text: '🎪 *Equipment*\n' + itemList } },
+    { type: 'section', text: { type: 'mrkdwn', text:
+      '💵 *Total $' + parseFloat(booking.total).toFixed(2) + '*  ·  Deposit $' + parseFloat(booking.deposit_amount).toFixed(2) + '  ·  Balance $' + bal.toFixed(2) + '  ·  ' + (booking.payment_status || 'unpaid') } }
   ];
 
-  // Add discount if present
+  // Discount (compact) if present
   if (booking.discount_code || parseFloat(booking.discount_amount) > 0) {
-    blocks.push({
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: '*Discount Code:*\n' + (booking.discount_code || 'N/A') },
-        { type: 'mrkdwn', text: '*Discount Amount:*\n-$' + parseFloat(booking.discount_amount || 0).toFixed(2) }
-      ]
-    });
+    blocks.push({ type: 'context', elements: [
+      { type: 'mrkdwn', text: '🏷 Discount ' + (booking.discount_code || '') + ' −$' + parseFloat(booking.discount_amount || 0).toFixed(2) }
+    ] });
   }
 
-  // Add delivery notes if present
+  // Delivery notes if present
   if (booking.delivery_notes) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*DELIVERY NOTES:*\n' + booking.delivery_notes }
-    });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '📝 *Notes:* ' + booking.delivery_notes } });
   }
 
-  // Admin link and IDs for recovery
-  blocks.push({
-    type: 'divider'
-  });
-  blocks.push({
-    type: 'context',
-    elements: [
-      { type: 'mrkdwn', text: '*Booking ID:* `' + booking.id + '` | *Created:* ' + fmtCentral(booking.created_at) + ' | <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
-    ]
-  });
+  // Slim footer: admin link + created time
+  blocks.push({ type: 'context', elements: [
+    { type: 'mrkdwn', text: '<https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin> · ' + fmtCentral(booking.created_at) }
+  ] });
 
   return blocks;
 }
@@ -187,7 +117,7 @@ function buildDeliveryCardBlocks(booking, customer, items) {
   const paid = balance <= 0;
 
   const blocks = [
-    { type: 'header', text: { type: 'plain_text', text: 'Delivery Tomorrow - ' + booking.booking_number } },
+    { type: 'header', text: { type: 'plain_text', text: '🚚 Upcoming Delivery - ' + booking.booking_number } },
     {
       type: 'section',
       fields: [
@@ -223,7 +153,8 @@ function buildDeliveryCardBlocks(booking, customer, items) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: ':white_check_mark: Contract signed. Collect balance on delivery.' } });
   }
 
-  // Buttons: On My Way always; Record Payment only while a balance is owed.
+  // Buttons: On My Way + Open in Maps always; Record Payment only while a balance is owed.
+  const mapAddr = [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ');
   const elements = [
     {
       type: 'button',
@@ -231,6 +162,12 @@ function buildDeliveryCardBlocks(booking, customer, items) {
       style: 'primary',
       action_id: 'on_my_way',
       value: JSON.stringify({ booking_id: booking.id, booking_number: booking.booking_number, phone: customer.phone, first_name: customer.first_name })
+    },
+    {
+      type: 'button',
+      text: { type: 'plain_text', text: ':round_pushpin: Open in Maps', emoji: true },
+      url: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapAddr),
+      action_id: 'open_maps'
     }
   ];
   if (!paid) {
@@ -263,7 +200,7 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
   // Reflect contract-signed onto the booking object so the builder can read it.
   if (contract && booking.contract_signed == null) booking.contract_signed = contract.signed ? 1 : 0;
   const blocks = buildDeliveryCardBlocks(booking, customer, items);
-  const resp = await postToSlack(BOOKINGS_CHANNEL, blocks, 'Delivery tomorrow for ' + customer.first_name + ' - ' + booking.booking_number);
+  const resp = await postToSlack(BOOKINGS_CHANNEL, blocks, 'Upcoming delivery for ' + customer.first_name + ' - ' + booking.booking_number);
   // Save this card's ts so its Payment Status can be flipped in place when they pay.
   if (resp && resp.ts) {
     try {
@@ -303,9 +240,9 @@ async function checkDeliveryReminders() {
     const { sendDeliveryReminder } = require('./email');
     const { v4: uuid } = require('uuid');
     const db = getDb();
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const target = new Date();
+    target.setDate(target.getDate() + 2); // remind 2 days ahead of the event
+    const tomorrowStr = target.toISOString().split('T')[0];
 
     const bookings = db.prepare("SELECT * FROM bookings WHERE event_date = ? AND status NOT IN ('cancelled', 'declined')").all(tomorrowStr);
 
