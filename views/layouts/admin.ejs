@@ -118,6 +118,17 @@
       table.rtable td.rt-actions { justify-content: stretch; gap: 8px; }
       table.rtable td.rt-actions > * { flex: 1 1 auto; }
       table.rtable td.rt-hide { display: none; }
+      /* Tappable cards (rows that link to a detail page) act as one clean button */
+      table.rtable tr[data-href], table.rtable tr[data-row-href] {
+        position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
+      }
+      table.rtable.table-hover > tbody > tr:hover > * { box-shadow: none !important; }
+      table.rtable tr[data-href]:hover, table.rtable tr[data-href]:active,
+      table.rtable tr[data-row-href]:hover, table.rtable tr[data-row-href]:active { background: #eceff3; }
+      table.rtable tr[data-href]::after, table.rtable tr[data-row-href]::after {
+        content: "\203A"; position: absolute; top: 8px; right: 14px;
+        color: #c2c8d0; font-size: 1.6rem; line-height: 1; font-weight: 400; pointer-events: none;
+      }
     }
 
     @media (max-width: 768px) {

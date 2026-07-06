@@ -59,7 +59,7 @@
             <td data-label="Bookings"><span class="badge bg-primary">${c.total_bookings || 0}</span></td>
             <td data-label="Total Revenue">$${parseFloat(c.total_revenue || 0).toFixed(2)}</td>
             <td data-label="Joined">${c.created_at || ''}</td>
-            <td class="rt-actions">
+            <td class="rt-actions rt-hide">
               <a href="/admin/customers/${c.id}" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-eye"></i> View
               </a>
