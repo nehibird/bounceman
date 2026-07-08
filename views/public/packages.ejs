@@ -7,6 +7,17 @@
       <p>Save with our bundled deals!</p>
     </div>
 
+    <!-- Free extra day promo -->
+    <div class="row mb-5">
+      <div class="col-lg-9 mx-auto">
+        <div class="d-flex align-items-center justify-content-center text-center flex-wrap gap-2" style="background:linear-gradient(135deg,var(--bm-green),#2e9e5b);color:white;border-radius:16px;padding:18px 24px;box-shadow:0 4px 16px rgba(46,158,91,0.25)">
+          <span style="font-size:26px">🎁</span>
+          <span style="font-size:17px;font-weight:700">Book any 3 items and keep them an extra day — FREE!</span>
+          <span style="font-size:14px;opacity:.95">Automatically applied at checkout on multi-day rentals.</span>
+        </div>
+      </div>
+    </div>
+
     ${packages.length > 0 ? `
     <div class="row g-4 justify-content-center">
       ${packages.filter(p => p.active !== false).map((pkg, i) => `

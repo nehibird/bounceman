@@ -854,6 +854,10 @@ function initialize() {
     d.prepare('DELETE FROM equipment_images WHERE rowid NOT IN (SELECT MIN(rowid) FROM equipment_images GROUP BY equipment_id, image_path)').run();
   } catch { /* noop */ }
 
+  // Retire the Splash Party Package (owner dropped the generator bundle). Soft-delete so
+  // the /packages route (WHERE active=1) hides it without losing history. Idempotent.
+  try { d.prepare("UPDATE packages SET active = 0 WHERE slug = 'splash-party-package'").run(); } catch { /* noop */ }
+
   // Seed starter rental packages (idempotent — skips any package whose slug already exists).
   // Each package bundles a marquee unit with an under-selling add-on/second unit to raise
   // average order value. Prices are ~10% under the a-la-carte total. Item equipment_ids are
@@ -867,11 +871,6 @@ function initialize() {
       name: 'Backyard Birthday Bash', slug: 'backyard-birthday-bash', price: 249,
       description: 'The classic kid\'s party combo: our Monkey Jumper bounce house plus the World\'s Loudest Bluetooth Speaker so the music is as big as the fun.',
       items: ['Monkey Jumper', 'Worlds Loudest Bluetooth Speaker'],
-    },
-    {
-      name: 'Splash Party Package', slug: 'splash-party-package', price: 415,
-      description: 'Beat the Oklahoma heat with the Blue Crush Water Slide, plus a Portable Generator so you can set up anywhere — parks, fields, or a yard without an outlet nearby.',
-      items: ['Blue Crush Slide', 'Portable Generator'],
     },
     {
       name: 'Ultimate Field Day', slug: 'ultimate-field-day', price: 595,

@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, freeExtraDayDiscount, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -303,9 +303,11 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const taxExemptClaimed = tax_exempt_claimed === '1';
   const certCustomer = email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(email) : null;
   const taxExemptHonored = !!(certCustomer && certCustomer.tax_exempt && certCustomer.tax_exempt_cert);
+  // Promo: 3+ items → one extra day free.
+  const free_extra_day = freeExtraDayDiscount(db, items, { days, wetSet: wetItemIds, date: event_date });
   const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptHonored);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
-  const total = rawTotal - discount_amount;
+  const total = Math.max(0, rawTotal - discount_amount - free_extra_day);
   const reviewDepositPct = parseFloat(settings.deposit_percent || '50') / 100;
   const deposit_amount = Math.floor(total * reviewDepositPct * 100) / 100;
 
@@ -316,7 +318,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     customer: { first_name, last_name, email, phone },
     delivery: { delivery_address, delivery_city, delivery_zip, delivery_notes, venue_type, surface_type, power_available },
     event: { event_date, event_start_time, event_end_time, event_type },
-    pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, damage_waiver_fee, total, deposit_amount },
+    pricing: { subtotal, delivery_fee, tax_rate, tax_amount, discount_amount, discount_code, free_extra_day, damage_waiver_fee, total, deposit_amount },
     wet_items: wet_items || '',
     rental_duration: duration,
     rental_days: days,
@@ -382,8 +384,10 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // does NOT zero the tax — it's recorded as tax_exempt_claimed for admin to review.
     const existingCustomer = data.email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(data.email) : null;
     const taxExempt = !!(existingCustomer && existingCustomer.tax_exempt && existingCustomer.tax_exempt_cert);
+    // Promo: 3+ items → one extra day free (same helper the review preview uses).
+    const recalcFreeExtraDay = freeExtraDayDiscount(db, submitItems, { days: submitDays, wetSet: submitWetIdsSet, date: data.event_date });
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city, taxExempt);
-    const recalcTotal = recalcPricing.total - recalcDiscountAmount;
+    const recalcTotal = Math.max(0, recalcPricing.total - recalcDiscountAmount - recalcFreeExtraDay);
     data.subtotal = recalcSubtotal;
     data.delivery_fee = recalcDeliveryFee;
     data.tax_rate = recalcPricing.taxRate;
@@ -392,7 +396,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     data.total = recalcTotal;
     const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
     data.deposit_amount = Math.floor(recalcTotal * depositPercent * 100) / 100;
-    data.discount_amount = recalcDiscountAmount;
+    // Store code discount + promo combined so downstream totals reconcile.
+    data.discount_amount = recalcDiscountAmount + recalcFreeExtraDay;
 
     // H-3: Overnight time-normalization (defensive against crafted POSTs)
     if (data.rental_duration === 'overnight') {

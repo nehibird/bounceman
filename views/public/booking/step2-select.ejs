@@ -227,6 +227,7 @@
             <span class="fw-bold" style="color:var(--bm-orange);font-size:20px;" id="subtotal">$0</span>
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
+          <div id="freeDayPromo" style="display:none;margin-bottom:10px;background:#e9f7ef;border:1px solid #b7e4c7;border-radius:10px;padding:9px 12px;font-size:13px;color:#1e7e4f;font-weight:600;"></div>
           <div id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><i class="fas fa-circle-info me-1"></i><span id="wetChoiceWarnText"></span></div>
           <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
             <i class="fas fa-arrow-right me-2"></i>Continue to Your Details
@@ -486,6 +487,8 @@
       continueBtn.disabled = true;
       continueBtn.style.opacity = '0.5';
       if (wetWarnEl) wetWarnEl.style.display = 'none';
+      var pe0 = document.getElementById('freeDayPromo');
+      if (pe0) pe0.style.display = 'none';
       refreshMultiDayBlock();
       return;
     }
@@ -508,6 +511,24 @@
 
     subtotalEl.textContent = '$' + subtotal.toFixed(0);
     countEl.textContent = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' selected';
+
+    // Promo nudge: book 3+ items → one extra day free (applied at checkout).
+    var promoEl = document.getElementById('freeDayPromo');
+    if (promoEl) {
+      var n = keys.length;
+      if (rentalDays >= 2 && n >= 3) {
+        promoEl.innerHTML = '🎁 Your extra day is <b>FREE</b> — 3+ item bonus, applied at checkout!';
+        promoEl.style.display = '';
+      } else if (rentalDays >= 2 && n > 0) {
+        promoEl.innerHTML = '🎁 Add ' + (3 - n) + ' more item' + ((3 - n) > 1 ? 's' : '') + ' and your extra day is <b>FREE</b>!';
+        promoEl.style.display = '';
+      } else if (rentalDays < 2 && n >= 3) {
+        promoEl.innerHTML = '🎁 Booking 3+ items? Keep them a 2nd day <b>FREE</b> — <a href="/booking" style="color:inherit;text-decoration:underline">add days</a>.';
+        promoEl.style.display = '';
+      } else {
+        promoEl.style.display = 'none';
+      }
+    }
 
     // Button stays clickable so the click can guide them to the unmade choice
     continueBtn.disabled = false;
