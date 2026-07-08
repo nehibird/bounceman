@@ -842,6 +842,48 @@ function initialize() {
     );
   `);
 
+  // Fix the broken Portable Generator image: it points at generator-1.jpg, which was
+  // never uploaded (renders a broken-image icon). Swap to the placeholder until a real
+  // photo is added, and drop duplicate (equipment, path) image rows. Idempotent.
+  try {
+    d.prepare("UPDATE equipment_images SET image_path = '/assets/images/placeholder-bounce.svg' WHERE image_path = '/assets/images/equipment/generator-1.jpg'").run();
+    d.prepare('DELETE FROM equipment_images WHERE rowid NOT IN (SELECT MIN(rowid) FROM equipment_images GROUP BY equipment_id, image_path)').run();
+  } catch { /* noop */ }
+
+  // Seed starter rental packages (idempotent — skips any package whose slug already exists).
+  // Each package bundles a marquee unit with an under-selling add-on/second unit to raise
+  // average order value. Prices are ~10% under the a-la-carte total. Item equipment_ids are
+  // resolved by name so this works across environments (titan + prod share equipment names).
+  const pkgExists = d.prepare('SELECT id FROM packages WHERE slug = ?');
+  const pkgInsert = d.prepare('INSERT INTO packages (id, name, slug, description, price, discount_percent, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, datetime(\'now\'))');
+  const pkgItemInsert = d.prepare('INSERT INTO package_items (id, package_id, equipment_id) VALUES (?, ?, ?)');
+  const eqIdByName = (name) => (d.prepare('SELECT id FROM equipment WHERE name = ?').get(name) || {}).id;
+  const starterPackages = [
+    {
+      name: 'Backyard Birthday Bash', slug: 'backyard-birthday-bash', price: 249,
+      description: 'The classic kid\'s party combo: our Monkey Jumper bounce house plus the World\'s Loudest Bluetooth Speaker so the music is as big as the fun.',
+      items: ['Monkey Jumper', 'Worlds Loudest Bluetooth Speaker'],
+    },
+    {
+      name: 'Splash Party Package', slug: 'splash-party-package', price: 415,
+      description: 'Beat the Oklahoma heat with the Blue Crush Water Slide, plus a Portable Generator so you can set up anywhere — parks, fields, or a yard without an outlet nearby.',
+      items: ['Blue Crush Slide', 'Portable Generator'],
+    },
+    {
+      name: 'Ultimate Field Day', slug: 'ultimate-field-day', price: 595,
+      description: 'Built for churches, schools, and big events: The Gauntlet obstacle course for the older kids plus the Monkey Jumper bounce house for the little ones. Something for every age.',
+      items: ['The Gauntlet', 'Monkey Jumper'],
+    },
+  ];
+  for (const pkg of starterPackages) {
+    if (pkgExists.get(pkg.slug)) continue;
+    const eqIds = pkg.items.map(eqIdByName).filter(Boolean);
+    if (eqIds.length !== pkg.items.length) continue; // equipment not seeded yet — skip, retry next boot
+    const pid = uuid();
+    pkgInsert.run(pid, pkg.name, pkg.slug, pkg.description, pkg.price, 0);
+    for (const eqId of eqIds) pkgItemInsert.run(uuid(), pid, eqId);
+  }
+
   console.log('[DB] Database initialized successfully');
 }
 

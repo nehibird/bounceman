@@ -5,7 +5,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
   <i class="fas fa-arrow-left me-1"></i> Back to Customers
 </a>
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0">${customer.first_name} ${customer.last_name}</h4>
+  <h4 class="mb-0">${esc(customer.first_name)} ${esc(customer.last_name)}</h4>
   <form method="POST" action="/admin/customers/${customer.id}/delete" class="confirm-delete" data-confirm="Delete this customer? This will only work if they have no bookings? This cannot be undone.">
     <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i> Delete Customer</button>
   </form>
@@ -19,14 +19,14 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
     <div class="card mb-4">
       <div class="card-header"><i class="fas fa-user me-2"></i>Contact Information</div>
       <div class="card-body">
-        <div class="mb-2"><i class="fas fa-envelope text-muted me-2"></i>${customer.email || 'No email'}</div>
-        <div class="mb-2"><i class="fas fa-phone text-muted me-2"></i>${customer.phone || 'No phone'}</div>
+        <div class="mb-2"><i class="fas fa-envelope text-muted me-2"></i>${esc(customer.email) || 'No email'}</div>
+        <div class="mb-2"><i class="fas fa-phone text-muted me-2"></i>${esc(customer.phone) || 'No phone'}</div>
         <div class="mb-2">
           <i class="fas fa-map-marker-alt text-muted me-2"></i>
-          ${customer.address || ''}
-          ${customer.city ? ', ' + customer.city : ''}
-          ${customer.state ? ', ' + customer.state : ''}
-          ${customer.zip || ''}
+          ${esc(customer.address)}
+          ${customer.city ? ', ' + esc(customer.city) : ''}
+          ${customer.state ? ', ' + esc(customer.state) : ''}
+          ${esc(customer.zip)}
           ${!customer.address && !customer.city ? 'No address on file' : ''}
         </div>
       </div>
@@ -67,7 +67,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
           </div>
           <div class="mb-2">
             <label class="form-label small text-muted">Exemption Certificate #</label>
-            <input type="text" name="tax_exempt_cert" class="form-control form-control-sm" placeholder="OK exemption cert number" value="${customer.tax_exempt_cert || ''}">
+            <input type="text" name="tax_exempt_cert" class="form-control form-control-sm" placeholder="OK exemption cert number" value="${esc(customer.tax_exempt_cert)}">
           </div>
           <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><i class="fas fa-save me-1"></i> Save</button>
         </form>
@@ -153,11 +153,11 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
             <div class="d-flex justify-content-between">
               <strong>
                 <i class="fas fa-${c.direction === 'outbound' ? 'paper-plane text-primary' : 'inbox text-success'} me-1"></i>
-                ${c.subject || c.type || 'Message'}
+                ${esc(c.subject || c.type || 'Message')}
               </strong>
               <small class="text-muted">${c.sent_at || c.created_at || ''}</small>
             </div>
-            <p class="mb-0 mt-1 small text-muted">${(c.body || '').substring(0, 200)}${(c.body || '').length > 200 ? '...' : ''}</p>
+            <p class="mb-0 mt-1 small text-muted">${esc((c.body || '').substring(0, 200))}${(c.body || '').length > 200 ? '...' : ''}</p>
           </div>
         `).join('') + '</div>' : '<div class="text-center text-muted py-3">No communications</div>'}
       </div>

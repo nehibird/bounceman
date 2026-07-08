@@ -1,5 +1,39 @@
 <%- include('../layouts/public', { body: `
 
+${(function() {
+  var escJson = function(obj) { return JSON.stringify(obj).replace(/</g, '\\u003c'); };
+  var qa = [
+    { q: "How far in advance should I book?", a: "We recommend booking at least 1-2 weeks in advance, especially during peak season (May through September). Weekends fill up fast, and popular units like our water slides can be booked out weeks ahead. That said, if you need something last minute, give us a call — we will do our best to accommodate you!" },
+    { q: "What is included in the rental price?", a: "Every rental includes delivery, professional setup, takedown, and pickup. We also sanitize every unit after each use. You do not need to worry about inflating, anchoring, or breaking anything down — we handle it all. The only thing not included is an electrical outlet (standard 110V household outlet within 50 feet of setup)." },
+    { q: "Do you deliver and set up?", a: "Yes! Delivery, setup, and pickup are all included with every rental. Delivery is FREE across all of Kay County — including Tonkawa, Ponca City, Blackwell, Newkirk, Kaw City, Braman, and Nardin. Just outside the county (like Perry, Burbank, or Pond Creek), there is a low flat fee. Anywhere farther out, you can get an instant online delivery quote right on the booking page — no waiting for a call back. Check our Service Areas page for full zone details." },
+    { q: "Do you deliver on Sundays?", a: "Yes — we're open Sundays too! Sunday rentals are full-day or overnight only (no half-day bookings on Sundays)." },
+    { q: "What surfaces can inflatables be set up on?", a: "Inflatables work best on flat, level grass — that is the ideal setup surface. We can also set up on concrete, asphalt, or dirt using sandbags instead of stakes. We cannot set up on gravel, steep slopes, or surfaces near power lines or trees with low branches. We will assess your setup location when we arrive to make sure it is safe." },
+    { q: "What happens if it rains?", a: "A little drizzle usually is not a problem — kids actually love a slightly wet bounce house! However, if there is lightning, thunderstorms, or high winds (25+ mph), we will need to deflate the unit for safety. For weather cancellations, we'll reschedule — or issue a full refund if that doesn't work. We monitor weather forecasts and will communicate with you ahead of time if conditions look concerning." },
+    { q: "Do I need to provide power?", a: "Yes. Inflatables require a continuous-running electric blower to stay inflated. You will need a standard 110V household outlet within about 50 feet of the setup location. Each unit uses its own dedicated outlet (please do not share with other high-draw appliances). If you are setting up at a park or venue without power, let us know — we can discuss generator options." },
+    { q: "How long is a rental period?", a: "Our standard rental is for up to 8 hours within a single day. We typically deliver and set up 1-2 hours before your event start time and pick up within a couple hours after your event ends. Need it longer? Multi-day and extended rentals are available at a discounted rate — just ask!" },
+    { q: "Is there an age or weight limit?", a: "Each unit has its own capacity and weight limits, which are listed on the equipment detail page. Most standard bounce houses are designed for children ages 3-12. Some larger units and obstacle courses can handle teens and adults. We always recommend separating smaller children from older kids for safety. An adult should supervise at all times." },
+    { q: "Do you require a deposit?", a: "Yes, a 50% deposit is required at the time of booking to hold your date. The remaining balance is due on delivery day. We accept all major credit/debit cards and cash. The deposit amount is calculated and shown during checkout." },
+    { q: "Are you insured?", a: "Bounce Man LLC is fully insured with commercial general liability coverage. Safety and professionalism are at the core of everything we do. A Certificate of Insurance (COI) is available upon request." },
+    { q: "What is your cancellation policy?", a: "Your deposit is non-refundable, but can be applied to a future date if you need to reschedule. For weather cancellations, we'll reschedule — or issue a full refund if that doesn't work. We always try to work with you!" },
+    { q: "Can I rent multiple items?", a: "Of course! Many customers rent a bounce house plus a water slide, or add tables and chairs to their bounce house booking. You can add multiple items during the booking process. We also offer package deals that bundle popular items together at a discounted price." },
+    { q: "How do I clean up after the event?", a: "You do not have to! We handle all the cleanup. When your rental time is up, our team returns to deflate, pack up, and haul everything away. The only thing we ask is that you remove any debris, food, or personal items from inside the inflatable before we arrive for pickup. We take care of the rest." }
+  ];
+
+  var schema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: qa.map(function(item) {
+      return {
+        '@type': 'Question',
+        name: item.q,
+        acceptedAnswer: { '@type': 'Answer', text: item.a }
+      };
+    })
+  };
+
+  return '<script type="application/ld+json">' + escJson(schema) + '</script>';
+})()}
+
 <!-- FAQ Hero -->
 <section class="hero-section" style="padding:60px 0">
   <div class="container">

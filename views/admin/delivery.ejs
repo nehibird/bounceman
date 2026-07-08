@@ -26,13 +26,13 @@ ${deliveries.length > 0 ? deliveries.map((d, i) => `
     <div class="row g-3">
       <div class="col-md-4">
         <small class="text-muted d-block"><i class="fas fa-user me-1"></i> Customer</small>
-        <strong>${d.first_name} ${d.last_name}</strong>
-        ${d.phone ? '<br><a href="tel:' + d.phone + '" class="text-decoration-none"><i class="fas fa-phone me-1"></i>' + d.phone + '</a>' : ''}
+        <strong>${esc(d.first_name)} ${esc(d.last_name)}</strong>
+        ${d.phone ? '<br><a href="tel:' + d.phone + '" class="text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(d.phone) + '</a>' : ''}
       </div>
       <div class="col-md-4">
         <small class="text-muted d-block"><i class="fas fa-map-marker-alt me-1"></i> Address</small>
-        <strong>${d.delivery_address || 'No address'}</strong>
-        ${d.delivery_city ? '<br>' + d.delivery_city : ''}${d.delivery_zip ? ', ' + d.delivery_zip : ''}
+        <strong>${esc(d.delivery_address) || 'No address'}</strong>
+        ${d.delivery_city ? '<br>' + esc(d.delivery_city) : ''}${d.delivery_zip ? ', ' + esc(d.delivery_zip) : ''}
       </div>
       <div class="col-md-4">
         <small class="text-muted d-block"><i class="fas fa-clock me-1"></i> Setup Time</small>
@@ -41,13 +41,13 @@ ${deliveries.length > 0 ? deliveries.map((d, i) => `
       <div class="col-12">
         <small class="text-muted d-block"><i class="fas fa-castle me-1"></i> Items</small>
         <div class="d-flex flex-wrap gap-2 mt-1">
-          ${d.items ? d.items.split(', ').map(function(name) { return '<span class="badge bg-light text-dark border">' + name + '</span>'; }).join('') : '<span class="text-muted">No items listed</span>'}
+          ${d.items ? d.items.split(', ').map(function(name) { return '<span class="badge bg-light text-dark border">' + esc(name) + '</span>'; }).join('') : '<span class="text-muted">No items listed</span>'}
         </div>
       </div>
       ${d.delivery_notes ? `
       <div class="col-12">
         <small class="text-muted d-block"><i class="fas fa-sticky-note me-1"></i> Delivery Notes</small>
-        <div class="alert alert-warning py-2 mb-0 mt-1">${d.delivery_notes}</div>
+        <div class="alert alert-warning py-2 mb-0 mt-1">${esc(d.delivery_notes)}</div>
       </div>
       ` : ''}
     </div>

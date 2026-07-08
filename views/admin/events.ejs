@@ -76,9 +76,9 @@
         ${events.length === 0 ? '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-calendar-times me-2"></i>No events yet</td></tr>' : ''}
         ${events.map(function(e) {
           return '<tr style="cursor:pointer" data-row-href="/admin/events/' + e.id + '">' +
-            '<td class="rt-primary" style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + e.name + '</a></td>' +
+            '<td class="rt-primary" style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + esc(e.name) + '</a></td>' +
             '<td data-label="Date">' + e.event_date + '</td>' +
-            '<td data-label="Location">' + (e.location || '-') + '</td>' +
+            '<td data-label="Location">' + esc(e.location || '-') + '</td>' +
             '<td data-label="Price/Kid"><strong>$' + parseFloat(e.price_per_kid).toFixed(0) + '</strong></td>' +
             '<td data-label="Kids">' + (e.total_kids || 0) + '</td>' +
             '<td data-label="Revenue"><strong>$' + (e.total_revenue || 0).toFixed(2) + '</strong></td>' +
@@ -91,9 +91,9 @@
               '</form>' +
               '<button class="btn btn-sm btn-outline-primary rounded-pill btn-edit-event me-1" title="Edit" ' +
                 'data-id="' + e.id + '" ' +
-                'data-name="' + e.name.replace(/"/g, '&quot;') + '" ' +
+                'data-name="' + esc(e.name) + '" ' +
                 'data-date="' + e.event_date + '" ' +
-                'data-location="' + (e.location||'').replace(/"/g, '&quot;') + '" ' +
+                'data-location="' + esc(e.location||'') + '" ' +
                 'data-price="' + parseFloat(e.price_per_kid) + '" ' +
                 'data-allow-card="' + (e.allow_card ? '1' : '0') + '" ' +
                 'data-allow-cash="' + (e.allow_cash ? '1' : '0') + '" ' +
@@ -101,7 +101,7 @@
                 'data-bs-toggle="modal" data-bs-target="#editEventModal">' +
                 '<i class="fas fa-pencil-alt"></i>' +
               '</button>' +
-              '<form method="POST" action="/admin/events/' + e.id + '/delete" style="display:inline" onsubmit="return confirm(\'Delete ' + e.name.replace(/'/g, "\\'") + '? This cannot be undone.\');">' +
+              '<form method="POST" action="/admin/events/' + e.id + '/delete" style="display:inline" onsubmit="return confirm(\'Delete ' + e.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;') + '? This cannot be undone.\');">' +
                 '<button class="btn btn-sm btn-outline-danger rounded-pill" title="Delete">' +
                   '<i class="fas fa-trash"></i>' +
                 '</button>' +

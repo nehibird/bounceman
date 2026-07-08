@@ -17,10 +17,10 @@
         ${threads.length ? threads.map(t => `
         <a href="/admin/messages?to=${encodeURIComponent(t.number)}" class="list-group-item list-group-item-action ${t.number === active ? 'active' : ''}">
           <div class="d-flex justify-content-between align-items-center">
-            <strong>${t.name || t.display}</strong>
+            <strong>${esc(t.name || t.display)}</strong>
             ${t.unread ? '<span class="badge bg-danger rounded-pill">new</span>' : ''}
           </div>
-          <small class="${t.number === active ? '' : 'text-muted'} d-block text-truncate">${t.name ? t.display + ' · ' : ''}${(t.messages[t.messages.length - 1] || {}).body || ''}</small>
+          <small class="${t.number === active ? '' : 'text-muted'} d-block text-truncate">${t.name ? esc(t.display) + ' · ' : ''}${esc((t.messages[t.messages.length - 1] || {}).body || '')}</small>
         </a>`).join('') : '<div class="p-4 text-muted text-center">No texts yet.<br><small>Inbound texts to 580-308-9288 will appear here.</small></div>'}
       </div>
     </div>
@@ -30,7 +30,7 @@
     <a href="/admin/messages" class="btn btn-sm btn-outline-secondary d-md-none mb-2"><i class="fas fa-arrow-left me-1"></i>Back to conversations</a>
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <div><strong>${activeThread.name || activeThread.display}</strong> ${activeThread.name ? '<small class="text-muted ms-1">' + activeThread.display + '</small>' : ''}</div>
+        <div><strong>${esc(activeThread.name || activeThread.display)}</strong> ${activeThread.name ? '<small class="text-muted ms-1">' + esc(activeThread.display) + '</small>' : ''}</div>
         <div class="d-flex gap-2">
           ${sarahEnabled ? `<form method="POST" action="/admin/messages/${threadPaused ? 'resume' : 'pause'}" class="m-0"><input type="hidden" name="to" value="${activeThread.number}"><button class="btn btn-sm ${threadPaused ? 'btn-outline-secondary' : 'btn-success'}" type="submit" title="${threadPaused ? 'Sarah is paused here — click to let her reply' : 'Sarah is auto-replying — click to take over'}"><i class="fas fa-robot me-1"></i>${threadPaused ? 'Sarah off' : 'Sarah on'}</button></form>` : ''}
           <button class="btn btn-sm btn-outline-success call-btn" data-phone="${activeThread.number}"><i class="fas fa-phone-alt me-1"></i>Call</button>
@@ -41,7 +41,7 @@
         ${activeThread.messages.map(m => `
         <div class="d-flex mb-2 ${m.direction === 'outbound' ? 'justify-content-end' : 'justify-content-start'}">
           <div class="p-2 px-3 rounded-3 shadow-sm" style="max-width:75%;${m.direction === 'outbound' ? 'background:#0d6efd;color:#fff' : 'background:#fff;border:1px solid #dee2e6'}">
-            <div style="white-space:pre-wrap;word-break:break-word">${m.body || ''}</div>
+            <div style="white-space:pre-wrap;word-break:break-word">${esc(m.body || '')}</div>
             <small class="${m.direction === 'outbound' ? 'text-white-50' : 'text-muted'} d-block mt-1" style="font-size:11px">${m.when || ''}</small>
           </div>
         </div>`).join('')}

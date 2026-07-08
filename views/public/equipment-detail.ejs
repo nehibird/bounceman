@@ -1,5 +1,69 @@
 <%- include('../layouts/public', { body: `
 
+${(function() {
+  var baseUrl = 'https://bouncemanrentals.com';
+  var escJson = function(obj) { return JSON.stringify(obj).replace(/</g, '\\u003c'); };
+  var stripHtml = function(html) { return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(); };
+
+  var primaryImage = images.find(function(i) { return i.is_primary; }) || images[0];
+  var imageUrl = primaryImage ? baseUrl + primaryImage.image_path : baseUrl + '/assets/images/placeholder-bounce.svg';
+  var price = item.price_daily || item.price_4hr || 0;
+
+  var productSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: item.name,
+    description: stripHtml(item.description) || item.short_description || item.name,
+    image: imageUrl,
+    sku: item.id,
+    category: (item.category || '').replace(/_/g, ' '),
+    brand: { '@type': 'Brand', name: 'Bounce Man Rentals' },
+    offers: {
+      '@type': 'Offer',
+      url: baseUrl + '/equipment/' + item.slug,
+      priceCurrency: 'USD',
+      price: parseFloat(price).toFixed(2),
+      availability: item.status === 'available' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      itemCondition: 'https://schema.org/NewCondition'
+    }
+  };
+
+  if (reviews && reviews.length > 0) {
+    var totalRating = 0;
+    for (var i = 0; i < reviews.length; i++) totalRating += reviews[i].rating;
+    var avgRating = totalRating / reviews.length;
+    productSchema.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: avgRating.toFixed(1),
+      reviewCount: reviews.length,
+      bestRating: 5,
+      worstRating: 1
+    };
+    productSchema.review = reviews.slice(0, 5).map(function(r) {
+      return {
+        '@type': 'Review',
+        author: { '@type': 'Person', name: r.customer_name || 'Happy Customer' },
+        reviewRating: { '@type': 'Rating', ratingValue: r.rating, bestRating: 5, worstRating: 1 },
+        reviewBody: r.comment || '',
+        datePublished: r.created_at || undefined
+      };
+    });
+  }
+
+  var breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: baseUrl + '/' },
+      { '@type': 'ListItem', position: 2, name: 'Equipment', item: baseUrl + '/equipment' },
+      { '@type': 'ListItem', position: 3, name: item.name, item: baseUrl + '/equipment/' + item.slug }
+    ]
+  };
+
+  return '<script type="application/ld+json">' + escJson(productSchema) + '</script>' +
+         '<script type="application/ld+json">' + escJson(breadcrumbSchema) + '</script>';
+})()}
+
 <!-- Breadcrumb -->
 <section class="py-3" style="background:white;border-bottom:1px solid #eee">
   <div class="container">

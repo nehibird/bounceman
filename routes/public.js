@@ -100,9 +100,13 @@ router.get('/equipment/:slug', (req, res) => {
     ORDER BY r.created_at DESC LIMIT 5
   `).all(item.id);
 
+  const primaryImage = (images.find(im => im.is_primary) || images[0] || {}).image_path;
+
   res.render('public/equipment-detail', {
-    title: `${item.name} - Bounce Man Rentals`,
+    title: `${item.name} Rental in Kay County, OK | Bounce Man`,
+    metaDescription: `Rent ${item.name} from Bounce Man${item.short_description ? ' — ' + item.short_description : ''}. Serving Tonkawa, Ponca City & Kay County, OK. From $${parseFloat(item.price_daily || 0).toFixed(0)}/day with free local delivery. Book online.`,
     canonicalPath: '/equipment/' + req.params.slug,
+    ogImage: primaryImage || undefined,
     settings,
     item,
     images,
@@ -118,13 +122,21 @@ router.get('/packages', (req, res) => {
   const settings = getSettings();
   const packages = db.prepare(`
     SELECT p.*,
-      GROUP_CONCAT(e.name, ', ') as items_list
+      GROUP_CONCAT(e.name, ', ') as items_list,
+      GROUP_CONCAT(e.id) as item_ids,
+      SUM(e.price_daily) as regular_total
     FROM packages p
     LEFT JOIN package_items pi ON pi.package_id = p.id
     LEFT JOIN equipment e ON e.id = pi.equipment_id
     WHERE p.active = 1
     GROUP BY p.id
+    ORDER BY p.price
   `).all();
+  packages.forEach(p => {
+    const regular = parseFloat(p.regular_total || 0);
+    p.regular = regular;
+    p.savings = regular > p.price ? Math.round(regular - p.price) : 0;
+  });
 
   res.render('public/packages', {
     title: 'Rental Packages & Pricing | Bounce Man | Tonkawa OK',
@@ -240,7 +252,7 @@ router.get('/reviews', (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const reviews = db.prepare('SELECT * FROM reviews WHERE approved = 1 ORDER BY created_at DESC').all();
-  res.render('public/reviews', { title: 'Reviews - Bounce Man Rentals', canonicalPath: '/reviews', settings, reviews, page: 'reviews' });
+  res.render('public/reviews', { title: 'Customer Reviews - Bounce Man Rentals | Tonkawa & Kay County OK', metaDescription: 'Read real reviews from Bounce Man Rentals customers across Tonkawa, Ponca City and Kay County, OK. See why families trust us for clean, safe bounce house and water slide rentals.', canonicalPath: '/reviews', settings, reviews, page: 'reviews' });
 });
 
 // Submit review
@@ -307,13 +319,13 @@ router.get('/service-areas', (req, res) => {
 // Privacy Policy
 router.get('/privacy', (req, res) => {
   const settings = getSettings();
-  res.render('public/privacy', { title: 'Privacy Policy - Bounce Man Rentals', settings, page: 'privacy' });
+  res.render('public/privacy', { title: 'Privacy Policy - Bounce Man Rentals', canonicalPath: '/privacy', settings, page: 'privacy' });
 });
 
 // Terms and Conditions
 router.get('/terms', (req, res) => {
   const settings = getSettings();
-  res.render('public/terms', { title: 'Terms & Conditions - Bounce Man Rentals', settings, page: 'terms' });
+  res.render('public/terms', { title: 'Terms & Conditions - Bounce Man Rentals', canonicalPath: '/terms', settings, page: 'terms' });
 });
 
 // Digital contract signing

@@ -37,15 +37,15 @@
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Event Type</small>
-            <strong>${booking.event_type || 'N/A'}</strong>
+            <strong>${esc(booking.event_type) || 'N/A'}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Venue / Location</small>
-            <strong>${booking.venue_type || 'N/A'}</strong>
+            <strong>${esc(booking.venue_type) || 'N/A'}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Surface Type</small>
-            <strong>${booking.surface_type || 'N/A'}</strong>
+            <strong>${esc(booking.surface_type) || 'N/A'}</strong>
           </div>
         </div>
       </div>
@@ -58,14 +58,14 @@
         <div class="row g-3">
           <div class="col-sm-8">
             <small class="text-muted d-block">Delivery Address</small>
-            <strong>${booking.delivery_address || ''}</strong>
-            ${booking.delivery_city ? ', ' + booking.delivery_city : ''}
-            ${booking.delivery_state ? ', ' + booking.delivery_state : ''}
-            ${booking.delivery_zip || ''}
+            <strong>${esc(booking.delivery_address)}</strong>
+            ${booking.delivery_city ? ', ' + esc(booking.delivery_city) : ''}
+            ${booking.delivery_state ? ', ' + esc(booking.delivery_state) : ''}
+            ${esc(booking.delivery_zip)}
           </div>
           <div class="col-12">
             <small class="text-muted d-block">Delivery Notes</small>
-            <span>${booking.delivery_notes || 'None'}</span>
+            <span>${esc(booking.delivery_notes) || 'None'}</span>
           </div>
         </div>
       </div>
@@ -84,8 +84,8 @@
                 <td class="rt-hide" style="width:60px">
                   ${item.image ? '<img src="' + item.image + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px">' : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;display:flex;align-items:center;justify-content:center"><i class="fas fa-image text-muted"></i></div>'}
                 </td>
-                <td class="rt-primary"><strong>${item.item_name}</strong></td>
-                <td class="d-none d-md-table-cell">${item.category || ''}</td>
+                <td class="rt-primary"><strong>${esc(item.item_name)}</strong></td>
+                <td class="d-none d-md-table-cell">${esc(item.category)}</td>
                 <td data-label="Unit Price">$${parseFloat(item.unit_price || 0).toFixed(2)}</td>
                 <td data-label="Total">$${parseFloat(item.total_price || 0).toFixed(2)}</td>
               </tr>
@@ -101,7 +101,7 @@
       <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Internal Notes</div>
       <div class="card-body">
         <form method="POST" action="/admin/bookings/${booking.id}/notes">
-          <textarea name="internal_notes" class="form-control mb-2" rows="3" placeholder="Add internal notes...">${booking.internal_notes || ''}</textarea>
+          <textarea name="internal_notes" class="form-control mb-2" rows="3" placeholder="Add internal notes...">${esc(booking.internal_notes)}</textarea>
           <button type="submit" class="btn btn-sm btn-bm"><i class="fas fa-save me-1"></i> Save Notes</button>
         </form>
       </div>
@@ -116,11 +116,11 @@
             <div class="d-flex justify-content-between">
               <strong>
                 <i class="fas fa-${c.direction === 'outbound' ? 'paper-plane text-primary' : 'inbox text-success'} me-1"></i>
-                ${c.subject || c.type || 'Message'}
+                ${esc(c.subject || c.type || 'Message')}
               </strong>
               <small class="text-muted">${c.sent_at || c.created_at || ''}</small>
             </div>
-            <p class="mb-0 mt-1 small">${(c.body || '').substring(0, 200)}${(c.body || '').length > 200 ? '...' : ''}</p>
+            <p class="mb-0 mt-1 small">${esc((c.body || '').substring(0, 200))}${(c.body || '').length > 200 ? '...' : ''}</p>
           </div>
         `).join('') + '</div>' : '<div class="text-center text-muted py-3">No communications yet</div>'}
       </div>
@@ -135,11 +135,11 @@
     <div class="card mb-4">
       <div class="card-header"><i class="fas fa-user me-2"></i>Customer</div>
       <div class="card-body">
-        <h6 class="mb-2">${booking.first_name} ${booking.last_name}</h6>
-        <div class="mb-1"><i class="fas fa-envelope text-muted me-2"></i>${booking.email || 'N/A'}</div>
+        <h6 class="mb-2">${esc(booking.first_name)} ${esc(booking.last_name)}</h6>
+        <div class="mb-1"><i class="fas fa-envelope text-muted me-2"></i>${esc(booking.email) || 'N/A'}</div>
         <div class="mb-1 d-flex align-items-center gap-2">
           <i class="fas fa-phone text-muted"></i>
-          <span>${booking.phone || 'N/A'}</span>
+          <span>${esc(booking.phone) || 'N/A'}</span>
           ${booking.phone ? '<button class="btn btn-sm btn-outline-success rounded-pill py-0 px-2 call-btn" data-phone="' + booking.phone + '" title="Click to call"><i class="fas fa-phone-alt me-1"></i>Call</button>' : ''}
         </div>
         ${booking.customer_id ? '<a href="/admin/customers/' + booking.customer_id + '" class="btn btn-sm btn-outline-secondary mt-2"><i class="fas fa-external-link-alt me-1"></i> View Customer</a>' : ''}
@@ -196,7 +196,7 @@
       <div class="card-header"><i class="fas fa-hard-hat me-2"></i>Crew Assignment</div>
       <div class="card-body">
         <form method="POST" action="/admin/bookings/${booking.id}/crew">
-          <input type="text" name="crew_assigned" class="form-control mb-2" placeholder="Crew member names" value="${booking.crew_assigned || ''}">
+          <input type="text" name="crew_assigned" class="form-control mb-2" placeholder="Crew member names" value="${esc(booking.crew_assigned)}">
           <button type="submit" class="btn btn-sm btn-bm-outline w-100"><i class="fas fa-save me-1"></i> Assign Crew</button>
         </form>
       </div>
@@ -261,7 +261,7 @@
           <div class="list-group-item d-flex justify-content-between align-items-center">
             <div>
               <strong>$${parseFloat(p.amount || 0).toFixed(2)}</strong>
-              <small class="text-muted d-block">${p.payment_method || ''} ${p.stripe_payment_id ? '(' + p.stripe_payment_id + ')' : ''}</small>
+              <small class="text-muted d-block">${esc(p.payment_method)} ${p.stripe_payment_id ? '(' + esc(p.stripe_payment_id) + ')' : ''}</small>
             </div>
             <small class="text-muted">${p.created_at || ''}</small>
           </div>

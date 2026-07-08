@@ -1,5 +1,45 @@
 <%- include('../layouts/public', { body: `
 
+${(function() {
+  var escJson = function(obj) { return JSON.stringify(obj).replace(/</g, '\\u003c'); };
+  var list = reviews || [];
+  var count = list.length;
+  var avg = 0;
+  if (count > 0) {
+    var total = 0;
+    for (var i = 0; i < count; i++) total += list[i].rating;
+    avg = total / count;
+  }
+
+  var schema = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: 'Bounce Man Rentals',
+    url: 'https://bouncemanrentals.com'
+  };
+
+  if (count > 0) {
+    schema.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: avg.toFixed(1),
+      reviewCount: count,
+      bestRating: 5,
+      worstRating: 1
+    };
+    schema.review = list.slice(0, 10).map(function(r) {
+      return {
+        '@type': 'Review',
+        author: { '@type': 'Person', name: r.customer_name || 'Happy Customer' },
+        reviewRating: { '@type': 'Rating', ratingValue: r.rating, bestRating: 5, worstRating: 1 },
+        reviewBody: r.comment || '',
+        datePublished: r.created_at || undefined
+      };
+    });
+  }
+
+  return '<script type="application/ld+json">' + escJson(schema) + '</script>';
+})()}
+
 <!-- Reviews Hero -->
 <section class="hero-section" style="padding:60px 0">
   <div class="container">

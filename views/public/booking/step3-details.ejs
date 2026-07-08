@@ -70,19 +70,19 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">First Name *</label>
-                <input type="text" class="form-control" name="first_name" required placeholder="John">
+                <input type="text" class="form-control" name="first_name" autocomplete="given-name" required placeholder="John">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Last Name *</label>
-                <input type="text" class="form-control" name="last_name" required placeholder="Smith">
+                <input type="text" class="form-control" name="last_name" autocomplete="family-name" required placeholder="Smith">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Email *</label>
-                <input type="email" class="form-control" name="email" required placeholder="john@example.com">
+                <input type="email" class="form-control" name="email" autocomplete="email" required placeholder="john@example.com">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Phone *</label>
-                <input type="tel" class="form-control" name="phone" required placeholder="(580) 555-0123">
+                <input type="tel" class="form-control" name="phone" autocomplete="tel" inputmode="tel" required placeholder="(580) 555-0123">
               </div>
             </div>
           </div>
@@ -93,15 +93,15 @@
             <div class="row g-3">
               <div class="col-12">
                 <label class="form-label">Delivery Address *</label>
-                <input type="text" class="form-control" name="delivery_address" required placeholder="123 Main Street">
+                <input type="text" class="form-control" name="delivery_address" autocomplete="street-address" required placeholder="123 Main Street">
               </div>
               <div class="col-md-6">
                 <label class="form-label">City *</label>
-                <input type="text" class="form-control" name="delivery_city" required placeholder="Tonkawa">
+                <input type="text" class="form-control" name="delivery_city" autocomplete="address-level2" required placeholder="Tonkawa">
               </div>
               <div class="col-md-6">
                 <label class="form-label">ZIP Code *</label>
-                <input type="text" class="form-control" name="delivery_zip" required placeholder="74653" maxlength="10" id="zipInput">
+                <input type="text" class="form-control" name="delivery_zip" autocomplete="postal-code" inputmode="numeric" pattern="[0-9]*" required placeholder="74653" maxlength="10" id="zipInput">
                 <div id="zipResult" style="margin-top:6px;font-size:13px;display:none"></div>
               </div>
               <div class="col-12">

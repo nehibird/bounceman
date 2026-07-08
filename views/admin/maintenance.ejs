@@ -76,15 +76,15 @@
           ${logs.length > 0 ? logs.map(log => `
           <tr>
             <td data-label="Date"><small>${log.performed_at || ''}</small></td>
-            <td class="rt-primary">${log.equipment_name || 'Equipment #' + (log.equipment_id || '?')}</td>
+            <td class="rt-primary">${log.equipment_name ? esc(log.equipment_name) : 'Equipment #' + (log.equipment_id || '?')}</td>
             <td data-label="Type">
               <span class="badge bg-${log.type === 'repair' ? 'danger' : log.type === 'inspection' ? 'info' : log.type === 'cleaning' ? 'success' : log.type === 'replacement' ? 'warning text-dark' : 'secondary'}">
                 ${log.type || 'N/A'}
               </span>
             </td>
-            <td data-label="Description">${log.description || ''}</td>
+            <td data-label="Description">${esc(log.description)}</td>
             <td data-label="Cost">${log.cost ? '$' + parseFloat(log.cost).toFixed(2) : '-'}</td>
-            <td data-label="Performed By">${log.performed_by || ''}</td>
+            <td data-label="Performed By">${esc(log.performed_by)}</td>
             <td data-label="Next Due">
               ${log.next_due ? `
                 <span class="${new Date(log.next_due) < new Date() ? 'text-danger fw-bold' : ''}">

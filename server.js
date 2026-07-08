@@ -21,6 +21,13 @@ const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 3200;
 
+// Make the HTML-escape helper available inside every EJS template (in scope via
+// app.locals, same as other bare locals like `settings`) without touching every
+// render() call. CRITICAL for admin views that interpolate user-controlled text
+// (customer fields, inbound SMS bodies, review comments) via `<%- %>` + template
+// literals, which do not auto-escape.
+app.locals.esc = require('./lib/helpers').esc;
+
 // Security — HIGH-3: Real CSP, MED-7: HSTS max-age
 app.use(helmet({
   contentSecurityPolicy: {

@@ -21,7 +21,7 @@ ${reviews.length > 0 ? reviews.map(r => `
           ${Array.from({length: 5}, (_, i) => i < (r.rating || 0) ? '<i class="fas fa-star text-warning"></i>' : '<i class="far fa-star text-muted"></i>').join('')}
           <span class="ms-2 fw-bold">${r.rating || 0}/5</span>
         </div>
-        <h6 class="mb-0">${r.customer_name || 'Anonymous'}</h6>
+        <h6 class="mb-0">${esc(r.customer_name) || 'Anonymous'}</h6>
         ${r.booking_number ? '<small class="text-muted">Booking #' + r.booking_number + '</small>' : ''}
       </div>
       <div class="text-end">
@@ -32,12 +32,12 @@ ${reviews.length > 0 ? reviews.map(r => `
       </div>
     </div>
 
-    <p class="mb-3">${r.comment || 'No comment'}</p>
+    <p class="mb-3">${esc(r.comment) || 'No comment'}</p>
 
     ${r.response ? `
     <div class="bg-light rounded p-3 mb-3">
       <small class="text-muted d-block mb-1"><i class="fas fa-reply me-1"></i> Your Response</small>
-      <p class="mb-0">${r.response}</p>
+      <p class="mb-0">${esc(r.response)}</p>
     </div>
     ` : ''}
 
@@ -63,7 +63,7 @@ ${reviews.length > 0 ? reviews.map(r => `
 
     <div class="collapse mt-3" id="respond-${r.id}">
       <form method="POST" action="/admin/reviews/${r.id}/respond">
-        <textarea name="response" class="form-control mb-2" rows="3" placeholder="Write your response...">${r.response || ''}</textarea>
+        <textarea name="response" class="form-control mb-2" rows="3" placeholder="Write your response...">${esc(r.response)}</textarea>
         <button type="submit" class="btn btn-sm btn-bm"><i class="fas fa-paper-plane me-1"></i> Submit Response</button>
       </form>
     </div>

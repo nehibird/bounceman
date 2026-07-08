@@ -71,7 +71,8 @@
   }
 
   @media (max-width: 991px) {
-    .sticky-summary { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); }
+    #selectionSummary.has-items { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001; margin: 0; border-radius: 16px 16px 0 0; max-height: 42vh; overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,.15); }
+    body.has-sticky-summary { padding-bottom: 40vh; }
   }
 </style>
 
@@ -469,6 +470,12 @@
     var wetWarnEl = document.getElementById('wetChoiceWarn');
     var wetWarnTextEl = document.getElementById('wetChoiceWarnText');
     var subtotal = 0;
+
+    var summaryEl = document.getElementById('selectionSummary');
+    if (summaryEl) {
+      summaryEl.classList.toggle('has-items', keys.length > 0);
+      document.body.classList.toggle('has-sticky-summary', keys.length > 0);
+    }
 
     listEl.innerHTML = '';
     if (keys.length === 0) {

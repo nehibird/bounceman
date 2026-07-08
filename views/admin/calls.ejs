@@ -25,9 +25,9 @@
           <tr>
             <td data-label="When"><small>${c.when || ''}</small></td>
             <td class="rt-primary">${c.caller_number || ''}</td>
-            <td data-label="Customer">${c.customer_name ? c.customer_name : '<span class="text-muted">—</span>'}</td>
+            <td data-label="Customer">${c.customer_name ? esc(c.customer_name) : '<span class="text-muted">—</span>'}</td>
             <td data-label="Status">${c.block_reason
-              ? '<span class="badge bg-danger" title="' + c.block_reason + '"><i class="fas fa-ban me-1"></i>Blocked</span>'
+              ? '<span class="badge bg-danger" title="' + esc(c.block_reason) + '"><i class="fas fa-ban me-1"></i>Blocked</span>'
               : '<span class="badge bg-success"><i class="fas fa-phone-alt me-1"></i>' + (c.status || 'received') + '</span>'}</td>
             <td class="rt-actions">
               ${c.caller_number ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + c.caller_number + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}

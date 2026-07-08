@@ -166,14 +166,24 @@ async function releaseExpiredHolds() {
             text: ':hourglass_flowing_sand: *Hold released — unit freed*\n*' + b.first_name + ' ' + (b.last_name || '') + '* never paid the deposit (held ' + Math.round(b.age_hours) + 'h).\n' + (items || 'items') + ' · ' + fmtDate(b.event_date) + '\nBooking `' + b.booking_number + '` set to cancelled; the equipment is available again.' } }]
         });
       } catch (e) { console.error('[HOLD] release notify failed:', e.message); }
-    } else if (b.age_hours >= HOLD_REMIND_HOURS && !b.hold_reminder_sent && b.phone) {
+    } else if (b.age_hours >= HOLD_REMIND_HOURS && !b.hold_reminder_sent && (b.phone || b.email)) {
       db.prepare('UPDATE bookings SET hold_reminder_sent = 1 WHERE id = ?').run(b.id);
       reminded++;
-      try {
-        const deposit = parseFloat(b.deposit_amount || 0).toFixed(2);
-        await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`);
-        console.log('[HOLD] Last-chance reminder sent', b.booking_number);
-      } catch (e) { console.error('[HOLD] reminder failed:', e.message); }
+      const deposit = parseFloat(b.deposit_amount || 0).toFixed(2);
+      // Last-chance reminder on BOTH channels we have — a text is easy to miss,
+      // and we already have their email on file, so back it up.
+      if (b.phone) {
+        try {
+          await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`);
+          console.log('[HOLD] Last-chance SMS sent', b.booking_number);
+        } catch (e) { console.error('[HOLD] reminder SMS failed:', e.message); }
+      }
+      if (b.email) {
+        try {
+          await emailService.sendDepositLink(b, b, link);
+          console.log('[HOLD] Last-chance email sent', b.booking_number);
+        } catch (e) { console.error('[HOLD] reminder email failed:', e.message); }
+      }
     }
   }
   if (released || reminded) console.log(`[HOLD] ${released} released, ${reminded} reminded`);

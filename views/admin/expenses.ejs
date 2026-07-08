@@ -201,11 +201,11 @@ ${totals.length > 0 ? `
           <tr>
             <td class="rt-primary"><strong>${e.date}</strong></td>
             <td data-label="Category"><span class="badge bg-secondary text-capitalize">${(e.category||'').replace(/_/g,' ')}</span></td>
-            <td data-label="Vendor">${e.vendor || '<span class="text-muted">—</span>'}</td>
-            <td data-label="Description">${e.description}</td>
+            <td data-label="Vendor">${e.vendor ? esc(e.vendor) : '<span class="text-muted">—</span>'}</td>
+            <td data-label="Description">${esc(e.description)}</td>
             <td data-label="Amount" class="fw-semibold text-danger">$${parseFloat(e.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
             <td class="d-none d-md-table-cell"><small class="text-muted text-capitalize">${(e.payment_method||'').replace(/_/g,' ')}</small></td>
-            <td class="d-none d-md-table-cell"><small class="text-muted">${e.notes || ''}</small></td>
+            <td class="d-none d-md-table-cell"><small class="text-muted">${esc(e.notes)}</small></td>
             <td class="rt-actions" data-label="Reimburse">
               ${e.reimbursable ? (e.reimbursed
                 ? `<span class="badge bg-success">Reimbursed</span>${e.reimbursed_date ? `<div class="text-muted small">${e.reimbursed_date}</div>` : ''}
@@ -234,8 +234,8 @@ ${totals.length > 0 ? `
                       ${['equipment','insurance','storage','marketing','software','legal','supplies','fuel','labor','other'].map(c=>`<option value="${c}" ${e.category===c?'selected':''}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')}
                     </select>
                   </div>
-                  <div class="col-md-2"><input type="text" name="vendor" class="form-control form-control-sm" value="${e.vendor||''}" placeholder="Vendor"></div>
-                  <div class="col-md-3"><input type="text" name="description" class="form-control form-control-sm" value="${e.description}" required></div>
+                  <div class="col-md-2"><input type="text" name="vendor" class="form-control form-control-sm" value="${esc(e.vendor)}" placeholder="Vendor"></div>
+                  <div class="col-md-3"><input type="text" name="description" class="form-control form-control-sm" value="${esc(e.description)}" required></div>
                   <div class="col-md-1"><input type="number" name="amount" class="form-control form-control-sm" step="0.01" value="${e.amount}" required></div>
                   <div class="col-md-1">
                     <select name="payment_method" class="form-select form-select-sm">
@@ -247,7 +247,7 @@ ${totals.length > 0 ? `
                   </div>
                 </div>
                 <div class="row g-2 mt-1">
-                  <div class="col-md-4"><input type="text" name="notes" class="form-control form-control-sm" value="${e.notes||''}" placeholder="Notes"></div>
+                  <div class="col-md-4"><input type="text" name="notes" class="form-control form-control-sm" value="${esc(e.notes)}" placeholder="Notes"></div>
                 </div>
               </form>
             </td>

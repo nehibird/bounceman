@@ -30,7 +30,7 @@
       <a href="/admin/bookings?status=cancelled${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'cancelled' ? 'btn-bm' : 'btn-bm-outline'}">Cancelled</a>
     </div>
     <div class="ms-auto">
-      <input type="date" class="form-control form-control-sm" value="${activeDate || ''}" id="dateFilter" data-status="${activeStatus || ''}">
+      <input type="date" class="form-control form-control-sm" value="${esc(activeDate)}" id="dateFilter" data-status="${esc(activeStatus)}">
     </div>
   </div>
 </div>
@@ -59,8 +59,8 @@
             <td class="rt-hide"><input type="checkbox" class="form-check-input rowCb" value="${b.id}" data-num="${b.booking_number}"></td>
             <td class="rt-primary"><strong>${b.booking_number}</strong></td>
             <td data-label="Customer">
-              <div>${b.first_name} ${b.last_name}</div>
-              <small class="text-muted">${b.email || ''}</small>
+              <div>${esc(b.first_name)} ${esc(b.last_name)}</div>
+              <small class="text-muted">${esc(b.email)}</small>
             </td>
             <td data-label="Date">${b.event_date}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
             <td data-label="Time">${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>

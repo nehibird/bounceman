@@ -18,8 +18,10 @@
               ${pkg.savings ? '<span class="badge rounded-pill" style="background:var(--bm-green);color:white;font-size:13px;font-weight:700">Save $' + pkg.savings + '!</span>' : ''}
             </div>
 
-            <div class="mb-3">
+            <div class="mb-3 d-flex align-items-baseline flex-wrap gap-2">
               <span class="price-tag" style="font-size:28px">$${parseFloat(pkg.price).toFixed(0)}</span>
+              ${pkg.regular && pkg.regular > pkg.price ? '<span class="text-muted" style="text-decoration:line-through;font-size:18px">$' + parseFloat(pkg.regular).toFixed(0) + '</span>' : ''}
+              <span class="text-muted" style="font-size:14px">/ day</span>
             </div>
 
             ${pkg.description ? '<p class="text-muted mb-3" style="line-height:1.6">' + pkg.description + '</p>' : ''}
@@ -33,7 +35,7 @@
           </div>
 
           <div class="p-4 pt-0">
-            <a href="/booking?package=${pkg.id}" class="btn btn-book-now w-100">
+            <a href="/booking?preselect=${pkg.item_ids || ''}" class="btn btn-book-now w-100">
               <i class="fas fa-calendar-check me-2"></i>Book This Package
             </a>
           </div>
