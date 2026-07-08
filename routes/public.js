@@ -374,16 +374,27 @@ router.post('/contract/:id/sign', (req, res) => {
   const bk = db.prepare('SELECT booking_number, deposit_paid FROM bookings WHERE id = ?').get(contract.booking_id);
   const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
 
-  // Safety net: the instant a contract is signed, also email + text the customer a
-  // deposit link. If the live redirect to Stripe fails on their device (in-app
-  // browsers commonly block it), they still have a working link to finish paying.
+  // Safety net for the rare device (in-app browsers commonly block the Stripe
+  // redirect) where the customer signs but never lands on checkout. We DON'T send
+  // this immediately — almost everyone reaches Stripe and pays within a couple
+  // minutes, and texting "finish your deposit" one second after they sign nags
+  // people who are actively paying. So we wait, then re-check the DB and only
+  // send the link if the deposit is STILL unpaid (and the hold is still alive).
   if (justSigned && bk && !bk.deposit_paid) {
+    const bookingId = contract.booking_id;
+    const customerId = contract.customer_id;
+    const bookingNumber = bk.booking_number;
     const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
-    const link = `${baseUrl}/booking/pay-deposit/${bk.booking_number}`;
+    const link = `${baseUrl}/booking/pay-deposit/${bookingNumber}`;
+    const nudgeDelayMs = (parseInt(process.env.DEPOSIT_NUDGE_DELAY_MIN, 10) || 10) * 60 * 1000;
     setTimeout(async () => {
       try {
-        const cust = db.prepare('SELECT first_name, last_name, email, phone FROM customers WHERE id = ?').get(contract.customer_id);
-        const bkFull = db.prepare('SELECT * FROM bookings WHERE id = ?').get(contract.booking_id);
+        const db2 = getDb();
+        const fresh = db2.prepare('SELECT deposit_paid, status FROM bookings WHERE id = ?').get(bookingId);
+        // Paid in the meantime, or the hold was released — don't nag them.
+        if (!fresh || fresh.deposit_paid || fresh.status === 'cancelled') return;
+        const cust = db2.prepare('SELECT first_name, last_name, email, phone FROM customers WHERE id = ?').get(customerId);
+        const bkFull = db2.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         const deposit = parseFloat(bkFull.deposit_amount || 0).toFixed(2);
         if (cust && cust.email) {
           await require('../services/email').sendDepositLink(bkFull, cust, link).catch(e => console.error('[CONTRACT] deposit email failed:', e.message));
@@ -393,7 +404,7 @@ router.post('/contract/:id/sign', (req, res) => {
           await require('../services/sms').sendSms(cust.phone, msg).catch(e => console.error('[CONTRACT] deposit SMS failed:', e.message));
         }
       } catch (e) { console.error('[CONTRACT] deposit link send failed:', e.message); }
-    }, 0);
+    }, nudgeDelayMs);
   }
 
   if (wantsJson) {
