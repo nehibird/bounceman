@@ -842,11 +842,15 @@ function initialize() {
     );
   `);
 
-  // Fix the broken Portable Generator image: it points at generator-1.jpg, which was
-  // never uploaded (renders a broken-image icon). Swap to the placeholder until a real
-  // photo is added, and drop duplicate (equipment, path) image rows. Idempotent.
+  // Fix the Portable Generator image. Its DB rows pointed at generator-1.jpg, but the
+  // actual committed photo is generator.avif (generator-1.jpg never existed → broken
+  // image). Point every generator image row at the real file and drop duplicate
+  // (equipment, path) rows. Idempotent.
   try {
-    d.prepare("UPDATE equipment_images SET image_path = '/assets/images/placeholder-bounce.svg' WHERE image_path = '/assets/images/equipment/generator-1.jpg'").run();
+    const genId = (d.prepare("SELECT id FROM equipment WHERE name = 'Portable Generator'").get() || {}).id;
+    if (genId) {
+      d.prepare("UPDATE equipment_images SET image_path = '/assets/images/equipment/generator.avif' WHERE equipment_id = ?").run(genId);
+    }
     d.prepare('DELETE FROM equipment_images WHERE rowid NOT IN (SELECT MIN(rowid) FROM equipment_images GROUP BY equipment_id, image_path)').run();
   } catch { /* noop */ }
 
