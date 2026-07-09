@@ -163,8 +163,8 @@ function deliveryReminderBody(booking, customer, contractId) {
   }
 
   return `
-<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">Your rental is tomorrow!</td></tr>
-<tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:20px;">Delivery Day</td></tr></table>
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">A friendly reminder — your rental is coming up on ${fmtDate(booking.event_date)}.</td></tr>
+<tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:20px;">Upcoming Delivery</td></tr></table>
 
 <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;">
 <tr><td style="padding:20px;">
@@ -252,7 +252,7 @@ async function sendDeliveryReminder(booking, customer, contractId) {
   await getTransporter().sendMail({
     from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
     to: customer.email,
-    subject: 'Your Bounce Man Delivery is Tomorrow! #' + booking.booking_number,
+    subject: 'Your upcoming Bounce Man rental — ' + fmtDate(booking.event_date) + ' #' + booking.booking_number,
     html: wrap('Delivery Reminder', deliveryReminderBody(booking, customer, contractId)),
   });
   console.log('[EMAIL] Delivery reminder sent to ' + customer.email);
