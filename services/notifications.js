@@ -3,6 +3,7 @@
 const { fmtTime12 } = require('../lib/helpers');
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const BOOKINGS_CHANNEL = process.env.SLACK_NEW_BOOKING_CHANNEL || 'C0AQF8ZAEBE'; // #bookings (not #phonecalls)
+const DELIVERY_CHANNEL = process.env.SLACK_DELIVERY_CHANNEL || 'C0BGDQNJ5SM'; // #deliveries — delivery reminders/cards go here
 
 function fmtDate(d) {
   try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
@@ -200,11 +201,11 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
   // Reflect contract-signed onto the booking object so the builder can read it.
   if (contract && booking.contract_signed == null) booking.contract_signed = contract.signed ? 1 : 0;
   const blocks = buildDeliveryCardBlocks(booking, customer, items);
-  const resp = await postToSlack(BOOKINGS_CHANNEL, blocks, 'Upcoming delivery for ' + customer.first_name + ' - ' + booking.booking_number);
+  const resp = await postToSlack(DELIVERY_CHANNEL, blocks, 'Upcoming delivery for ' + customer.first_name + ' - ' + booking.booking_number);
   // Save this card's ts so its Payment Status can be flipped in place when they pay.
   if (resp && resp.ts) {
     try {
-      require('../db').getDb().prepare('UPDATE bookings SET slack_reminder_ts = ?, slack_reminder_channel = ? WHERE id = ?').run(resp.ts, BOOKINGS_CHANNEL, booking.id);
+      require('../db').getDb().prepare('UPDATE bookings SET slack_reminder_ts = ?, slack_reminder_channel = ? WHERE id = ?').run(resp.ts, DELIVERY_CHANNEL, booking.id);
     } catch (e) { console.error('[SLACK] store reminder ts failed:', e.message); }
   }
   console.log('[SLACK] Delivery reminder sent for', booking.booking_number);
