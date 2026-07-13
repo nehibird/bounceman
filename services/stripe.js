@@ -78,4 +78,36 @@ function constructWebhookEvent(rawBody, signature, secret) {
   return stripe.webhooks.constructEvent(rawBody, signature, secret);
 }
 
-module.exports = { createCheckoutSession, retrieveSession, constructWebhookEvent };
+// Payout summary for the admin finance dashboard — so the owner can see incoming
+// money + recent payouts without logging into Stripe. Cached 5 min (Stripe is a
+// network call); on failure returns the last good value, or null.
+let _payoutCache = { data: null, at: 0 };
+async function getPayoutSummary() {
+  const now = Date.now();
+  if (_payoutCache.data && (now - _payoutCache.at) < 5 * 60 * 1000) return _payoutCache.data;
+  try {
+    const stripe = getStripe();
+    const [bal, payouts, acct] = await Promise.all([
+      stripe.balance.retrieve(),
+      stripe.payouts.list({ limit: 5 }),
+      stripe.accounts.retrieve().catch(() => null),
+    ]);
+    const sum = (arr) => (arr || []).reduce((s, x) => s + (x.amount || 0), 0);
+    const sched = acct && acct.settings && acct.settings.payouts ? acct.settings.payouts.schedule : null;
+    const data = {
+      pendingCents: sum(bal.pending),
+      availableCents: sum(bal.available),
+      recent: (payouts.data || []).map((p) => ({ amountCents: p.amount, date: p.arrival_date * 1000, status: p.status })),
+      interval: sched ? sched.interval : null,
+      delayDays: sched ? sched.delay_days : null,
+      fetchedAt: now,
+    };
+    _payoutCache = { data, at: now };
+    return data;
+  } catch (e) {
+    console.error('[STRIPE] payout summary failed:', e.message);
+    return _payoutCache.data || null;
+  }
+}
+
+module.exports = { createCheckoutSession, retrieveSession, constructWebhookEvent, getPayoutSummary };

@@ -62,9 +62,8 @@
     <div class="card">
       <div class="card-header fw-semibold"><i class="fas fa-university me-2"></i>Bank Accounts</div>
       <div class="card-body">
-        ${bankAccounts && bankAccounts.length ? `
         <div class="row g-3">
-          ${bankAccounts.map(a => {
+          ${(bankAccounts || []).map(a => {
             const isCredit = a.type === 'credit';
             const fmt = (v, d=2) => v == null ? '—' : '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
             const sub = isCredit
@@ -85,7 +84,20 @@
               </div>
             </div>`;
           }).join('')}
-        </div>` : `<div class="text-muted text-center py-3">No bank accounts synced yet — balances will appear here once the bank sync runs.</div>`}
+          ${stripePayouts ? `
+          <div class="col-md-4">
+            <div class="border rounded p-3 h-100" style="border-color:#635bff !important">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <span class="fw-semibold"><i class="fab fa-stripe-s me-1" style="color:#635bff"></i> Stripe Payouts</span>
+                ${stripePayouts.interval ? '<span class="badge bg-light text-muted text-capitalize">' + stripePayouts.interval + '</span>' : ''}
+              </div>
+              <div class="fs-4 fw-bold text-success">$${(stripePayouts.pendingCents / 100).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+              <div class="text-muted small">Incoming to your bank${stripePayouts.delayDays != null ? ' • arrives ~' + stripePayouts.delayDays + ' day' + (stripePayouts.delayDays === 1 ? '' : 's') : ''}</div>
+              ${(stripePayouts.recent && stripePayouts.recent.length) ? '<hr class="my-2"><div class="small">' + stripePayouts.recent.slice(0,4).map(p => { const d = new Date(p.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}); const amt = '$' + (p.amountCents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); const ok = p.status==='paid'; return '<div class="d-flex justify-content-between align-items-center mb-1"><span class="text-muted">' + d + '</span><span>' + amt + ' <span class="badge ' + (ok?'bg-success-subtle text-success':'bg-warning-subtle text-warning') + '" style="font-size:10px">' + p.status + '</span></span></div>'; }).join('') + '</div>' : ''}
+            </div>
+          </div>` : ''}
+        </div>
+        ${(!bankAccounts || !bankAccounts.length) && !stripePayouts ? `<div class="text-muted text-center py-3">No accounts synced yet.</div>` : ''}
       </div>
     </div>
   </div>

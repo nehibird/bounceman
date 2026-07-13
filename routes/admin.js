@@ -43,7 +43,7 @@ function getSettings() {
 }
 
 // Dashboard
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const today = dayjs().format('YYYY-MM-DD');
@@ -125,11 +125,14 @@ router.get('/', (req, res) => {
 
   const bankAccounts = db.prepare('SELECT * FROM bank_accounts ORDER BY sort_order, name').all();
 
+  let stripePayouts = null;
+  try { stripePayouts = await require('../services/stripe').getPayoutSummary(); } catch (e) { console.error('[DASH] stripe payouts failed:', e.message); }
+
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
     analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven },
-    monthlyRevenue, equipmentUtil, bankAccounts
+    monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts
   });
 });
 
