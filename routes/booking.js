@@ -253,7 +253,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     delivery_address, delivery_city, delivery_zip,
     event_type, venue_type, surface_type, power_available,
     delivery_notes, discount_code, rental_duration, wet_items,
-    tax_exempt_claimed, rental_days, event_end_date, ready_by
+    tax_exempt_claimed, tax_exempt_cert, rental_days, event_end_date, ready_by
   } = req.body;
 
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
@@ -325,6 +325,7 @@ router.post('/review', bookingLimiter, async (req, res) => {
     event_end_date: isoOffset(event_date, days - 1),
     ready_by: ready_by || event_start_time,
     tax_exempt_claimed: taxExemptClaimed,
+    tax_exempt_cert: tax_exempt_cert || '',
     page: 'booking'
   });
 });
@@ -505,6 +506,15 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         Math.round((parseFloat(data.total) - parseFloat(data.deposit_amount)) * 100) / 100, 'unpaid',
         (data.tax_exempt_claimed === '1') ? 1 : 0 // record the exemption REQUEST (honored only if cert-backed above)
       );
+
+      // Record the claimed exemption permit # on the customer for admin to verify.
+      // Does NOT set tax_exempt=1, so tax stays charged until an admin verifies the cert.
+      if (data.tax_exempt_claimed === '1' && data.tax_exempt_cert) {
+        try {
+          db.prepare('UPDATE customers SET tax_exempt_cert = ? WHERE id = ?')
+            .run(String(data.tax_exempt_cert).trim().slice(0, 100), customerId);
+        } catch (e) { console.error('[BOOKING] store tax_exempt_cert failed:', e.message); }
+      }
 
       // Add line items using priceForBooking
       for (const eqId of submitItems) {

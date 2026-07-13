@@ -3,8 +3,16 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h4 class="mb-1">Communications</h4>
-    <p class="text-muted mb-0">${comms.length} message${comms.length !== 1 ? 's' : ''}</p>
+    <p class="text-muted mb-0">${comms.length} message${comms.length !== 1 ? 's' : ''}${activeType ? ' · filtered by ' + activeType : ''}</p>
   </div>
+</div>
+
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="/admin/communications" class="btn btn-sm ${!activeType ? 'btn-bm' : 'btn-bm-outline'}">All</a>
+  <a href="/admin/communications?type=sms" class="btn btn-sm ${activeType === 'sms' ? 'btn-bm' : 'btn-bm-outline'}">SMS</a>
+  <a href="/admin/communications?type=email" class="btn btn-sm ${activeType === 'email' ? 'btn-bm' : 'btn-bm-outline'}">Email</a>
+  <a href="/admin/communications?type=contact_form" class="btn btn-sm ${activeType === 'contact_form' ? 'btn-bm' : 'btn-bm-outline'}">Contact</a>
+  <a href="/admin/communications?type=suggestion" class="btn btn-sm ${activeType === 'suggestion' ? 'btn-bm' : 'btn-bm-outline'}"><i class="fas fa-lightbulb me-1"></i>Suggestions</a>
 </div>
 
 <div class="card">
@@ -28,8 +36,8 @@
           <tr>
             <td data-label="Date"><small>${c.sent_at || c.created_at || ''}</small></td>
             <td data-label="Type">
-              <span class="badge bg-${c.type === 'email' ? 'primary' : c.type === 'sms' ? 'success' : c.type === 'contact_form' ? 'info' : 'secondary'}">
-                <i class="fas fa-${c.type === 'email' ? 'envelope' : c.type === 'sms' ? 'sms' : c.type === 'contact_form' ? 'file-alt' : 'comment'} me-1"></i>
+              <span class="badge bg-${c.type === 'email' ? 'primary' : c.type === 'sms' ? 'success' : c.type === 'contact_form' ? 'info' : c.type === 'suggestion' ? 'warning text-dark' : 'secondary'}">
+                <i class="fas fa-${c.type === 'email' ? 'envelope' : c.type === 'sms' ? 'sms' : c.type === 'contact_form' ? 'file-alt' : c.type === 'suggestion' ? 'lightbulb' : 'comment'} me-1"></i>
                 ${c.type || 'other'}
               </span>
             </td>

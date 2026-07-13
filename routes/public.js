@@ -76,6 +76,31 @@ router.get('/equipment', (req, res) => {
   });
 });
 
+// Equipment suggestion / wishlist (from the equipment page "not finding it?" card)
+router.post('/equipment/suggest', (req, res) => {
+  try {
+    const db = getDb();
+    const suggestion = String(req.body.suggestion || '').trim().slice(0, 300);
+    const email = String(req.body.email || '').trim().slice(0, 254);
+    if (!suggestion) return res.status(400).json({ error: 'Suggestion required' });
+    db.prepare("INSERT INTO communications (id, type, direction, subject, body, recipient, status, sent_at) VALUES (?, 'suggestion', 'inbound', 'Equipment Suggestion', ?, ?, 'received', datetime('now'))")
+      .run(require('crypto').randomUUID(), suggestion, email || null);
+    try {
+      // Escape Slack control chars so input can't inject links or @channel/@here pings.
+      const slackEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const { sendSlackMessage } = require('../services/notifications');
+      sendSlackMessage({
+        text: 'Equipment suggestion from the website',
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: ':bulb: *Equipment suggestion from the website*\n> ' + slackEsc(suggestion).replace(/[\r\n]+/g, ' ') + (email ? '\n_from ' + slackEsc(email) + '_' : '') } }]
+      }).catch(() => {});
+    } catch (e) { /* Slack optional */ }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[SUGGEST] failed:', e.message);
+    res.status(500).json({ error: 'Failed to save suggestion' });
+  }
+});
+
 // Equipment detail
 router.get('/equipment/:slug', (req, res) => {
   const db = getDb();

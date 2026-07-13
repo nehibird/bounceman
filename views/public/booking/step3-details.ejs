@@ -186,6 +186,10 @@
                 <strong>We are a tax-exempt organization</strong> (church, school, or nonprofit) — A copy of your Oklahoma Sales Tax Exemption Certificate will be required prior to your balance due date.
               </label>
             </div>
+            <div id="taxExemptCodeWrap" style="display:none;margin-top:12px;">
+              <input type="text" class="form-control" name="tax_exempt_cert" id="taxExemptCert" placeholder="Oklahoma Sales Tax Exemption Permit #" autocomplete="off">
+              <small class="text-muted" style="font-size:12px">Enter your exemption permit / certificate number to claim tax-exempt status.</small>
+            </div>
           </div>
 
           <!-- Discount Code -->
@@ -339,6 +343,20 @@
 
   // CSP-safe: replace oninput="checkZip" with addEventListener
   document.getElementById("zipInput").addEventListener("input", function() { checkZip(this.value); });
+
+  // Tax-exempt: require a permit # when the box is checked (prevents accidental checking)
+  (function() {
+    var cb = document.getElementById('taxExemptCheck');
+    var wrap = document.getElementById('taxExemptCodeWrap');
+    var cert = document.getElementById('taxExemptCert');
+    if (!cb || !wrap || !cert) return;
+    function sync() {
+      if (cb.checked) { wrap.style.display = ''; cert.required = true; }
+      else { wrap.style.display = 'none'; cert.required = false; cert.value = ''; }
+    }
+    cb.addEventListener('change', sync);
+    sync();
+  })();
 </script>
 <script>if(typeof fbq!=='undefined')fbq('track','InitiateCheckout');</script>
 ` }) %>

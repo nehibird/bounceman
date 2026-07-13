@@ -570,7 +570,7 @@ function initialize() {
   // Seed default contract template
   const contractInsert = d.prepare('INSERT OR IGNORE INTO contract_templates (id, name, content, is_default, active) VALUES (?, ?, ?, ?, ?)');
   const contractExists = d.prepare('SELECT id FROM contract_templates WHERE is_default = 1').get();
-  if (!contractExists) {
+  {
     const contractContent = [
       'BOUNCE MAN LLC — RENTAL AGREEMENT',
       '',
@@ -595,15 +595,17 @@ function initialize() {
       '',
       '5. SETUP: Renter will provide a flat, clear area free of debris. A standard 110V outlet within 100 feet is required.',
       '',
-      '6. DAMAGE/LOSS: Renter is responsible for damage beyond normal wear. Replacement costs billed at current value.',
+      '6. ANCHORING & UNDERGROUND HAZARDS: For everyone\'s safety, each unit is anchored with stakes driven roughly 18–24 inches into the ground at several points (typically six or more). Renter is responsible for locating and marking all underground hazards before setup — including sprinkler/irrigation lines, buried utility or electrical lines, septic systems, and any other buried obstacles (call 811 if unsure). Bounce Man LLC is not responsible for damage to underground systems. Stakes must be driven fully and correctly; units cannot be installed with shortened or angled stakes. If an area cannot be safely staked, sandbags/weights may be required at additional cost, or the Company may decline setup — treated as a Renter cancellation with no refund.',
       '',
-      '7. CANCELLATION: All deposits are non-refundable but may be applied toward a future rental date. If Bounce Man LLC cancels due to weather or safety concerns, Renter will receive a full refund or free reschedule.',
+      '7. DAMAGE/LOSS: Renter is responsible for damage beyond normal wear. Replacement costs billed at current value.',
       '',
-      '8. LIABILITY WAIVER: Renter assumes all risk. Renter holds Bounce Man LLC harmless from any claims or injuries.',
+      '8. CANCELLATION: All deposits are non-refundable but may be applied toward a future rental date if you need to reschedule. If Bounce Man LLC cancels due to weather or conditions on our end, your payment will be applied to a rescheduled date at no extra charge. Cancellations caused by the Renter — including a setup area that cannot be safely staked or is not properly prepared (see Section 6) — are non-refundable.',
       '',
-      '9. INDEMNIFICATION: Renter indemnifies Bounce Man LLC, its owners, employees, and agents from any liability.',
+      '9. LIABILITY WAIVER: Renter assumes all risk. Renter holds Bounce Man LLC harmless from any claims or injuries.',
       '',
-      '10. PAYMENT: Total rental amount is due as agreed. A 50% non-refundable deposit is required at booking. Remaining balance is due on delivery day.',
+      '10. INDEMNIFICATION: Renter indemnifies Bounce Man LLC, its owners, employees, and agents from any liability.',
+      '',
+      '11. PAYMENT: Total rental amount is due as agreed. A 50% non-refundable deposit is required at booking. Remaining balance is due on delivery day.',
       '',
       'TOTAL: ${{total}}',
       'DEPOSIT: ${{deposit_amount}}',
@@ -613,7 +615,19 @@ function initialize() {
       'Renter Signature: ________________________  Date: ____________',
       'Renter Name (Print): {{customer_name}}'
     ].join('\n');
-    contractInsert.run(uuid(), 'Standard Rental Agreement', contractContent, 1, 1);
+    if (!contractExists) {
+      contractInsert.run(uuid(), 'Standard Rental Agreement', contractContent, 1, 1);
+    }
+    // Keep the default agreement in sync with the canonical text above. Bump
+    // CONTRACT_VERSION whenever contractContent changes; it re-applies on next boot.
+    const CONTRACT_VERSION = '2026-07-13c';
+    const curVer = (d.prepare("SELECT value FROM settings WHERE key = 'contract_version'").get() || {}).value;
+    if (curVer !== CONTRACT_VERSION) {
+      try {
+        d.prepare('UPDATE contract_templates SET content = ? WHERE is_default = 1').run(contractContent);
+        d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('contract_version', ?)").run(CONTRACT_VERSION);
+      } catch (e) { /* noop */ }
+    }
   }
 
   // Seed default delivery zones

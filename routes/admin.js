@@ -993,15 +993,18 @@ router.post('/reviews/:id/delete', (req, res) => {
 router.get('/communications', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const comms = db.prepare(`
+  const activeType = req.query.type || '';
+  const sql = `
     SELECT cm.*, c.first_name, c.last_name
     FROM communications cm
     LEFT JOIN customers c ON c.id = cm.customer_id
+    ${activeType ? 'WHERE cm.type = ?' : ''}
     ORDER BY cm.sent_at DESC LIMIT 100
-  `).all();
+  `;
+  const comms = activeType ? db.prepare(sql).all(activeType) : db.prepare(sql).all();
 
   res.render('admin/communications', {
-    title: 'Communications - Admin', user: req.user, settings, comms, page: 'communications'
+    title: 'Communications - Admin', user: req.user, settings, comms, activeType, page: 'communications'
   });
 });
 

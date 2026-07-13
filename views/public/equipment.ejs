@@ -48,6 +48,35 @@
       </div>
       `}
     </div>
+
+    <!-- Equipment request / wishlist card -->
+    <div class="row mt-5">
+      <div class="col-lg-8 mx-auto">
+        <div id="suggestCard" class="bg-white rounded-4 shadow-sm p-4 p-md-5 text-center" style="border:2px dashed #e6cbb0">
+          <div id="suggestMain">
+            <div style="font-size:44px">🔎</div>
+            <h4 style="color:var(--bm-blue);font-weight:700;margin-top:6px">Not finding what you're looking for?</h4>
+            <p class="text-muted" style="max-width:520px;margin:6px auto 18px">Tell us what you'd love to rent and we'll take your feedback into consideration as we grow our lineup.</p>
+            <form id="suggestForm" class="row g-2 justify-content-center" style="max-width:560px;margin:0 auto">
+              <div class="col-12">
+                <input type="text" class="form-control form-control-lg" id="suggestInput" name="suggestion" maxlength="300" placeholder="e.g. a foam pit, dunk tank, 40ft obstacle course..." required>
+              </div>
+              <div class="col-12 col-sm-8">
+                <input type="email" class="form-control" id="suggestEmail" name="email" maxlength="254" placeholder="Your email (optional)" autocomplete="email">
+              </div>
+              <div class="col-12 col-sm-4 d-grid">
+                <button type="submit" class="btn btn-book-now" id="suggestBtn">Send</button>
+              </div>
+            </form>
+          </div>
+          <div id="suggestThanks" style="display:none">
+            <div style="font-size:44px">🎉</div>
+            <h4 style="color:var(--bm-blue);font-weight:700">Thanks for the idea!</h4>
+            <p class="text-muted mb-0">We appreciate the feedback and will keep it in mind as we add inventory.</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -56,5 +85,28 @@
 if (typeof fbq !== "undefined" && document.querySelector("script[src*=fbevents]")) {
   fbq('track', 'ViewContent', { content_name: 'Equipment', content_type: 'product' });
 }
+(function() {
+  var form = document.getElementById('suggestForm');
+  if (!form) return;
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('suggestBtn');
+    var suggestion = document.getElementById('suggestInput').value.trim();
+    if (!suggestion) return;
+    btn.disabled = true; btn.textContent = 'Sending...';
+    fetch('/equipment/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ suggestion: suggestion, email: document.getElementById('suggestEmail').value.trim() })
+    }).then(function(r) { return r.json(); }).then(function() {
+      document.getElementById('suggestMain').style.display = 'none';
+      document.getElementById('suggestThanks').style.display = '';
+    }).catch(function() {
+      btn.disabled = false; btn.textContent = 'Send';
+      if (typeof showToast === 'function') showToast('Something went wrong — please try again.', 'error');
+      else alert('Something went wrong — please try again.');
+    });
+  });
+})();
 </script>
 ` }) %>
