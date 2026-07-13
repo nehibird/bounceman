@@ -147,6 +147,7 @@
                   <option value="Asphalt">Asphalt</option>
                   <option value="Dirt">Dirt</option>
                 </select>
+                <div id="surfaceFeeNote" style="display:none;margin-top:6px;font-size:12px;color:#b9521f"><i class="fas fa-info-circle me-1"></i>Concrete, asphalt &amp; indoor setups need sandbag anchoring — a 10% surcharge applies.</div>
               </div>
               <div class="col-md-6 d-flex align-items-end">
                 <div class="form-check mb-2">
@@ -355,6 +356,22 @@
       else { wrap.style.display = 'none'; cert.required = false; cert.value = ''; }
     }
     cb.addEventListener('change', sync);
+    sync();
+  })();
+
+  // Show the hard-surface/indoor surcharge note only when it applies
+  (function() {
+    var surf = document.querySelector('select[name="surface_type"]');
+    var venue = document.querySelector('select[name="venue_type"]');
+    var note = document.getElementById('surfaceFeeNote');
+    if (!note) return;
+    function sync() {
+      var s = (surf && surf.value || '').toLowerCase();
+      var v = (venue && venue.value || '').toLowerCase();
+      note.style.display = (/concrete|asphalt/.test(s) || /indoor/.test(v)) ? '' : 'none';
+    }
+    if (surf) surf.addEventListener('change', sync);
+    if (venue) venue.addEventListener('change', sync);
     sync();
   })();
 </script>
