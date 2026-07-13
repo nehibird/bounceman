@@ -532,4 +532,34 @@ async function uploadFileToThread(phone, buffer, filename, contentType, comment,
   } catch (e) { console.error('[MMS] uploadFileToThread:', e.message); return null; }
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread };
+// Automated hazard-check text ~1 week before the event: asks about underground lines
+// (sprinkler/utility/septic) and anything buried under 24" so the crew can stake safely.
+// Window is 6–8 days out so a missed daily run still catches it; hazard_check_sent dedupes.
+async function sendHazardChecks() {
+  const db = require('../db').getDb();
+  const smsService = require('./sms');
+  const bookings = db.prepare(`
+    SELECT b.id, b.booking_number, b.event_date, c.first_name, c.phone
+    FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE date(b.event_date) BETWEEN date('now', '+6 days') AND date('now', '+8 days')
+      AND b.status NOT IN ('cancelled', 'declined')
+      AND (b.hazard_check_sent IS NULL OR b.hazard_check_sent = 0)
+  `).all();
+  let sent = 0;
+  for (const b of bookings) {
+    if (!b.phone) continue;
+    try {
+      const msg = `Hi ${b.first_name}! This is Nehemiah with Bounce Man 🎉 We're getting ready for your rental on ${fmtDate(b.event_date)}. Quick safety question: we anchor our units with stakes driven about 24 inches into the ground. Are there any underground hazards in your setup area we should know about — sprinkler/irrigation lines, buried electrical/utility lines, septic, etc. — or anything buried less than 24 inches deep? If you're not sure, calling 811 (it's free) gets your lines marked. Just reply and let us know — thank you!`;
+      await smsService.sendSms(b.phone, msg);
+      db.prepare("UPDATE bookings SET hazard_check_sent = 1, updated_at = datetime('now') WHERE id = ?").run(b.id);
+      sent++;
+      console.log('[HAZARD] Hazard-check sent for', b.booking_number);
+    } catch (e) {
+      console.error('[HAZARD] failed for', b.booking_number, e.message);
+    }
+  }
+  if (sent) console.log(`[HAZARD] ${sent} hazard-check text(s) sent`);
+  return sent;
+}
+
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread };

@@ -135,18 +135,22 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Public: http://localhost:${PORT}`);
 
   // Daily delivery reminder check — runs at 8 AM CT (14:00 UTC)
-  const { checkDeliveryReminders } = require('./services/notifications');
+  const { checkDeliveryReminders, sendHazardChecks } = require('./services/notifications');
   function scheduleReminders() {
     const now = new Date();
     const target = new Date(now);
     target.setUTCHours(14, 0, 0, 0); // 8 AM CT
     if (target <= now) target.setDate(target.getDate() + 1);
     const ms = target - now;
-    setTimeout(() => {
+    const runDaily = () => {
       checkDeliveryReminders();
-      setInterval(checkDeliveryReminders, 24 * 60 * 60 * 1000);
+      sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
+    };
+    setTimeout(() => {
+      runDaily();
+      setInterval(runDaily, 24 * 60 * 60 * 1000);
     }, ms);
-    console.log(`[BounceMan] Delivery reminders scheduled for ${target.toISOString()}`);
+    console.log(`[BounceMan] Delivery reminders + hazard checks scheduled for ${target.toISOString()}`);
   }
   // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
   // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,
