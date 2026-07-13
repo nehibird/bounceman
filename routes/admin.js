@@ -419,17 +419,17 @@ router.post('/bookings/:id/payment', (req, res) => {
 
   // Create payment record
   const paymentId = require('crypto').randomUUID();
-  db.prepare('INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))').run(
+  db.prepare("INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))").run(
     paymentId, bookingId, booking.cust_id, paymentAmount, 'charge', payment_method || 'cash', 'completed', notes || null
   );
 
   // Calculate new balance
-  const totalPaid = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ? AND status = "completed"').get(bookingId).total;
+  const totalPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ? AND status = 'completed'").get(bookingId).total;
   const newBalance = Math.max(0, parseFloat(booking.total) - totalPaid);
   const newStatus = newBalance <= 0 ? 'paid' : (totalPaid > 0 ? 'partial' : 'unpaid');
 
   // Update booking
-  db.prepare('UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime("now") WHERE id = ?').run(newBalance, newStatus, bookingId);
+  db.prepare("UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime('now') WHERE id = ?").run(newBalance, newStatus, bookingId);
 
   // Send Slack notification
   const slack = require('../services/notifications');
