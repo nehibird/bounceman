@@ -89,17 +89,28 @@ async function getPayoutSummary() {
     const stripe = getStripe();
     const [bal, payouts, acct] = await Promise.all([
       stripe.balance.retrieve(),
-      stripe.payouts.list({ limit: 5 }),
+      stripe.payouts.list({ limit: 30 }),
       stripe.accounts.retrieve().catch(() => null),
     ]);
     const sum = (arr) => (arr || []).reduce((s, x) => s + (x.amount || 0), 0);
     const sched = acct && acct.settings && acct.settings.payouts ? acct.settings.payouts.schedule : null;
+    const delayDays = sched && sched.delay_days != null ? sched.delay_days : 2;
+    const all = payouts.data || [];
+    const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+    const in30 = all.filter((p) => p.arrival_date * 1000 >= cutoff);
+    // Business-day estimate of when the current pending balance lands in the bank.
+    const nd = new Date(now); let bd = 0;
+    while (bd < delayDays) { nd.setDate(nd.getDate() + 1); const dw = nd.getDay(); if (dw !== 0 && dw !== 6) bd++; }
     const data = {
       pendingCents: sum(bal.pending),
       availableCents: sum(bal.available),
-      recent: (payouts.data || []).map((p) => ({ amountCents: p.amount, date: p.arrival_date * 1000, status: p.status })),
+      recent: all.slice(0, 5).map((p) => ({ amountCents: p.amount, date: p.arrival_date * 1000, status: p.status })),
+      last30Total: sum(in30),
+      last30Count: in30.length,
+      spark: in30.slice().reverse().map((p) => p.amount), // chronological amounts for the sparkline
+      nextPayoutDate: nd.getTime(),
       interval: sched ? sched.interval : null,
-      delayDays: sched ? sched.delay_days : null,
+      delayDays,
       fetchedAt: now,
     };
     _payoutCache = { data, at: now };

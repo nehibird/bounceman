@@ -128,11 +128,16 @@ router.get('/', async (req, res) => {
   let stripePayouts = null;
   try { stripePayouts = await require('../services/stripe').getPayoutSummary(); } catch (e) { console.error('[DASH] stripe payouts failed:', e.message); }
 
+  // Total cash position: liquid bank balances (excluding credit lines) + money on the way from Stripe.
+  const bankCash = (bankAccounts || []).filter((a) => a.type !== 'credit').reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
+  const stripeIncoming = stripePayouts ? stripePayouts.pendingCents / 100 : 0;
+  const finance = { bankCash, stripeIncoming, cashPosition: bankCash + stripeIncoming };
+
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
     analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven },
-    monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts
+    monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
   });
 });
 

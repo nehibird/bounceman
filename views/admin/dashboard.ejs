@@ -62,6 +62,12 @@
     <div class="card">
       <div class="card-header fw-semibold"><i class="fas fa-university me-2"></i>Bank Accounts</div>
       <div class="card-body">
+        ${(typeof finance !== 'undefined' && finance) ? `
+        <div class="mb-3 pb-3 border-bottom">
+          <div class="text-muted small text-uppercase" style="letter-spacing:.5px">Total Cash Position</div>
+          <div class="fs-2 fw-bold text-success">$${finance.cashPosition.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+          <div class="text-muted small">$${finance.bankCash.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} in bank${finance.stripeIncoming > 0 ? ' + $' + finance.stripeIncoming.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' on the way from Stripe' : ''}</div>
+        </div>` : ''}
         <div class="row g-3">
           ${(bankAccounts || []).map(a => {
             const isCredit = a.type === 'credit';
@@ -92,8 +98,9 @@
                 ${stripePayouts.interval ? '<span class="badge bg-light text-muted text-capitalize">' + stripePayouts.interval + '</span>' : ''}
               </div>
               <div class="fs-4 fw-bold text-success">$${(stripePayouts.pendingCents / 100).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
-              <div class="text-muted small">Incoming to your bank${stripePayouts.delayDays != null ? ' • arrives ~' + stripePayouts.delayDays + ' day' + (stripePayouts.delayDays === 1 ? '' : 's') : ''}</div>
-              ${(stripePayouts.recent && stripePayouts.recent.length) ? '<hr class="my-2"><div class="small">' + stripePayouts.recent.slice(0,4).map(p => { const d = new Date(p.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}); const amt = '$' + (p.amountCents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); const ok = p.status==='paid'; return '<div class="d-flex justify-content-between align-items-center mb-1"><span class="text-muted">' + d + '</span><span>' + amt + ' <span class="badge ' + (ok?'bg-success-subtle text-success':'bg-warning-subtle text-warning') + '" style="font-size:10px">' + p.status + '</span></span></div>'; }).join('') + '</div>' : ''}
+              <div class="text-muted small">Incoming${(stripePayouts.pendingCents > 0 && stripePayouts.nextPayoutDate) ? ' • arrives ~' + new Date(stripePayouts.nextPayoutDate).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) : ''}</div>
+              ${(stripePayouts.spark && stripePayouts.spark.length) ? '<div class="mt-2">' + (function(){ var s = stripePayouts.spark; var mx = Math.max.apply(null, s.concat([1])); var bw=6, g=3, h=28; var bars = s.map(function(v,i){ var bh = Math.max(2, Math.round(v/mx*h)); return '<rect x="'+(i*(bw+g))+'" y="'+(h-bh)+'" width="'+bw+'" height="'+bh+'" rx="2" fill="#198754"></rect>'; }).join(''); return '<svg role="img" aria-label="Payouts over the last 30 days" width="'+(s.length*(bw+g))+'" height="'+h+'" style="max-width:100%">' + '<title>Payouts over the last 30 days</title>' + bars + '</svg>'; })() + '<div class="d-flex justify-content-between text-muted mt-1" style="font-size:11px"><span>30-day payouts</span><span class="fw-semibold text-dark">$' + (stripePayouts.last30Total/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</span></div></div>' : ''}
+              ${(stripePayouts.recent && stripePayouts.recent.length) ? '<hr class="my-2"><div class="small">' + stripePayouts.recent.slice(0,3).map(p => { const d = new Date(p.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}); const amt = '$' + (p.amountCents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); const ok = p.status==='paid'; return '<div class="d-flex justify-content-between align-items-center mb-1"><span class="text-muted">' + d + '</span><span>' + amt + ' <span class="badge ' + (ok?'bg-success-subtle text-success':'bg-warning-subtle text-warning') + '" style="font-size:10px">' + p.status + '</span></span></div>'; }).join('') + '</div>' : ''}
             </div>
           </div>` : ''}
         </div>
