@@ -89,7 +89,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
@@ -98,20 +98,26 @@
       --bm-orange: <%= settings.primary_color || '#FF6B35' %>;
       --bm-blue: <%= settings.secondary_color || '#004E89' %>;
       --bm-yellow: #FFD166;
-      --bm-green: #06D6A0;
+      --bm-green: #059669;
       --bm-pink: #EF476F;
       --bm-purple: #7B2D8E;
       --bm-light-bg: #FFF9F0;
-      --bm-gradient: linear-gradient(135deg, var(--bm-orange) 0%, var(--bm-pink) 100%);
-      --bm-gradient-cool: linear-gradient(135deg, var(--bm-blue) 0%, var(--bm-purple) 100%);
+      --bm-ink: #1c1530;
+      --bm-gradient: linear-gradient(135deg, var(--bm-orange) 0%, #ee5626 100%);
+      --bm-gradient-cool: linear-gradient(140deg, #17123a 0%, #2a1c5e 52%, #3c2270 100%);
+      /* Make Bootstrap utility classes inherit the brand palette instead of framework defaults */
+      --bs-primary: #004E89; --bs-primary-rgb: 0,78,137;
+      --bs-success: #059669; --bs-success-rgb: 5,150,105;
     }
 
     * { box-sizing: border-box; }
     body {
-      font-family: 'Nunito', sans-serif; color: #333;
+      font-family: 'Inter', sans-serif; color: #333;
       background: var(--bm-light-bg); margin: 0;
     }
-    h1, h2, h3, h4, h5, h6 { font-family: 'Fredoka', sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Poppins', sans-serif; font-weight: 700; }
+    /* Negative tracking only reads intentional on large display type, not every heading */
+    .hero-section h1, .section-title h2, .cta-banner h2 { letter-spacing: -0.02em; }
 
     /* === TOP BAR === */
     .top-bar {
@@ -126,7 +132,7 @@
       position: sticky; top: 0; z-index: 1000;
     }
     .main-header .navbar-brand {
-      font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 28px;
+      font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 26px; letter-spacing: -0.03em;
       color: var(--bm-orange) !important;
     }
     .main-header .navbar-brand span { color: var(--bm-blue); }
@@ -141,16 +147,27 @@
       content: ''; position: absolute; bottom: 0; left: 18px; right: 18px;
       height: 3px; background: var(--bm-orange); border-radius: 3px 3px 0 0;
     }
-    .btn-book-now {
-      background: var(--bm-gradient); color: white !important; font-weight: 700;
-      border: none; padding: 10px 28px; border-radius: 50px;
-      text-transform: uppercase; letter-spacing: 1px; font-size: 14px;
-      transition: transform 0.3s, box-shadow 0.3s;
+    .btn-book-now, .btn-bm {
+      background: var(--bm-gradient); color: var(--bm-ink) !important; font-weight: 600;
+      border: none; padding: 11px 26px; border-radius: 12px;
+      letter-spacing: 0; font-size: 15px;
+      box-shadow: 0 6px 18px rgba(255,107,53,0.28);
+      transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
     }
-    .btn-book-now:hover {
-      transform: translateY(-2px);
+    .btn-book-now:hover, .btn-bm:hover {
+      transform: translateY(-1px); filter: brightness(1.04);
       box-shadow: 0 8px 25px rgba(255,107,53,0.4);
-      color: white;
+      color: var(--bm-ink) !important;
+    }
+    /* Brand the outline buttons so they stop rendering Bootstrap default blue */
+    .btn-outline-primary { color: var(--bm-blue); border-color: var(--bm-blue); }
+    .btn-outline-primary:hover, .btn-outline-primary:focus { background: var(--bm-blue); border-color: var(--bm-blue); color: #fff; }
+    /* Deliberate on-brand keyboard focus signal (gold reads 8.8-12:1 on the indigo hero and on white) */
+    a:focus-visible, button:focus-visible, .btn:focus-visible, .equipment-card-link:focus-visible {
+      outline: 3px solid var(--bm-yellow); outline-offset: 2px; box-shadow: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
     }
 
     /* === HERO === */
@@ -162,8 +179,30 @@
       color: white;
     }
     .hero-logo {
-      width: 420px; height: auto;
+      width: clamp(260px, 30vw, 380px); max-width: 100%; height: auto;
       filter: drop-shadow(2px 4px 8px rgba(0,0,0,0.2));
+    }
+    /* Full-bleed real-setup hero video */
+    .hero-section::before, .hero-section::after { display: none; }
+    .hero-section .container { position: relative; z-index: 2; }
+    .hero-bg-video {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: cover; object-position: center center; z-index: 0;
+    }
+    /* Light left wash only — keep the video bright; legibility comes from text-shadow */
+    .hero-overlay {
+      position: absolute; inset: 0; z-index: 1; pointer-events: none;
+      background: linear-gradient(90deg, rgba(15,11,40,0.55) 0%, rgba(15,11,40,0.24) 26%, rgba(15,11,40,0) 48%);
+    }
+    .hero-video-badge {
+      position: absolute; right: 16px; bottom: 16px; z-index: 3;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(0,0,0,0.5); color: #fff; font-weight: 600; font-size: 12px;
+      padding: 6px 12px; border-radius: 8px;
+    }
+    @media (max-width: 767px) {
+      .hero-bg-video, .hero-video-badge { display: none; }
+      .hero-section { background-image: url('/assets/video/hero-poster-wide.jpg'); background-size: cover; background-position: center; }
     }
     .hero-section::before {
       content: '';
@@ -178,17 +217,36 @@
       content: '';
       position: absolute; bottom: -80px; left: -80px;
       width: 300px; height: 300px;
-      background: var(--bm-pink);
+      background: var(--bm-orange);
       border-radius: 50%;
-      opacity: 0.1;
+      opacity: 0.07;
       pointer-events: none;
     }
-    .hero-section h1 {
-      font-size: 52px; font-weight: 700; margin-bottom: 20px;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    .hero-kicker {
+      font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--bm-yellow); opacity: 0.95; margin-bottom: 12px;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.6);
     }
-    .hero-section h1 span { color: var(--bm-yellow); }
-    .hero-section p { font-size: 20px; opacity: 0.9; max-width: 600px; }
+    .hero-section h1 {
+      font-size: 54px; font-weight: 700; margin-bottom: 20px;
+      letter-spacing: -0.01em; line-height: 1.15;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.6);
+    }
+    .hero-section h1 span {
+      color: var(--bm-yellow); font-weight: 800;
+      position: relative; display: inline-block;
+    }
+    .hero-section h1 span::after {
+      content: ''; position: absolute; left: -2%; right: -2%; bottom: -6px; height: 12px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20'%3E%3Cpath d='M2 12 Q30 2 60 12 T120 12 T198 10' stroke='%23FFD166' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
+      background-size: 100% 100%; opacity: 0.85;
+    }
+    .hero-section p { font-size: 20px; color: rgba(255,255,255,0.95); max-width: 520px; text-shadow: 0 1px 6px rgba(0,0,0,0.65); }
+    /* Balanced CTA scale — primary clearly the largest, secondary recessive but legible */
+    .hero-section .btn-book-now { font-size: 17px; padding: 14px 30px; }
+    .hero-section .btn-outline-light { border-color: rgba(255,255,255,0.5); color: rgba(255,255,255,0.85); font-size: 16px; padding: 13px 26px; }
+    .hero-section .btn-outline-light:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.7); color: #fff; }
 
     /* === SECTIONS === */
     .section-title {
@@ -223,7 +281,7 @@
       font-weight: 700; font-size: 20px; color: var(--bm-blue);
     }
     .equipment-card .price-tag {
-      background: var(--bm-gradient); color: white; font-weight: 700;
+      background: var(--bm-gradient); color: var(--bm-ink); font-weight: 700;
       padding: 6px 16px; border-radius: 30px; font-size: 18px;
       display: inline-block;
     }
@@ -252,11 +310,12 @@
     }
     .how-it-works-step .step-number {
       width: 80px; height: 80px; border-radius: 50%;
-      background: var(--bm-gradient); color: white;
+      background: var(--bm-gradient); color: var(--bm-ink);
       font-size: 32px; font-weight: 700; line-height: 80px;
       margin: 0 auto 20px; box-shadow: 0 8px 20px rgba(255,107,53,0.3);
     }
     .how-it-works-step h3, .how-it-works-step h4 { color: var(--bm-blue); font-weight: 700; }
+    .how-it-works-step h3 { font-size: 21px; margin-bottom: 8px; }
 
     /* === TESTIMONIALS (from Balloo) === */
     .testimonial-card {
@@ -276,7 +335,7 @@
     }
     .cta-banner h2 { font-size: 36px; font-weight: 700; margin-bottom: 15px; }
     .cta-banner .btn-cta {
-      background: white; color: var(--bm-orange); font-weight: 700;
+      background: white; color: var(--bm-ink); font-weight: 700;
       padding: 14px 40px; border-radius: 50px; font-size: 18px;
       border: none; transition: transform 0.3s;
     }
@@ -312,7 +371,7 @@
     }
 
     @media (max-width: 991px) {
-      .hero-section h1 { font-size: 36px; }
+      .hero-section h1 { font-size: 36px; line-height: 1.15; }
       .hero-section { padding: 50px 0; }
       .section-title h2 { font-size: 30px; }
       .how-it-works-step { padding: 20px 10px; }
@@ -547,7 +606,7 @@
 <script>
 function showToast(message, type) {
   type = type || 'error';
-  var colors = { error: '#EF476F', warning: '#f59e0b', success: '#06D6A0', info: '#118AB2' };
+  var colors = { error: '#EF476F', warning: '#f59e0b', success: '#059669', info: '#118AB2' };
   var icons = { error: 'fa-exclamation-circle', warning: 'fa-exclamation-triangle', success: 'fa-check-circle', info: 'fa-info-circle' };
   var container = document.getElementById('toast-container');
   var toast = document.createElement('div');
