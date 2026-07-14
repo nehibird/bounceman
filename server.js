@@ -93,6 +93,7 @@ app.use('/booking', bookingRoutes);
 app.use('/admin', adminRoutes);
 
 app.use('/api/sarah', sarahRoutes);
+ app.use('/api/messenger', require('./routes/messenger'));
 app.use('/api/call', callsRouter);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/bank', bankRoutes);
