@@ -372,6 +372,12 @@ router.get('/terms', (req, res) => {
   res.render('public/terms', { title: 'Terms & Conditions - Bounce Man Rentals', canonicalPath: '/terms', settings, page: 'terms' });
 });
 
+// Data Deletion Instructions (required for Meta App Review)
+router.get('/data-deletion', (req, res) => {
+  const settings = getSettings();
+  res.render('public/data-deletion', { title: 'Data Deletion Instructions - Bounce Man Rentals', canonicalPath: '/data-deletion', settings, page: 'data-deletion' });
+});
+
 // Digital contract signing
 router.get('/contract/:id', (req, res) => {
   const db = getDb();
