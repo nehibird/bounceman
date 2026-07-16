@@ -27,6 +27,9 @@ const PORT = process.env.PORT || 3200;
 // (customer fields, inbound SMS bodies, review comments) via `<%- %>` + template
 // literals, which do not auto-escape.
 app.locals.esc = require('./lib/helpers').esc;
+// Live review aggregate for LocalBusiness JSON-LD (rich-result stars). Exposed
+// as a callable local so the shared layout can emit real, current numbers.
+app.locals.getReviewStats = require('./lib/helpers').getReviewStats;
 
 // Security — HIGH-3: Real CSP, MED-7: HSTS max-age
 app.use(helmet({

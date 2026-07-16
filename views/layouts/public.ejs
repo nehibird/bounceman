@@ -64,6 +64,25 @@
       {"@type": "City", "name": "Kaw City", "containedInPlace": {"@type": "State", "name": "Oklahoma"}}
     ],
     "priceRange": "$150-$375",
+    <% var _rs = (typeof getReviewStats === 'function') ? getReviewStats() : { count: 0 }; if (_rs && _rs.count > 0) { %>
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "<%= _rs.avg %>",
+      "reviewCount": "<%= _rs.count %>",
+      "bestRating": "5",
+      "worstRating": "1"
+    },
+    <% if (_rs.samples && _rs.samples.length) { %>
+    "review": [
+      <% _rs.samples.forEach(function (r, i) { %><%- i ? ',' : '' %>{
+        "@type": "Review",
+        "author": { "@type": "Person", "name": <%- JSON.stringify(String(r.name || 'Customer')) %> },
+        "reviewRating": { "@type": "Rating", "ratingValue": "<%= r.rating %>", "bestRating": "5", "worstRating": "1" },
+        "reviewBody": <%- JSON.stringify(String(r.comment || '')) %>
+      }<% }); %>
+    ],
+    <% } %>
+    <% } %>
     "image": "https://bouncemanrentals.com/assets/images/equipment/blue-crush-1.jpg",
     "sameAs": ["https://www.facebook.com/profile.php?id=61576480285099"]
   }
