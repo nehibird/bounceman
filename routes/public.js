@@ -107,7 +107,26 @@ router.get('/equipment/:slug', (req, res) => {
   const settings = getSettings();
   const item = db.prepare('SELECT * FROM equipment WHERE slug = ? AND status = ?').get(req.params.slug, 'available');
 
-  if (!item) return res.status(404).render('public/404', { title: 'Not Found', settings });
+  if (!item) {
+    // Fuzzy fallback so a mangled/guessed slug (e.g. a chat bot rebuilding a URL
+    // from a unit's name) never dead-ends on a 404. Match on shared word tokens;
+    // redirect to the closest unit, or to the gallery if nothing's close.
+    const norm = (s) => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const want = new Set(norm(req.params.slug));
+    if (want.size) {
+      const all = db.prepare("SELECT slug FROM equipment WHERE status = 'available' AND slug IS NOT NULL").all();
+      let best = null, bestScore = 0;
+      for (const e of all) {
+        const toks = norm(e.slug);
+        if (!toks.length) continue;
+        const shared = toks.filter((t) => want.has(t)).length;
+        const score = shared / Math.max(toks.length, want.size);
+        if (score > bestScore) { bestScore = score; best = e.slug; }
+      }
+      if (best && bestScore >= 0.6) return res.redirect(302, '/equipment/' + best);
+    }
+    return res.redirect(302, '/equipment');
+  }
 
   const images = db.prepare('SELECT * FROM equipment_images WHERE equipment_id = ? ORDER BY sort_order').all(item.id);
   const related = db.prepare(`
