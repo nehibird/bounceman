@@ -559,6 +559,54 @@ const CITY_DATA = {
       { name: 'Blackwell', url: '/bounce-house-rental-blackwell-ok' },
       { name: 'Stillwater', url: '/bounce-house-rental-stillwater-ok' }
     ]
+  },
+  newkirk: {
+    name: 'Newkirk',
+    h1: 'Bounce House Rentals in Newkirk, Oklahoma',
+    subheading: 'Free delivery bounce house and water slide rentals for Newkirk, the Kay County seat.',
+    freeDelivery: true,
+    deliveryFee: null,
+    deliveryNote: null,
+    title: 'Bounce House Rentals in Newkirk OK | Bounce Man | Free Delivery',
+    metaDescription: 'Bounce Man delivers bounce houses and water slides to Newkirk, OK for FREE. Serving the Kay County seat with birthday party and event rentals. Book online!',
+    bodyHtml: '<p>Hosting a party in <strong>Newkirk, Oklahoma</strong>? Bounce Man delivers bounce houses and water slides right to your door in Newkirk, <strong>completely FREE</strong>. As the Kay County seat, Newkirk is part of our home territory, and we love bringing the fun to Newkirk families.</p><p>We have set up all over Newkirk, from backyards to church lots to community events near Kaw Lake. Every unit arrives clean, inspected, and fully set up by our team, so you can focus on the party.</p><h3 style="color:var(--bm-blue);margin-top:24px">Free Delivery to Newkirk</h3><p>Because Newkirk is right here in Kay County, <strong>delivery, setup, and pickup are always free</strong>. Popular Newkirk picks include our Buccaneer Bay dual-lane water slide and the Tropical Combo Bounce &amp; Slide.</p><h3 style="color:var(--bm-blue);margin-top:24px">Book Your Newkirk Rental</h3><p>Reserve online in minutes at BounceManRentals.com or call <strong>(580) 308-9288</strong>, seven days a week, 8 AM to 7 PM.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  enid: {
+    name: 'Enid',
+    h1: 'Bounce House Rentals in Enid, Oklahoma',
+    subheading: 'Premium bounce house and water slide rentals delivered to Enid and Garfield County.',
+    freeDelivery: false,
+    deliveryFee: 'Instant online quote',
+    deliveryNote: 'Enid is about 35 miles from our Tonkawa base. A distance-based delivery fee applies. Get your exact delivery total instantly on the booking page, no waiting for a call back.',
+    title: 'Bounce House and Water Slide Rentals in Enid OK | Bounce Man',
+    metaDescription: 'Bounce Man delivers bounce houses and water slides to Enid, OK. Perfect for birthday parties, church events and school field days in Garfield County. Book online!',
+    bodyHtml: '<p>Planning an event in <strong>Enid, Oklahoma</strong>? Bounce Man brings commercial-grade bounce houses and inflatable water slides to Enid and the surrounding Garfield County area. Enid is one of the largest cities we serve, with a busy schedule of birthday parties, church events, and school celebrations year round.</p><p>We deliver, set up, sanitize, and tear down every unit for you. Enid is about 35 miles from our Tonkawa base, so a distance-based delivery fee applies, but you can see your exact total instantly when you book online.</p><h3 style="color:var(--bm-blue);margin-top:24px">Great for Enid Events</h3><ul><li>Birthday parties for all ages</li><li>Church and community festivals</li><li>School field days and carnivals</li><li>Neighborhood and corporate gatherings</li></ul><h3 style="color:var(--bm-blue);margin-top:24px">Book Your Enid Rental Early</h3><p>Enid summer weekends fill up fast. We recommend booking 2 to 3 weeks ahead. Reserve online at BounceManRentals.com or call <strong>(580) 308-9288</strong>.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
+  },
+  perry: {
+    name: 'Perry',
+    h1: 'Bounce House Rentals in Perry, Oklahoma',
+    subheading: 'Bounce house and water slide rentals delivered to Perry and Noble County.',
+    freeDelivery: false,
+    deliveryFee: 'Instant online quote',
+    deliveryNote: 'Perry is a short drive south of our Kay County home base. A low distance-based delivery fee applies, shown instantly when you book online.',
+    title: 'Bounce House and Water Slide Rentals in Perry OK | Bounce Man',
+    metaDescription: 'Bounce Man delivers bounce houses and water slides to Perry, OK and Noble County. Birthday parties, church and school events. Instant online quote. Book now!',
+    bodyHtml: '<p>Looking for a bounce house rental in <strong>Perry, Oklahoma</strong>? Bounce Man delivers bounce houses, water slides, and combo units to Perry and the Noble County area. Perry sits just south of our Kay County home base, so we can reach you easily with the same clean equipment and professional setup our neighbors trust.</p><p>Whether it is a backyard birthday, a church event, or a school field day, we handle delivery, setup, and pickup so your day stays stress free.</p><h3 style="color:var(--bm-blue);margin-top:24px">Simple, Upfront Pricing for Perry</h3><p>Perry is just outside Kay County, so a low distance-based delivery fee applies. You will see your exact total instantly on the booking page, no surprises and no waiting for a call back.</p><h3 style="color:var(--bm-blue);margin-top:24px">Book Your Perry Rental</h3><p>Reserve online at BounceManRentals.com or call <strong>(580) 308-9288</strong>, seven days a week, 8 AM to 7 PM.</p>',
+    nearbyCities: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Stillwater', url: '/bounce-house-rental-stillwater-ok' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' }
+    ]
   }
 };
 
@@ -593,6 +641,24 @@ router.get('/water-slide-rental-kay-county-ok', (req, res) => {
   res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/water-slide-rental-kay-county-ok', settings, cityData, page: 'city-landing' });
 });
 
+router.get('/bounce-house-rental-newkirk-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.newkirk;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-newkirk-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/bounce-house-rental-enid-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.enid;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-enid-ok', settings, cityData, page: 'city-landing' });
+});
+
+router.get('/bounce-house-rental-perry-ok', (req, res) => {
+  const settings = getSettings();
+  const cityData = CITY_DATA.perry;
+  res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-perry-ok', settings, cityData, page: 'city-landing' });
+});
+
 // ===== SITEMAP.XML =====
 router.get('/sitemap.xml', (req, res) => {
   const baseUrl = 'https://bouncemanrentals.com';
@@ -613,7 +679,10 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/bounce-house-rental-ponca-city-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-blackwell-ok', priority: '0.8', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-stillwater-ok', priority: '0.8', changefreq: 'monthly' },
-    { loc: '/water-slide-rental-kay-county-ok', priority: '0.9', changefreq: 'monthly' }
+    { loc: '/water-slide-rental-kay-county-ok', priority: '0.9', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-newkirk-ok', priority: '0.9', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-enid-ok', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-perry-ok', priority: '0.8', changefreq: 'monthly' }
   ];
 
   const db = getDb();
