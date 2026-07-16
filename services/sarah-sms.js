@@ -70,7 +70,8 @@ const TOOLS = [
           equipment_ids: { type: 'array', items: { type: 'string' }, description: 'Equipment IDs from checkAvailability results. Never guess IDs.' },
           duration: { type: 'string', enum: ['4hr', 'daily', 'overnight'] },
           wet: { type: 'boolean', description: 'True if a water unit set up wet.' },
-          event_start_time: { type: 'string', description: 'Half-day only: 24hr HH:MM to pick morning (09:00) vs afternoon (15:00).' }
+          event_start_time: { type: 'string', description: 'Half-day only: 24hr HH:MM to pick morning (09:00) vs afternoon (15:00).' },
+          phone: { type: 'string', description: "Only when the customer's number is NOT already on file (e.g. Facebook Messenger) — ask them for it first, then pass it here so the link can be texted." }
         },
         required: ['event_date', 'equipment_ids', 'duration']
       }
@@ -91,7 +92,7 @@ async function execTool(name, args, customerPhone) {
   const path = map[name];
   if (!path) return { error: 'unknown tool' };
   const body = Object.assign({}, args);
-  if (name === 'sendCheckoutLink') body.phone = customerPhone;
+  if (name === 'sendCheckoutLink') body.phone = args.phone || customerPhone;
   if (name === 'lookupBooking' && !body.booking_number) body.phone = customerPhone;
   try {
     const r = await fetch(`http://localhost:${PORT}/api/sarah/${path}`, {
@@ -103,15 +104,25 @@ async function execTool(name, args, customerPhone) {
   } catch (e) { return { error: e.message }; }
 }
 
-function buildSystemPrompt(equipment, customerPhone) {
+function buildSystemPrompt(equipment, customerPhone, channel = 'sms') {
   const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const cat = equipment.map(e => `- ${e.name} (ID: ${e.id}): $${e.price_4hr} half day / $${e.price_daily} full day / $${e.price_overnight} overnight${e.price_wet != null ? ` — wet +$${e.price_wet}` : ''} [${e.category}]`).join('\n');
-  return `You are Sarah, the friendly booking agent for Bounce Man Rentals in Tonkawa, Oklahoma — now helping a customer over TEXT MESSAGE. You handle availability, quotes, checkout links, and policy questions.
+  const isMsgr = channel === 'messenger';
+  const medium = isMsgr ? 'FACEBOOK MESSENGER' : 'TEXT MESSAGE';
+  const identityLine = isMsgr
+    ? `You do NOT have the customer's phone number on file. Today is ${today}.`
+    : `The customer's phone number is ${customerPhone} (already on file — never ask for it). Today is ${today}.`;
+  const styleHeader = isMsgr ? 'Messaging style' : 'Texting style';
+  const styleVerb = isMsgr ? 'messaging on Facebook, not talking' : 'TEXTING, not talking';
+  const linkStep = isMsgr
+    ? `3. Once they've picked a unit + date (+ wet?), ask for the best phone number to text their booking link to, then call sendCheckoutLink with that phone. It texts them a pre-filled checkout link where the website collects their name, address, email, and zip and calculates delivery + tax.`
+    : `3. Once they've picked a unit + date (+ wet?), call sendCheckoutLink. It texts them a pre-filled checkout link. You do NOT need their name, address, email, or zip — the website collects all of that and calculates delivery + tax.`;
+  return `You are Sarah, the friendly booking agent for Bounce Man Rentals in Tonkawa, Oklahoma — now helping a customer over ${medium}. You handle availability, quotes, checkout links, and policy questions.
 
-The customer's phone number is ${customerPhone} (already on file — never ask for it). Today is ${today}.
+${identityLine}
 
-## Texting style
-- You are TEXTING, not talking. Keep replies to 1-2 short, warm sentences.
+## ${styleHeader}
+- You are ${styleVerb}. Keep replies to 1-2 short, warm sentences.
 - Write prices and dates normally: "$300", "June 14th". No emoji spam.
 - One question at a time. Friendly neighbor energy. Say "Sure thing!" / "You bet!". Never "Certainly!" / "Absolutely!".
 - Be silent while a tool is running (no "let me check").
@@ -139,11 +150,43 @@ We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. I
 ## Booking workflow
 1. When ANY date is mentioned, call checkAvailability immediately with their words (don't confirm first).
 2. Tell them what's open + the price. For a water unit, ask wet or dry ("Wet is $20 more").
-3. Once they've picked a unit + date (+ wet?), call sendCheckoutLink. It texts them a pre-filled checkout link. You do NOT need their name, address, email, or zip — the website collects all of that and calculates delivery + tax.
+${linkStep}
 4. Then tell them to check their texts: they fill out their info, sign the rental agreement, and pay the deposit to lock it in. Once the deposit's in, their date is reserved.
 5. Use equipment IDs from tool results only — never invent IDs.
 
 ## Handoff: If they ask for a person/owner/Nehemiah, or you can't help, say "I'll have Nehemiah reach out to you shortly!" — he sees every text. Never make promises he can't keep.`;
+}
+
+// Core reply generation — shared by SMS and Facebook Messenger. Takes a fully
+// built `messages` array (system prompt + conversation) and runs the OpenRouter
+// tool-calling loop. `customerPhone` is used by tools (null for Messenger until
+// the customer provides one). Returns the reply text, or null.
+async function generateReply(messages, customerPhone) {
+  let reply = null;
+  for (let i = 0; i < 5; i++) {
+    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 600, messages, tools: TOOLS, tool_choice: 'auto' })
+    });
+    const data = await resp.json();
+    const msg = data.choices && data.choices[0] && data.choices[0].message;
+    if (!msg) { console.error('[SARAH] no msg from LLM:', JSON.stringify(data).slice(0, 200)); break; }
+    messages.push(msg);
+    if (msg.tool_calls && msg.tool_calls.length) {
+      for (const tc of msg.tool_calls) {
+        let args = {};
+        try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) { /* */ }
+        const result = await execTool(tc.function.name, args, customerPhone);
+        console.log('[SARAH] tool', tc.function.name, '->', JSON.stringify(result).slice(0, 120));
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result).slice(0, 3000) });
+      }
+      continue;
+    }
+    reply = (msg.content || '').trim();
+    break;
+  }
+  return reply;
 }
 
 async function handleInboundSms(from, body) {
@@ -161,33 +204,10 @@ async function handleInboundSms(from, body) {
     const rows = db.prepare("SELECT direction, body FROM communications WHERE type='sms' AND recipient = ? AND sent_at >= datetime('now','-2 days') ORDER BY sent_at DESC LIMIT 16").all(number).reverse();
     const equipment = db.prepare("SELECT id, name, price_4hr, price_daily, price_overnight, price_wet, category FROM equipment WHERE status='available' AND category NOT IN ('add_ons','add-ons') ORDER BY sort_order").all();
 
-    const messages = [{ role: 'system', content: buildSystemPrompt(equipment, number) }];
+    const messages = [{ role: 'system', content: buildSystemPrompt(equipment, number, 'sms') }];
     rows.forEach(m => messages.push({ role: m.direction === 'inbound' ? 'user' : 'assistant', content: m.body || '' }));
 
-    let reply = null;
-    for (let i = 0; i < 5; i++) {
-      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 600, messages, tools: TOOLS, tool_choice: 'auto' })
-      });
-      const data = await resp.json();
-      const msg = data.choices && data.choices[0] && data.choices[0].message;
-      if (!msg) { console.error('[SARAH-SMS] no msg from LLM:', JSON.stringify(data).slice(0, 200)); break; }
-      messages.push(msg);
-      if (msg.tool_calls && msg.tool_calls.length) {
-        for (const tc of msg.tool_calls) {
-          let args = {};
-          try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) { /* */ }
-          const result = await execTool(tc.function.name, args, number);
-          console.log('[SARAH-SMS] tool', tc.function.name, '->', JSON.stringify(result).slice(0, 120));
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result).slice(0, 3000) });
-        }
-        continue;
-      }
-      reply = (msg.content || '').trim();
-      break;
-    }
+    const reply = await generateReply(messages, number);
 
     if (reply) {
       if (mode === 'suggest') { await postSuggestion(number, reply); console.log('[SARAH-SMS] suggested reply to', number, '->', reply.slice(0, 80)); }
@@ -268,4 +288,4 @@ async function actOnSuggestion(id, act, actedBy) {
 }
 
 
-module.exports = { handleInboundSms, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };
+module.exports = { handleInboundSms, generateReply, buildSystemPrompt, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };
