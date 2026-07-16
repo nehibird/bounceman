@@ -79,7 +79,7 @@ router.post('/check-availability', async (req, res) => {
   }
 
   // Get all rentable equipment (not add-ons)
-  const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
+  const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight, slug FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
 
   // Check each time window separately for accurate per-slot availability
   const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00', '4hr');
@@ -157,11 +157,12 @@ router.post('/check-availability', async (req, res) => {
 
   // Build result string with IDs so LLM can use them in createAndSendLink
   const equipmentLines = available.map(e => {
+    const pageLink = e.slug ? ` — page (photos): https://bouncemanrentals.com/equipment/${e.slug}` : '';
     if (e.fullDayOpen) {
-      return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight`;
+      return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight${pageLink}`;
     }
     const slots = [e.morningOpen && 'morning half day (9 AM–1 PM)', e.afternoonOpen && 'afternoon half day (3–7 PM)'].filter(Boolean);
-    return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} [PARTIAL: ${slots.join(' or ')} only — do NOT book full day or overnight for this item]`;
+    return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} [PARTIAL: ${slots.join(' or ')} only — do NOT book full day or overnight for this item]${pageLink}`;
   }).join('\n');
   const addonLines = addons.map(a =>
     `${a.name} (equipment_id: ${a.id}) — $${a.price_4hr} half day, $${a.price_daily} full day`
