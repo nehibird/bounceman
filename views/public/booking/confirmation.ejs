@@ -111,5 +111,6 @@
   })();
 </script>
 ${locals.depositPaid ? `<script>if(typeof fbq!=='undefined'){fbq('track','Purchase',{value:${Number(locals.conversionValue)||0},currency:'USD'},{eventID:${JSON.stringify(String(bookingNumber||''))}});}</script>` : ''}
+${locals.depositPaid && (locals.ecEmailHash || locals.ecPhoneHash) ? `<script>if(typeof gtag==='function'){gtag('set','user_data',{${locals.ecEmailHash ? `sha256_email_address:${JSON.stringify(locals.ecEmailHash)}` : ''}${locals.ecEmailHash && locals.ecPhoneHash ? ',' : ''}${locals.ecPhoneHash ? `sha256_phone_number:${JSON.stringify(locals.ecPhoneHash)}` : ''}});}</script>` : ''}
 ${locals.depositPaid ? `<script>if(typeof gtag==='function'){gtag('event','conversion',{send_to:'AW-18074004860/P4n-CM6-k7EcEPzarapD',value:${Number(locals.conversionValue)||0},currency:'USD',transaction_id:${JSON.stringify(String(bookingNumber||''))}});}</script>` : ''}
 ` }) %>

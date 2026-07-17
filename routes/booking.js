@@ -690,6 +690,23 @@ router.get('/confirmation', async (req, res) => {
     }
   }
 
+  // Google Enhanced Conversions for Web: hash the customer's email/phone server-side
+  // (SHA-256 of normalized values) so only the HASHES reach the page — never raw PII.
+  // gtag sends these with the conversion so Google can match ad clicks lost to
+  // cookie/browser restrictions (~5-10% more conversions recovered).
+  let ecEmailHash, ecPhoneHash;
+  if (depositPaid) {
+    const cust = db.prepare('SELECT email, phone FROM customers WHERE id = ?').get(booking.customer_id);
+    const crypto = require('crypto');
+    const sha = v => crypto.createHash('sha256').update(v).digest('hex');
+    if (cust?.email) ecEmailHash = sha(cust.email.trim().toLowerCase());
+    if (cust?.phone) {
+      const digits = cust.phone.replace(/\D/g, '');
+      const e164 = digits.length === 10 ? '+1' + digits : (digits.length === 11 && digits[0] === '1' ? '+' + digits : '+' + digits);
+      ecPhoneHash = sha(e164);
+    }
+  }
+
   res.render('public/booking/confirmation', {
     title: 'Booking Confirmed! - Bounce Man',
     settings,
@@ -697,6 +714,8 @@ router.get('/confirmation', async (req, res) => {
     bookingId: booking.id,
     depositPaid,
     conversionValue: booking.total || booking.deposit_amount || 0,
+    ecEmailHash,
+    ecPhoneHash,
     page: 'booking'
   });
 });
