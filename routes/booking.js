@@ -634,6 +634,9 @@ router.get('/confirmation', async (req, res) => {
     return res.redirect('/');
   }
 
+  // Google Ads conversion should only fire for a genuinely paid deposit (set true below on payment).
+  let depositPaid = booking.deposit_paid === 1 || booking.payment_status === 'deposit_paid';
+
   // Mark deposit as paid if Stripe session completed
   const notes = booking.internal_notes || '';
   const sessionMatch = notes.match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
@@ -643,6 +646,7 @@ router.get('/confirmation', async (req, res) => {
       if (session.payment_status === 'paid') {
         db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
           .run(booking.deposit_amount, booking.id);
+        depositPaid = true;
         console.log('[STRIPE] Deposit confirmed for', bookingNumber);
 
         // Send confirmation email + Slack notification now that payment is confirmed
@@ -687,6 +691,8 @@ router.get('/confirmation', async (req, res) => {
     settings,
     bookingNumber,
     bookingId: booking.id,
+    depositPaid,
+    conversionValue: booking.total || booking.deposit_amount || 0,
     page: 'booking'
   });
 });
