@@ -668,11 +668,15 @@ router.get('/confirmation', async (req, res) => {
         // Server-side Facebook Pixel — Purchase event
         const fbBooking = { ...booking, payment_status: 'deposit_paid', deposit_paid: 1 };
         facebookAds.sendPixelEvent('Purchase', {
-          value: booking.deposit_amount,
+          // Full booking value (matches the Google Ads conversion) so Facebook and
+          // Google report the same sale amount and can be compared apples-to-apples.
+          value: booking.total || booking.deposit_amount,
           currency: 'USD',
-          content_name: 'Bounce House Rental Deposit',
+          content_name: 'Bounce House Rental',
           content_type: 'product',
           order_id: bookingNumber,
+          // Shared with the browser pixel event for deduplication.
+          event_id: bookingNumber,
           event_source_url: 'https://bouncemanrentals.com/booking/confirmation',
         }, {
           email: customer?.email,

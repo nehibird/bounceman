@@ -110,6 +110,6 @@
     setTimeout(function() { container.remove(); }, 5000);
   })();
 </script>
-<script>if(typeof fbq!=='undefined')fbq('track','Purchase',{value:0,currency:'USD'});</script>
+${locals.depositPaid ? `<script>if(typeof fbq!=='undefined'){fbq('track','Purchase',{value:${Number(locals.conversionValue)||0},currency:'USD'},{eventID:${JSON.stringify(String(bookingNumber||''))}});}</script>` : ''}
 ${locals.depositPaid ? `<script>if(typeof gtag==='function'){gtag('event','conversion',{send_to:'AW-18074004860/P4n-CM6-k7EcEPzarapD',value:${Number(locals.conversionValue)||0},currency:'USD',transaction_id:${JSON.stringify(String(bookingNumber||''))}});}</script>` : ''}
 ` }) %>

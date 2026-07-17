@@ -172,6 +172,9 @@ async function sendPixelEvent(eventName, eventData = {}, userData = {}) {
     data: [{
       event_name: eventName,
       event_time: Math.floor(Date.now() / 1000),
+      // event_id lets Meta dedupe this server event against the matching browser
+      // pixel event (both use the booking number), so a sale is counted once.
+      event_id: eventData.event_id,
       action_source: 'website',
       event_source_url: eventData.event_source_url || 'https://bouncemanrentals.com',
       user_data: hashedUser,
