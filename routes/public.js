@@ -610,6 +610,124 @@ const CITY_DATA = {
   }
 };
 
+// ===== EVENT-TYPE LANDING PAGES (AEO / local SEO) =====
+const EVENT_DATA = {
+  birthday: {
+    badge: 'Birthday Parties', name: 'Birthday Party', occasion: 'birthday party',
+    serviceType: 'Bounce house rental for birthday parties',
+    h1: 'Bounce House Rentals for Birthday Parties in Kay County, OK',
+    subheading: 'Make their big day unforgettable — bounce houses, water slides, and combos delivered right to your yard.',
+    title: 'Birthday Party Bounce House Rentals — Kay County, OK | Bounce Man',
+    metaDescription: 'Bounce house rentals for birthday parties in Tonkawa, Ponca City & all of Kay County, OK. Free delivery & setup, clean units, easy online booking. Ages 2-18.',
+    heroImage: '/assets/images/equipment/tropical-combo.jpg',
+    imgAlt: 'Bounce house rental for a birthday party in Kay County OK',
+    contentHeading: 'The Easiest Way to Make a Birthday Party Unforgettable',
+    bodyHtml: `<p>Renting a bounce house is the single easiest way to turn a <strong>birthday party</strong> into the one all the kids talk about. Bounce Man delivers bounce houses, water slides, and combo units to homes across Tonkawa, Ponca City, Blackwell, and all of Kay County, Oklahoma — we handle delivery, setup, and pickup so you can focus on cake and candles.</p><p>Our units are perfect for birthdays from toddlers to teens (ages 2-18). Add a water slide for a summer party, or a combo bounce-and-slide to keep every age group entertained for hours.</p><h3 style="color:var(--bm-blue);margin-top:24px">Why Parents Book Bounce Man for Birthdays</h3><ul><li>Free delivery &amp; setup in Tonkawa (low distance fee elsewhere, shown instantly online)</li><li>Clean, sanitized units inspected before every party</li><li>Book online in minutes — no waiting for a call back</li><li>Locally owned and operated, seven days a week</li></ul><p>Reserve online or call <strong>(580) 308-9288</strong>, 8 AM to 7 PM daily.</p>`,
+    faqs: [
+      { q: 'How much does it cost to rent a bounce house for a birthday party?', a: 'Rentals run about $200-$375 per day depending on the unit, and that includes delivery, setup, and takedown. Delivery is free within Tonkawa; a small distance-based fee applies elsewhere in Kay County and shows instantly when you book online.' },
+      { q: 'What size bounce house is best for a kids birthday party?', a: 'For most backyard birthdays a standard bounce house or a combo bounce-and-slide is ideal — it fits a typical yard and keeps 6-10 kids bouncing at once. For summer birthdays, a water slide is the most popular pick. Each equipment page lists dimensions so you can check your space.' },
+      { q: 'How far in advance should I book a bounce house for a birthday?', a: 'For weekend birthdays we recommend booking 2-3 weeks ahead, especially in spring and summer when dates fill up fast. That said, we often have last-minute availability — just check your date online or give us a call.' },
+      { q: 'Do you set up the bounce house at our house?', a: 'Yes. We deliver, set up, inflate, and take everything down when the party is over — you do not lift a finger. We just need a mostly flat spot and access to a standard outlet (or ask about our generator).' },
+    ],
+    relatedLinks: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Church Events', url: '/church-event-bounce-house-rental' },
+      { name: 'School Field Days', url: '/school-field-day-bounce-house-rental' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
+    ],
+  },
+  church: {
+    badge: 'Church Events', name: 'Church Event', occasion: 'church event',
+    serviceType: 'Bounce house rental for church events',
+    h1: 'Bounce House Rentals for Church Events in Kay County, OK',
+    subheading: 'VBS, fall festivals, and fellowship days — safe, clean inflatables the whole congregation will love.',
+    title: 'Church Event Bounce House Rentals — Kay County, OK | Bounce Man',
+    metaDescription: 'Bounce house & inflatable rentals for church events in Kay County, OK — VBS, fall festivals, trunk-or-treat & fellowship days. Free Tonkawa delivery, clean units, book online.',
+    heroImage: '/assets/images/equipment/bounce-castle.jpg',
+    imgAlt: 'Bounce house rental for a church event in Kay County OK',
+    contentHeading: 'Draw a Crowd to Your Next Church Event',
+    bodyHtml: `<p>Nothing brings families out to a <strong>church event</strong> like a bounce house. Whether it is Vacation Bible School, a fall festival, trunk-or-treat, or a Sunday fellowship day, Bounce Man delivers safe, sanitized inflatables to churches across Tonkawa, Ponca City, and all of Kay County, Oklahoma.</p><p>As a Christ-centered, family-owned business, we love partnering with local churches. We handle delivery, setup, and takedown so your volunteers can focus on ministry, not logistics.</p><h3 style="color:var(--bm-blue);margin-top:24px">Great for Every Church Gathering</h3><ul><li>Vacation Bible School (VBS)</li><li>Fall festivals &amp; trunk-or-treat</li><li>Easter egg hunts &amp; spring events</li><li>Fellowship days &amp; member appreciation</li><li>Youth group &amp; community outreach</li></ul><p>Need multiple units for a big event? Just ask. Call <strong>(580) 308-9288</strong> or book online.</p>`,
+    faqs: [
+      { q: 'Do you rent bounce houses for church events and festivals?', a: 'Absolutely — church events are some of our favorites. We serve VBS, fall festivals, trunk-or-treat, Easter events, and fellowship days throughout Kay County. For larger festivals we can provide multiple units; just call (580) 308-9288 to plan it out.' },
+      { q: 'Can we rent more than one inflatable for a big church festival?', a: 'Yes. For fall festivals and VBS we often set up several units — a bounce house for little kids, a slide or obstacle course for older ones. Reach out early for multi-unit dates so we can reserve everything you need.' },
+      { q: 'How much does a bounce house rental cost for a church event?', a: 'Single units run about $200-$375 per day including delivery and setup. Delivery is free in Tonkawa with a small distance fee elsewhere in Kay County, shown when you book. Ask about options for full-day festival rentals.' },
+      { q: 'Are your inflatables safe and clean for lots of kids?', a: 'Yes. Every unit is sanitized between rentals and safety-inspected before delivery. We set up on a flat, secured surface and can walk your volunteers through simple attendant guidelines to keep the day running smoothly.' },
+    ],
+    relatedLinks: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Birthday Parties', url: '/bounce-house-rental-birthday-party' },
+      { name: 'School Field Days', url: '/school-field-day-bounce-house-rental' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
+    ],
+  },
+  school: {
+    badge: 'School Field Days', name: 'School Field Day', occasion: 'school event',
+    serviceType: 'Bounce house and obstacle course rental for school field days',
+    h1: 'Bounce House & Obstacle Course Rentals for School Field Days',
+    subheading: 'Field days, school carnivals & fundraisers — big fun that keeps students moving.',
+    title: 'School Field Day Bounce House Rentals — Kay County, OK | Bounce Man',
+    metaDescription: 'Bounce house, water slide & obstacle course rentals for school field days, carnivals & fundraisers in Kay County, OK. Multi-unit setups, free Tonkawa delivery, book online.',
+    heroImage: '/assets/images/equipment/obstacle-course.jpg',
+    imgAlt: 'Obstacle course rental for a school field day in Kay County OK',
+    contentHeading: 'Make Field Day the Best Day of the School Year',
+    bodyHtml: `<p>An inflatable <strong>obstacle course</strong> or bounce house turns an ordinary field day into the day students remember all year. Bounce Man supplies schools and PTOs across Tonkawa, Ponca City, Blackwell, and Kay County, Oklahoma with clean, high-capacity units built to handle class after class of energetic kids.</p><p>From field days and end-of-year parties to carnivals and fundraisers, we deliver, set up, and take down — so teachers and volunteers can run the fun, not the equipment.</p><h3 style="color:var(--bm-blue);margin-top:24px">Perfect for School Days</h3><ul><li>Field days &amp; end-of-year celebrations</li><li>Fall &amp; spring carnivals</li><li>PTO / PTA fundraisers</li><li>Reward days &amp; assemblies</li><li>Multiple units for large groups</li></ul><p>Planning a big day? Call <strong>(580) 308-9288</strong> to line up multiple units and staggered timing.</p>`,
+    faqs: [
+      { q: 'Do you rent inflatables for school field days and carnivals?', a: 'Yes — field days, carnivals, and fundraisers are a specialty. Our obstacle course (The Gauntlet), bounce houses, and water slides are built for high-volume use and keep students moving through the day. For big events we set up multiple units.' },
+      { q: 'Can the school be invoiced for a field day rental?', a: 'We are happy to work with schools and PTOs on booking and payment for field days — just call (580) 308-9288 and we will sort out the details for your event.' },
+      { q: 'How many kids can go through an obstacle course at once?', a: 'Our obstacle course is designed for continuous rotation, so students cycle through quickly — ideal for field-day stations. For a full grade level we recommend pairing it with a bounce house or slide so more kids are active at once.' },
+      { q: 'How much does a school field day rental cost?', a: 'Individual units run about $200-$375 per day including delivery and setup, with free delivery in Tonkawa and a small distance fee elsewhere in Kay County. Ask about multi-unit field-day pricing.' },
+    ],
+    relatedLinks: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Birthday Parties', url: '/bounce-house-rental-birthday-party' },
+      { name: 'Church Events', url: '/church-event-bounce-house-rental' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
+    ],
+  },
+  graduation: {
+    badge: 'Graduation Parties', name: 'Graduation Party', occasion: 'graduation party',
+    serviceType: 'Water slide and bounce house rental for graduation parties',
+    h1: 'Water Slide & Bounce House Rentals for Graduation Parties',
+    subheading: 'Celebrate the grad — water slides and combos to beat the Oklahoma summer heat.',
+    title: 'Graduation Party Rentals — Water Slides & Bounce Houses | Bounce Man',
+    metaDescription: 'Water slide & bounce house rentals for graduation parties in Kay County, OK. Beat the summer heat with a backyard water slide. Free Tonkawa delivery, easy online booking.',
+    heroImage: '/assets/images/equipment/water-slide.jpg',
+    imgAlt: 'Water slide rental for a graduation party in Kay County OK',
+    contentHeading: 'Send Off the Grad With a Summer Party to Remember',
+    bodyHtml: `<p>Graduation season lands in the heat of an Oklahoma summer — which makes a backyard <strong>water slide</strong> the perfect centerpiece for the party. Bounce Man delivers water slides, combo units, and bounce houses to graduation celebrations across Tonkawa, Ponca City, and all of Kay County.</p><p>Our slides are a hit with every age at the party, from little cousins to the grads themselves. We deliver, set up, and take it all down, so the family can enjoy the celebration.</p><h3 style="color:var(--bm-blue);margin-top:24px">Why a Water Slide Wins Grad Season</h3><ul><li>Beats the May &amp; June Oklahoma heat</li><li>Fun for all ages, not just little kids</li><li>Combo units add a bounce house for the younger crowd</li><li>Free delivery &amp; setup in Tonkawa</li></ul><p>Summer dates book early — reserve online or call <strong>(580) 308-9288</strong>.</p>`,
+    faqs: [
+      { q: 'What rental is best for a graduation party?', a: 'A water slide is the top pick for graduation parties since they fall in the summer heat. Combo bounce-and-slide units are great too — the slide keeps teens and adults cool while a bounce house entertains younger guests.' },
+      { q: 'Are water slides fun for teens and adults, not just little kids?', a: 'Definitely. Our larger water slides like Buccaneer Bay are built for all ages — plenty of grads and adults take the plunge. It is an easy way to keep a summer party going for hours.' },
+      { q: 'When should I book a rental for a graduation party?', a: 'Graduation weekends in May and June are our busiest dates, so book 3-4 weeks ahead if you can. Check your date online anytime or call (580) 308-9288 for last-minute availability.' },
+      { q: 'How much does a water slide rental cost for a graduation party?', a: 'Water slides and combos run about $299-$375 per day including delivery and setup. Delivery is free in Tonkawa with a small distance fee elsewhere in Kay County, shown instantly when you book online.' },
+    ],
+    relatedLinks: [
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' },
+      { name: 'Ponca City', url: '/bounce-house-rental-ponca-city-ok' },
+      { name: 'Birthday Parties', url: '/bounce-house-rental-birthday-party' },
+      { name: 'Church Events', url: '/church-event-bounce-house-rental' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
+    ],
+  },
+};
+
+function renderEventPage(res, key, path) {
+  const settings = getSettings();
+  const eventData = EVENT_DATA[key];
+  const faqSchema = JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: eventData.faqs.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) });
+  const serviceSchema = JSON.stringify({ '@context': 'https://schema.org', '@type': 'Service', serviceType: eventData.serviceType, provider: { '@type': 'LocalBusiness', name: 'Bounce Man Rentals', telephone: '+1-580-308-9288' }, areaServed: { '@type': 'AdministrativeArea', name: 'Kay County, Oklahoma' }, description: eventData.metaDescription });
+  res.render('public/event-landing', { title: eventData.title, metaDescription: eventData.metaDescription, canonicalPath: path, settings, eventData, faqSchema, serviceSchema, page: 'event-landing' });
+}
+
+// Event-type landing page routes
+router.get('/bounce-house-rental-birthday-party', (req, res) => renderEventPage(res, 'birthday', '/bounce-house-rental-birthday-party'));
+router.get('/church-event-bounce-house-rental', (req, res) => renderEventPage(res, 'church', '/church-event-bounce-house-rental'));
+router.get('/school-field-day-bounce-house-rental', (req, res) => renderEventPage(res, 'school', '/school-field-day-bounce-house-rental'));
+router.get('/graduation-party-bounce-house-rental', (req, res) => renderEventPage(res, 'graduation', '/graduation-party-bounce-house-rental'));
+
 // City landing page routes
 router.get('/bounce-house-rental-tonkawa-ok', (req, res) => {
   const settings = getSettings();
@@ -682,7 +800,11 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/water-slide-rental-kay-county-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-newkirk-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-enid-ok', priority: '0.8', changefreq: 'monthly' },
-    { loc: '/bounce-house-rental-perry-ok', priority: '0.8', changefreq: 'monthly' }
+    { loc: '/bounce-house-rental-perry-ok', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/bounce-house-rental-birthday-party', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/church-event-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/school-field-day-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/graduation-party-bounce-house-rental', priority: '0.8', changefreq: 'monthly' }
   ];
 
   const db = getDb();
