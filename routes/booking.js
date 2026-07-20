@@ -634,6 +634,11 @@ router.get('/confirmation', async (req, res) => {
     return res.redirect('/');
   }
 
+  // Log who opened the confirmation page (real client IP via Cloudflare + user agent) so an
+  // unexpected alert can be traced to a bot/crawler vs a real visitor. Not personally identifying.
+  const visitorIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip;
+  console.log('[CONFIRMATION VIEW]', bookingNumber, '| ip:', visitorIp, '| ua:', req.headers['user-agent'] || 'unknown');
+
   // Google Ads conversion should only fire for a genuinely paid deposit (set true below on payment).
   let depositPaid = booking.deposit_paid === 1 || booking.payment_status === 'deposit_paid';
 
@@ -644,7 +649,11 @@ router.get('/confirmation', async (req, res) => {
     try {
       const session = await stripeService.retrieveSession(sessionMatch[1]);
       if (session.payment_status === 'paid') {
-        db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
+        // Set confirmation_email_sent=1 HERE (not only in the email callback below) so this
+        // block runs exactly ONCE per booking. Bug fix: bookings made WITHOUT an email never
+        // got this flag set, so re-opening their confirmation link re-fired the "New Booking"
+        // Slack alert (and conversion events) on every visit. This is the process-once guard.
+        db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, confirmation_email_sent = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
           .run(booking.deposit_amount, booking.id);
         depositPaid = true;
         console.log('[STRIPE] Deposit confirmed for', bookingNumber);
