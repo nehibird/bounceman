@@ -83,6 +83,14 @@ function buildBookingBlocks(booking, customer, items) {
     ] });
   }
 
+  // Tax-exempt claim → surface the permit # + a verify link. We honor the exemption on
+  // entry (accept-then-verify), so an admin should confirm the permit before delivery.
+  if (booking.tax_exempt_claimed) {
+    const permit = (customer && customer.tax_exempt_cert) ? customer.tax_exempt_cert : 'not provided';
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text:
+      '🏛️ *TAX-EXEMPT — verify before delivery*\nPermit #: `' + permit + '`  ·  <https://oktap.tax.ok.gov/OkTAP/Web/_/|Verify at OkTAP>' } });
+  }
+
   // Delivery notes if present
   if (booking.delivery_notes) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '📝 *Notes:* ' + booking.delivery_notes } });

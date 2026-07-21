@@ -298,11 +298,12 @@ router.post('/review', bookingLimiter, async (req, res) => {
     }
   }
 
-  // B8: a self-claimed exemption only zeros tax when backed by a certificate on file.
-  // The bare claim is still recorded (below) so an admin can review/verify it.
+  // Accept-then-verify: honor the exemption immediately when the customer provides a
+  // permit #, so the displayed total and the actual charge match (no more "$0.00 shown
+  // but tax still charged"). The claim + permit # are recorded below and surfaced on the
+  // new-booking Slack card so an admin can verify the permit before delivery.
   const taxExemptClaimed = tax_exempt_claimed === '1';
-  const certCustomer = email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(email) : null;
-  const taxExemptHonored = !!(certCustomer && certCustomer.tax_exempt && certCustomer.tax_exempt_cert);
+  const taxExemptHonored = taxExemptClaimed && !!(tax_exempt_cert && String(tax_exempt_cert).trim());
   // Promo: 3+ items → one extra day free.
   const free_extra_day = freeExtraDayDiscount(db, items, { days, wetSet: wetItemIds, date: event_date });
   // Hard-surface (concrete/asphalt) or indoor setups need sandbags → 10% surcharge.
@@ -383,10 +384,10 @@ router.post('/submit', bookingLimiter, async (req, res) => {
           : Math.min(code.value, recalcSubtotal);
       }
     }
-    // B8: only honor an exemption backed by a certificate on file. A bare self-claim
-    // does NOT zero the tax — it's recorded as tax_exempt_claimed for admin to review.
-    const existingCustomer = data.email ? db.prepare('SELECT tax_exempt, tax_exempt_cert FROM customers WHERE email = ?').get(data.email) : null;
-    const taxExempt = !!(existingCustomer && existingCustomer.tax_exempt && existingCustomer.tax_exempt_cert);
+    // Accept-then-verify: honor the exemption on entry when a permit # was provided, so
+    // the charged total matches the review page. Recorded on the booking + customer below;
+    // the permit # is surfaced on the Slack card for an admin to verify before delivery.
+    const taxExempt = data.tax_exempt_claimed === '1' && !!(data.tax_exempt_cert && String(data.tax_exempt_cert).trim());
     // Promo: 3+ items → one extra day free (same helper the review preview uses).
     const recalcFreeExtraDay = freeExtraDayDiscount(db, submitItems, { days: submitDays, wetSet: submitWetIdsSet, date: data.event_date });
     // Hard-surface/indoor 10% surcharge (same helper the review preview uses).
