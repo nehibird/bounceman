@@ -1250,7 +1250,11 @@ router.post('/twilio-entry', (req, res) => {
 
   const twimlGather = () => {
     res.type('text/xml');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" action="/api/webhooks/twilio-gather" method="POST" timeout="8"><Play>https://bouncemanrentals.com/assets/audio/thanks-for-calling.mp3</Play></Gather><Hangup/></Response>`);
+    // Use <Say> (text-to-speech) for the gather prompt instead of a hosted MP3. The prior
+    // <Play> pointed at /assets/audio/thanks-for-calling.mp3 which does not exist (404),
+    // causing Twilio to fail the whole call with "an application error has occurred" and
+    // never present the press-1 prompt. <Say> has no external dependency and can't 404.
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" action="/api/webhooks/twilio-gather" method="POST" timeout="8"><Say voice="Polly.Joanna">Thanks for calling Bounce Man Rentals! Press 1 to be connected.</Say></Gather><Hangup/></Response>`);
   };
 
   const logCall = (status, reason) => {
