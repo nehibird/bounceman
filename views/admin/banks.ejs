@@ -32,15 +32,18 @@
 async function api(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
 const msg=document.getElementById('msg');
 document.getElementById('connectBtn').onclick=async()=>{
-  msg.textContent='Opening Plaid…';
-  const r=await api('/admin/banks/link-token');
-  if(!r.link_token){msg.textContent='Error: '+(r.error||'could not start');return;}
-  Plaid.create({token:r.link_token,onSuccess:async(pt)=>{
-    msg.textContent='Connecting & syncing…';
-    const ex=await api('/admin/banks/exchange',{public_token:pt});
-    msg.textContent=ex.error?('Error: '+ex.error):('Connected '+(ex.institution||'')+' — syncing…');
-    setTimeout(()=>location.reload(),1800);
-  },onExit:(err)=>{msg.textContent=err?'Cancelled / error':'Closed';}}).open();
+  try{
+    msg.textContent='Opening Plaid…';
+    if(typeof Plaid==='undefined'){msg.textContent='Error: Plaid failed to load (check network / ad-blocker).';return;}
+    const r=await api('/admin/banks/link-token');
+    if(!r.link_token){msg.textContent='Error: '+(r.error||'could not start');return;}
+    Plaid.create({token:r.link_token,onSuccess:async(pt)=>{
+      msg.textContent='Connecting & syncing…';
+      const ex=await api('/admin/banks/exchange',{public_token:pt});
+      msg.textContent=ex.error?('Error: '+ex.error):('Connected '+(ex.institution||'')+' — syncing…');
+      setTimeout(()=>location.reload(),1800);
+    },onExit:(err)=>{msg.textContent=err?'Cancelled / error':'Closed';}}).open();
+  }catch(e){msg.textContent='Error: '+(e.message||'Plaid failed to open');}
 };
 document.getElementById('syncBtn').onclick=async()=>{msg.textContent='Syncing all banks…';const r=await api('/admin/banks/sync');msg.textContent='Done: '+JSON.stringify(r);setTimeout(()=>location.reload(),1800);};
 </script>

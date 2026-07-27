@@ -113,6 +113,8 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
   <style>
+    /* Prevent small (Bootstrap gutter) horizontal overflow on mobile — no page should scroll sideways. */
+    html, body { overflow-x: hidden; max-width: 100%; }
     :root {
       --bm-orange: <%= settings.primary_color || '#FF6B35' %>;
       --bm-blue: <%= settings.secondary_color || '#004E89' %>;

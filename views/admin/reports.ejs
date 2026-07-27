@@ -94,7 +94,7 @@
         <table class="table table-sm mb-0">
           <thead><tr><th>Event Month</th><th class="text-end">Bookings</th><th class="text-end">Sales (total)</th><th class="text-end">Tax Collected</th></tr></thead>
           <tbody>
-            ${(taxByMonth||[]).length ? (taxByMonth||[]).map(function(m){ return '<tr><td>'+m.month+'</td><td class="text-end">'+m.bookings+'</td><td class="text-end">$'+parseFloat(m.total).toFixed(2)+'</td><td class="text-end fw-bold">$'+parseFloat(m.tax).toFixed(2)+'</td></tr>'; }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No data</td></tr>'}
+            ${(taxByMonth||[]).length ? (taxByMonth||[]).map(function(m){ return '<tr><td>'+(m.month || 'Unknown (missing event date)')+'</td><td class="text-end">'+m.bookings+'</td><td class="text-end">$'+parseFloat(m.total).toFixed(2)+'</td><td class="text-end fw-bold">$'+parseFloat(m.tax).toFixed(2)+'</td></tr>'; }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No data</td></tr>'}
           </tbody>
         </table>
       </div>

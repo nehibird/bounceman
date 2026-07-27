@@ -49,10 +49,10 @@ ${vapiError ? `<div class="alert alert-warning py-2"><i class="fas fa-triangle-e
 <div class="card mb-3">
   <div class="card-header bg-white"><i class="fas fa-headphones me-2"></i>Recording</div>
   <div class="card-body">
-    ${call.hasRecording ? `
+    ${call.hasRecording && !vapiError ? `
       <audio controls preload="none" class="w-100" src="/admin/calls/${encodeURIComponent(vapiCallId)}/recording"></audio>
       <div class="mt-2"><a href="/admin/calls/${encodeURIComponent(vapiCallId)}/recording" class="small text-decoration-none"><i class="fas fa-download me-1"></i>Download / open in a new tab</a></div>
-    ` : '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>No recording available for this call.</p>'}
+    ` : (call.hasRecording ? '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>Recording unavailable — it may have expired or the live Vapi lookup failed.</p>' : '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>No recording available for this call.</p>')}
   </div>
 </div>
 

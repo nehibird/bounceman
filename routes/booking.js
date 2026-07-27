@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -256,6 +256,12 @@ router.post('/review', bookingLimiter, async (req, res) => {
     tax_exempt_claimed, tax_exempt_cert, rental_days, event_end_date, ready_by
   } = req.body;
 
+  // Reject a past event date — client-side flatpickr minDate is bypassable via direct POST.
+  const todayCT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  if (!event_date || event_date < todayCT) {
+    return res.status(400).render('error', { title: 'Invalid Event Date', message: 'Please choose an event date of today or later.', status: 400 });
+  }
+
   const items = Array.isArray(equipment_ids) ? equipment_ids : (equipment_ids || '').split(',').filter(Boolean);
   const wetItemIds = new Set((wet_items || '').split(',').filter(Boolean));
   const duration = rental_duration || 'daily';
@@ -308,7 +314,9 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const free_extra_day = freeExtraDayDiscount(db, items, { days, wetSet: wetItemIds, date: event_date });
   // Hard-surface (concrete/asphalt) or indoor setups need sandbags → 10% surcharge.
   const surface_fee = surfaceSurcharge(subtotal, surface_type, venue_type);
-  const pricing = calcPricing(settings, subtotal, delivery_fee, delivery_city, taxExemptHonored, surface_fee);
+  // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
+  const tax_city = await resolveTaxCity(delivery_zip, delivery_city);
+  const pricing = calcPricing(settings, subtotal, delivery_fee, tax_city, taxExemptHonored, surface_fee, discount_amount + free_extra_day);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
   const total = Math.max(0, rawTotal - discount_amount - free_extra_day);
   const reviewDepositPct = parseFloat(settings.deposit_percent || '50') / 100;
@@ -351,6 +359,20 @@ router.post('/submit', bookingLimiter, async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
     return res.status(400).send('Invalid email address');
   }
+  // Reject a past event date on direct POST (mirrors the /review guard).
+  const submitTodayCT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  if (!data.event_date || data.event_date < submitTodayCT) {
+    return res.status(400).render('error', { title: 'Invalid Event Date', message: 'Please choose an event date of today or later.', status: 400 });
+  }
+  // Require the core customer/delivery fields server-side (client `required` is bypassable).
+  for (const [field, label] of [['first_name','first name'],['last_name','last name'],['phone','phone'],['delivery_address','delivery address'],['delivery_city','delivery city'],['delivery_zip','delivery ZIP']]) {
+    if (!data[field] || !String(data[field]).trim()) {
+      return res.status(400).render('error', { title: 'Missing Information', message: `Please provide your ${label} to complete the booking.`, status: 400 });
+    }
+  }
+  if (!(Array.isArray(data.equipment_ids) ? data.equipment_ids.length : (data.equipment_ids || '').split(',').filter(Boolean).length)) {
+    return res.status(400).render('error', { title: 'No Equipment Selected', message: 'Please select at least one item to rent.', status: 400 });
+  }
 
   try {
     // CRIT-1: Recalculate all pricing server-side
@@ -392,7 +414,9 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const recalcFreeExtraDay = freeExtraDayDiscount(db, submitItems, { days: submitDays, wetSet: submitWetIdsSet, date: data.event_date });
     // Hard-surface/indoor 10% surcharge (same helper the review preview uses).
     const recalcSurfaceFee = surfaceSurcharge(recalcSubtotal, data.surface_type, data.venue_type);
-    const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, data.delivery_city, taxExempt, recalcSurfaceFee);
+    // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
+    const recalcTaxCity = await resolveTaxCity(data.delivery_zip, data.delivery_city);
+    const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, recalcTaxCity, taxExempt, recalcSurfaceFee, recalcDiscountAmount + recalcFreeExtraDay);
     const recalcTotal = Math.max(0, recalcPricing.total - recalcDiscountAmount - recalcFreeExtraDay);
     data.subtotal = recalcSubtotal;
     data.delivery_fee = recalcDeliveryFee;
@@ -581,6 +605,22 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const depositAmount = parseFloat(data.deposit_amount);
     const itemNames = submitItems.map(id => db.prepare('SELECT name FROM equipment WHERE id = ?').get(id)?.name).filter(Boolean).join(', ');
     const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+
+    // No deposit due (comped / fully-discounted booking) — Stripe rejects sub-$0.50 charges,
+    // which would otherwise strand the booking as "confirmed" but unpaid. Mark it settled
+    // (balance collected on delivery), send the confirmation, and skip Stripe entirely.
+    if (!(depositAmount >= 0.5)) {
+      db.prepare("UPDATE bookings SET deposit_paid = 1, payment_method = 'none' WHERE id = ?").run(bookingId);
+      if (data.email) {
+        const bookingForEmail = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+        const itemsForEmail = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
+        emailService.sendBookingConfirmation(bookingForEmail, { first_name: data.first_name, last_name: data.last_name, email: data.email }, itemsForEmail, contractId)
+          .then(() => db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(bookingId))
+          .catch(err => console.error('[EMAIL ERROR]', err.message));
+      }
+      console.log('[BOOKING] Created', bookingNumber, '-> $0 deposit, marked settled (no Stripe)');
+      return res.render('public/booking/confirmation', { title: 'Booking Confirmed! - Bounce Man', settings, bookingNumber, bookingId, page: 'booking' });
+    }
 
     try {
       const session = await stripeService.createCheckoutSession({
@@ -793,6 +833,12 @@ router.get('/pay-deposit/:bookingNumber', async (req, res) => {
   const depositAmount = parseFloat(booking.deposit_amount);
   const itemNames = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id).map(i => i.item_name).join(', ');
   const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
+
+  // No deposit due — Stripe rejects sub-$0.50 charges; mark settled (balance on delivery) and confirm.
+  if (!(depositAmount >= 0.5)) {
+    db.prepare("UPDATE bookings SET deposit_paid = 1, payment_method = 'none' WHERE id = ?").run(booking.id);
+    return res.redirect(`/booking/confirmation?booking_number=${booking.booking_number}`);
+  }
 
   try {
     const session = await stripeService.createCheckoutSession({

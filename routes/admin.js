@@ -807,6 +807,19 @@ router.post('/customers/:id/tax-exempt', (req, res) => {
   res.redirect('/admin/customers/' + req.params.id);
 });
 
+// Append a timestamped internal note to the customer record.
+router.post('/customers/:id/notes', (req, res) => {
+  const db = getDb();
+  const note = (req.body.note || '').trim();
+  if (note) {
+    const cust = db.prepare('SELECT notes FROM customers WHERE id = ?').get(req.params.id);
+    const stamp = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' });
+    const appended = (cust && cust.notes ? cust.notes + '\n\n' : '') + '[' + stamp + '] ' + note;
+    db.prepare("UPDATE customers SET notes = ?, updated_at = datetime('now') WHERE id = ?").run(appended, req.params.id);
+  }
+  res.redirect('/admin/customers/' + req.params.id);
+});
+
 router.post('/customers/:id/delete', (req, res) => {
   const db = getDb();
   const id = req.params.id;
@@ -911,7 +924,8 @@ router.get('/reports', (req, res) => {
     SELECT strftime('%Y-%m', event_date) as month,
            COALESCE(SUM(tax_amount),0) as tax, COALESCE(SUM(total),0) as total, COUNT(*) as bookings
     FROM bookings
-    WHERE status NOT IN ('cancelled','declined') AND tax_amount IS NOT NULL AND event_date >= date('now','-18 months')
+    WHERE status NOT IN ('cancelled','declined') AND tax_amount IS NOT NULL
+      AND date(event_date) IS NOT NULL AND date(event_date) >= date('now','-18 months')
     GROUP BY month ORDER BY month DESC
   `).all();
   // Tax collected on bookings whose event hasn't happened yet (collected, not yet due).
@@ -1512,13 +1526,21 @@ router.get('/ads/rules', requireAdmin, (req, res) => {
 router.get('/ads/reports', requireAdmin, (req, res) => {
   const db = getDb();
   const settings = getSettings();
+  const { from, to, platform } = req.query;
+  const where = [];
+  const params = [];
+  if (from) { where.push('p.date >= ?'); params.push(from); }
+  if (to) { where.push('p.date <= ?'); params.push(to); }
+  if (platform && platform !== 'all') { where.push('c.platform = ?'); params.push(platform); }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const rows = db.prepare(`
     SELECT p.*, c.name as campaign_name, c.platform
     FROM ad_performance p
     LEFT JOIN ad_campaigns c ON c.id = p.campaign_id
+    ${whereSql}
     ORDER BY p.date DESC LIMIT 200
-  `).all();
-  res.render('admin/ads-reports', { title: 'Ad Reports', settings, rows, page: 'ads', user: req.user });
+  `).all(...params);
+  res.render('admin/ads-reports', { title: 'Ad Reports', settings, rows, page: 'ads', user: req.user, filter: { from: from || '', to: to || '', platform: platform || 'all' } });
 });
 
 // --- JSON API ---

@@ -218,8 +218,8 @@ ${totals.length > 0 ? `
                 data-bs-toggle="collapse" data-bs-target="#edit-${e.id}">
                 <i class="fas fa-pencil-alt"></i>
               </button>
-              <form method="POST" action="/admin/expenses/${e.id}/delete" class="d-inline"
-                onsubmit="return confirm('Delete this expense?')">
+              <form method="POST" action="/admin/expenses/${e.id}/delete" class="d-inline confirm-delete"
+                data-confirm="Delete this expense?">
                 <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
               </form>
             </td>

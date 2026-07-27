@@ -101,7 +101,7 @@
                 'data-bs-toggle="modal" data-bs-target="#editEventModal">' +
                 '<i class="fas fa-pencil-alt"></i>' +
               '</button>' +
-              '<form method="POST" action="/admin/events/' + e.id + '/delete" style="display:inline" onsubmit="return confirm(\'Delete ' + e.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;') + '? This cannot be undone.\');">' +
+              '<form method="POST" action="/admin/events/' + e.id + '/delete" style="display:inline" class="confirm-delete" data-confirm="Delete ' + e.name.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '? This cannot be undone.">' +
                 '<button class="btn btn-sm btn-outline-danger rounded-pill" title="Delete">' +
                   '<i class="fas fa-trash"></i>' +
                 '</button>' +

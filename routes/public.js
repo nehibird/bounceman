@@ -803,6 +803,7 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/faq', priority: '0.6', changefreq: 'monthly' },
     { loc: '/reviews', priority: '0.5', changefreq: 'weekly' },
     { loc: '/service-areas', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/bounceintobiz', priority: '0.5', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-tonkawa-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-ponca-city-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-blackwell-ok', priority: '0.8', changefreq: 'monthly' },

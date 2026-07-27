@@ -34,7 +34,7 @@
         <div class="d-flex gap-2">
           ${sarahEnabled ? `<form method="POST" action="/admin/messages/${threadPaused ? 'resume' : 'pause'}" class="m-0"><input type="hidden" name="to" value="${activeThread.number}"><button class="btn btn-sm ${threadPaused ? 'btn-outline-secondary' : 'btn-success'}" type="submit" title="${threadPaused ? 'Sarah is paused here — click to let her reply' : 'Sarah is auto-replying — click to take over'}"><i class="fas fa-robot me-1"></i>${threadPaused ? 'Sarah off' : 'Sarah on'}</button></form>` : ''}
           <button class="btn btn-sm btn-outline-success call-btn" data-phone="${activeThread.number}"><i class="fas fa-phone-alt me-1"></i>Call</button>
-          <form method="POST" action="/admin/messages/delete" class="m-0" onsubmit="return confirm('Delete this entire conversation? This cannot be undone.')"><input type="hidden" name="to" value="${activeThread.number}"><button class="btn btn-sm btn-outline-danger" type="submit" title="Delete conversation"><i class="fas fa-trash"></i></button></form>
+          <form method="POST" action="/admin/messages/delete" class="m-0 confirm-delete" data-confirm="Delete this entire conversation? This cannot be undone."><input type="hidden" name="to" value="${activeThread.number}"><button class="btn btn-sm btn-outline-danger" type="submit" title="Delete conversation"><i class="fas fa-trash"></i></button></form>
         </div>
       </div>
       <div class="card-body" style="max-height:56vh;overflow:auto;background:#f1f3f5" id="convo">

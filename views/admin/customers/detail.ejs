@@ -59,7 +59,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
           <div class="mb-3">
             <div class="form-check form-switch">
               <input type="hidden" name="tax_exempt" value="0">
-              <input class="form-check-input" type="checkbox" name="tax_exempt" value="1" id="taxExemptToggle" ${customer.tax_exempt ? 'checked' : ''} onchange="this.form.submit()">
+              <input class="form-check-input" type="checkbox" name="tax_exempt" value="1" id="taxExemptToggle" ${customer.tax_exempt ? 'checked' : ''}>
               <label class="form-check-label" for="taxExemptToggle">
                 ${customer.tax_exempt ? '<span class="badge bg-success">Tax Exempt</span>' : '<span class="text-muted">Not exempt</span>'}
               </label>
@@ -76,8 +76,9 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
 
     <!-- Add Note -->
     <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Add Note</div>
+      <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Notes</div>
       <div class="card-body">
+        ${customer.notes ? `<div class="small text-muted mb-3 p-2 rounded" style="white-space:pre-wrap;background:#f8f9fa">${esc(customer.notes)}</div>` : ''}
         <form method="POST" action="/admin/customers/${customer.id}/notes">
           <textarea name="note" class="form-control mb-2" rows="3" placeholder="Add a note about this customer..."></textarea>
           <button type="submit" class="btn btn-sm btn-bm w-100"><i class="fas fa-save me-1"></i> Save Note</button>
@@ -165,5 +166,10 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
 
   </div>
 </div>
-
+<script>
+  (function(){
+    var t = document.getElementById('taxExemptToggle');
+    if (t) t.addEventListener('change', function(){ t.form.submit(); });
+  })();
+</script>
 `, scripts: '' }) %>

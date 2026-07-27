@@ -11,18 +11,18 @@
     <div class="row g-3 align-items-end">
       <div class="col-6 col-md-3">
         <label class="form-label small text-muted">From Date</label>
-        <input type="date" class="form-control form-control-sm" id="fromDate">
+        <input type="date" class="form-control form-control-sm" id="fromDate" value="${filter.from}">
       </div>
       <div class="col-6 col-md-3">
         <label class="form-label small text-muted">To Date</label>
-        <input type="date" class="form-control form-control-sm" id="toDate">
+        <input type="date" class="form-control form-control-sm" id="toDate" value="${filter.to}">
       </div>
       <div class="col-6 col-md-3">
         <label class="form-label small text-muted">Channel</label>
         <select class="form-select form-select-sm" id="channelFilter">
-          <option value="all">All Channels</option>
-          <option value="google">Google</option>
-          <option value="facebook">Facebook / Instagram</option>
+          <option value="all" ${filter.platform === 'all' ? 'selected' : ''}>All Channels</option>
+          <option value="google" ${filter.platform === 'google' ? 'selected' : ''}>Google</option>
+          <option value="facebook" ${filter.platform === 'facebook' ? 'selected' : ''}>Facebook / Instagram</option>
         </select>
       </div>
       <div class="col-6 col-md-3">
@@ -126,12 +126,14 @@ function applyFilters() {
   const from = document.getElementById('fromDate').value;
   const to = document.getElementById('toDate').value;
   const ch = document.getElementById('channelFilter').value;
-  let url = '/admin/api/ads/performance?';
-  if (from) url += 'from=' + from + '&';
-  if (to) url += 'to=' + to + '&';
-  if (ch !== 'all') url += 'platform=' + ch;
-  // Reload with new data (simple approach)
-  window.location.href = '/admin/ads/reports';
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (ch && ch !== 'all') params.set('platform', ch);
+  const qs = params.toString();
+  window.location.href = '/admin/ads/reports' + (qs ? '?' + qs : '');
 }
+var _applyBtn = document.getElementById('applyFiltersBtn');
+if (_applyBtn) _applyBtn.addEventListener('click', applyFilters);
 </script>
 ` }) %>
