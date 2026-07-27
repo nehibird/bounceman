@@ -1151,7 +1151,20 @@ router.post('/vapi', async (req, res) => {
 
   if (msg.type === 'end-of-call-report') {
     const call = msg.call || {};
-    const callerNumber = call.customer?.number || 'Unknown';
+    // Twilio drops callerId on <Dial><Sip>, so for SIP-bridged calls call.customer.number
+    // is OUR OWN line, not the caller's. assistant-request stored the real number in
+    // sip_call_map — use it, or the Slack card shows the wrong caller and its Call Back
+    // button dials Bounce Man instead of the customer.
+    let callerNumber = call.customer?.number || 'Unknown';
+    if (call.id && (callerNumber === BM_NUMBER || callerNumber === 'Unknown')) {
+      try {
+        const row = getDb().prepare('SELECT real_caller_phone FROM sip_call_map WHERE vapi_call_id = ?').get(call.id);
+        if (row && row.real_caller_phone && row.real_caller_phone !== BM_NUMBER) {
+          console.log('[VAPI] end-of-call: resolved real caller', row.real_caller_phone, 'for', call.id);
+          callerNumber = row.real_caller_phone;
+        }
+      } catch (e) { /* sip_call_map optional */ }
+    }
     // Outcome fields (duration/ended/cost) live on the end-of-call MESSAGE, not on the
     // nested `call` snapshot — that snapshot is from when the call started, so reading
     // it gave every card "Duration: unknown | Ended: unknown | Cost: $0.0000".
