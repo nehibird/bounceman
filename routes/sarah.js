@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -107,7 +107,7 @@ router.post('/check-availability', async (req, res) => {
   const specialOn = weekdaySpecialApplies(db, date);
   const specialLabel = (() => {
     try {
-      const r = db.prepare("SELECT value FROM settings WHERE key = 'weekday_special_label'").get();
+      const r = db.prepare('SELECT value FROM settings WHERE key = \'weekday_special_label\'').get();
       return (r && r.value) || 'weekday special';
     } catch (e) { return 'weekday special'; }
   })();
@@ -392,32 +392,12 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     // -- Booking guards (Sarah previously bypassed every calendar rule the website enforces) --
-    // 1. Sundays are open for full-day and overnight only — never half day.
-    const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
-    if (dow === 0 && dur === '4hr') {
-      return res.json({ success: false, error: `On Sundays we only do full-day or overnight rentals — no half days. Want me to set it up as a full day instead?` });
-    }
-    // 2. Season: April (3) through November (10) only
-    const monthIdx = parseInt(eventDateISO.slice(5, 7), 10) - 1;
-    if (monthIdx < 3 || monthIdx > 10) {
-      return res.json({ success: false, error: `We're closed for the season from December through March — we start back up in April. Want me to help you book a date then?` });
-    }
-    // 3. Minimum lead time: under 24h is a rush booking that needs owner approval
-    const nowCT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
-    const eventStartDT = new Date(`${eventDateISO}T${startTime}:00`);
-    const leadHours = (eventStartDT - nowCT) / 36e5;
-    if (leadHours < 24) {
-      return res.json({
-        success: false,
-        requires_approval: true,
-        error: `Since that's less than twenty-four hours away, I'll need Nehemiah to approve a rush booking. Let me grab your info and have him call you right back to lock it in.`
-      });
-    }
-    // 4. Globally blocked dates
-    const blockedDay = db.prepare('SELECT reason FROM blocked_dates WHERE date = ? AND equipment_id IS NULL').get(eventDateISO);
-    if (blockedDay) {
-      return res.json({ success: false, error: blockedDay.reason || `Sorry, that date is fully booked. Want to try another day?` });
-    }
+    // Shared with send-checkout-link so both paths enforce identical rules — see
+    // helpers.validateBookingDate.
+    const guard = validateBookingDate(db, eventDateISO, { duration: dur, startTime });
+    if (guard) return res.json({ success: false, ...guard });
+    // Sunday occupancy below is whole-day rather than half-day split.
+    const dow = dowOf(eventDateISO);
 
     // Calculate pricing (wet upcharge applies to water-capable units when caller chose wet)
     const reqDays = Math.min(30, Math.max(1, parseInt(req.body.days) || 1));
@@ -605,8 +585,11 @@ router.post('/create-and-send-link', async (req, res) => {
       `Deposit due now: $${deposit_amount.toFixed(2)}\n\n` +
       `Pay here: ${paymentUrl}\n\n` +
       `Booking #${bookingNumber} — Questions? Call (580) 308-9288`;
+    // Track the real outcome — this used to swallow the failure and still report success.
+    let smsOk = false;
     try {
       await smsService.sendSms(phone, smsBody);
+      smsOk = true;
       console.log('[SARAH] SMS sent to', phone);
     } catch (smsErr) {
       console.error('[SARAH] SMS failed:', smsErr.message);
@@ -630,7 +613,7 @@ router.post('/create-and-send-link', async (req, res) => {
       deposit_amount: deposit_amount,
       balance_due: Math.round((total - deposit_amount) * 100) / 100,
       payment_url: paymentUrl,
-      sms_sent: true,
+      sms_sent: smsOk,
       message: `I've created booking #${bookingNumber}! To lock it in, pay the deposit of $${deposit_amount.toFixed(2)} at this link: ${paymentUrl} — that's your secure Stripe checkout. The remaining $${(total - deposit_amount).toFixed(2)} is due on delivery day. Do you have a pen or can you pull that up right now?`
     });
   } catch (err) {
@@ -658,6 +641,18 @@ router.post('/send-checkout-link', async (req, res) => {
     return res.json({ success: false, error: `I couldn't lock in that date — could you say it like "July fourth"?` });
   }
 
+  // Never text a checkout link to our own business line. If caller-phone resolution failed
+  // upstream, {{customerPhone}} is BM_NUMBER and the customer silently never gets the link —
+  // this is what happened on CALL #25. Fail loudly instead of pretending it was sent.
+  const BM_NUMBER_DIGITS = '5803089288';
+  if (normalizePhone(phone) === BM_NUMBER_DIGITS) {
+    console.error('[SARAH] REFUSED checkout link to Bounce Man\'s own number — caller phone did not resolve');
+    return res.json({
+      success: false,
+      error: `I don't have a good number to text that to. What's the best number to send the checkout link to?`
+    });
+  }
+
   // Sundays are full-day or overnight only — bump a half-day request up to full day.
   const dow = new Date(`${eventDateISO}T12:00:00`).getDay();
   let dur = duration || 'daily';
@@ -674,6 +669,15 @@ router.post('/send-checkout-link', async (req, res) => {
     else { startTime = '09:00'; endTime = '13:00'; }
   }
 
+  // Calendar rules the website enforces. These previously existed only in
+  // create-and-send-link, which the live assistant does not call — so a link could be texted
+  // for an off-season, blocked, past, or <24h date and only get rejected once the customer
+  // had already tapped through to the site.
+  // Use `dur`/`startTime` (post Sunday-bump) so the Sunday rule auto-corrects a half-day
+  // request rather than erroring, and the lead-time check uses the real start hour.
+  const guard = validateBookingDate(db, eventDateISO, { duration: dur, startTime });
+  if (guard) return res.json({ success: false, ...guard });
+
   // Validate units + figure out which are wet.
   const validIds = [];
   const wetIds = [];
@@ -688,6 +692,24 @@ router.post('/send-checkout-link', async (req, res) => {
   if (!validIds.length) {
     return res.json({ success: false, error: "I couldn't find that unit — want me to recheck what's available?" });
   }
+
+  // Re-check availability at send time — the unit may have been booked between
+  // checkAvailability and the caller making up their mind.
+  try {
+    const win = dur === 'overnight' ? ['09:00:00', '23:59:00'] : (dur === 'daily' ? ['09:00:00', '19:00:00'] : [startTime + ':00', endTime + ':00']);
+    const bookedNow = getBookedEquipmentIds(db, eventDateISO, win[0], win[1], dur);
+    const takenNames = [];
+    for (const id of validIds) {
+      const eq = db.prepare('SELECT name, quantity FROM equipment WHERE id = ?').get(id);
+      if (eq && (bookedNow.get(id) || 0) >= (eq.quantity || 1)) takenNames.push(eq.name);
+    }
+    if (takenNames.length) {
+      return res.json({
+        success: false,
+        error: `Someone just booked the ${takenNames.join(' and ')} for ${fmtDate(eventDateISO)} while we were talking. Want me to check what else is open that day?`
+      });
+    }
+  } catch (e) { console.error('[SARAH] send-checkout-link availability recheck failed:', e.message); }
 
   const publicBase = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
   let q = `items=${validIds.join(',')}&event_date=${eventDateISO}&rental_duration=${dur}&event_start_time=${startTime}&event_end_time=${endTime}`;
