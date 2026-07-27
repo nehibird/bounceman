@@ -914,9 +914,14 @@ router.post('/lookup-booking', (req, res) => {
   } else if (phone) {
     const customer = findCustomerByPhone(db, phone);
     if (customer) {
+      // Soonest UPCOMING booking first (that's the one they're calling about); fall back
+      // to their most recent past booking if they have nothing scheduled.
       booking = db.prepare(`SELECT b.* FROM bookings b
         WHERE b.customer_id = ? AND b.status NOT IN ('cancelled','declined')
-        ORDER BY b.event_date DESC LIMIT 1`).get(customer.id);
+        ORDER BY (b.event_date < date('now','-1 day')) ASC,
+                 CASE WHEN b.event_date >= date('now','-1 day') THEN b.event_date END ASC,
+                 b.event_date DESC
+        LIMIT 1`).get(customer.id);
       if (booking) {
         booking.first_name = customer.first_name;
         booking.last_name = customer.last_name;

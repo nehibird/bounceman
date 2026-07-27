@@ -5,7 +5,7 @@ const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
 const vapiSvc = require('../services/vapi');
 const crypto = require('crypto');
-const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c182c';
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c162c';
 
 // SECURITY: require SARAH_API_KEY (no insecure fallback) — used to auth internal /api/sarah/* calls
 const SARAH_API_KEY = process.env.SARAH_API_KEY;
@@ -26,7 +26,7 @@ function verifySlackSignature(req) {
 
 // SECURITY: validate Twilio request signatures. Monitor-mode by default (logs valid/invalid);
 // set TWILIO_VALIDATE_ENFORCE=true to reject unsigned/invalid requests.
-const TWILIO_VALIDATE_ENFORCE = process.env.TWILIO_VALIDATE_ENFORCE === 'true';
+const TWILIO_VALIDATE_ENFORCE = process.env.TWILIO_VALIDATE_ENFORCE !== 'false'; // fail closed
 function guardTwilio(req, res) {
   let ok = false;
   try {
@@ -48,7 +48,7 @@ function guardTwilio(req, res) {
 
 // SECURITY: Vapi webhook auth via X-Vapi-Secret header. Monitor-mode by default;
 // set VAPI_VALIDATE_ENFORCE=true to reject calls without the matching secret.
-const VAPI_VALIDATE_ENFORCE = process.env.VAPI_VALIDATE_ENFORCE === 'true';
+const VAPI_VALIDATE_ENFORCE = process.env.VAPI_VALIDATE_ENFORCE !== 'false'; // fail closed
 function guardVapi(req, res) {
   const expected = process.env.VAPI_SERVER_SECRET;
   const got = req.headers['x-vapi-secret'];
@@ -1120,7 +1120,16 @@ router.post('/vapi', async (req, res) => {
     for (const tc of toolCallList) {
       const name = tc.function?.name;
       const rawArgs = tc.function?.arguments;
-      const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs || {});
+      let args;
+      try {
+        args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs || {});
+      } catch (parseErr) {
+        // Previously this threw OUTSIDE the try below, killing the entire response and
+        // leaving the caller in silence. Fail just this one tool call instead.
+        console.error('[VAPI TOOL]', name, 'bad JSON arguments:', parseErr.message);
+        results.push({ toolCallId: tc.id, result: JSON.stringify({ error: 'Could not read the tool arguments.' }) });
+        continue;
+      }
       try {
         const result = await callSarahToolInternal(name, args, callerPhone, vapiCallId);
         console.log('[VAPI TOOL]', name, 'args:', JSON.stringify(args).slice(0, 80), '-> result:', JSON.stringify(result).slice(0, 120));

@@ -6,57 +6,12 @@ const { requireAuth } = require('./auth');
 
 const VAPI_SIP_URI = 'sip:bounceman@sip.vapi.ai';
 
-// POST /api/call/screen — Twilio calls this on every inbound call (replaces direct Vapi routing)
-router.post('/screen', (req, res) => {
-  const callerNumber = req.body.From || req.body.Caller || 'Unknown';
-  console.log('[CALL SCREEN] Inbound from', callerNumber);
-
-  res.type('text/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather action="https://bouncemanrentals.com/api/call/connect" method="POST" numDigits="1" timeout="6">
-    <Say voice="Polly.Joanna-Neural">Thanks for calling Bounce Man Rentals! Press 1 to speak with our team.</Say>
-  </Gather>
-  <Hangup/>
-</Response>`);
-});
-
-// POST /api/call/connect — Handles keypress result
-router.post('/connect', (req, res) => {
-  const digit = req.body.Digits;
-  const callerNumber = req.body.From || req.body.Caller || 'Unknown';
-
-  const logCall = (status, reason) => {
-    try {
-      const db = getDb();
-      db.prepare(`INSERT INTO call_log (id, caller_number, vapi_call_id, status, block_reason, called_at)
-        VALUES (?, ?, null, ?, ?, datetime('now'))`).run(uuid(), callerNumber, status, reason || null);
-    } catch (e) { /* ignore */ }
-  };
-
-  res.type('text/xml');
-
-  if (digit === '1') {
-    console.log('[CALL SCREEN]', callerNumber, '-> pressed 1, bridging to Sarah via SIP');
-    logCall('allowed', null);
-    // <Dial><Sip> creates a fresh SIP call leg to Vapi — bypasses the CallStatus=ringing
-    // restriction on Vapi's HTTP webhook. Customer stays connected throughout.
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial callerId="${callerNumber}" timeout="20">
-    <Sip>${VAPI_SIP_URI}</Sip>
-  </Dial>
-</Response>`);
-  } else {
-    const reason = digit ? 'wrong_key:' + digit : 'no_input';
-    console.log('[CALL SCREEN]', callerNumber, '-> blocked (' + reason + ')');
-    logCall('blocked', reason);
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Hangup/>
-</Response>`);
-  }
-});
+// NOTE: the /screen + /connect IVR that used to live here was removed 2026-07-27.
+// Twilio's live number points at /api/webhooks/twilio-entry, so these were dead for real
+// traffic — but they were still mounted with no auth and no Twilio signature check, and
+// /connect wrote call_log rows with status='allowed'. That is exactly the table and status
+// the Vapi assistant-request handler reads to recover the real caller's phone number, so
+// anyone could have poisoned that lookup. The live IVR is twilio-entry / twilio-gather.
 
 // POST /api/call/dial — Click-to-call from admin: Twilio calls your phone, then bridges to customer
 router.post('/dial', requireAuth, async (req, res) => {
