@@ -1,0 +1,105 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="fas fa-phone me-2"></i>Call${call && call.caller ? ' from ' + esc(call.caller) : ''}</h4>
+    <p class="text-muted mb-0">${customerName ? '<strong>' + esc(customerName) + '</strong> &middot; ' : ''}${when ? esc(when) : ''}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/admin/calls" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>All Calls</a>
+    ${call && call.caller ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + esc(call.caller) + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}
+  </div>
+</div>
+
+${notFound ? `
+<div class="alert alert-warning">
+  <i class="fas fa-triangle-exclamation me-2"></i>No record of call <code>${esc(vapiCallId)}</code>${vapiError ? ' (Vapi lookup: ' + esc(vapiError) + ')' : ''}.
+</div>
+` : `
+
+${vapiError ? `<div class="alert alert-warning py-2"><i class="fas fa-triangle-exclamation me-2"></i>Live Vapi lookup failed (${esc(vapiError)}) — showing the details saved when the call ended. The recording and transcript may be unavailable.</div>` : ''}
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card h-100"><div class="card-body py-3">
+      <div class="text-muted small text-uppercase">Duration</div>
+      <div class="fs-5 fw-semibold">${esc(call.duration)}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100"><div class="card-body py-3">
+      <div class="text-muted small text-uppercase">Ended</div>
+      <div class="fs-6 fw-semibold">${esc(String(call.endedReason || 'unknown').replace(/-/g, ' '))}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100"><div class="card-body py-3">
+      <div class="text-muted small text-uppercase">Cost</div>
+      <div class="fs-5 fw-semibold">${call.cost != null ? '$' + Number(call.cost).toFixed(4) : '<span class="text-muted fs-6">n/a</span>'}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100"><div class="card-body py-3">
+      <div class="text-muted small text-uppercase">Outcome</div>
+      <div class="fs-6 fw-semibold">${call.successEvaluation != null ? esc(String(call.successEvaluation)) : '<span class="text-muted">—</span>'}</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header bg-white"><i class="fas fa-headphones me-2"></i>Recording</div>
+  <div class="card-body">
+    ${call.hasRecording ? `
+      <audio controls preload="none" class="w-100" src="/admin/calls/${encodeURIComponent(vapiCallId)}/recording"></audio>
+      <div class="mt-2"><a href="/admin/calls/${encodeURIComponent(vapiCallId)}/recording" class="small text-decoration-none"><i class="fas fa-download me-1"></i>Download / open in a new tab</a></div>
+    ` : '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>No recording available for this call.</p>'}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header bg-white"><i class="fas fa-file-lines me-2"></i>Summary</div>
+  <div class="card-body">
+    ${call.summary ? '<p class="mb-0" style="white-space:pre-wrap">' + esc(call.summary) + '</p>' : '<p class="text-muted mb-0">No summary available.</p>'}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white"><i class="fas fa-comments me-2"></i>Transcript</div>
+  <div class="card-body">
+    ${call.transcript ? '<pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word">' + esc(call.transcript) + '</pre>' : '<p class="text-muted mb-0">No transcript available.</p>'}
+  </div>
+</div>
+`}
+
+`, scripts: `
+<script>
+(function(){
+  var MY_PHONE_KEY = 'bm_my_phone';
+  document.querySelectorAll('.call-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var customerPhone = btn.getAttribute('data-phone');
+      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
+      myPhone = prompt('Your cell number to call from (we ring you first, then connect the customer):', myPhone);
+      if (!myPhone) return;
+      localStorage.setItem(MY_PHONE_KEY, myPhone);
+      var orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...';
+      fetch('/api/call/dial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: customerPhone, your_phone: myPhone })
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.success) {
+          btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing your phone!';
+          setTimeout(function(){ btn.disabled = false; btn.innerHTML = orig; }, 6000);
+        } else {
+          alert('Error: ' + (d.error || 'Unknown error'));
+          btn.disabled = false; btn.innerHTML = orig;
+        }
+      }).catch(function(){ alert('Request failed'); btn.disabled = false; btn.innerHTML = orig; });
+    });
+  });
+})();
+</script>
+` }) %>

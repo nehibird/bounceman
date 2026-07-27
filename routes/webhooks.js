@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
+const vapiSvc = require('../services/vapi');
 const crypto = require('crypto');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c182c';
 
@@ -1122,21 +1123,34 @@ router.post('/vapi', async (req, res) => {
   if (msg.type === 'end-of-call-report') {
     const call = msg.call || {};
     const callerNumber = call.customer?.number || 'Unknown';
-    const startedAt = call.startedAt ? new Date(call.startedAt) : null;
-    const endedAt = call.endedAt ? new Date(call.endedAt) : null;
-    const durationSec = (startedAt && endedAt) ? Math.round((endedAt - startedAt) / 1000) : null;
-    const durationStr = durationSec != null
-      ? (durationSec >= 60 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : `${durationSec}s`)
-      : 'unknown';
-    const cost = call.cost != null ? `$${Number(call.cost).toFixed(4)}` : 'n/a';
-    const endedReason = call.endedReason || 'unknown';
+    // Outcome fields (duration/ended/cost) live on the end-of-call MESSAGE, not on the
+    // nested `call` snapshot — that snapshot is from when the call started, so reading
+    // it gave every card "Duration: unknown | Ended: unknown | Cost: $0.0000".
+    // Prefer the message, fall back to the call for older payload shapes.
+    const startedAt = msg.startedAt ? new Date(msg.startedAt) : (call.startedAt ? new Date(call.startedAt) : null);
+    const endedAt = msg.endedAt ? new Date(msg.endedAt) : (call.endedAt ? new Date(call.endedAt) : null);
+    const durationSec = msg.durationSeconds != null
+      ? Math.round(Number(msg.durationSeconds))
+      : ((startedAt && endedAt) ? Math.round((endedAt - startedAt) / 1000) : null);
+    const durationStr = vapiSvc.formatDuration(durationSec);
+    const costVal = msg.cost != null ? msg.cost : call.cost;
+    const cost = costVal != null ? `$${Number(costVal).toFixed(4)}` : 'n/a';
+    const endedReason = msg.endedReason || call.endedReason || 'unknown';
     const recordingUrl = msg.artifact?.recordingUrl || msg.artifact?.stereoRecordingUrl || call.recordingUrl || null;
-    const summary = msg.summary || call.summary || null;
-    const transcript = msg.transcript || call.transcript || null;
+    const summary = msg.analysis?.summary || msg.summary || call.summary || null;
+    const transcript = msg.artifact?.transcript || msg.transcript || call.transcript || null;
+
+    // Vapi's recording URLs point at a private bucket and 400 when clicked, so the card
+    // links our own proxy, which mints a fresh signed URL at click time. See services/vapi.js.
+    const vapiCallId = call.id || msg.call?.id || null;
+    const baseUrl = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+    const callDetailUrl = vapiCallId ? `${baseUrl}/admin/calls/${vapiCallId}` : null;
 
     const headerLine = `:telephone_receiver: *Inbound Call* from ${callerNumber}`;
     const metaLine = `Duration: ${durationStr} | Ended: ${endedReason} | Cost: ${cost}`;
-    const recordingLine = recordingUrl ? `:headphones: <${recordingUrl}|Listen to Recording>` : ':mute: No recording available';
+    const recordingLine = (recordingUrl && callDetailUrl)
+      ? `:headphones: <${callDetailUrl}/recording|Listen to Recording>`
+      : (recordingUrl ? ':headphones: Recording available in the admin call log' : ':mute: No recording available');
     const summarySection = summary ? `\n*Summary:*\n${summary}` : '';
 
     let transcriptSection = '';
@@ -1160,18 +1174,26 @@ router.post('/vapi', async (req, res) => {
       const t = transcript.length > MAX ? transcript.slice(0, MAX) + '\n…[truncated]' : transcript;
       blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Transcript:*\n\`\`\`${t}\`\`\`` } });
     }
-    if (isCallable) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
-          type: 'button',
-          text: { type: 'plain_text', text: '📞 Call Back', emoji: true },
-          style: 'primary',
-          action_id: 'call_back',
-          value: JSON.stringify({ caller: callerNumber })
-        }]
+    const actionElements = [];
+    if (callDetailUrl) {
+      // URL button — opens the call detail page (player + transcript + summary).
+      actionElements.push({
+        type: 'button',
+        text: { type: 'plain_text', text: '▶️ View Call', emoji: true },
+        action_id: 'view_call',
+        url: callDetailUrl
       });
     }
+    if (isCallable) {
+      actionElements.push({
+        type: 'button',
+        text: { type: 'plain_text', text: '📞 Call Back', emoji: true },
+        style: 'primary',
+        action_id: 'call_back',
+        value: JSON.stringify({ caller: callerNumber })
+      });
+    }
+    if (actionElements.length) blocks.push({ type: 'actions', elements: actionElements });
 
     try {
       await fetch('https://slack.com/api/chat.postMessage', {
@@ -1190,7 +1212,7 @@ router.post('/vapi', async (req, res) => {
       db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
         VALUES (?, 'sarah_call_completed', 'call', ?, ?, ?)`).run(
         uuid(), call.id || uuid(),
-        JSON.stringify({ caller: callerNumber, duration_sec: durationSec, ended_reason: endedReason, cost: call.cost, recording_url: recordingUrl }),
+        JSON.stringify({ caller: callerNumber, duration_sec: durationSec, ended_reason: endedReason, cost: costVal, recording_url: recordingUrl, summary }),
         req.ip
       );
     } catch (dbErr) {

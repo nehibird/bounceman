@@ -16,6 +16,7 @@
             <th>When</th>
             <th>Caller</th>
             <th>Customer</th>
+            <th>Length</th>
             <th>Status</th>
             <th class="text-end">Action</th>
           </tr>
@@ -26,13 +27,15 @@
             <td data-label="When"><small>${c.when || ''}</small></td>
             <td class="rt-primary">${c.caller_number || ''}</td>
             <td data-label="Customer">${c.customer_name ? esc(c.customer_name) : '<span class="text-muted">—</span>'}</td>
+            <td data-label="Length">${c.vapi_call_id_real ? esc(c.duration) : '<span class="text-muted">—</span>'}</td>
             <td data-label="Status">${c.block_reason
               ? '<span class="badge bg-danger" title="' + esc(c.block_reason) + '"><i class="fas fa-ban me-1"></i>Blocked</span>'
               : '<span class="badge bg-success"><i class="fas fa-phone-alt me-1"></i>' + (c.status || 'received') + '</span>'}</td>
             <td class="rt-actions">
+              ${c.vapi_call_id_real ? '<a href="/admin/calls/' + encodeURIComponent(c.vapi_call_id_real) + '" class="btn btn-sm btn-outline-primary me-1"><i class="fas fa-play me-1"></i>View Call</a>' : ''}
               ${c.caller_number ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + c.caller_number + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}
             </td>
-          </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No calls logged yet</td></tr>'}
+          </tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted py-4">No calls logged yet</td></tr>'}
         </tbody>
       </table>
     </div>

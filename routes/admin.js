@@ -8,6 +8,7 @@ const path = require('path');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
 const bcrypt = require('bcryptjs');
+const vapiSvc = require('../services/vapi');
 const googleAds = require('../services/google-ads');
 const facebookAds = require('../services/facebook-ads');
 
@@ -1032,6 +1033,13 @@ router.post('/communications/:id/bot-resume', (req, res) => {
 });
 
 // Call log + click-to-call back (uses /api/call/dial)
+//
+// call_log is the inbound spam-gate log (one row per attempt: number, status, time).
+// The substance of a call — Vapi id, duration, summary, recording — is only written to
+// activity_log as 'sarah_call_completed'. The two tables have no shared key
+// (call_log.vapi_call_id actually holds a Twilio CallSid), so completed-call detail is
+// attached here by matching on caller number within a time window; each completed
+// record is consumed at most once so redials don't all inherit the same conversation.
 router.get('/calls', (req, res) => {
   const db = getDb();
   const settings = getSettings();
@@ -1039,12 +1047,110 @@ router.get('/calls', (req, res) => {
   const customers = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
   const byPhone = {};
   customers.forEach(c => { const d = String(c.phone).replace(/\D/g, '').slice(-10); if (d.length === 10) byPhone[d] = ((c.first_name || '') + ' ' + (c.last_name || '')).trim(); });
+
+  const completed = db.prepare("SELECT entity_id, details, created_at FROM activity_log WHERE action = 'sarah_call_completed' ORDER BY created_at DESC LIMIT 400").all()
+    .map(r => { let d = {}; try { d = JSON.parse(r.details || '{}'); } catch { d = {}; } return { vapiCallId: r.entity_id, at: r.created_at, digits: String(d.caller || '').replace(/\D/g, '').slice(-10), durationSec: d.duration_sec, endedReason: d.ended_reason, summary: d.summary, used: false }; });
+
+  const MATCH_WINDOW_MS = 2 * 60 * 60 * 1000; // a report lands within ~2h of the gate row
+  const ts = (v) => { const t = Date.parse(String(v).replace(' ', 'T') + 'Z'); return Number.isNaN(t) ? null : t; };
+
   calls.forEach(cl => {
     const d = String(cl.caller_number || '').replace(/\D/g, '').slice(-10);
     cl.customer_name = byPhone[d] || '';
     try { cl.when = new Date(String(cl.called_at).replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch { cl.when = cl.called_at; }
+
+    const start = ts(cl.called_at);
+    if (start != null && d.length === 10) {
+      // Nearest unused report for this number that ended after the call started.
+      let best = null;
+      for (const c of completed) {
+        if (c.used || c.digits !== d) continue;
+        const end = ts(c.at);
+        if (end == null || end < start || end - start > MATCH_WINDOW_MS) continue;
+        if (!best || ts(c.at) < ts(best.at)) best = c;
+      }
+      if (best) {
+        best.used = true;
+        cl.vapi_call_id_real = best.vapiCallId;
+        cl.duration = vapiSvc.formatDuration(best.durationSec != null ? best.durationSec : null);
+        cl.ended_reason = best.endedReason || '';
+        cl.summary = best.summary || '';
+      }
+    }
   });
   res.render('admin/calls', { title: 'Calls - Admin', user: req.user, settings, calls, page: 'calls' });
+});
+
+// Call detail — audio player + transcript + summary + call back.
+// :id is the Vapi call id (the 019f… uuid stored in activity_log.entity_id).
+router.get('/calls/:id', async (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const vapiCallId = req.params.id;
+
+  // Cached copy from the end-of-call webhook, so the page still renders if Vapi is down.
+  const row = db.prepare("SELECT entity_id, details, created_at FROM activity_log WHERE action = 'sarah_call_completed' AND entity_id = ? ORDER BY created_at DESC LIMIT 1").get(vapiCallId);
+  let cached = {};
+  if (row) { try { cached = JSON.parse(row.details || '{}'); } catch { cached = {}; } }
+
+  let call = null;
+  let vapiError = null;
+  try {
+    call = vapiSvc.normalizeCall(await vapiSvc.getCall(vapiCallId));
+  } catch (e) {
+    vapiError = e.message;
+    console.error('[ADMIN CALLS] Vapi lookup failed for', vapiCallId, '-', e.message);
+  }
+
+  if (!call && !row) return res.status(404).render('admin/call-detail', {
+    title: 'Call - Admin', user: req.user, settings, page: 'calls',
+    vapiCallId, call: null, vapiError, customerName: '', when: '', notFound: true
+  });
+
+  // Merge: live Vapi data wins, cached webhook values fill the gaps.
+  const merged = {
+    id: vapiCallId,
+    caller: (call && call.caller) || cached.caller || null,
+    durationSec: (call && call.durationSec != null) ? call.durationSec : (cached.duration_sec != null ? cached.duration_sec : null),
+    endedReason: (call && call.endedReason) || cached.ended_reason || 'unknown',
+    cost: (call && call.cost != null) ? call.cost : null,
+    summary: (call && call.summary) || cached.summary || null,
+    transcript: (call && call.transcript) || null,
+    successEvaluation: call ? call.successEvaluation : null,
+    hasRecording: call ? call.hasRecording : !!cached.recording_url,
+    startedAt: call ? call.startedAt : null
+  };
+  merged.duration = vapiSvc.formatDuration(merged.durationSec);
+
+  const digits = String(merged.caller || '').replace(/\D/g, '').slice(-10);
+  const cust = digits.length === 10
+    ? db.prepare("SELECT first_name, last_name FROM customers WHERE replace(replace(replace(replace(phone,'-',''),' ',''),'(',''),')','') LIKE ? LIMIT 1").get('%' + digits)
+    : null;
+  const customerName = cust ? ((cust.first_name || '') + ' ' + (cust.last_name || '')).trim() : '';
+
+  let when = '';
+  const stamp = merged.startedAt || (row ? new Date(String(row.created_at).replace(' ', 'T') + 'Z') : null);
+  if (stamp) { try { when = stamp.toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }) + ' CT'; } catch { when = String(stamp); } }
+
+  res.render('admin/call-detail', {
+    title: 'Call ' + (merged.caller || vapiCallId) + ' - Admin',
+    user: req.user, settings, page: 'calls',
+    vapiCallId, call: merged, vapiError, customerName, when, notFound: false
+  });
+});
+
+// Recording proxy — Vapi's stored recording URL points at a private bucket and 400s.
+// Redirect to a freshly minted presigned URL (they expire ~30 min after minting, so this
+// must be resolved per click and can never be baked into a Slack card).
+router.get('/calls/:id/recording', async (req, res) => {
+  try {
+    const url = await vapiSvc.getRecordingUrl(req.params.id);
+    if (!url) return res.status(404).send('No recording available for this call.');
+    res.redirect(302, url);
+  } catch (e) {
+    console.error('[ADMIN CALLS] recording lookup failed for', req.params.id, '-', e.message);
+    res.status(502).send('Could not fetch the recording from Vapi: ' + e.message);
+  }
 });
 
 // SMS chat — threads grouped by number
