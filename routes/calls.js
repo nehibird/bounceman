@@ -177,4 +177,30 @@ router.post('/voicemail-callback', async (req, res) => {
   res.sendStatus(200);
 });
 
+// GET /api/call/recording/:id?e=<expiry>&s=<sig>
+// Login-free recording playback for the Slack call cards. Deliberately NOT behind
+// requireAuth: access is granted by an unguessable HMAC tied to this one call id and an
+// expiry (see services/vapi.js). Vapi's own recording URLs live in a private bucket and
+// its presigned URLs die after ~30 minutes, so the signed URL is resolved per request.
+router.get('/recording/:id', async (req, res) => {
+  const vapiSvc = require('../services/vapi');
+  const { id } = req.params;
+  const { e, s } = req.query;
+
+  if (!vapiSvc.verifyRecordingSignature(id, e, s)) {
+    console.warn('[RECORDING] rejected link for', id, '- bad or expired signature');
+    return res.status(403).send('This recording link is invalid or has expired. Open the call from the admin call log instead.');
+  }
+
+  try {
+    const url = await vapiSvc.getRecordingUrl(id);
+    if (!url) return res.status(404).send('No recording available for this call.');
+    res.redirect(302, url);
+  } catch (err) {
+    console.error('[RECORDING] Vapi lookup failed for', id, '-', err.message);
+    // Vapi only retains 14 days of call history; older calls 400 here.
+    res.status(502).send('Could not fetch this recording from Vapi: ' + err.message);
+  }
+});
+
 module.exports = router;

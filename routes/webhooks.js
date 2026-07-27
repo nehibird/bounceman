@@ -1168,8 +1168,14 @@ router.post('/vapi', async (req, res) => {
 
     const headerLine = `:telephone_receiver: *Inbound Call* from ${callerNumber}`;
     const metaLine = `Duration: ${durationStr} | Ended: ${endedReason} | Cost: ${cost}`;
-    const recordingLine = (recordingUrl && callDetailUrl)
-      ? `:headphones: <${callDetailUrl}/recording|Listen to Recording>`
+    // Signed link so the recording plays straight from Slack on a phone with no login
+    // (an admin session only lasts 24h). Grants access to this one recording only.
+    let signedRecording = null;
+    if (recordingUrl && vapiCallId) {
+      try { signedRecording = vapiSvc.signedRecordingUrl(vapiCallId, baseUrl); } catch (e) { console.error('[VAPI] could not sign recording link:', e.message); }
+    }
+    const recordingLine = signedRecording
+      ? `:headphones: <${signedRecording}|Listen to Recording>`
       : (recordingUrl ? ':headphones: Recording available in the admin call log' : ':mute: No recording available');
     const summarySection = summary ? `\n*Summary:*\n${summary}` : '';
 

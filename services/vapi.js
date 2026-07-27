@@ -55,4 +55,40 @@ function formatDuration(sec) {
   return sec >= 60 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${sec}s`;
 }
 
-module.exports = { getCall, getRecordingUrl, normalizeCall, formatDuration };
+// ── Signed, login-free recording links for Slack cards ──────────────────────
+// The call cards are read on a phone, and an admin session only lasts 24h, so a link
+// behind requireAuth means logging in almost every time. Instead the card carries an
+// unguessable HMAC tied to that one call id and an expiry. It grants access to exactly
+// one recording and nothing else in admin. 14 days matches Vapi's retention window —
+// past that the audio no longer exists to serve.
+const crypto = require('crypto');
+const LINK_TTL_DAYS = 14;
+
+function signingSecret() {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error('JWT_SECRET not set — cannot sign recording links');
+  return s;
+}
+
+function recordingSignature(callId, exp) {
+  return crypto.createHmac('sha256', signingSecret()).update(`recording:${callId}:${exp}`).digest('hex');
+}
+
+function signedRecordingUrl(callId, baseUrl) {
+  const exp = Math.floor(Date.now() / 1000) + LINK_TTL_DAYS * 86400;
+  const sig = recordingSignature(callId, exp);
+  return `${baseUrl}/api/call/recording/${encodeURIComponent(callId)}?e=${exp}&s=${sig}`;
+}
+
+function verifyRecordingSignature(callId, exp, sig) {
+  const e = Number(exp);
+  if (!e || !sig || Number.isNaN(e)) return false;
+  if (Math.floor(Date.now() / 1000) > e) return false;
+  const expected = recordingSignature(callId, String(exp));
+  const a = Buffer.from(String(sig));
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try { return crypto.timingSafeEqual(a, b); } catch { return false; }
+}
+
+module.exports = { getCall, getRecordingUrl, normalizeCall, formatDuration, signedRecordingUrl, verifyRecordingSignature };
