@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, isBlockedByWetDryRule, isoOffset } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -66,8 +66,8 @@ router.post('/check-availability', async (req, res) => {
     return res.json({ available: false, message: `I didn't quite catch that date. Could you say it again, like "May tenth" or "next Saturday"?` });
   }
 
-  // Validate date is in the future
-  const today = new Date().toISOString().slice(0, 10);
+  // Validate date is in the future (in CENTRAL time — see todayCT)
+  const today = todayCT();
   if (date < today) {
     return res.json({ available: false, message: 'That date has already passed. Can I help you find a future date?' });
   }
@@ -99,6 +99,34 @@ router.post('/check-availability', async (req, res) => {
   const available   = equipmentWithSlots.filter(e => e.isAnyOpen);
   const unavailable = equipmentWithSlots.filter(e => !e.isAnyOpen);
 
+  // Weekday special (e.g. "Last Month of Summer"): a single-day FULL-DAY rental on a
+  // qualifying weekday bills at the half-day rate. The website already prices this via
+  // priceForBooking; Sarah used to read price_daily straight off the equipment row, so she
+  // quoted the undiscounted price and never mentioned the offer. Price every unit the same
+  // way the website does, and keep the regular price so she can name the saving out loud.
+  const specialOn = weekdaySpecialApplies(db, date);
+  const specialLabel = (() => {
+    try {
+      const r = db.prepare("SELECT value FROM settings WHERE key = 'weekday_special_label'").get();
+      return (r && r.value) || 'weekday special';
+    } catch (e) { return 'weekday special'; }
+  })();
+  const priceOf = (e, opts) => priceForBooking(db, e, { duration: 'daily', days: 1, wet: false, date, ...opts });
+  available.forEach(e => {
+    e.fullDayPrice = priceOf(e);
+    e.regularFullDayPrice = priceOf(e, { ignoreSpecial: true });
+    e.fullDaySaving = Math.max(0, (e.regularFullDayPrice || 0) - (e.fullDayPrice || 0));
+  });
+  const specialApplies = specialOn && available.some(e => e.fullDaySaving > 0);
+  // Add-ons go through priceForBooking on the website too, so price them the same way here
+  // or Sarah's quote drifts from what the customer is actually charged at checkout.
+  const priceAddon = (a) => {
+    a.fullDayPrice = priceOf(a);
+    a.regularFullDayPrice = priceOf(a, { ignoreSpecial: true });
+    a.fullDaySaving = Math.max(0, (a.regularFullDayPrice || 0) - (a.fullDayPrice || 0));
+    return a;
+  };
+
   if (available.length === 0) {
     return res.json({
       available: false,
@@ -107,7 +135,7 @@ router.post('/check-availability', async (req, res) => {
   }
 
   // Get add-ons too
-  const addons = db.prepare("SELECT id, name, price_daily, price_4hr FROM equipment WHERE status = 'available' AND category = 'add_ons'").all();
+  const addons = db.prepare("SELECT id, name, price_daily, price_4hr FROM equipment WHERE status = 'available' AND category = 'add_ons'").all().map(priceAddon);
 
   // Calculate delivery fee and totals if zip provided
   const settings = getSettings();
@@ -118,7 +146,7 @@ router.post('/check-availability', async (req, res) => {
     delivery_zone = zoneResult.zone;
     // Sample total using first available item (full day) so Sarah can quote a ballpark
     if (available.length > 0) {
-      const samplePrice = available[0].price_daily;
+      const samplePrice = available[0].fullDayPrice;
       const pricing = calcPricing(settings, samplePrice, delivery_fee);
       sample_total = pricing.total;
       sample_deposit = pricing.depositAmount;
@@ -128,13 +156,18 @@ router.post('/check-availability', async (req, res) => {
   const listing = available.map(e => {
     const partialNote = e.fullDayOpen ? '' :
       ` [${[e.morningOpen && 'morning', e.afternoonOpen && 'afternoon'].filter(Boolean).join(' or ')} half day only]`;
-    let line = `${e.name}${partialNote}: $${e.price_4hr} half day${e.fullDayOpen ? `, $${e.price_daily} full day` : ''}`;
+    const fullDayBit = e.fullDayOpen
+      ? (e.fullDaySaving > 0
+        ? `, $${e.fullDayPrice} full day (${specialLabel} — normally $${e.regularFullDayPrice})`
+        : `, $${e.fullDayPrice} full day`)
+      : '';
+    let line = `${e.name}${partialNote}: $${e.price_4hr} half day${fullDayBit}`;
     if (zip && delivery_fee === 0) line += ' (free delivery to your area)';
     else if (zip) line += ` + $${delivery_fee} delivery`;
     return line;
   }).join('. ');
 
-  const addonListing = addons.map(a => `${a.name}: $${a.price_4hr} half day, $${a.price_daily} full day`).join('. ');
+  const addonListing = addons.map(a => `${a.name}: $${a.price_4hr} half day, $${a.fullDayPrice} full day`).join('. ');
 
   const deliveryNote = zip
     ? ` Delivery to your area: ${delivery_fee === 0 ? 'FREE' : `$${delivery_fee}`}${delivery_zone ? ` (${delivery_zone})` : ''}.`
@@ -145,32 +178,44 @@ router.post('/check-availability', async (req, res) => {
       name: e.name,
       category: e.category,
       price_4hr: e.price_4hr,
-      price_daily: e.price_daily,
+      price_daily: e.fullDayPrice,
+      price_daily_regular: e.regularFullDayPrice,
+      special_saving: e.fullDaySaving,
       price_overnight: e.price_overnight
     }));
   const addonsWithIds = addons.map(a => ({
       id: a.id,
       name: a.name,
       price_4hr: a.price_4hr,
-      price_daily: a.price_daily
+      price_daily: a.fullDayPrice,
+      price_daily_regular: a.regularFullDayPrice
     }));
 
   // Build result string with IDs so LLM can use them in createAndSendLink
   const equipmentLines = available.map(e => {
     const pageLink = e.slug ? ` — page (photos): https://bouncemanrentals.com/equipment/${e.slug}` : '';
     if (e.fullDayOpen) {
-      return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, $${e.price_daily} full day, $${e.price_overnight} overnight${pageLink}`;
+      const fullDay = e.fullDaySaving > 0
+        ? `$${e.fullDayPrice} full day (${specialLabel}: normally $${e.regularFullDayPrice}, saves $${e.fullDaySaving})`
+        : `$${e.fullDayPrice} full day`;
+      return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, ${fullDay}, $${e.price_overnight} overnight${pageLink}`;
     }
     const slots = [e.morningOpen && 'morning half day (9 AM–1 PM)', e.afternoonOpen && 'afternoon half day (3–7 PM)'].filter(Boolean);
     return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} [PARTIAL: ${slots.join(' or ')} only — do NOT book full day or overnight for this item]${pageLink}`;
   }).join('\n');
   const addonLines = addons.map(a =>
-    `${a.name} (equipment_id: ${a.id}) — $${a.price_4hr} half day, $${a.price_daily} full day`
+    `${a.name} (equipment_id: ${a.id}) — $${a.price_4hr} half day, $${a.fullDayPrice} full day`
   ).join('\n');
   const unavailLine = unavailable.length > 0 ? `\nFully booked (do not offer): ${unavailable.map(e => e.name).join(', ')}.` : '';
   const deliveryLine = zip ? (delivery_fee === 0 ? `\nDelivery: FREE to zip ${zip}.` : `\nDelivery fee: $${delivery_fee} to zip ${zip}.`) : '';
 
-  const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}\n\nUse the equipment_id values above when calling createAndSendLink.`;
+  // The model reliably acts on this string, not on the adjacent JSON fields — so the special
+  // has to be stated here in words, not just priced in.
+  const specialLine = specialApplies
+    ? `\n\nSPECIAL ACTIVE — ${specialLabel}: on this date a FULL DAY is billed at the half-day price. The full-day prices above are already discounted. Tell the caller about this offer and name the saving; it applies to single-day full-day rentals on qualifying weekdays only (not half day, not multi-day, not overnight).`
+    : '';
+
+  const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}${specialLine}\n\nUse the equipment_id values above when calling sendCheckoutLink.`;
 
   res.json({
     result: resultText,
@@ -182,7 +227,9 @@ router.post('/check-availability', async (req, res) => {
     equipment: equipmentWithIds,
     addons: addonsWithIds,
     unavailable: unavailable.map(e => e.name),
-    message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons: ${addonListing}.${deliveryNote}${unavailable.length > 0 ? ` Already booked that day: ${unavailable.map(e => e.name).join(', ')}.` : ''}`
+    special_active: specialApplies,
+    special_label: specialApplies ? specialLabel : null,
+    message: `Great news! On ${fmtDate(date)} we have: ${listing}. Add-ons: ${addonListing}.${deliveryNote}${unavailable.length > 0 ? ` Already booked that day: ${unavailable.map(e => e.name).join(', ')}.` : ''}${specialApplies ? ` Heads up — our ${specialLabel} is on for that day: a full day costs the half-day price.` : ''}`
   });
   } catch (err) {
     console.error('[sarah] check-availability error:', err);
