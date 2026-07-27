@@ -728,6 +728,16 @@ router.get('/church-event-bounce-house-rental', (req, res) => renderEventPage(re
 router.get('/school-field-day-bounce-house-rental', (req, res) => renderEventPage(res, 'school', '/school-field-day-bounce-house-rental'));
 router.get('/graduation-party-bounce-house-rental', (req, res) => renderEventPage(res, 'graduation', '/graduation-party-bounce-house-rental'));
 
+// Platform showcase / demo page (conference)
+router.get('/bounceintobiz', (req, res) => {
+  const settings = getSettings();
+  res.render('public/bounceintobiz', {
+    title: 'The Bounce Man Platform — A Custom, AI-Powered Rental Operating System',
+    metaDescription: 'A fully custom, AI-powered platform running a bounce house business — online booking, an admin command center, an AI receptionist for SMS and phone, automated Google/Facebook ads, delivery routing, and more. Built by Nehemiah Reese / Bird Herd Media.',
+    canonicalPath: '/bounceintobiz', settings, page: 'bounceintobiz'
+  });
+});
+
 // City landing page routes
 router.get('/bounce-house-rental-tonkawa-ok', (req, res) => {
   const settings = getSettings();
