@@ -722,7 +722,7 @@ router.post('/slack/interactivity', async (req, res) => {
     } else if (actionId === 'sms_dismiss_suggested') {
       await require('../services/sarah-sms').actOnSuggestion(value.id, 'dismiss', user && (user.name || user.id));
     } else if (actionId === 'call_back') {
-      await handleCallBack(value, user, response_url, message);
+      await handleCallBack(value, user, response_url, message, payload);
     }
 
   } catch (err) {
@@ -845,9 +845,11 @@ const CALLBACK_AGENTS = {
 };
 const CALLBACK_DEFAULT = '+15806281765'; // fallback -> Nehemiah
 
-async function handleCallBack(value, user, response_url, originalMessage) {
+async function handleCallBack(value, user, response_url, originalMessage, payload) {
   const customerNumber = value.caller;
   const agentNumber = CALLBACK_AGENTS[user.id] || CALLBACK_DEFAULT;
+  const channel = (payload && payload.channel && payload.channel.id) || (payload && payload.container && payload.container.channel_id) || null;
+  const ts = (originalMessage && originalMessage.ts) || (payload && payload.message && payload.message.ts) || null;
 
   if (!customerNumber || !/^\+1[2-9]\d{9}$/.test(customerNumber)) {
     await respondToSlack(response_url, { replace_original: false, response_type: 'ephemeral', text: ':x: No valid customer number on this call to call back.' });
@@ -873,12 +875,30 @@ async function handleCallBack(value, user, response_url, originalMessage) {
   const agentLabel = user.id in CALLBACK_AGENTS ? '<@' + user.id + '>' : '<@' + user.id + '> (default → Nehemiah)';
   const ringTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT';
   const banner = { type: 'section', text: { type: 'mrkdwn', text: ':telephone_receiver::arrow_right: *Calling back ' + customerNumber + '* — ringing ' + agentLabel + ' first, then connecting the customer. (' + ringTime + ')' } };
-  const updatedBlocks = [banner, ...originalMessage.blocks.filter(b => b.type !== 'actions')];
-  await respondToSlack(response_url, {
-    replace_original: true,
-    blocks: updatedBlocks,
-    text: ':telephone_receiver: Calling back ' + customerNumber
-  });
+  const priorBlocks = (originalMessage && originalMessage.blocks) || [];
+  const updatedBlocks = [banner, ...priorBlocks.filter(b => b.type !== 'actions')];
+  const fallbackText = ':telephone_receiver: Calling back ' + customerNumber;
+
+  // Update via chat.update, not response_url: a call card is typically clicked hours or
+  // days after it was posted, and response_url dies after ~30 minutes / 5 uses. Using it
+  // alone meant the call was placed but the card never visibly changed. Same fix, and same
+  // ordering, as handleOnMyWay.
+  let updated = false;
+  if (channel && ts) {
+    try {
+      const r = await fetch('https://slack.com/api/chat.update', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.SLACK_BOT_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: channel, ts: ts, text: fallbackText, blocks: updatedBlocks })
+      });
+      const d = await r.json();
+      updated = !!d.ok;
+      if (!d.ok) console.error('[CALL BACK] chat.update failed:', d.error);
+    } catch (e) { console.error('[CALL BACK] chat.update error:', e.message); }
+  }
+  if (!updated) {
+    await respondToSlack(response_url, { replace_original: true, blocks: updatedBlocks, text: fallbackText });
+  }
 }
 
 async function respondToSlack(response_url, payload) {
