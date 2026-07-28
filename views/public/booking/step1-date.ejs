@@ -148,6 +148,10 @@
               <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
             </div>
 
+            <div id="holidayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
+              <i class="fas fa-info-circle me-1"></i> Memorial Day and Labor Day are <strong>full-day only</strong> — no half-day or multi-day on these holidays.
+            </div>
+
             <div id="weekdaySpecialNote" style="display:none;margin-top:12px;background:#FFF3E8;border:1px solid #E8833A;border-radius:10px;padding:12px;font-size:14px;color:#15263A">
               <i class="fas fa-sun me-1" style="color:#E8833A"></i> <strong>${settings.weekday_special_label || 'Weekday Special'}!</strong> On this weekday you get a <strong>Full Day for the Half-Day price</strong> — see your deal on the next step. 🎉
             </div>
@@ -208,6 +212,18 @@
     if (WEEKDAY_SPECIAL.start && dateStr < WEEKDAY_SPECIAL.start) return false;
     if (WEEKDAY_SPECIAL.end && dateStr > WEEKDAY_SPECIAL.end) return false;
     return WEEKDAY_SPECIAL.days.indexOf(new Date(dateStr + 'T12:00:00').getDay()) !== -1;
+  }
+
+  // Memorial Day (last Mon of May) + Labor Day (first Mon of Sep) = full-day only.
+  // Keep in sync with isFullDayOnlyDate() in lib/helpers.js (server enforces it too).
+  function isFullDayOnlyHoliday(dateStr) {
+    if (!dateStr) return false;
+    var d = new Date(dateStr + 'T12:00:00');
+    if (isNaN(d.getTime())) return false;
+    var y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+    if (m === 8) { var dow1 = new Date(y, 8, 1).getDay(); return day === 1 + ((1 - dow1 + 7) % 7); }
+    if (m === 4) { var lastMay = new Date(y, 5, 0).getDate(); var ldow = new Date(y, 4, lastMay).getDay(); return day === lastMay - ((ldow - 1 + 7) % 7); }
+    return false;
   }
 
   var HALFDAY_HOURS = 4;
@@ -346,29 +362,35 @@
     applyDayRules();
   }
 
+  function setDurDisabled(btn, off) {
+    if (!btn) return;
+    if (off) { btn.classList.add('disabled'); btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+    else { btn.classList.remove('disabled'); btn.style.opacity = ''; btn.style.pointerEvents = ''; }
+  }
+
   function applyDayRules() {
     var dateStr = document.getElementById('eventDateInput').value;
     var note = document.getElementById('sundayNote');
     var specialNote = document.getElementById('weekdaySpecialNote');
+    var holidayNote = document.getElementById('holidayNote');
     var halfBtn = document.getElementById('durHalfDay');
+    var multiBtn = document.getElementById('durMultiDay');
     var isSunday = dateStr ? (new Date(dateStr + 'T12:00:00').getDay() === 0) : false;
     var isSpecial = isWeekdaySpecialDate(dateStr);
+    var isHoliday = isFullDayOnlyHoliday(dateStr);
 
-    note.style.display = isSunday ? '' : 'none';
-    if (specialNote) specialNote.style.display = isSpecial ? '' : 'none';
+    note.style.display = (isSunday && !isHoliday) ? '' : 'none';
+    if (specialNote) specialNote.style.display = (isSpecial && !isHoliday) ? '' : 'none';
+    if (holidayNote) holidayNote.style.display = isHoliday ? '' : 'none';
 
-    // Half-day is disabled on Sundays (full-day only) and on weekday-special days
-    // (Full Day is the same price as a half day, so there's no reason to pick it).
-    if (isSunday || isSpecial) {
-      halfBtn.classList.add('disabled');
-      halfBtn.style.opacity = '0.4';
-      halfBtn.style.pointerEvents = 'none';
-      if (selectedDurationType === 'halfday') { selectDurationType('allday'); return; }
-    } else {
-      halfBtn.classList.remove('disabled');
-      halfBtn.style.opacity = '';
-      halfBtn.style.pointerEvents = '';
-    }
+    // Memorial Day / Labor Day: full-day only — disable BOTH half-day and multi-day.
+    setDurDisabled(multiBtn, isHoliday);
+    // Half-day is disabled on Sundays, weekday-special days, and the full-day-only holidays.
+    setDurDisabled(halfBtn, isSunday || isSpecial || isHoliday);
+
+    // Force the selection back to Full Day when the current pick is no longer allowed.
+    if (isHoliday && selectedDurationType !== 'allday') { selectDurationType('allday'); return; }
+    if ((isSunday || isSpecial) && selectedDurationType === 'halfday') { selectDurationType('allday'); return; }
   }
 
   flatpickr('#datePicker', {

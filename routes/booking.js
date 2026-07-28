@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -267,6 +267,11 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const duration = rental_duration || 'daily';
   const days = duration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(rental_days) || 1));
 
+  // Labor Day / Memorial Day are full-day single-day rentals only (no half-day, multi-day, or overnight).
+  if (isFullDayOnlyDate(event_date) && (duration !== 'daily' || days > 1)) {
+    return res.status(400).render('error', { title: 'Full-Day Rental Only', message: 'Labor Day and Memorial Day are full-day rentals only — please choose the Full Day option for that date.', status: 400 });
+  }
+
   let subtotal = 0;
   const lineItems = [];
   for (const eqId of items) {
@@ -381,6 +386,11 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     const submitDuration = data.rental_duration || 'daily';
     const submitDays = submitDuration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(data.rental_days) || 1));
     const submitEndDate = isoOffset(data.event_date, submitDays - 1);
+
+    // Labor Day / Memorial Day are full-day single-day rentals only (mirrors the /review guard).
+    if (isFullDayOnlyDate(data.event_date) && (submitDuration !== 'daily' || submitDays > 1)) {
+      return res.status(400).render('error', { title: 'Full-Day Rental Only', message: 'Labor Day and Memorial Day are full-day rentals only — please choose the Full Day option for that date.', status: 400 });
+    }
 
     let recalcSubtotal = 0;
     for (const eqId of submitItems) {
