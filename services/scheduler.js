@@ -31,6 +31,12 @@ function getYesterday() {
   return d.toISOString().slice(0, 10);
 }
 
+function getDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 async function sendDeliveryReminders() {
   const db = getDb();
   const tomorrow = getTomorrow();
@@ -88,18 +94,21 @@ async function sendDeliveryReminders() {
 
 async function sendReviewRequests() {
   const db = getDb();
-  const yesterday = getYesterday();
+  // Catch-up window: any past event in the last 14 days not yet review-requested.
+  // Runs as a weekly Monday batch, so a missed run is recovered the following Monday.
+  const from = getDaysAgo(14);
+  const until = getDaysAgo(1);
 
-  // Find bookings from yesterday that haven't received a review request
   const bookings = db.prepare(`
     SELECT b.*, c.first_name, c.last_name, c.email, c.phone, ct.id as contract_id, ct.signed as contract_signed_flag
     FROM bookings b
     JOIN customers c ON c.id = b.customer_id
     LEFT JOIN contracts ct ON ct.booking_id = b.id
-    WHERE b.event_date = ?
+    WHERE b.event_date >= ?
+      AND b.event_date <= ?
       AND b.status NOT IN ('cancelled', 'declined')
       AND b.review_requested = 0
-  `).all(yesterday);
+  `).all(from, until);
 
   for (const b of bookings) {
     try {
@@ -193,7 +202,11 @@ async function releaseExpiredHolds() {
 async function runScheduler() {
   try {
     const reminders = await sendDeliveryReminders();
-    const reviews = await sendReviewRequests();
+    // Review requests batch out Mondays at 9 AM CT (server timezone = America/Chicago).
+    const now = new Date();
+    const reviews = (now.getDay() === 1 && now.getHours() === 9)
+      ? await sendReviewRequests()
+      : 0;
     await releaseExpiredHolds();
     if (reminders > 0 || reviews > 0) {
       console.log(`[SCHEDULER] Run complete: ${reminders} delivery reminders, ${reviews} review requests`);
