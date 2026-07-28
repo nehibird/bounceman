@@ -950,7 +950,10 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
       // routes to a graceful callback message if Nehemiah doesn't pick up.
       // A short leading <Say> bridges the dead-air gap between Vapi's request-start line
       // and this redirect taking effect — callers were hanging up into silence (~8s).
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Please hold while I connect you.</Say><Dial action="${BASE}/api/webhooks/transfer-result?parent=${callSid}" method="POST" callerId="${BM_NUMBER}" timeout="25"><Number url="${BASE}/api/webhooks/transfer-screen?parent=${callSid}" method="POST">${TRANSFER_TARGET}</Number></Dial></Response>`;
+      // Record the handoff too. Sarah's own recording stops the moment this redirect kills
+      // her SIP leg, so without this the human half of the conversation is lost entirely.
+      const recCb = `${BASE}/api/webhooks/transfer-recording?caller=${encodeURIComponent(realPhone || '')}`;
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Please hold while I connect you.</Say><Dial action="${BASE}/api/webhooks/transfer-result?parent=${callSid}" method="POST" callerId="${BM_NUMBER}" timeout="25" record="record-from-answer-dual" recordingStatusCallback="${recCb}" recordingStatusCallbackEvent="completed"><Number url="${BASE}/api/webhooks/transfer-screen?parent=${callSid}" method="POST">${TRANSFER_TARGET}</Number></Dial></Response>`;
       await twilio.calls(callSid).update({ twiml });
       console.log('[TRANSFER] Redirected Twilio call', callSid, 'to', TRANSFER_TARGET, 'for caller', realPhone);
       return { result: 'TRANSFER_INITIATED to ' + TRANSFER_TARGET };
@@ -1511,6 +1514,51 @@ router.post('/transfer-result', (req, res) => {
 
 // Twilio fires this when a Call Back (click-to-dial) recording finishes.
 // Posts a "Listen" link to the bookings channel, mirroring the inbound call cards.
+// Download a finished Twilio recording and upload it into Slack so it plays inline.
+// Twilio serves the media as mp3 at <RecordingUrl>.mp3 behind account Basic auth, so a bare
+// link in Slack is not reliably playable — pull the bytes and hand them to Slack instead.
+async function postTwilioRecordingToSlack(recUrl, channel, comment, filenameHint) {
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN;
+    const auth = 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64');
+    const r = await fetch(recUrl + '.mp3', { headers: { Authorization: auth } });
+    if (!r.ok) throw new Error('twilio media ' + r.status);
+    const buf = Buffer.from(await r.arrayBuffer());
+    const stamp = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    const fname = `${filenameHint || 'call'}-${stamp}.mp3`;
+    const up = await require('../services/notifications')
+      .uploadFileToChannel(channel, null, buf, fname, 'audio/mpeg', comment);
+    console.log('[TWILIO REC] upload', up ? 'OK' : 'FAILED', fname, Math.round(buf.length / 1024) + 'KB');
+    return !!up;
+  } catch (e) {
+    console.error('[TWILIO REC] failed:', e.message);
+    return false;
+  }
+}
+
+// Recording of a transfer-to-Nehemiah leg (the human half of the conversation).
+router.post('/transfer-recording', async (req, res) => {
+  res.status(204).end();
+  try {
+    const recUrl = req.body && req.body.RecordingUrl;
+    if (!recUrl) return;
+    const caller = req.query.caller || 'unknown caller';
+    const channel = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';
+    const ok = await postTwilioRecordingToSlack(
+      recUrl, channel,
+      ':telephone_receiver: Transferred call with ' + caller + ' — recorded after handoff to Nehemiah',
+      'transfer-' + String(caller).replace(/\D/g, '')
+    );
+    if (!ok) {
+      await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.SLACK_BOT_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, text: ':headphones: Transferred call with ' + caller + ' recorded — <' + recUrl + '.mp3|Listen to recording>' })
+      });
+    }
+  } catch (e) { console.error('[TRANSFER REC] error:', e.message); }
+});
+
 router.post('/callback-recording', async (req, res) => {
   res.status(204).end();
   try {
@@ -1520,11 +1568,18 @@ router.post('/callback-recording', async (req, res) => {
     const token = process.env.SLACK_BOT_TOKEN;
     const channel = process.env.SLACK_BOOKINGS_CHANNEL || 'C0B40UJSHHS';
     if (!token) { console.log('[CALLBACK REC] recorded', recUrl, '(no SLACK_BOT_TOKEN to post)'); return; }
-    await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, text: ':headphones: Call-back with ' + customer + ' recorded — <' + recUrl + '.mp3|Listen to recording>' })
-    });
+    const ok = await postTwilioRecordingToSlack(
+      recUrl, channel,
+      ':headphones: Call-back with ' + customer + ' — recorded',
+      'callback-' + String(customer).replace(/\D/g, '')
+    );
+    if (!ok) {
+      await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, text: ':headphones: Call-back with ' + customer + ' recorded — <' + recUrl + '.mp3|Listen to recording>' })
+      });
+    }
     console.log('[CALLBACK REC] posted recording for', customer, recUrl);
   } catch (e) { console.error('[CALLBACK REC] error:', e.message); }
 });
