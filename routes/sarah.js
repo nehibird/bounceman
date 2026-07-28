@@ -215,7 +215,7 @@ router.post('/check-availability', async (req, res) => {
     ? `\n\nSPECIAL ACTIVE — ${specialLabel}: on this date a FULL DAY is billed at the half-day price. The full-day prices above are already discounted. Tell the caller about this offer and name the saving; it applies to single-day full-day rentals on qualifying weekdays only (not half day, not multi-day, not overnight).`
     : '';
 
-  const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}${specialLine}\n\nUse the equipment_id values above when calling sendCheckoutLink.`;
+  const resultText = `Available on ${fmtDate(date)} (${date}):\n${equipmentLines}\nAdd-ons:\n${addonLines}${unavailLine}${deliveryLine}${specialLine}\n\nWhen the caller picks a unit, call sendCheckoutLink with ONLY the equipment_id of the unit or units they actually chose. Never pass this whole list — sending every ID books every unit.`;
 
   res.json({
     result: resultText,
@@ -692,6 +692,28 @@ router.post('/send-checkout-link', async (req, res) => {
   if (!validIds.length) {
     return res.json({ success: false, error: "I couldn't find that unit — want me to recheck what's available?" });
   }
+
+  // Backstop: the model sometimes hands back every ID from the checkAvailability listing
+  // instead of the one the caller chose, which texts a checkout link for the whole fleet.
+  // Nobody rents every unit we own, so treat "all available rentable units" as a mistake and
+  // make Sarah confirm rather than sending it.
+  try {
+    const rentable = validIds.filter(id => {
+      const e = db.prepare('SELECT category FROM equipment WHERE id = ?').get(id);
+      return e && e.category !== 'add_ons';
+    });
+    if (rentable.length >= 3) {
+      const openNow = db.prepare('SELECT id FROM equipment WHERE status = \'available\' AND category != \'add_ons\'').all().map(r => r.id);
+      const coversEverything = openNow.length > 0 && openNow.every(id => rentable.includes(id));
+      if (coversEverything) {
+        console.error('[SARAH] REFUSED checkout link covering every rentable unit —', rentable.length, 'units; model likely passed the whole list');
+        return res.json({
+          success: false,
+          error: "Just to make sure I get this right — which unit did you want? I don't want to send you a link for all of them."
+        });
+      }
+    }
+  } catch (e) { console.error('[SARAH] all-units guard failed:', e.message); }
 
   // Re-check availability at send time — the unit may have been booked between
   // checkAvailability and the caller making up their mind.
