@@ -513,6 +513,33 @@ async function reactToSlack(channel, timestamp, name) {
 }
 
 
+// Upload a file into any channel/thread. Used to attach a call recording directly to the
+// #phone-calls card so it plays inline in Slack — no login, no expiring link, no redirect.
+async function uploadFileToChannel(channel, thread_ts, buffer, filename, contentType, comment) {
+  try {
+    const up = await fetch('https://slack.com/api/files.getUploadURLExternal', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ filename, length: String(buffer.length) })
+    });
+    const upd = await up.json();
+    if (!upd.ok) { console.error('[SLACK UPLOAD] getUploadURL:', upd.error); return null; }
+    const fd = new FormData();
+    fd.append('file', new Blob([buffer], { type: contentType || 'application/octet-stream' }), filename);
+    await fetch(upd.upload_url, { method: 'POST', body: fd });
+    const payload = { files: [{ id: upd.file_id, title: filename }], channel_id: channel, initial_comment: comment || '' };
+    if (thread_ts) payload.thread_ts = thread_ts;
+    const comp = await fetch('https://slack.com/api/files.completeUploadExternal', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const compd = await comp.json();
+    if (!compd.ok) { console.error('[SLACK UPLOAD] completeUpload:', compd.error); return null; }
+    return compd;
+  } catch (e) { console.error('[SLACK UPLOAD] uploadFileToChannel:', e.message); return null; }
+}
+
 // Upload an MMS attachment (image, etc.) into the customer's #texts thread.
 async function uploadFileToThread(phone, buffer, filename, contentType, comment, displayName) {
   try {
@@ -570,4 +597,4 @@ async function sendHazardChecks() {
   return sent;
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread };
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };

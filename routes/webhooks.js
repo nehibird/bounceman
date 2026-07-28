@@ -1243,15 +1243,41 @@ router.post('/vapi', async (req, res) => {
     }
     if (actionElements.length) blocks.push({ type: 'actions', elements: actionElements });
 
+    let cardTs = null;
     try {
-      await fetch('https://slack.com/api/chat.postMessage', {
+      const postRes = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel: PHONE_CALLS_CHANNEL, text: slackText, blocks, unfurl_links: false })
       });
+      const postJson = await postRes.json();
+      cardTs = postJson.ok ? postJson.ts : null;
       console.log('[VAPI] End-of-call report posted to Slack for', callerNumber);
     } catch (err) {
       console.error('[VAPI] Slack post failed:', err.message);
+    }
+
+    // Attach the actual audio to the card's thread so it plays inline in Slack — no login,
+    // no expiring link, no redirect. Vapi's stored URL is unfetchable (private bucket) and
+    // its presigned URL dies in ~30 min, so pull the bytes now while they're valid. Also
+    // means the audio survives Vapi's 14-day retention.
+    if (recordingUrl && vapiCallId && cardTs) {
+      try {
+        const audioUrl = await vapiSvc.getRecordingUrl(vapiCallId);
+        if (audioUrl) {
+          const audioRes = await fetch(audioUrl);
+          if (!audioRes.ok) throw new Error('recording fetch ' + audioRes.status);
+          const buf = Buffer.from(await audioRes.arrayBuffer());
+          const stamp = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+          const fname = `call-${stamp}-${String(callerNumber).replace(/\D/g, '') || 'unknown'}.wav`;
+          const up = await require('../services/notifications')
+            .uploadFileToChannel(PHONE_CALLS_CHANNEL, cardTs, buf, fname, 'audio/wav', ':headphones: Call recording');
+          console.log('[VAPI] recording upload', up ? 'OK' : 'FAILED', fname, Math.round(buf.length / 1024) + 'KB');
+        }
+      } catch (e) {
+        // Non-fatal: the card still carries the signed playback link as a fallback.
+        console.error('[VAPI] recording upload failed:', e.message);
+      }
     }
 
     // Also log to DB activity log
