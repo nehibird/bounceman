@@ -35,6 +35,13 @@ app.locals.getReviewStats = require('./lib/helpers').getReviewStats;
 // sandbox) means the widget isn't rendered and /api/lead skips verification.
 app.locals.TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '';
 
+// Flag the booking flow so the shared layout can drop the footer's outbound
+// social links there — nothing on a checkout page should lead off-site.
+app.use((req, res, next) => {
+  res.locals.isBookingFlow = /^\/booking(\/|$)/.test(req.path);
+  next();
+});
+
 // Security — HIGH-3: Real CSP, MED-7: HSTS max-age
 app.use(helmet({
   contentSecurityPolicy: {

@@ -37,6 +37,19 @@ function getDaysAgo(n) {
   return d.toISOString().slice(0, 10);
 }
 
+// The container runs UTC (no TZ set), so new Date().getHours() is NOT local time
+// — it's 5-6 hours ahead of Tonkawa. Anything that decides when to contact a
+// customer has to go through here, or it fires in the middle of their night.
+function centralHour() {
+  return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hour12: false }));
+}
+
+// Same for the day of week — a "Monday" job keyed off UTC starts on Sunday
+// evening Central.
+function centralDay() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })).getDay();
+}
+
 async function sendDeliveryReminders() {
   const db = getDb();
   const tomorrow = getTomorrow();
@@ -199,17 +212,71 @@ async function releaseExpiredHolds() {
   return { released, reminded };
 }
 
+/**
+ * Stage 4 — "you had a quote, any questions?" follow-up.
+ *
+ * Targets cancelled bookings where the deposit was never paid: they picked a
+ * unit and a date, got a checkout link, and stopped. We wait a day (long enough
+ * not to stack on the last-chance deposit text, short enough that the party is
+ * still being planned), then ask one open question instead of pushing the link
+ * again.
+ *
+ * deposit_paid=0 AND payment_status='unpaid' is the load-bearing filter — it
+ * means they never committed, so this is an abandoned quote rather than a real
+ * booking someone cancelled on purpose. (Deliberate cancellations carry
+ * deposit_paid=1.) Deliberately NOT keyed on the auto-release marker: that path
+ * has never fired on prod, so keying on it would make this dead code.
+ *
+ * Skipped when: they've since booked anything, the event date has passed, or
+ * they already got this in the last 30 days — sendLeadOpener's per-tag dedupe
+ * handles the last one, so no schema change is needed to track it.
+ * Business hours only; a 3am sales text loses the customer.
+ */
+async function sendQuoteFollowUps() {
+  const db = getDb();
+  if (centralHour() < 10 || centralHour() >= 19) return 0;
+
+  const candidates = db.prepare(`
+    SELECT b.*, c.id AS cust_id, c.first_name, c.phone
+    FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE b.status = 'cancelled' AND b.deposit_paid = 0 AND b.payment_status = 'unpaid'
+      AND b.updated_at <= datetime('now','-24 hours')
+      AND b.updated_at >= datetime('now','-4 days')
+      AND b.event_date >= date('now')
+      AND c.phone IS NOT NULL AND c.phone != ''
+  `).all();
+
+  let sent = 0;
+  for (const b of candidates) {
+    const booked = db.prepare(
+      "SELECT COUNT(*) n FROM bookings WHERE customer_id = ? AND status != 'cancelled'"
+    ).get(b.cust_id).n;
+    if (booked > 0) continue;                  // they came back on their own
+
+    const body = 'Hi ' + b.first_name + "! This is Sarah with Bounce Man. I saw you had a quote for "
+      + fmtDate(b.event_date) + " but didn't finish booking — what questions can I answer? "
+      + "That date's still open if you want it: https://bouncemanrentals.com/booking";
+    try {
+      const ok = await smsService.sendLeadOpener(b.phone, body, 'quote_followup', { dupeDays: 30 });
+      if (ok) { sent++; console.log('[QUOTE] Follow-up sent for', b.booking_number); }
+    } catch (e) { console.error('[QUOTE] follow-up SMS failed for ' + b.booking_number + ':', e.message); }
+  }
+  if (sent) console.log('[QUOTE] ' + sent + ' quote follow-ups sent');
+  return sent;
+}
+
 async function runScheduler() {
   try {
     const reminders = await sendDeliveryReminders();
-    // Review requests batch out Mondays at 9 AM CT (server timezone = America/Chicago).
-    const now = new Date();
-    const reviews = (now.getDay() === 1 && now.getHours() === 9)
+    // Review requests batch out Mondays at 9 AM CT. This used to read getHours()
+    // against a UTC container, so it was firing Mondays at 4 AM Central.
+    const reviews = (centralDay() === 1 && centralHour() === 9)
       ? await sendReviewRequests()
       : 0;
     await releaseExpiredHolds();
-    if (reminders > 0 || reviews > 0) {
-      console.log(`[SCHEDULER] Run complete: ${reminders} delivery reminders, ${reviews} review requests`);
+    const followUps = await sendQuoteFollowUps();
+    if (reminders > 0 || reviews > 0 || followUps > 0) {
+      console.log(`[SCHEDULER] Run complete: ${reminders} delivery reminders, ${reviews} review requests, ${followUps} quote follow-ups`);
     }
   } catch (err) {
     console.error('[SCHEDULER] Run failed:', err.message);
@@ -231,4 +298,4 @@ function start() {
   setInterval(() => { releaseExpiredHolds().catch(e => console.error('[HOLD] run failed:', e.message)); }, 20 * 60 * 1000);
 }
 
-module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds };
+module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds, sendQuoteFollowUps };

@@ -568,7 +568,9 @@
         <div class="col-md-4 mb-4">
           <h5><img src="/assets/images/navbar-wordmark.svg" alt="Bounce Man" style="height:30px"></h5>
           <p style="opacity:0.7">Making your events unforgettable with safe, clean, and fun party equipment rentals in Tonkawa, OK and surrounding areas.</p>
-          <% if (settings.facebook_url || settings.instagram_url) { %>
+          <%# Social icons are hidden inside the booking flow — they're the one link %>
+          <%# on the page that sends someone away mid-checkout. %>
+          <% if (!(typeof isBookingFlow !== 'undefined' && isBookingFlow) && (settings.facebook_url || settings.instagram_url)) { %>
           <div class="social-links">
             <% if (settings.facebook_url) { %><a href="<%= settings.facebook_url %>" target="_blank"><i class="fab fa-facebook-f"></i></a><% } %>
             <% if (settings.instagram_url) { %><a href="<%= settings.instagram_url %>" target="_blank"><i class="fab fa-instagram"></i></a><% } %>

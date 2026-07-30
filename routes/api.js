@@ -245,16 +245,17 @@ router.post('/lead', async (req, res) => {
       db.prepare("UPDATE customers SET email = ?, updated_at = datetime('now') WHERE id = ?").run(email, existing.id);
     }
 
-    // Abuse backstops (until Turnstile is wired): never text the same number twice in 7 days,
-    // and cap total lead-texts per day so a bot blast can't run up Twilio or torch our sender rep.
-    const DAILY_CAP = 40;
-    const dupe = db.prepare("SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND recipient LIKE ? AND body LIKE '%SAVE10%' AND sent_at >= datetime('now','-7 days')").get('%' + digits).n;
-    const today = db.prepare("SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND body LIKE '%SAVE10%' AND sent_at >= datetime('now','-1 day')").get().n;
+    // Text the code — this becomes Sarah's first turn, so their reply threads
+    // straight into her. Guarded against repeats and bot blasts (see sms.js).
     const opener = 'Hi ' + first_name + "! This is Sarah with Bounce Man. Here's your $10 code: SAVE10 — just enter it at checkout. What day are you thinking for your party?";
-    if (dupe === 0 && today < DAILY_CAP) {
-      smsService.sendSms(digits, opener).catch((e) => console.error('[LEAD] opener SMS failed:', e.message));
-    } else {
-      console.warn('[LEAD] opener SMS suppressed (dupe=' + dupe + ', today=' + today + ') for ' + digits);
+    smsService.sendLeadOpener(digits, opener, 'lead_popup')
+      .catch((e) => console.error('[LEAD] opener SMS failed:', e.message));
+
+    // ...and email it too. The text starts the conversation; the email is what
+    // they can still find next week when the text is buried.
+    if (email) {
+      require('../services/email').sendCouponCode(email, first_name, 'SAVE10', 10)
+        .catch((e) => console.error('[LEAD] coupon email failed:', e.message));
     }
 
     return res.json({ ok: true });   // always show success — don't reveal the guard to bots

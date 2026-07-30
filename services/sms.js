@@ -28,7 +28,9 @@ function formatPhone(phone) {
 }
 
 // Log an SMS (in or out) to the communications table for the admin chat. Non-fatal.
-function logSms(direction, otherNumber, body, status) {
+// `tag` (stored in `subject`) marks a message family — e.g. 'lead_popup' — so the
+// lead-opener guards below can count them without pattern-matching message copy.
+function logSms(direction, otherNumber, body, status, tag) {
   try {
     const db = getDb();
     const recip = formatPhone(otherNumber) || String(otherNumber || '');
@@ -39,8 +41,8 @@ function logSms(direction, otherNumber, body, status) {
       const m = rows.find(r => String(r.phone).replace(/\D/g, '').slice(-10) === digits);
       if (m) customerId = m.id;
     }
-    db.prepare("INSERT INTO communications (id, customer_id, type, direction, body, recipient, status, sent_at) VALUES (?, ?, 'sms', ?, ?, ?, ?, datetime('now'))")
-      .run(uuid(), customerId, direction, body, recip, status || 'sent');
+    db.prepare("INSERT INTO communications (id, customer_id, type, direction, subject, body, recipient, status, sent_at) VALUES (?, ?, 'sms', ?, ?, ?, ?, ?, datetime('now'))")
+      .run(uuid(), customerId, direction, tag || null, body, recip, status || 'sent');
   } catch (e) { console.error('[SMS LOG] failed:', e.message); }
 }
 
@@ -64,7 +66,7 @@ async function sendSms(to, body, opts) {
 
   const message = await getClient().messages.create(params);
   console.log(`[SMS] Sent to ${toFormatted} via ${messagingServiceSid ? 'MsgSvc' : 'direct'} — SID: ${message.sid}`);
-  logSms('outbound', toFormatted, body, 'sent');
+  logSms('outbound', toFormatted, body, 'sent', opts.tag);
   // Mirror into the customer's Slack #texts thread (two-way visibility)
   try {
     const notif = require('./notifications');
@@ -78,6 +80,42 @@ async function sendSms(to, body, opts) {
     }
   } catch (e) { console.error('[SMS->SLACK] mirror failed:', e.message); }
   return message;
+}
+
+/**
+ * First outbound text to a brand-new lead — the popup coupon opener, the
+ * contact-form speed-to-lead reply, anything a stranger can trigger from the
+ * public site. Because sendSms mirrors outbound texts into `communications`
+ * and the Slack thread, this becomes Sarah's own first turn and her inbound
+ * handler picks up the reply with full context.
+ *
+ * Guarded, since these endpoints are public and each send costs money and
+ * A2P sender reputation: never text the same number twice inside `dupeDays`,
+ * and cap lead openers per day so a bot blast (or a loop) is bounded.
+ * Returns true if the text went out, false if a guard suppressed it.
+ */
+async function sendLeadOpener(phone, body, tag, opts) {
+  const { dupeDays = 7, dailyCap = 40 } = opts || {};
+  const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return false;
+  try {
+    const db = getDb();
+    const dupe = db.prepare(
+      "SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND subject = ? AND recipient LIKE ? AND sent_at >= datetime('now', ?)"
+    ).get(tag, '%' + digits, '-' + dupeDays + ' days').n;
+    const today = db.prepare(
+      "SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND subject = ? AND sent_at >= datetime('now','-1 day')"
+    ).get(tag).n;
+    if (dupe > 0 || today >= dailyCap) {
+      console.warn('[LEAD] ' + tag + ' opener suppressed (dupe=' + dupe + ', today=' + today + ') for ' + digits);
+      return false;
+    }
+  } catch (e) {
+    console.error('[LEAD] guard check failed, not texting:', e.message);
+    return false;   // a broken guard must fail closed — this path sends money
+  }
+  await sendSms(digits, body, { tag });
+  return true;
 }
 
 /**
@@ -175,5 +213,6 @@ module.exports = {
   sendBookingConfirmation,
   sendDeliveryReminder,
   sendReviewRequest,
+  sendLeadOpener,
   sendSms,
 };

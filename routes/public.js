@@ -253,6 +253,22 @@ router.post('/contact', (req, res) => {
 
   console.log('[CONTACT] Form submission from', name, email);
 
+  // Speed-to-lead: text them back immediately if they left a number. The clock on
+  // a rental inquiry is brutal — whoever answers first usually gets the booking,
+  // and Nehemiah is often at his day job. sendLeadOpener logs it as an outbound
+  // SMS, so this is Sarah's first turn and their reply threads into her.
+  if (phone) {
+    const first = String(name || '').trim().split(/\s+/)[0] || 'there';
+    const dateBit = event_date
+      ? " I see you're looking at " + event_date + ' — let me check what we have open.'
+      : " What's your event date?";
+    const reply = 'Hi ' + first + '! This is Sarah with Bounce Man — thanks for reaching out.' + dateBit;
+    try {
+      require('../services/sms').sendLeadOpener(phone, reply, 'contact_form')
+        .catch(e => console.error('[CONTACT] speed-to-lead SMS failed:', e.message));
+    } catch (e) { console.error('[CONTACT] SMS require error:', e.message); }
+  }
+
   // Send Slack notification
   try {
     const { notifyContactForm } = require('../services/notifications');
