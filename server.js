@@ -31,17 +31,21 @@ app.locals.esc = require('./lib/helpers').esc;
 // as a callable local so the shared layout can emit real, current numbers.
 app.locals.getReviewStats = require('./lib/helpers').getReviewStats;
 
+// Cloudflare Turnstile site key for the lead-capture popup. Empty (e.g. on the
+// sandbox) means the widget isn't rendered and /api/lead skips verification.
+app.locals.TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '';
+
 // Security — HIGH-3: Real CSP, MED-7: HSTS max-age
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://js.stripe.com', 'https://www.googletagmanager.com', 'https://www.googleadservices.com', 'https://connect.facebook.net', 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://www.clarity.ms', 'https://cdn.plaid.com'],
+      scriptSrc: ["'self'", "'unsafe-inline'", 'https://js.stripe.com', 'https://www.googletagmanager.com', 'https://www.googleadservices.com', 'https://connect.facebook.net', 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://www.clarity.ms', 'https://cdn.plaid.com', 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'data:', 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com', 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
       connectSrc: ["'self'", 'https://api.stripe.com', 'https://www.google-analytics.com', 'https://region1.google-analytics.com', 'https://www.googletagmanager.com', 'https://www.google.com', 'https://google.com', 'https://www.googleadservices.com', 'https://googleads.g.doubleclick.net', 'https://www.facebook.com', 'https://connect.facebook.net', 'https://api.zippopotam.us', 'https://vapi.ai', 'https://cdn.jsdelivr.net', 'https://cdn.plaid.com', 'https://production.plaid.com'],
-      frameSrc: ["'self'", 'https://js.stripe.com', 'https://cdn.plaid.com', 'https://www.facebook.com', 'https://td.doubleclick.net'],
+      frameSrc: ["'self'", 'https://js.stripe.com', 'https://cdn.plaid.com', 'https://www.facebook.com', 'https://td.doubleclick.net', 'https://challenges.cloudflare.com'],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'", 'https://checkout.stripe.com'],

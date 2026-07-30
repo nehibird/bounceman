@@ -681,6 +681,7 @@ document.getElementById("toast-container").addEventListener("click", function(e)
       <input class="bml-in" type="tel" name="phone" required placeholder="Phone *">
       <input class="bml-in" type="email" name="email" required placeholder="Email *">
       <label class="bml-chk"><input type="checkbox" name="sms_optin" value="1" required> Text me my code &amp; occasional specials. Msg &amp; data rates may apply; reply STOP to opt out.</label>
+      <div id="bml-turnstile" class="bml-ts"></div>
       <button class="bml-cta bml-go" type="submit">Get My $10 Code</button>
       <p class="bml-err" id="bml-err"></p>
       <p class="bml-fine">By submitting, you agree to be contacted by Bounce Man by text, call, or email at the number provided &mdash; even if it's on a Do Not Call list &mdash; including via automated systems. Consent isn't a condition of purchase. Reply STOP to opt out.</p>
@@ -712,20 +713,40 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 .bml-chk{display:flex;gap:8px;text-align:left;font-size:11.5px;color:#666;line-height:1.35;margin:2px 2px 14px;cursor:pointer}
 .bml-chk input{margin-top:2px;flex:none}
 .bml-go{width:100%}
+.bml-ts{display:flex;justify-content:center;min-height:0;margin:0 0 10px}
+.bml-ts:empty{margin:0}
 .bml-err{color:#c0392b;font-size:13px;margin:10px 0 0;display:none}
 .bml-fine{font-size:9.5px;color:#aaa;line-height:1.4;margin:12px 2px 0;text-align:left}
 .bml-tick{width:56px;height:56px;margin:4px auto 10px;border-radius:50%;background:#2ecc71;color:#fff;font-size:32px;line-height:56px;font-weight:900}
 @media(max-width:520px){#bml-root{left:12px;right:12px;bottom:12px;width:auto}.bml-burst{font-size:52px}}
 </style>
+<% if (typeof TURNSTILE_SITE_KEY !== 'undefined' && TURNSTILE_SITE_KEY) { %>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+<% } %>
 <script>
 (function(){
   var KEY='bml_seen_v1', DAYS=7;
+  var TS_KEY='<%= typeof TURNSTILE_SITE_KEY !== "undefined" ? TURNSTILE_SITE_KEY : "" %>';
+  var tsToken='', tsRendered=false;
   function seen(){ try{ var t=+localStorage.getItem(KEY)||0; return Date.now()-t < DAYS*864e5; }catch(e){ return false; } }
   function mark(){ try{ localStorage.setItem(KEY, Date.now()); }catch(e){} }
   var root=document.getElementById('bml-root'); if(!root) return;
   var opened=false;
   function closePopup(){ root.style.display='none'; mark(); }
-  function showForm(){ document.getElementById('bml-teaser').style.display='none'; document.getElementById('bml-form').style.display='block'; document.getElementById('bml-ts').value=Date.now(); }
+  // Render Turnstile only once the form is actually visible — a widget rendered
+  // inside a display:none container won't run its challenge.
+  function renderTurnstile(tries){
+    if(!TS_KEY||tsRendered) return;
+    if(!window.turnstile){ if((tries||0)<20) setTimeout(function(){ renderTurnstile((tries||0)+1); }, 250); return; }
+    tsRendered=true;
+    window.turnstile.render('#bml-turnstile', {
+      sitekey: TS_KEY,
+      callback: function(t){ tsToken=t; },
+      'expired-callback': function(){ tsToken=''; if(window.turnstile) window.turnstile.reset('#bml-turnstile'); },
+      'error-callback': function(){ tsToken=''; }
+    });
+  }
+  function showForm(){ document.getElementById('bml-teaser').style.display='none'; document.getElementById('bml-form').style.display='block'; document.getElementById('bml-ts').value=Date.now(); renderTurnstile(0); }
   function open(){ if(opened||seen()) return; opened=true; root.style.display='block'; }
   document.getElementById('bml-x').addEventListener('click', closePopup);
   document.getElementById('bml-open').addEventListener('click', showForm);
@@ -740,13 +761,28 @@ document.getElementById("toast-container").addEventListener("click", function(e)
     if(!data.name||!data.phone||!data.email){ err.textContent='Please fill in your name, phone, and email.'; err.style.display='block'; return; }
     if(!data.sms_optin){ err.textContent='Please check the box so we can text you your code.'; err.style.display='block'; return; }
     btn.textContent='Sending...'; btn.disabled=true;
-    fetch('/api/lead',{method:'POST',body:new URLSearchParams(data)})
-      .then(function(r){return r.json();})
-      .then(function(j){
-        if(j&&j.ok){ document.getElementById('bml-form').style.display='none'; document.getElementById('bml-done').style.display='block'; mark(); }
-        else { err.textContent=(j&&j.error)||'Something went wrong — please try again.'; err.style.display='block'; btn.textContent=orig; btn.disabled=false; }
-      })
-      .catch(function(){ err.textContent='Network error — please try again.'; err.style.display='block'; btn.textContent=orig; btn.disabled=false; });
+    function fail(msg){
+      err.textContent=msg; err.style.display='block'; btn.textContent=orig; btn.disabled=false;
+      // Turnstile tokens are single-use — hand the retry a fresh one.
+      tsToken=''; if(TS_KEY&&window.turnstile&&tsRendered) window.turnstile.reset('#bml-turnstile');
+    }
+    function post(){
+      data['cf-turnstile-response']=tsToken;
+      fetch('/api/lead',{method:'POST',body:new URLSearchParams(data)})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(j&&j.ok){ document.getElementById('bml-form').style.display='none'; document.getElementById('bml-done').style.display='block'; mark(); }
+          else { fail((j&&j.error)||'Something went wrong — please try again.'); }
+        })
+        .catch(function(){ fail('Network error — please try again.'); });
+    }
+    // The managed challenge usually solves in well under a second, but they can
+    // submit before it lands — wait up to 8s for the token rather than fail them.
+    (function waitToken(tries){
+      if(!TS_KEY||tsToken) return post();
+      if(tries>=32) return fail('Verification is taking a moment — please try again.');
+      setTimeout(function(){ waitToken(tries+1); }, 250);
+    })(0);
   });
 })();
 </script>

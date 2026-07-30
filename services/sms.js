@@ -103,16 +103,23 @@ async function sendBookingConfirmation(phone, bookingNumber, eventDate) {
 
 /**
  * Delivery reminder SMS, sent 24 hours before event.
+ *
+ * Says the delivery DATE (not just "tomorrow"), quotes the delivery window, and
+ * states the remaining balance plus that it can be paid at drop-off — the three
+ * things customers called about after getting the old version.
+ *
  * @param {string} phone
  * @param {string} eventDate
- * @param {string} setupTime  optional estimated arrival window
+ * @param {string} setupTime  optional exact arrival time; overrides the window
  * @param {string} endDate    optional rental end date (for multi-day rentals)
+ * @param {object} opts       { balanceDue }
  */
-async function sendDeliveryReminder(phone, eventDate, setupTime, endDate) {
+async function sendDeliveryReminder(phone, eventDate, setupTime, endDate, opts) {
+  const { balanceDue } = opts || {};
   let dateStr = eventDate;
   try {
     dateStr = new Date(eventDate + 'T12:00:00').toLocaleDateString('en-US', {
-      month: 'long', day: 'numeric'
+      weekday: 'short', month: 'long', day: 'numeric'
     });
   } catch (e) { /* use raw */ }
 
@@ -123,18 +130,27 @@ async function sendDeliveryReminder(phone, eventDate, setupTime, endDate) {
       const d1 = new Date(eventDate + 'T12:00:00');
       const d2 = new Date(endDate + 'T12:00:00');
       const days = Math.round((d2 - d1) / 86400000) + 1;
-      const pickup = d2.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      const pickup = d2.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
       multiDayNote = ` This is a ${days}-day rental — we'll pick up on ${pickup}.`;
     } catch (e) { /* skip note */ }
   }
 
+  let window = '8-11 AM';
+  try { window = require('../lib/helpers').getSettings().delivery_window || window; } catch (e) { /* default */ }
+
   const timeNote = setupTime
-    ? `We'll arrive around ${setupTime}.`
-    : `We'll call when we're on our way!`;
+    ? `, and we'll arrive around ${setupTime}. We'll text when we're on our way.`
+    : `, between ${window}. We'll text when we're on our way.`;
+
+  const bal = parseFloat(balanceDue);
+  const balNote = (!isNaN(bal) && bal > 0)
+    ? ` Remaining balance $${bal.toFixed(2)} — you can pay that at drop-off (cash or check; card adds 3%).`
+    : ` You're paid in full — nothing due at drop-off.`;
 
   const body =
-    `Reminder: Your Bounce Man delivery is tomorrow (${dateStr})! ${timeNote}${multiDayNote} ` +
-    `Make sure the setup area is clear with a power outlet nearby. ` +
+    `Reminder: Your Bounce Man delivery is tomorrow, ${dateStr}${timeNote}${multiDayNote}` +
+    balNote +
+    ` Please have the setup area clear with a power outlet nearby. ` +
     `Questions? (580) 308-9288`;
 
   return sendSms(phone, body);

@@ -184,6 +184,34 @@ router.get('/ads/google/callback', async (req, res) => {
   }
 });
 
+// Cloudflare Turnstile verification. Returns true when the visitor cleared the
+// challenge — or when no secret is configured, so the sandbox still works.
+// A siteverify outage fails OPEN: the backstops below still bound the damage,
+// and silently swallowing real leads is worse than the bot risk it would cover.
+async function verifyTurnstile(req) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return true;
+  const token = (req.body || {})['cf-turnstile-response'];
+  if (!token) return false;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 5000);
+    const resp = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: token, remoteip: req.ip || '' }),
+      signal: ctl.signal,
+    });
+    clearTimeout(timer);
+    const data = await resp.json();
+    if (!data.success) console.warn('[LEAD] turnstile rejected:', (data['error-codes'] || []).join(','));
+    return !!data.success;
+  } catch (e) {
+    console.error('[LEAD] turnstile verify unreachable, allowing through:', e.message);
+    return true;
+  }
+}
+
 // Lead-capture coupon popup (PUBLIC — must be before requireAuth): save the lead, text them
 // the $10 code, then let Sarah take over the reply. The opener is sent via sendSms (logged to
 // `communications` as outbound), so Sarah replays it as her first turn when they text back.
@@ -192,6 +220,13 @@ router.post('/lead', async (req, res) => {
     const { name, phone, email, sms_optin, website_url, _ts } = req.body || {};
     if (website_url) return res.json({ ok: true });                       // honeypot → silently drop bots
     if (_ts && (Date.now() - Number(_ts)) < 1500) return res.status(400).json({ ok: false, error: 'Please try again.' });
+
+    // Cloudflare Turnstile — the real bot gate. Everything below it (honeypot,
+    // timing, dupe window, daily cap) stays as defense in depth. No secret
+    // configured (sandbox/dev) means verification is skipped, not failed.
+    if (!(await verifyTurnstile(req))) {
+      return res.status(400).json({ ok: false, error: "Couldn't verify you're human — please try again." });
+    }
     if (!name || !phone || !email) return res.status(400).json({ ok: false, error: 'Please fill in your name, phone, and email.' });
     if (!sms_optin) return res.status(400).json({ ok: false, error: 'Please check the box so we can text your code.' });
     const digits = String(phone).replace(/\D/g, '').slice(-10);

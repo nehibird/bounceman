@@ -68,7 +68,7 @@ async function sendDeliveryReminders() {
     try {
       // SMS reminder
       if (b.phone) {
-        await smsService.sendDeliveryReminder(b.phone, b.event_date, null, b.event_end_date);
+        await smsService.sendDeliveryReminder(b.phone, b.event_date, null, b.event_end_date, { balanceDue: b.balance_due });
       }
     } catch (err) {
       console.error(`[SCHEDULER] SMS reminder failed for ${b.booking_number}:`, err.message);
