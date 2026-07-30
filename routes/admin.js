@@ -294,8 +294,7 @@ router.post('/bookings/create', async (req, res) => {
   const pricing = calcPricing(settings, subtotal, delivery_fee, data.delivery_city || null, taxExempt);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee } = pricing;
   const total = Math.round((pricing.total - discount_amount) * 100) / 100;
-  const depositPercent = parseFloat(settings.deposit_percent || '50') / 100;
-  const deposit_amount = Math.floor(total * depositPercent * 100) / 100;
+  const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
   const balance_due = Math.round((total - deposit_amount) * 100) / 100;
 
   // H-2: Customer upsert + all INSERTs in ONE transaction to prevent TOCTOU double-booking race

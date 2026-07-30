@@ -479,7 +479,7 @@ router.post('/create-and-send-link', async (req, res) => {
 
     const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, delivery_city);
     const total = Math.round((rawTotal - discount_amount) * 100) / 100;
-    const deposit_amount = Math.floor(total * (parseFloat(settings.deposit_percent || '50') / 100) * 100) / 100;
+    const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
 
     // Create or find customer (format-agnostic so returning website customers aren't duplicated)
     let customer = findCustomerByPhone(db, phone);

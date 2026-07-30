@@ -5,6 +5,7 @@ const { resolveDeliveryFee } = require('../lib/helpers');
 const { requireAuth } = require('./auth');
 const cookieParser = require('cookie-parser');
 const { v4: uuid } = require('uuid');
+const smsService = require('../services/sms');
 
 router.use(cookieParser());
 
@@ -180,6 +181,51 @@ router.get('/ads/google/callback', async (req, res) => {
   } catch (e) {
     console.error('[GOOGLE ADS] callback error:', e.message);
     res.redirect('/admin/ads/google?error=' + encodeURIComponent(e.message));
+  }
+});
+
+// Lead-capture coupon popup (PUBLIC — must be before requireAuth): save the lead, text them
+// the $10 code, then let Sarah take over the reply. The opener is sent via sendSms (logged to
+// `communications` as outbound), so Sarah replays it as her first turn when they text back.
+router.post('/lead', async (req, res) => {
+  try {
+    const { name, phone, email, sms_optin, website_url, _ts } = req.body || {};
+    if (website_url) return res.json({ ok: true });                       // honeypot → silently drop bots
+    if (_ts && (Date.now() - Number(_ts)) < 1500) return res.status(400).json({ ok: false, error: 'Please try again.' });
+    if (!name || !phone || !email) return res.status(400).json({ ok: false, error: 'Please fill in your name, phone, and email.' });
+    if (!sms_optin) return res.status(400).json({ ok: false, error: 'Please check the box so we can text your code.' });
+    const digits = String(phone).replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) return res.status(400).json({ ok: false, error: 'Please enter a valid 10-digit phone number.' });
+
+    const db = getDb();
+    const parts = String(name).trim().split(/\s+/);
+    const first_name = parts[0];
+    const last_name = parts.slice(1).join(' ');
+    const norm = (s) => String(s || '').replace(/\D/g, '').slice(-10);
+    const existing = db.prepare('SELECT id, email FROM customers').all().find((c) => norm(c.phone) === digits);
+    if (!existing) {
+      db.prepare("INSERT INTO customers (id, first_name, last_name, email, phone, state, source) VALUES (?, ?, ?, ?, ?, 'OK', 'lead_popup')")
+        .run(uuid(), first_name, last_name || '', email || null, digits);
+    } else if (email && !existing.email) {
+      db.prepare("UPDATE customers SET email = ?, updated_at = datetime('now') WHERE id = ?").run(email, existing.id);
+    }
+
+    // Abuse backstops (until Turnstile is wired): never text the same number twice in 7 days,
+    // and cap total lead-texts per day so a bot blast can't run up Twilio or torch our sender rep.
+    const DAILY_CAP = 40;
+    const dupe = db.prepare("SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND recipient LIKE ? AND body LIKE '%SAVE10%' AND sent_at >= datetime('now','-7 days')").get('%' + digits).n;
+    const today = db.prepare("SELECT COUNT(*) n FROM communications WHERE type='sms' AND direction='outbound' AND body LIKE '%SAVE10%' AND sent_at >= datetime('now','-1 day')").get().n;
+    const opener = 'Hi ' + first_name + "! This is Sarah with Bounce Man. Here's your $10 code: SAVE10 — just enter it at checkout. What day are you thinking for your party?";
+    if (dupe === 0 && today < DAILY_CAP) {
+      smsService.sendSms(digits, opener).catch((e) => console.error('[LEAD] opener SMS failed:', e.message));
+    } else {
+      console.warn('[LEAD] opener SMS suppressed (dupe=' + dupe + ', today=' + today + ') for ' + digits);
+    }
+
+    return res.json({ ok: true });   // always show success — don't reveal the guard to bots
+  } catch (e) {
+    console.error('[LEAD] error:', e.message);
+    return res.status(500).json({ ok: false, error: 'Something went wrong — please try again.' });
   }
 });
 

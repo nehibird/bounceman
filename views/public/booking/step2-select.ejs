@@ -172,7 +172,7 @@
                 '</div>' +
               '</div>';
             }
-            var wetUp = (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '') ? Number(item.price_wet) : 20;
+            var wetUp = 0;  // wet upcharge removed 2026-07 — wet and dry are the same price
             var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '');
             return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '" data-extra-day="' + (item.extraDayPrice !== null && item.extraDayPrice !== undefined ? item.extraDayPrice : '') + '" data-max-extra="' + (item.maxExtraDays || 0) + '">' +
             '<div class="equipment-card select-card">' +
@@ -192,7 +192,7 @@
                   '<div class="wd-q">Do you need it wet or dry? <span class="wd-req" id="wdreq-' + item.id + '">Choose one</span></div>' +
                   '<div class="wd-row">' +
                     '<div class="wd-btn" data-mode="dry" id="wd-dry-' + item.id + '"><div class="wd-ic"><i class="fas fa-sun"></i></div><div><div class="wd-t">Dry</div><div class="wd-s">No water — keep it dry</div></div></div>' +
-                    '<div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><div class="wd-ic"><i class="fas fa-tint"></i></div><div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide (+$' + wetUp + ')</div></div></div>' +
+                    '<div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><div class="wd-ic"><i class="fas fa-tint"></i></div><div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide — same price</div></div></div>' +
                   '</div></div>' : '') +
               '</div>' +
             '</div>' +
@@ -498,9 +498,7 @@
       var itemTotal = item.price;
       var label = item.name;
       if (wetItems[id]) {
-        var wEl = document.querySelector('[data-id="' + id + '"]');
-        itemTotal += (wEl && wEl.dataset.wetUp ? parseFloat(wEl.dataset.wetUp) : 20);
-        label += ' (Wet)';
+        label += ' (Wet)';  // wet is the same price — no upcharge added
       }
       subtotal += itemTotal;
       var row = document.createElement('div');

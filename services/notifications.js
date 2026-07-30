@@ -48,7 +48,7 @@ async function postToSlack(channel, blocks, text, thread_ts) {
 }
 
 function buildBookingBlocks(booking, customer, items) {
-  // Comprehensive booking notification - all data preserved in Slack
+  // Structured booking notification — clean labeled sections, full info, minimal emoji.
   const days = Math.max(1, ...items.map(i => parseInt(i.rental_days) || 1));
   const itemList = items.map(i => {
     const wet = i.wet_or_dry === 'wet' ? ' (WET)' : (i.wet_or_dry === 'dry' ? ' (DRY)' : '');
@@ -57,48 +57,79 @@ function buildBookingBlocks(booking, customer, items) {
   }).join('\n');
 
   const address = [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ');
-  const durationTxt = (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + '–' + fmtDate(booking.event_end_date) + ')' : '') : '');
-  const bal = parseFloat(booking.balance_due || 0);
+  const durationTxt = (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + ' – ' + fmtDate(booking.event_end_date) + ')' : '') : '');
 
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: '🎉 New Booking: ' + booking.booking_number } },
-    { type: 'section', text: { type: 'mrkdwn', text:
-      '*' + customer.first_name + ' ' + (customer.last_name || '') + '*  ·  ' + (customer.email || 'no email') +
-      '\n📞 ' + (customer.phone || 'N/A') } },
-    { type: 'section', text: { type: 'mrkdwn', text:
-      '📅 *' + fmtDate(booking.event_date) + '*  ·  ' + fmtTime(booking.event_start_time) + '–' + fmtTime(booking.event_end_time) +
-      '\n⏱ ' + durationTxt } },
-    { type: 'section', text: { type: 'mrkdwn', text:
-      '📍 *' + address + '*' +
-      '\n' + (booking.venue_type || 'N/A') + ' · ' + (booking.surface_type || 'N/A') + ' surface · Power: ' + (booking.power_available ? 'Yes' : 'No/Unknown') } },
-    { type: 'section', text: { type: 'mrkdwn', text: '🎪 *Equipment*\n' + itemList } },
-    { type: 'section', text: { type: 'mrkdwn', text:
-      '💵 *Total $' + parseFloat(booking.total).toFixed(2) + '*  ·  Deposit $' + parseFloat(booking.deposit_amount).toFixed(2) + '  ·  Balance $' + bal.toFixed(2) + '  ·  ' + (booking.payment_status || 'unpaid') } }
+
+    { type: 'section', text: { type: 'mrkdwn', text: '*CUSTOMER*' } },
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Name:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
+      { type: 'mrkdwn', text: '*Email:*\n' + (customer.email || 'N/A') },
+      { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') }
+    ] },
+
+    { type: 'section', text: { type: 'mrkdwn', text: '*EVENT DETAILS*' } },
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Date:*\n' + fmtDate(booking.event_date) },
+      { type: 'mrkdwn', text: '*Time:*\n' + fmtTime(booking.event_start_time) + ' - ' + fmtTime(booking.event_end_time) },
+      { type: 'mrkdwn', text: '*Event Type:*\n' + (booking.event_type || 'N/A') },
+      { type: 'mrkdwn', text: '*Duration:*\n' + durationTxt }
+    ] },
+
+    { type: 'section', text: { type: 'mrkdwn', text: '*DELIVERY*' } },
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Address:*\n' + address },
+      { type: 'mrkdwn', text: '*Venue:*\n' + (booking.venue_type || 'N/A') },
+      { type: 'mrkdwn', text: '*Surface:*\n' + (booking.surface_type || 'N/A') },
+      { type: 'mrkdwn', text: '*Power:*\n' + (booking.power_available ? 'Yes' : 'No/Unknown') }
+    ] },
+
+    { type: 'section', text: { type: 'mrkdwn', text: '*EQUIPMENT*\n' + itemList } },
+
+    { type: 'section', text: { type: 'mrkdwn', text: '*PRICING*' } }
   ];
 
-  // Discount (compact) if present
+  // Pricing — Subtotal + Tax always; Delivery Fee / Damage Waiver only when non-zero.
+  const priceFields = [
+    { type: 'mrkdwn', text: '*Subtotal:*\n$' + parseFloat(booking.subtotal || 0).toFixed(2) },
+    { type: 'mrkdwn', text: '*Tax (' + ((booking.tax_rate || 0) * 100).toFixed(1) + '%):*\n$' + parseFloat(booking.tax_amount || 0).toFixed(2) }
+  ];
+  if (parseFloat(booking.delivery_fee || 0) > 0) priceFields.push({ type: 'mrkdwn', text: '*Delivery Fee:*\n$' + parseFloat(booking.delivery_fee).toFixed(2) });
+  if (parseFloat(booking.damage_waiver_fee || 0) > 0) priceFields.push({ type: 'mrkdwn', text: '*Damage Waiver:*\n$' + parseFloat(booking.damage_waiver_fee).toFixed(2) });
+  blocks.push({ type: 'section', fields: priceFields });
+
+  blocks.push({ type: 'section', fields: [
+    { type: 'mrkdwn', text: '*TOTAL:*\n*$' + parseFloat(booking.total).toFixed(2) + '*' },
+    { type: 'mrkdwn', text: '*Deposit:*\n$' + parseFloat(booking.deposit_amount).toFixed(2) },
+    { type: 'mrkdwn', text: '*Balance Due:*\n$' + parseFloat(booking.balance_due || 0).toFixed(2) },
+    { type: 'mrkdwn', text: '*Payment Status:*\n' + (booking.payment_status || 'unpaid') }
+  ] });
+
+  // Discount (only if present)
   if (booking.discount_code || parseFloat(booking.discount_amount) > 0) {
-    blocks.push({ type: 'context', elements: [
-      { type: 'mrkdwn', text: '🏷 Discount ' + (booking.discount_code || '') + ' −$' + parseFloat(booking.discount_amount || 0).toFixed(2) }
+    blocks.push({ type: 'section', fields: [
+      { type: 'mrkdwn', text: '*Discount Code:*\n' + (booking.discount_code || 'N/A') },
+      { type: 'mrkdwn', text: '*Discount Amount:*\n-$' + parseFloat(booking.discount_amount || 0).toFixed(2) }
     ] });
   }
 
-  // Tax-exempt claim → surface the permit # + a verify link. We honor the exemption on
-  // entry (accept-then-verify), so an admin should confirm the permit before delivery.
+  // Tax-exempt claim → surface the permit # + a verify link (accept-then-verify).
   if (booking.tax_exempt_claimed) {
     const permit = (customer && customer.tax_exempt_cert) ? customer.tax_exempt_cert : 'not provided';
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text:
-      '🏛️ *TAX-EXEMPT — verify before delivery*\nPermit #: `' + permit + '`  ·  <https://oktap.tax.ok.gov/OkTAP/Web/_/|Verify at OkTAP>' } });
+      '*TAX-EXEMPT — verify before delivery*\nPermit #: `' + permit + '`  ·  <https://oktap.tax.ok.gov/OkTAP/Web/_/|Verify at OkTAP>' } });
   }
 
   // Delivery notes if present
   if (booking.delivery_notes) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '📝 *Notes:* ' + booking.delivery_notes } });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*DELIVERY NOTES:*\n' + booking.delivery_notes } });
   }
 
-  // Slim footer: admin link + created time
+  // Footer: created time + admin link (raw Booking ID UUID dropped — booking # is in the header)
+  blocks.push({ type: 'divider' });
   blocks.push({ type: 'context', elements: [
-    { type: 'mrkdwn', text: '<https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin> · ' + fmtCentral(booking.created_at) }
+    { type: 'mrkdwn', text: '*Created:* ' + fmtCentral(booking.created_at) + ' · <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
   ] });
 
   return blocks;
@@ -132,6 +163,7 @@ function buildDeliveryCardBlocks(booking, customer, items) {
       fields: [
         { type: 'mrkdwn', text: '*Customer:*\n' + customer.first_name + ' ' + (customer.last_name || '') },
         { type: 'mrkdwn', text: '*Phone:*\n' + (customer.phone || 'N/A') },
+        { type: 'mrkdwn', text: '*Date:*\n' + (booking.event_date ? fmtDate(booking.event_date) : 'TBD') },
         { type: 'mrkdwn', text: '*Time:*\n' + (booking.event_start_time ? fmtTime12(booking.event_start_time) : 'TBD') + ' - ' + (booking.event_end_time ? fmtTime12(booking.event_end_time) : 'TBD') },
         { type: 'mrkdwn', text: '*Items:*\n' + itemList }
       ]
