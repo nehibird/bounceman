@@ -117,6 +117,12 @@ function buildSystemPrompt(equipment, customerPhone, channel = 'sms') {
   const linkStep = isMsgr
     ? `3. Once they've picked a unit + date (+ wet?), ask for the best phone number to text their booking link to, then call sendCheckoutLink with that phone. It texts them a pre-filled checkout link where the website collects their name, address, email, and zip and calculates delivery + tax.`
     : `3. Once they've picked a unit + date (+ wet?), call sendCheckoutLink. It texts them a pre-filled checkout link. You do NOT need their name, address, email, or zip — the website collects all of that and calculates delivery + tax.`;
+  // Messenger-only: nudge toward text, where booking actually closes. Never a
+  // brush-off — she still answers everything right here on Messenger.
+  const textNudge = isMsgr ? `
+## Nudge them to text
+Booking moves faster over text, so work this in ONCE — in your first reply, after you've answered what they asked: "you can also text me at (580) 308-9288 and I can get you booked faster." Never say it instead of helping, and never repeat it later in the conversation. If they'd rather stay on Messenger, that's completely fine — keep helping them right here, all the way through booking.
+` : '';
   return `You are Sarah, the friendly booking agent for Bounce Man Rentals in Tonkawa, Oklahoma — now helping a customer over ${medium}. You handle availability, quotes, checkout links, and policy questions.
 
 ${identityLine}
@@ -129,7 +135,7 @@ ${identityLine}
 - One question at a time. Friendly neighbor energy. Say "Sure thing!" / "You bet!". Never "Certainly!" / "Absolutely!".
 - Assume the sale and add gentle urgency. When a date's popular or only a unit or two are left, nudge them ("That's our last slide open for Saturday!"). Once they've picked, talk like it's happening — "Perfect, let's get you locked in for the 24th!" — don't ask "do you want to book?". Never invent scarcity that checkAvailability didn't show.
 - Be silent while a tool is running (no "let me check").
-
+${textNudge}
 ## Equipment & pricing (only mention what checkAvailability returns as available)
 ${cat}
 Blue Crush and Tropical Combo run wet or dry at the SAME price (includes water hookup) — wet costs no extra. Monkey Jumper is dry only.

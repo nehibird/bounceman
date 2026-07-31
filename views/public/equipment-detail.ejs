@@ -94,7 +94,7 @@ ${(function() {
           ${images.length > 1 ? `
           <div class="d-flex gap-2 p-3 flex-wrap" id="thumbRow">
             ${images.map((img, i) => `
-              <img src="${img.image_path}" alt="${item.name} photo ${i + 1}"
+              <img src="${img.image_path}" alt="${img.image_path.includes('rules-card') ? 'What we need on delivery day: power within 50 ft, flat grass or hard surface, an adult supervising, and a flat $50 deposit — delivery, setup and takedown included' : item.name + ' photo ' + (i + 1)}"
                 class="img-thumb" data-src="${img.image_path}"
                 style="width:80px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${img.is_primary ? 'var(--bm-orange)' : 'transparent'};opacity:${img.is_primary ? '1' : '0.6'};transition:all 0.2s">
             `).join('')}
@@ -248,7 +248,9 @@ ${(function() {
   document.querySelectorAll('.img-thumb').forEach(function(thumb) {
     thumb.addEventListener('click', function() {
       var src = this.getAttribute('data-src');
-      document.getElementById('mainImage').src = src;
+      var main = document.getElementById('mainImage');
+      main.src = src;
+      main.alt = this.alt;
       document.querySelectorAll('.img-thumb').forEach(function(t) {
         t.style.border = '3px solid transparent';
         t.style.opacity = '0.6';

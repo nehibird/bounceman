@@ -119,6 +119,9 @@ router.get('/products/feed.csv', (req, res) => {
 
   const imageMap = {};
   db.prepare('SELECT equipment_id, image_path, is_primary FROM equipment_images ORDER BY is_primary DESC').all()
+    // The "before we set up" rules card is a text graphic. It belongs in the on-site
+    // gallery but not in a commerce feed — Meta rejects catalog images that are mostly text.
+    .filter(row => !row.image_path.includes('rules-card'))
     .forEach(row => {
       if (!imageMap[row.equipment_id]) imageMap[row.equipment_id] = { primary: null, additional: [] };
       if (row.is_primary) imageMap[row.equipment_id].primary = row.image_path;
