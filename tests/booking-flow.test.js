@@ -59,6 +59,11 @@ async function goToReview(page, date) {
   );
   await expect(page.locator('.equipment-item').first()).toBeVisible();
   await page.locator('.equipment-item').first().click();
+  // Wet-capable units require an explicit wet/dry choice — step 2's Continue handler
+  // silently returns while any selected unit is unchosen, so without this the click
+  // does nothing and waitForURL times out. Pick dry for whatever is on screen.
+  const dryBtns = page.locator('[id^="wd-dry-"]:visible');
+  for (let i = 0; i < await dryBtns.count(); i++) await dryBtns.nth(i).click();
   await expect(page.locator('#continueBtn')).toBeEnabled({ timeout: 5000 });
   await page.locator('#continueBtn').click();
   await page.waitForURL(/\/booking\/details/, { timeout: 8000 });

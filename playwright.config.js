@@ -2,6 +2,10 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests',
+  // pricing-availability and regression-pre-pr are standalone node scripts that run on
+  // import and call process.exit() — Playwright collecting them killed the whole run
+  // before the browser specs executed, and still exited 0. Run those via `npm run test:all`.
+  testIgnore: ['**/pricing-availability.test.js', '**/regression-pre-pr.test.js'],
   timeout: 90000,
   retries: 0,
   use: {

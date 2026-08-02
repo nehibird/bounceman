@@ -119,13 +119,15 @@ console.log('\n=== SECTION 1: priceForBooking ===');
 // 1e. Demand multiplier: insert window multiplier=2.0 for Aug 2026
 db.prepare("INSERT INTO demand_dates (id, date_start, date_end, multiplier, active, label) VALUES (?, '2026-08-01', '2026-08-31', 2.0, 1, 'SummerPeak')").run(uuid());
 
-// 1f. Wet flat-add NOT multiplied by demand
+// 1f. Wet costs the same as dry (conference decision 2026-07: upcharge removed).
+// This used to assert a $25 flat-add; getWetUpcharge() has returned 0 since 1f14565,
+// so the assertion was left failing. Wet/dry is now a selectable option with no price delta.
 {
   const demandDate = '2026-08-15';
   const priceWithWet    = priceForBooking(db, monkey, { duration: 'daily', days: 1, wet: true,  date: demandDate });
   const priceWithoutWet = priceForBooking(db, monkey, { duration: 'daily', days: 1, wet: false, date: demandDate });
   const wetDelta = round2(priceWithWet - priceWithoutWet);
-  assert('wet flat-add = 25 (not multiplied by demand 2x)', wetDelta === 25, `wetDelta=${wetDelta}`);
+  assert('wet costs the same as dry (upcharge removed)', wetDelta === 0, `wetDelta=${wetDelta}`);
 }
 
 // 1g. Demand multiplier applied to rentalBase
@@ -136,14 +138,16 @@ db.prepare("INSERT INTO demand_dates (id, date_start, date_end, multiplier, acti
   assert('demand 2x applied to base', withdemand === round2(nodemand * 2), `no-demand=${nodemand}, with-demand=${withdemand}`);
 }
 
-// 1h. Multiday + demand: (daily + extraDays*rate)*mult + wetFee
+// 1h. Multiday + demand: (daily + extraDays*rate)*mult. No wet fee is added — the
+// upcharge was removed in 1f14565, so price_wet on the row must NOT reach the total.
+// (price_wet survives in the DB purely as a wet-capable flag; see isWetCapable.)
 {
   const demandDate = '2026-08-15';
   const rentalBase = 450 + 1 * 150; // 600
-  const expected = round2(rentalBase * 2 + 30); // 1230
+  const expected = round2(rentalBase * 2); // 1200 — wet adds nothing
   const eqWithWet = { ...gauntlet, price_wet: 30 };
   const p = priceForBooking(db, eqWithWet, { duration: 'multiday', days: 2, wet: true, date: demandDate });
-  assert('multiday+demand+wet: (base+extra)*mult + wetFee', p === expected, `got ${p}, expected ${expected}`);
+  assert('multiday+demand, wet adds nothing: (base+extra)*mult', p === expected, `got ${p}, expected ${expected}`);
 }
 
 // 1i. NaN-guard: no price_extra_day + settings empty => throw
@@ -361,6 +365,69 @@ console.log('\n=== SECTION 8: sales-tax jurisdiction resolution ===');
   assert('calcPricing unknown -> 5.75% fallback (not 8.5)', near(pUnknown.taxAmount, 5.75), pUnknown.taxAmount);
   const pExempt = calcPricing(s, 100, 0, 'Tonkawa', true);
   assert('calcPricing exempt = 0 tax', pExempt.taxAmount === 0);
+}
+
+// ===========================================================================
+console.log('\n=== SECTION 9: discount codes (comp, single-use, whitespace) ===');
+// ===========================================================================
+{
+  const { lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, normalizeCode,
+          getSettings, calcPricing } = require('../lib/helpers');
+  const s = getSettings();
+
+  const mk = (code, type, value, maxUses) => {
+    db.prepare('DELETE FROM discount_codes WHERE code = ?').run(code);
+    db.prepare(`INSERT INTO discount_codes (id, code, type, value, min_order, max_uses, uses_count, active)
+                VALUES (?, ?, ?, ?, 0, ?, 0, 1)`).run(uuid(), code, type, value, maxUses);
+  };
+
+  // Mirrors the pricing that routes/booking.js does for a code.
+  const quote = (raw, { subtotal, deliveryFee = 0, surfaceFee = 0, city = 'Tonkawa' }) => {
+    const row = lookupDiscount(db, raw);
+    const comp = isCompCode(row);
+    let disc = comp ? subtotal : discountAmountFor(row, subtotal);
+    const p = calcPricing(s, subtotal, deliveryFee, city, false, surfaceFee, disc);
+    let total = round2(Math.max(0, p.total - disc));
+    if (comp) { disc = p.total; total = 0; }
+    return { matched: !!row, comp, total, tax: p.taxAmount,
+             deposit: Math.min(parseFloat(s.deposit_flat || '50'), total) };
+  };
+
+  mk('TESTCOMP', 'free', 100, 1);
+  mk('TESTPCT', 'percent', 10, null);
+
+  // A comp must zero EVERYTHING — the bug was that delivery and the hard-surface
+  // surcharge survived a subtotal-only discount, so "100% off" still charged money.
+  const worst = { subtotal: 450, deliveryFee: 100, surfaceFee: 45, city: 'Enid' };
+  const plain = quote(null, worst);
+  assert('no code: worst case still costs money', plain.total > 600, `total=${plain.total}`);
+  const comped = quote('TESTCOMP', worst);
+  assert('comp zeroes the total incl. delivery + surcharge', comped.total === 0, `total=${comped.total}`);
+  assert('comp owes no sales tax', comped.tax === 0, `tax=${comped.tax}`);
+  assert('comp leaves a $0 deposit (skips Stripe)', comped.deposit === 0, `deposit=${comped.deposit}`);
+
+  // Whitespace-insensitive matching — "FOSTER CARE" is typed with a space.
+  db.prepare("UPDATE discount_codes SET uses_count = 0 WHERE code = 'TESTCOMP'").run();
+  assert('normalizeCode strips spaces', normalizeCode(' Test Comp ') === 'TESTCOMP');
+  for (const v of ['TESTCOMP', 'test comp', ' Test Comp ', 'TEST  COMP']) {
+    assert(`code matches variant ${JSON.stringify(v)}`, !!lookupDiscount(db, v), 'no match');
+  }
+
+  // Single use must actually hold — max_uses was previously never enforced or incremented.
+  assert('first redemption succeeds', redeemDiscount(db, lookupDiscount(db, 'TESTCOMP').id) === true);
+  assert('used-up code no longer resolves', lookupDiscount(db, 'TESTCOMP') === null);
+  const after = quote('TESTCOMP', worst);
+  assert('used-up code charges full price', after.matched === false && after.total > 600, `total=${after.total}`);
+  const rowId = db.prepare("SELECT id FROM discount_codes WHERE code = 'TESTCOMP'").get().id;
+  assert('second redemption refused (atomic guard)', redeemDiscount(db, rowId) === false);
+
+  // Ordinary codes must be untouched by all of the above.
+  const pct = quote('TESTPCT', { subtotal: 350 });
+  assert('percent code still discounts subtotal only', pct.comp === false && pct.total > 0, `total=${pct.total}`);
+  assert('unlimited code has no use cap', redeemDiscount(db, lookupDiscount(db, 'TESTPCT').id) === true);
+  assert('unlimited code still resolves after use', !!lookupDiscount(db, 'TESTPCT'));
+
+  db.prepare("DELETE FROM discount_codes WHERE code IN ('TESTCOMP','TESTPCT')").run();
 }
 
 // ===========================================================================
