@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -299,15 +299,11 @@ router.post('/review', bookingLimiter, async (req, res) => {
 
   const { fee: delivery_fee } = await resolveDeliveryFee(db, delivery_zip);
 
-  let discount_amount = 0;
-  if (discount_code) {
-    const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(discount_code.toUpperCase());
-    if (code) {
-      discount_amount = code.type === 'percent'
-        ? Math.round(subtotal * (code.value / 100) * 100) / 100
-        : Math.min(code.value, subtotal);
-    }
-  }
+  const discountRow = lookupDiscount(db, discount_code);
+  const isComp = isCompCode(discountRow);
+  let discount_amount = discountAmountFor(discountRow, subtotal);
+  // A comp owes no sales tax — zero the taxable base before calcPricing runs.
+  if (isComp) discount_amount = subtotal;
 
   // Accept-then-verify: honor the exemption immediately when the customer provides a
   // permit #, so the displayed total and the actual charge match (no more "$0.00 shown
@@ -323,7 +319,10 @@ router.post('/review', bookingLimiter, async (req, res) => {
   const tax_city = await resolveTaxCity(delivery_zip, delivery_city);
   const pricing = calcPricing(settings, subtotal, delivery_fee, tax_city, taxExemptHonored, surface_fee, discount_amount + free_extra_day);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
-  const total = Math.max(0, rawTotal - discount_amount - free_extra_day);
+  let total = Math.max(0, rawTotal - discount_amount - free_extra_day);
+  // Comp: delivery and the surface surcharge survive a subtotal discount, so zero the
+  // whole thing and record the full comped value as the discount for the books.
+  if (isComp) { discount_amount = rawTotal; total = 0; }
   const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
 
   res.render('public/booking/step4-review', {
@@ -406,15 +405,11 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       recalcSubtotal += unitPrice;
     }
     const { fee: recalcDeliveryFee } = await resolveDeliveryFee(db, data.delivery_zip);
-    let recalcDiscountAmount = 0;
-    if (data.discount_code) {
-      const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(data.discount_code.toUpperCase());
-      if (code) {
-        recalcDiscountAmount = code.type === 'percent'
-          ? Math.round(recalcSubtotal * (code.value / 100) * 100) / 100
-          : Math.min(code.value, recalcSubtotal);
-      }
-    }
+    const submitDiscountRow = lookupDiscount(db, data.discount_code);
+    const submitIsComp = isCompCode(submitDiscountRow);
+    let recalcDiscountAmount = discountAmountFor(submitDiscountRow, recalcSubtotal);
+    // A comp owes no sales tax — zero the taxable base before calcPricing runs.
+    if (submitIsComp) recalcDiscountAmount = recalcSubtotal;
     // Accept-then-verify: honor the exemption on entry when a permit # was provided, so
     // the charged total matches the review page. Recorded on the booking + customer below;
     // the permit # is surfaced on the Slack card for an admin to verify before delivery.
@@ -426,7 +421,10 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
     const recalcTaxCity = await resolveTaxCity(data.delivery_zip, data.delivery_city);
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, recalcTaxCity, taxExempt, recalcSurfaceFee, recalcDiscountAmount + recalcFreeExtraDay);
-    const recalcTotal = Math.max(0, recalcPricing.total - recalcDiscountAmount - recalcFreeExtraDay);
+    let recalcTotal = Math.max(0, recalcPricing.total - recalcDiscountAmount - recalcFreeExtraDay);
+    // Comp: delivery and the surface surcharge survive a subtotal discount, so zero the
+    // whole thing and record the full comped value as the discount for the books.
+    if (submitIsComp) { recalcDiscountAmount = recalcPricing.total; recalcTotal = 0; }
     data.subtotal = recalcSubtotal;
     data.delivery_fee = recalcDeliveryFee;
     data.surface_fee = recalcSurfaceFee;
@@ -544,6 +542,15 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         Math.round((parseFloat(data.total) - parseFloat(data.deposit_amount)) * 100) / 100, 'unpaid',
         (data.tax_exempt_claimed === '1') ? 1 : 0 // record the exemption REQUEST (honored only if cert-backed above)
       );
+
+      // Burn the code's use now that a booking exists. Atomic, so two simultaneous
+      // submissions can't both redeem a single-use code. Nothing outside Sarah's path
+      // ever incremented this before, which is why max_uses did nothing on the website.
+      if (submitDiscountRow) {
+        const got = redeemDiscount(db, submitDiscountRow.id);
+        console.log('[DISCOUNT] ' + submitDiscountRow.code + ' redeemed on ' + bookingNumber +
+          (got ? '' : ' — WARNING: limit was already reached, booking kept'));
+      }
 
       // Record the claimed exemption permit # on the customer for admin to verify.
       // Does NOT set tax_exempt=1, so tax stays charged until an admin verifies the cert.

@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -465,20 +465,21 @@ router.post('/create-and-send-link', async (req, res) => {
     // Apply discount code if provided (canonical order: compute discount but DON'T subtract from subtotal yet)
     let discount_amount = 0;
     let applied_code = null;
-    if (discount_code) {
-      const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(discount_code.toUpperCase());
-      if (code) {
-        discount_amount = code.type === 'percent'
-          ? Math.round(subtotal * (code.value / 100) * 100) / 100
-          : Math.min(code.value, subtotal);
-        applied_code = code.code;
-        db.prepare('UPDATE discount_codes SET uses_count = uses_count + 1 WHERE id = ?').run(code.id);
-        // DO NOT subtract from subtotal yet — tax must be computed on undiscounted subtotal
-      }
+    const sarahDiscountRow = lookupDiscount(db, discount_code);
+    const sarahIsComp = isCompCode(sarahDiscountRow);
+    if (sarahDiscountRow) {
+      // Comp zeroes the taxable base; percent/fixed come off the subtotal only.
+      discount_amount = sarahIsComp ? subtotal : discountAmountFor(sarahDiscountRow, subtotal);
+      applied_code = sarahDiscountRow.code;
+      redeemDiscount(db, sarahDiscountRow.id);
+      // DO NOT subtract from subtotal yet — tax must be computed on undiscounted subtotal
     }
 
     const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, delivery_city);
-    const total = Math.round((rawTotal - discount_amount) * 100) / 100;
+    let total = Math.round((rawTotal - discount_amount) * 100) / 100;
+    // Comp: delivery survives a subtotal discount, so zero the whole thing and record
+    // the full comped value as the discount for the books.
+    if (sarahIsComp) { discount_amount = rawTotal; total = 0; }
     const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
 
     // Create or find customer (format-agnostic so returning website customers aren't duplicated)

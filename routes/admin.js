@@ -278,24 +278,24 @@ router.post('/bookings/create', async (req, res) => {
   }
 
   // Discount (canonical order — compute but don't subtract from subtotal)
-  let discount_amount = 0;
-  if (data.discount_code) {
-    const code = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(data.discount_code.toUpperCase());
-    if (code) {
-      discount_amount = code.type === 'percent'
-        ? Math.round(subtotal * (code.value / 100) * 100) / 100
-        : Math.min(code.value, subtotal);
-    }
-  }
+  const adminHelpers = require('../lib/helpers');
+  const adminDiscountRow = adminHelpers.lookupDiscount(db, data.discount_code);
+  const adminIsComp = adminHelpers.isCompCode(adminDiscountRow);
+  // Comp zeroes the taxable base; percent/fixed come off the subtotal only.
+  let discount_amount = adminIsComp ? subtotal : adminHelpers.discountAmountFor(adminDiscountRow, subtotal);
 
   // Tax + totals (canonical: tax on undiscounted subtotal, discount off final total)
   const taxExempt = data.tax_exempt_claimed === '1';
   const settings = getSettings();
   const pricing = calcPricing(settings, subtotal, delivery_fee, data.delivery_city || null, taxExempt);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee } = pricing;
-  const total = Math.round((pricing.total - discount_amount) * 100) / 100;
+  let total = Math.round((pricing.total - discount_amount) * 100) / 100;
+  // Comp: delivery survives a subtotal discount, so zero the whole thing and record
+  // the full comped value as the discount for the books.
+  if (adminIsComp) { discount_amount = pricing.total; total = 0; }
   const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
   const balance_due = Math.round((total - deposit_amount) * 100) / 100;
+  if (adminDiscountRow) adminHelpers.redeemDiscount(db, adminDiscountRow.id);
 
   // H-2: Customer upsert + all INSERTs in ONE transaction to prevent TOCTOU double-booking race
   let bookingId, bookingNumber;

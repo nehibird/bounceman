@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
-const { resolveDeliveryFee } = require('../lib/helpers');
+const { resolveDeliveryFee, lookupDiscount, isCompCode } = require('../lib/helpers');
 const { requireAuth } = require('./auth');
 const cookieParser = require('cookie-parser');
 const { v4: uuid } = require('uuid');
@@ -54,19 +54,23 @@ router.get('/delivery-fee', async (req, res) => {
 router.post('/validate-discount', (req, res) => {
   const db = getDb();
   const { code, subtotal } = req.body;
-  const discount = db.prepare('SELECT * FROM discount_codes WHERE code = ? AND active = 1').get(code?.toUpperCase());
+  // lookupDiscount already rejects inactive and used-up codes, and matches with
+  // whitespace stripped so "FOSTER CARE" hits the stored FOSTERCARE.
+  const discount = lookupDiscount(db, code);
 
-  if (!discount) return res.json({ valid: false, message: 'Invalid discount code' });
-  if (discount.max_uses && discount.uses_count >= discount.max_uses) return res.json({ valid: false, message: 'Code has expired' });
+  if (!discount) return res.json({ valid: false, message: 'Invalid or expired discount code' });
   if (discount.valid_from && new Date(discount.valid_from) > new Date()) return res.json({ valid: false, message: 'Code not yet active' });
   if (discount.valid_until && new Date(discount.valid_until) < new Date()) return res.json({ valid: false, message: 'Code has expired' });
   if (discount.min_order && subtotal < discount.min_order) return res.json({ valid: false, message: `Minimum order $${discount.min_order}` });
 
+  // A comp zeroes the whole booking, so the review page recomputes it — report the
+  // subtotal here just so the UI shows a non-zero saving.
   let amount = 0;
-  if (discount.type === 'percent') amount = Math.round(subtotal * (discount.value / 100) * 100) / 100;
+  if (isCompCode(discount)) amount = subtotal;
+  else if (discount.type === 'percent') amount = Math.round(subtotal * (discount.value / 100) * 100) / 100;
   else amount = discount.value;
 
-  res.json({ valid: true, type: discount.type, value: discount.value, discount_amount: amount });
+  res.json({ valid: true, type: discount.type, value: discount.value, discount_amount: amount, comp: isCompCode(discount) });
 });
 
 // === N8N INTEGRATION ENDPOINTS (key-based auth, before requireAuth) ===
