@@ -646,7 +646,12 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // which would otherwise strand the booking as "confirmed" but unpaid. Mark it settled
     // (balance collected on delivery), send the confirmation, and skip Stripe entirely.
     if (!(depositAmount >= 0.5)) {
-      db.prepare("UPDATE bookings SET deposit_paid = 1, payment_method = 'none' WHERE id = ?").run(bookingId);
+      // Promote it the same way the Stripe webhook does for a paying booking. Setting
+      // deposit_paid alone left comped bookings stranded as pending/unpaid forever —
+      // nothing else ever moves them, because no payment event will arrive.
+      db.prepare(`UPDATE bookings SET deposit_paid = 1, payment_method = 'none',
+        status = 'confirmed', payment_status = 'paid', balance_due = 0,
+        updated_at = datetime('now') WHERE id = ?`).run(bookingId);
       if (data.email) {
         const bookingForEmail = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         const itemsForEmail = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(bookingId);
@@ -887,7 +892,32 @@ router.get('/pay-deposit/:bookingNumber', async (req, res) => {
 
   // No deposit due — Stripe rejects sub-$0.50 charges; mark settled (balance on delivery) and confirm.
   if (!(depositAmount >= 0.5)) {
-    db.prepare("UPDATE bookings SET deposit_paid = 1, payment_method = 'none' WHERE id = ?").run(booking.id);
+    // Same promotion as above — a $0 booking has nothing owed, so it is fully paid.
+    db.prepare(`UPDATE bookings SET deposit_paid = 1, payment_method = 'none',
+      status = 'confirmed', payment_status = 'paid', balance_due = 0,
+      updated_at = datetime('now') WHERE id = ?`).run(booking.id);
+
+    // A paying booking gets its confirmation email and Slack card from the Stripe
+    // webhook. No payment means no webhook, so a comped booking got neither: the
+    // customer heard nothing and no card ever appeared in #bookings. Do it here.
+    setTimeout(async () => {
+      try {
+        const fresh = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking.id);
+        const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(fresh.customer_id);
+        const items = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id);
+        const contract = db.prepare('SELECT id FROM contracts WHERE booking_id = ?').get(booking.id);
+        if (customer && customer.email && !fresh.confirmation_email_sent) {
+          await require('../services/email').sendBookingConfirmation(fresh, customer, items, contract && contract.id);
+          db.prepare('UPDATE bookings SET confirmation_email_sent = 1 WHERE id = ?').run(booking.id);
+          console.log('[COMP BOOKING] confirmation email sent for', fresh.booking_number);
+        }
+        await require('../services/notifications').notifyNewBooking(fresh, customer, items);
+        console.log('[COMP BOOKING] Slack card posted for', fresh.booking_number);
+      } catch (e) {
+        console.error('[COMP BOOKING] confirmation/Slack failed:', e.message);
+      }
+    }, 0);
+
     return res.redirect(`/booking/confirmation?booking_number=${booking.booking_number}`);
   }
 
