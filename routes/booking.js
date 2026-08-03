@@ -5,6 +5,7 @@ const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
 const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { notifyNewBooking } = require('../services/notifications');
@@ -506,6 +507,9 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // Wrap all inserts in a transaction
     let bookingId, bookingNumber, customerId, contractId = null;
 
+    // Read the attribution cookie once, outside the write transaction.
+    const submitAttrib = readAttribution(req);
+
     const insertTxn = db.transaction(() => {
       let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
       customerId = customer?.id || uuid();
@@ -526,8 +530,12 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         event_type, venue_type, delivery_address, delivery_city, delivery_state, delivery_zip,
         delivery_notes, surface_type, power_available, sms_consent,
         subtotal, delivery_fee, surface_fee, tax_amount, tax_rate, discount_amount, discount_code,
-        damage_waiver_fee, total, deposit_amount, balance_due, payment_status, tax_exempt_claimed
-      ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        damage_waiver_fee, total, deposit_amount, balance_due, payment_status, tax_exempt_claimed,
+        source, attrib_gclid, attrib_fbclid, attrib_utm_source, attrib_utm_medium,
+        attrib_utm_campaign, attrib_utm_term, attrib_utm_content,
+        attrib_landing_page, attrib_referrer, attrib_first_seen_at
+      ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         bookingId, bookingNumber, customerId,
         data.event_date, submitEndDate, data.event_start_time, data.event_end_time,
         data.event_type, data.venue_type,
@@ -540,7 +548,11 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         parseFloat(data.damage_waiver_fee || 0),
         parseFloat(data.total), parseFloat(data.deposit_amount),
         Math.round((parseFloat(data.total) - parseFloat(data.deposit_amount)) * 100) / 100, 'unpaid',
-        (data.tax_exempt_claimed === '1') ? 1 : 0 // record the exemption REQUEST (honored only if cert-backed above)
+        (data.tax_exempt_claimed === '1') ? 1 : 0, // record the exemption REQUEST (honored only if cert-backed above)
+        // Ad attribution, banked on the visitor's first touch. This is THE customer
+        // path — if only one booking route ever records where a booking came from,
+        // it has to be this one.
+        ...attribValues(submitAttrib)
       );
 
       // Burn the code's use now that a booking exists. Atomic, so two simultaneous

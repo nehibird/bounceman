@@ -91,6 +91,10 @@ app.use(express.json({ limit: '10mb', verify: (req, res, buf) => { req.rawBody =
 app.use(express.urlencoded({ extended: true, verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
+// Ad attribution — must sit above the public routes so the click ID is banked before
+// anything renders. Cookie-based because there is no session store. Never throws.
+app.use(require('./middleware/attribution').attributionMiddleware);
+
 // View engine
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));

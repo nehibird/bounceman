@@ -697,6 +697,32 @@ function initialize() {
   } catch { /* already exists */ }
 
 
+  // Migration: ad attribution. We spend ~$60/month across Google and Meta and could not
+  // say whether it produced a single booking — `source` was empty on 29 of 31 rows and
+  // no click ID was captured anywhere in the app. All nullable on purpose: three test
+  // suites INSERT into bookings and NOT NULL here would break them.
+  for (const col of [
+    'attrib_gclid TEXT',
+    'attrib_fbclid TEXT',
+    'attrib_utm_source TEXT',
+    'attrib_utm_medium TEXT',
+    'attrib_utm_campaign TEXT',
+    'attrib_utm_term TEXT',
+    'attrib_utm_content TEXT',
+    'attrib_landing_page TEXT',
+    'attrib_referrer TEXT',
+    'attrib_first_seen_at TEXT',
+  ]) {
+    try {
+      d.prepare('ALTER TABLE bookings ADD COLUMN ' + col).run();
+    } catch {} // column already exists
+  }
+  // Historical rows predate any tracking. Mark them honestly rather than letting them
+  // masquerade as 'organic' and quietly flatter whichever channel we compare against.
+  try {
+    d.prepare("UPDATE bookings SET source = 'unknown_pre_tracking' WHERE (source IS NULL OR source = '') AND created_at < '2026-08-03'").run();
+  } catch {}
+
   // Migration: add slack_reminder_sent_date to bookings (dedup delivery reminders)
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_sent_date TEXT').run();

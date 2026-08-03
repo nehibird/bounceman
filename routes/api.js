@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const { resolveDeliveryFee, lookupDiscount, isCompCode } = require('../lib/helpers');
+const { readAttribution } = require('../middleware/attribution');
 const { requireAuth } = require('./auth');
 const cookieParser = require('cookie-parser');
 const { v4: uuid } = require('uuid');
@@ -359,12 +360,14 @@ router.post('/bookings/quick', (req, res) => {
   const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
   const bookingNumber = `${prefix}-${ts}-${rand}`;
 
+  // Attribution: this endpoint is server-to-server, so there is no visitor cookie to
+  // read — but it must still write a source rather than leaving it empty.
   db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
-    event_start_time, event_end_time, delivery_address, delivery_city, delivery_zip, total, balance_due)
-    VALUES (?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    event_start_time, event_end_time, delivery_address, delivery_city, delivery_zip, total, balance_due, source)
+    VALUES (?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     bookingId, bookingNumber, customerId, data.event_date, data.event_start_time,
     data.event_end_time, data.delivery_address, data.delivery_city, data.delivery_zip,
-    data.total || 0, data.total || 0
+    data.total || 0, data.total || 0, readAttribution(req).source || 'api'
   );
 
   res.json({ success: true, booking_id: bookingId, booking_number: bookingNumber });

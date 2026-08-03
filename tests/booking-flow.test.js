@@ -181,3 +181,43 @@ test('Stripe declined card 4000000000000002 shows error', async ({ page }) => {
   const url = page.url();
   expect(url.includes('checkout.stripe.com') || url.includes('/booking/lookup')).toBeTruthy();
 });
+
+// ─── Ad attribution: the click ID must survive all the way to the booking row ──
+test('Attribution — a gclid click produces source=google_cpc on the booking', async ({ page }) => {
+  const date = futureDate(23);
+
+  // Arrive from a Google ad, then browse on with no params — first-touch must hold.
+  await page.goto(`${BASE}/?gclid=ATTRIB_E2E_1&utm_source=google&utm_medium=cpc&utm_campaign=e2e`);
+  await page.goto(`${BASE}/faq`);
+
+  await goToReview(page, date);
+  await fillDetailsForm(page, {
+    firstName: 'Attrib', lastName: 'Tester',
+    email: 'attrib@example.com', phone: '5805550177'
+  });
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/booking\/review/, { timeout: 10000 });
+  await page.locator('#agreeTerms').check();
+  // The booking row is INSERTed by /submit, before the contract page renders — so by
+  // the time we land on /contract/ the attribution has already been written.
+  await Promise.all([
+    page.waitForURL(/\/contract\//, { timeout: 15000 }),
+    page.click('#reviewForm button[type="submit"]'),
+  ]);
+
+  const Database = require('better-sqlite3');
+  // NOT readonly: a readonly handle cannot read the server's uncheckpointed WAL,
+  // which shows up as a bogus "no such column" for freshly migrated columns.
+  const db = new Database('/opt/bounceman/data/bounceman-test.db');
+  const row = db.prepare(`SELECT booking_number, source, attrib_gclid, attrib_utm_source,
+                                 attrib_utm_medium, attrib_utm_campaign, attrib_landing_page
+                          FROM bookings ORDER BY created_at DESC LIMIT 1`).get();
+  db.close();
+
+  expect(row).toBeTruthy();
+  expect(row.attrib_gclid).toBe('ATTRIB_E2E_1');
+  expect(row.source).toBe('google_cpc');
+  expect(row.attrib_utm_source).toBe('google');
+  expect(row.attrib_utm_campaign).toBe('e2e');
+  expect(row.attrib_landing_page).toContain('gclid=ATTRIB_E2E_1');
+});

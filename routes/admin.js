@@ -335,9 +335,9 @@ router.post('/bookings/create', async (req, res) => {
       event_start_time, event_end_time, event_type, surface_type,
       delivery_address, delivery_city, delivery_state, delivery_zip,
       subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
-      total, deposit_amount, balance_due, payment_status, internal_notes,
+      total, deposit_amount, balance_due, payment_status, internal_notes, source,
       created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', datetime('now'), datetime('now'))`).run(
       bookingId, bookingNumber, customer.id, data.status || 'confirmed',
       data.event_date, eventEndDate,
       data.event_start_time || null, data.event_end_time || null,
