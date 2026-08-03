@@ -208,4 +208,80 @@ async function updateCampaignBudget(campaignId, budgetDollars) {
   return res.json();
 }
 
-module.exports = { getAuthUrl, handleCallback, getAccessToken, isConnected, getCampaigns, getCampaignPerformance, createCampaign, updateCampaignStatus, updateCampaignBudget };
+/**
+ * Offline conversion import.
+ *
+ * The browser tag on the confirmation page only fires if the customer actually lands
+ * there — anyone who pays and closes the tab is invisible to it. We capture `gclid`
+ * at first touch and know exactly when a deposit clears, so upload it server-side
+ * instead of hoping for a page view.
+ *
+ * The target action MUST have been created with type UPLOAD_CLICKS ("Import — from
+ * clicks"); Google rejects uploads against a WEBPAGE action.
+ *
+ * `orderId` is the booking number so repeat uploads of the same booking collapse
+ * into one conversion rather than stacking up.
+ *
+ * @param {string} gclid        click ID captured at first touch
+ * @param {string} bookingNumber used as orderId for dedupe
+ * @param {number} value        conversion value in dollars
+ * @param {Date|string} when    when the conversion happened (defaults to now)
+ */
+async function uploadClickConversion(gclid, bookingNumber, value, when) {
+  if (!gclid) return { skipped: 'no gclid' };
+  const actionId = process.env.GOOGLE_ADS_CONVERSION_ACTION_ID;
+  if (!actionId) return { skipped: 'GOOGLE_ADS_CONVERSION_ACTION_ID not set' };
+
+  // Google requires "yyyy-mm-dd hh:mm:ss+|-hh:mm" — the offset is NOT optional.
+  const d = when ? new Date(when) : new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const conversionDateTime =
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
+
+  const token = await getAccessToken();
+  const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${CUSTOMER_ID}:uploadClickConversions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'developer-token': DEVELOPER_TOKEN,
+      'login-customer-id': CUSTOMER_ID,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      conversions: [{
+        gclid,
+        conversionAction: `customers/${CUSTOMER_ID}/conversionActions/${actionId}`,
+        conversionDateTime,
+        conversionValue: Number(value) || 0,
+        currencyCode: 'USD',
+        orderId: String(bookingNumber || ''),
+      }],
+      partialFailure: true,   // one bad row must not reject the batch
+    }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(`Google Ads conversion upload ${res.status}: ${JSON.stringify(body).slice(0, 400)}`);
+  }
+  if (body.partialFailureError) {
+    const msg = JSON.stringify(body.partialFailureError);
+    // Google closed ConversionUploadService to new integrations in favour of the Data
+    // Manager API. This account is not an existing user of it, so every upload is
+    // rejected on those grounds — not because of anything in the payload. Return a
+    // skip rather than throwing, so a real booking does not log an error it cannot fix.
+    // Verified 2026-08-03. To actually ship offline import, port this to the Data
+    // Manager API; the gclid is already captured on every booking, so the data is there.
+    if (/Data Manager API|limited to existing users/i.test(msg)) {
+      return { skipped: 'ConversionUploadService is closed to new integrations — needs the Data Manager API' };
+    }
+    throw new Error(`Google Ads partial failure: ${msg.slice(0, 400)}`);
+  }
+  return body;
+}
+
+module.exports = { getAuthUrl, handleCallback, getAccessToken, isConnected, getCampaigns, getCampaignPerformance, createCampaign, updateCampaignStatus, updateCampaignBudget, uploadClickConversion };

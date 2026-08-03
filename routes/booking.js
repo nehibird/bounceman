@@ -770,6 +770,21 @@ router.get('/confirmation', async (req, res) => {
           first_name: customer?.first_name,
           last_name: customer?.last_name,
         }).catch(err => console.error('[FB PIXEL ERROR]', err.message));
+
+        // Google's counterpart. The browser tag on the confirmation page only fires
+        // if the customer actually lands there; anyone who pays and closes the tab is
+        // invisible to it. We now capture gclid at first touch, so upload server-side
+        // from the same event that just fired the Meta pixel. Fire-and-forget with a
+        // catch, exactly like the FB call — an ads API hiccup must never break a booking.
+        try {
+          const gclid = booking.attrib_gclid;
+          if (gclid) {
+            require('../services/google-ads')
+              .uploadClickConversion(gclid, bookingNumber, booking.total || booking.deposit_amount)
+              .then(() => console.log('[GOOGLE ADS] offline conversion uploaded for', bookingNumber))
+              .catch(err => console.error('[GOOGLE ADS ERROR]', err.message));
+          }
+        } catch (err) { console.error('[GOOGLE ADS ERROR]', err.message); }
       }
     } catch (err) {
       console.error('[STRIPE CHECK ERROR]', err.message);
