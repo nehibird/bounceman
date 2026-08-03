@@ -32,6 +32,14 @@ function fmtCentral(sqlTs) {
 }
 
 async function postToSlack(channel, blocks, text, thread_ts) {
+  // The test instance runs with the LIVE Slack token and the real #bookings channel,
+  // so every E2E run posted fake "New booking from Test Customer" cards into the
+  // owner's actual workspace — ten of them had to be deleted by hand. This is the one
+  // choke point every Slack post goes through, so gate it here rather than per-caller.
+  if (process.env.DISABLE_SLACK === 'true') {
+    console.log('[SLACK] suppressed (DISABLE_SLACK=true):', String(text || '').slice(0, 80));
+    return null;
+  }
   try {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -629,14 +637,23 @@ async function sendHazardChecks() {
       AND (b.hazard_check_sent IS NULL OR b.hazard_check_sent = 0)
   `).all();
   let sent = 0;
+  // hazard_check_sent: 0/NULL = still owed, 1 = sent, 2 = permanently undeliverable.
+  // 2 exists so a bad phone number alerts ONCE and is then left alone. Without it the
+  // hourly job retried the same doomed send every hour and re-posted the same Slack
+  // alert every hour, which is just noise that trains you to ignore the channel.
+  const giveUp = (b, why) => {
+    db.prepare("UPDATE bookings SET hazard_check_sent = 2, updated_at = datetime('now') WHERE id = ?").run(b.id);
+    console.error('[HAZARD] giving up on', b.booking_number, '—', why);
+    sendSlackMessage({ text: ':warning: *Hazard check could not be delivered* — ' + b.booking_number +
+      ' (' + b.first_name + ', ' + fmtDate(b.event_date) + ')\n' + why +
+      '\nThey have NOT been warned about buried lines. Fix the number in admin or call them — ' +
+      'this alert will not repeat.' }).catch(() => {});
+  };
+
   for (const b of bookings) {
-    // A missing or malformed number means this customer never gets the safety
-    // text at all — that has already happened once, so say so out loud.
+    // A missing or malformed number means this customer never gets the safety text at all.
     if (!b.phone || String(b.phone).replace(/\D/g, '').length < 10) {
-      console.error('[HAZARD] no usable phone for', b.booking_number, '— phone:', JSON.stringify(b.phone));
-      sendSlackMessage({ text: ':warning: Hazard check could NOT be sent for ' + b.booking_number +
-        ' (' + b.first_name + ', ' + fmtDate(b.event_date) + ') — phone on file is ' +
-        JSON.stringify(b.phone) + '. Fix the number or call them.' }).catch(() => {});
+      giveUp(b, 'Phone on file is ' + JSON.stringify(b.phone) + ', which is not dialable.');
       continue;
     }
     try {
@@ -646,12 +663,12 @@ async function sendHazardChecks() {
       sent++;
       console.log('[HAZARD] Hazard-check sent for', b.booking_number);
     } catch (e) {
-      // Swallowing this is how Paige Legg's booking went a fortnight with no safety
-      // text and nobody knew. A failed send now surfaces in Slack.
-      console.error('[HAZARD] failed for', b.booking_number, e.message);
-      sendSlackMessage({ text: ':rotating_light: Hazard check FAILED to send for ' + b.booking_number +
-        ' (' + b.first_name + ', ' + fmtDate(b.event_date) + '): ' + e.message +
-        '. They have not been warned about buried lines — follow up manually.' }).catch(() => {});
+      // Twilio rejects a bad number the same way every time, so retrying is pointless —
+      // alert once and stop. Anything else (network blip, Twilio outage) is worth another
+      // pass next hour, and is NOT worth a Slack ping each time.
+      const permanent = /not a valid phone number|is not a mobile|unsubscribed|blacklist|21211|21610|21614/i.test(e.message || '');
+      if (permanent) giveUp(b, 'Twilio rejected it permanently: ' + e.message);
+      else console.error('[HAZARD] transient failure for', b.booking_number, '— will retry next hour:', e.message);
     }
   }
   if (sent) console.log(`[HAZARD] ${sent} hazard-check text(s) sent`);
