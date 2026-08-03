@@ -1101,11 +1101,18 @@ router.post('/vapi', async (req, res) => {
       const recent = db.prepare(`SELECT COUNT(*) as c FROM call_log
         WHERE caller_number = ? AND called_at > datetime('now', '-24 hours')`).get(callerNumber);
       if (recent && recent.c >= 10) {
-        db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
-          VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), callerNumber);
-        logBlock('blocked', 'rate_limit');
-        console.log('[VAPI SPAM]', callerNumber, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
-        return res.json({ error: 'Too many calls from this number.' });
+        // Never auto-block someone who has actually booked with us. Calling back
+        // repeatedly about your own party is normal customer behaviour, and the
+        // block was permanent with nothing to lift it.
+        if (require('../lib/helpers').isKnownCustomer(db, callerNumber)) {
+          console.log('[VAPI SPAM]', callerNumber, '-> rate limit hit but KNOWN CUSTOMER, allowing');
+        } else {
+          db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
+            VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), callerNumber);
+          logBlock('blocked', 'rate_limit');
+          console.log('[VAPI SPAM]', callerNumber, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
+          return res.json({ error: 'Too many calls from this number.' });
+        }
       }
     } catch (e) { /* ignore if table not yet created */ }
 
@@ -1411,11 +1418,17 @@ router.post('/twilio-entry', (req, res) => {
     const recent = db.prepare(`SELECT COUNT(*) as c FROM call_log
       WHERE caller_number = ? AND called_at > datetime('now', '-24 hours')`).get(from);
     if (recent && recent.c >= 5) {
-      db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
-        VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), from);
-      logCall('blocked', 'rate_limit');
-      console.log('[TWILIO SPAM]', from, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
-      return twimlHangup("We're sorry, we've received too many calls from your number.");
+      // Five calls in 24h is nothing for a customer sorting out a party. This
+      // permanently blocked Charlene ($325) and Alexis Evans ($624) from reaching us.
+      if (require('../lib/helpers').isKnownCustomer(db, from)) {
+        console.log('[TWILIO SPAM]', from, '-> rate limit hit but KNOWN CUSTOMER, allowing');
+      } else {
+        db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked)
+          VALUES (?, ?, 'rate_limit_exceeded', 1)`).run(uuid(), from);
+        logCall('blocked', 'rate_limit');
+        console.log('[TWILIO SPAM]', from, '-> auto-blocked (rate limit:', recent.c + ' calls/24h)');
+        return twimlHangup("We're sorry, we've received too many calls from your number.");
+      }
     }
   } catch (e) { /* ignore */ }
 

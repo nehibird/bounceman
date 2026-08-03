@@ -203,11 +203,20 @@ const SCENARIOS = [
     ]
   },
   {
-    name: '3. No obstacle courses',
+    // Retargeted 2026-08-03. This used to assert she denies having obstacle courses —
+    // but The Gauntlet IS an obstacle course and it is the first unit in her catalog,
+    // so the test was locking in a lost sale. Dunk tanks we genuinely do not stock.
+    name: '3. Declines only what we truly do not have (dunk tank)',
+    turns: ['Do you guys have a dunk tank?'],
+    checks: [
+      { type: 'response_contains_one_of', values: ["don't have", "don't carry", "not have", "do not have", "we don't"] }
+    ]
+  },
+  {
+    name: '3b. Sells The Gauntlet when asked for an obstacle course',
     turns: ['Do you guys have obstacle courses?'],
     checks: [
-      { type: 'tool_not_called', tool: 'checkAvailability' },
-      { type: 'response_contains_one_of', values: ["don't have", "don't carry", "not have", "do not have", "we don't"] }
+      { type: 'response_contains_one_of', values: ['Gauntlet', 'gauntlet'] }
     ]
   },
   {

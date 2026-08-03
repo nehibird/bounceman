@@ -10,7 +10,19 @@ const OWNER_CELL = process.env.OWNER_CELL || '+15806281765';
 const SARAH_API_KEY = process.env.SARAH_API_KEY;
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const PORT = process.env.PORT || 3200;
-const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'optout'];
+const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'optout', 'optoutall', 'revoke', 'remove', 'delete'];
+// The single-word list only matched after punctuation/spaces were stripped, so a real
+// person writing "please stop texting me" sailed straight through to the sales agent.
+const STOP_PHRASES = [
+  /\bstop\s+(texting|messaging|contacting|calling)\b/i,
+  /\b(take|remove)\s+me\s+off\b/i,
+  /\bdo\s*n[o']?t\s+(text|message|contact|call)\s+me\b/i,
+  /\bunsubscribe\b/i,
+  /\bopt\s*-?\s*out\b/i,
+  /\brevoke\b/i,
+  /\bno\s+more\s+(texts|messages)\b/i,
+];
+const HELP_WORDS = ['help', 'info', 'support'];
 
 function normalize(n) {
   const d = String(n || '').replace(/\D/g, '');
@@ -141,7 +153,8 @@ ${textNudge}
 ${cat}
 Blue Crush and Tropical Combo run wet or dry at the SAME price (includes water hookup) — wet costs no extra. Monkey Jumper is dry only.
 Add-on you can offer: the World's Loudest Bluetooth Speaker for $75 — a fun party add-on. Offer it once they've picked a unit ("want to add our loud Bluetooth speaker to get the party going?"). Do NOT push the generator; only mention the generator ($75) if they say they have no power outlet within 100ft.
-We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. If asked, say what we do have.
+If someone asks for an OBSTACLE COURSE, that is The Gauntlet — say yes and sell it. If they ask for a TODDLER or little-kid unit, the Mini Castle is built for ages 2-8 — offer that. If they ask for a COMBO or bounce-and-slide, that is the Tropical Combo or the Mini Castle.
+We genuinely do NOT have: dunk tanks, mechanical bulls, dual-lane race slides. Only for those, say honestly "we don't have that one yet" and immediately name two units we do have that would work.
 
 ## Availability rules
 - Open April–November (closed Dec–March). Open 7 days including Sundays. Sundays are full-day or overnight ONLY — no half days on Sundays.
@@ -150,15 +163,18 @@ We do NOT have: obstacle courses, toddler units, dunk tanks, mechanical bulls. I
 - Two Blue Crush Slides exist (two customers can each rent one same day).
 
 ## Delivery
-- Free: Tonkawa, Ponca City, Blackwell, most of Kay County.
-- $35: Medford, Newkirk, Kaw City, Morrison, some Ponca City zips. $100: Enid, Stillwater, Wichita area. Outside: we'll confirm the fee.
+- FREE delivery across all of Kay County and anywhere within about 25 miles: Tonkawa, Ponca City, Blackwell, Newkirk, Kaw City, Braman, Marland, Nardin, Billings, Red Rock. Say "free delivery" out loud — it closes people.
+- $60 for about 30-45 minutes out: Perry, Pond Creek, Garber, Hunter.
+- $95 for about 45-60+ minutes out: Enid, Stillwater, Medford, Morrison, Arkansas City.
+- Farther than that we can usually still deliver — tell them the website figures the exact fee from their address.
+- NEVER guess a fee. If you are not certain the town is on the free list, ask for their ZIP and pass it to checkAvailability — it returns the real delivery total. A wrong fee quoted by text becomes a surprise at checkout.
 - We deliver, set up, anchor, and pick up. Needs a standard outlet within 100ft or add our generator ($75).
 
 ## Church discount: for church/VBS/youth/ministry events, tell them to enter code CHURCH at checkout for their discount.
 
 ## Photos: You can't attach photos in chat, so when someone asks to see pictures, send them the unit's page link — checkAvailability returns a "page (photos)" URL for each unit (e.g. https://bouncemanrentals.com/equipment/classic-bounce-house) where they'll see photos and full details. If it's a general "can I see them" ask, send bouncemanrentals.com/equipment to browse everything. Never say you "can't send photos" or describe units at length — just share the link warmly ("Here's the Monkey Jumper — photos and details: <link>"). CRITICAL: copy the URL EXACTLY as checkAvailability returns it, character for character — do NOT build a link yourself from the unit's name, you will get the address wrong.
 
-## Policies: It's a flat $50 deposit to book ANY unit (no matter the price) — the balance is due on delivery day. They sign the rental agreement and pay the $50 deposit on the website; once it's in, the date is locked. Cancel 48hr+ = full refund; under 48hr = deposit forfeited. Weather call-off = full reschedule or refund. Answer deposit questions plainly and confidently: "just $50 down to book."
+## Policies: It's a flat $50 deposit to book ANY unit (no matter the price) — the balance is due on delivery day. They sign the rental agreement and pay the $50 deposit on the website; once it's in, the date is locked. The $50 deposit is non-refundable, but it is never lost — if they cancel or need to move, it transfers to any future date. If WE call it off for weather, they choose: full reschedule or full refund. NEVER promise a cash refund for a customer cancellation at any notice — the agreement they sign says non-refundable, and contradicting it is how we end up arguing on delivery day. Answer deposit questions plainly and confidently: "just $50 down to book."
 
 ## Booking workflow
 1. When ANY date or timeframe is mentioned — even a vague one like "this weekend" — call checkAvailability right away; don't ask them to narrow it down first. IMPORTANT: pass checkAvailability a specific single day it can resolve, like "this Saturday" or "July 18th" — it does NOT understand ranges, so for "this weekend" check the upcoming Saturday (most rentals are Saturdays). If it replies that it couldn't read the date, immediately retry with a concrete day like "this Saturday" — never bounce the question back to the customer asking them to pick a day. NEVER state a weekday or calendar date you worked out yourself (you'll get it wrong) — only use dates exactly as checkAvailability returns them.
@@ -210,7 +226,29 @@ async function handleInboundSms(from, body) {
     const mode = getMode(); if (mode === 'off') return;
     if (isThreadPaused(number)) return;
     const clean = (body || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-    if (STOP_WORDS.includes(clean)) return;
+    const raw = String(body || '');
+    // Opt-out has to short-circuit BEFORE the model call. Single words were already
+    // caught; multi-word phrases and "revoke" were not, and Twilio doesn't catch those
+    // either. On a match we pause the thread so nothing else in the system texts them,
+    // and reply with ONE hard-coded line — an LLM-composed farewell would itself be a
+    // fresh message to someone who just asked us to stop.
+    if (STOP_WORDS.includes(clean) || STOP_PHRASES.some(re => re.test(raw))) {
+      pauseThread(number);
+      console.log('[SARAH-SMS] OPT-OUT from', number, '-', raw.slice(0, 60));
+      try {
+        await smsService.sendSms(number,
+          "Bounce Man LLC: You're unsubscribed and will get no further texts from us. Reply HELP or call (580) 308-9288 for help.");
+      } catch (e) { console.error('[SARAH-SMS] opt-out confirm failed:', e.message); }
+      return;
+    }
+    if (HELP_WORDS.includes(clean)) {
+      console.log('[SARAH-SMS] HELP from', number);
+      try {
+        await smsService.sendSms(number,
+          'Bounce Man LLC party rentals. Call or text (580) 308-9288, or see bouncemanrentals.com/terms. Reply STOP to cancel. Msg & data rates may apply.');
+      } catch (e) { console.error('[SARAH-SMS] help reply failed:', e.message); }
+      return;
+    }
     console.log('[SARAH-SMS] processing inbound from', number, '-', (body || '').slice(0, 50));
 
     const db = getDb();
