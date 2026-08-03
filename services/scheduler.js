@@ -298,4 +298,4 @@ function start() {
   setInterval(() => { releaseExpiredHolds().catch(e => console.error('[HOLD] run failed:', e.message)); }, 20 * 60 * 1000);
 }
 
-module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds, sendQuoteFollowUps };
+module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds, sendQuoteFollowUps, centralHour, centralDay };

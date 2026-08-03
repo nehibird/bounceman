@@ -19,6 +19,7 @@
           <select name="type" class="form-select" required>
             <option value="percent" ${code && code.type === 'percent' ? 'selected' : ''}>Percent (%)</option>
             <option value="flat" ${code && code.type === 'flat' ? 'selected' : ''}>Flat ($)</option>
+            <option value="free" ${code && code.type === 'free' ? 'selected' : ''}>Free (comps the entire booking — equipment, delivery, tax)</option>
           </select>
         </div>
         <div class="col-md-3">

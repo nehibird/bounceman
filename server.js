@@ -157,15 +157,19 @@ app.listen(PORT, '0.0.0.0', () => {
     target.setUTCHours(14, 0, 0, 0); // 8 AM CT
     if (target <= now) target.setDate(target.getDate() + 1);
     const ms = target - now;
-    const runDaily = () => {
-      checkDeliveryReminders();
-      sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
-    };
+    const runDaily = () => { checkDeliveryReminders(); };
     setTimeout(() => {
       runDaily();
       setInterval(runDaily, 24 * 60 * 60 * 1000);
     }, ms);
-    console.log(`[BounceMan] Delivery reminders + hazard checks scheduled for ${target.toISOString()}`);
+    // Hazard checks run HOURLY, not with the daily reminder. It's a safety text and
+    // it has to reach short-notice bookings too, so it can't wait for one fixed hour
+    // a day — a restart past that hour used to skip the run entirely. The
+    // hazard_check_sent flag makes repeat runs a no-op, and the job self-gates to
+    // daytime Central. First pass 90s after boot so it also acts as a catch-up.
+    const runHazards = () => sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
+    setTimeout(() => { runHazards(); setInterval(runHazards, 60 * 60 * 1000); }, 90 * 1000);
+    console.log(`[BounceMan] Delivery reminders scheduled for ${target.toISOString()}; hazard checks hourly`);
   }
   // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
   // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,

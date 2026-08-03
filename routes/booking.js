@@ -610,6 +610,15 @@ router.post('/submit', bookingLimiter, async (req, res) => {
 
     insertTxn();
 
+    // Underground-hazard safety text. Fire-and-forget right now so a short-notice
+    // booking gets it immediately instead of waiting for the hourly sweep; the job
+    // is idempotent (hazard_check_sent) and self-gates to daytime Central, so this
+    // is a no-op for long-lead bookings and for anyone booking overnight.
+    try {
+      require('../services/notifications').sendHazardChecks()
+        .catch((e) => console.error('[HAZARD] on-booking run failed:', e.message));
+    } catch (e) { console.error('[HAZARD] on-booking trigger failed:', e.message); }
+
     // Sign-before-pay
     if (contractId) {
       console.log('[BOOKING] Created', bookingNumber, '-> sign agreement', contractId);
