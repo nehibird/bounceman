@@ -703,6 +703,31 @@ const EVENT_DATA = {
       { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
     ],
   },
+  wedding: {
+    badge: 'Weddings', name: 'Wedding', occasion: 'wedding',
+    serviceType: 'Soft play and kids area rental for weddings',
+    h1: 'Wedding Soft Play &amp; Kids Area Rentals in Kay County, OK',
+    subheading: 'Give the little guests their own corner \u2014 so their parents can actually enjoy your reception.',
+    title: 'Wedding Soft Play & Kids Area Rental \u2014 Kay County, OK | Bounce Man',
+    metaDescription: 'Soft play kids area rental for weddings in Kay County, OK. A clean white toddler playground for your reception \u2014 Tonkawa, Ponca City, Blackwell & Enid. Free local delivery, we set up and collect.',
+    heroImage: '/uploads/equipment/soft-play-venue.jpg',
+    imgAlt: 'White soft play kids area set up at a wedding reception venue in Kay County OK',
+    contentHeading: 'The Detail Every Parent at Your Wedding Will Remember',
+    bodyHtml: `<p>Every wedding has them \u2014 the toddlers in tiny suits and flower-girl dresses who are done sitting still by the time the speeches start. A <strong>soft play area</strong> gives them somewhere safe to be, inside the room, where their parents can still see them and finally eat a hot meal.</p><p>Our set is deliberately plain <strong>white</strong> \u2014 climbers, an arch tunnel, a rocker, soft blocks and a ball pit, on padded flooring inside a low picket fence. No primary colours, no cartoon characters, nothing that fights your florals or ruins a photograph. It reads as part of the styling rather than equipment someone dumped in the corner.</p><h3 style="color:var(--bm-blue);margin-top:24px">Why couples add one</h3><ul><li><strong>Parents stay longer.</strong> The guests who usually leave before the dancing are the ones with small children.</li><li><strong>It photographs well.</strong> Neutral white works with any palette \u2014 your photographer will thank you.</li><li><strong>It is contained.</strong> The fence keeps little ones in one place instead of under the cake table.</li><li><strong>We handle it.</strong> Delivered, set up before guests arrive, collected after. You do nothing.</li></ul><p>We set up indoors at venues across Tonkawa, Ponca City, Blackwell, Newkirk and Enid \u2014 and outdoors too, in shade. Booking a wedding date? Call <strong>(580) 308-9288</strong> or reserve online with a flat $50 deposit.</p>`,
+    faqs: [
+      { q: 'Do you rent soft play areas for weddings in Oklahoma?', a: 'Yes \u2014 weddings are one of the best uses for our soft play playground. We deliver and set up at reception venues across Kay County including Tonkawa, Ponca City, Blackwell and Newkirk, and further out to Enid, Stillwater and Perry. Free delivery across Kay County.' },
+      { q: 'What does a wedding kids area cost to rent?', a: 'The complete soft play playground is $299 for the day, which includes delivery, setup before your guests arrive, and collection afterwards. A flat $50 deposit books the date and the balance is due on delivery day.' },
+      { q: 'Will it match our wedding decor?', a: 'It is entirely white \u2014 climbers, tunnel, rocker, blocks, ball pit and picket fencing. There are no primary colours or characters, so it sits quietly alongside any colour scheme and photographs cleanly.' },
+      { q: 'How much space does it need at our venue?', a: 'Plan for roughly a 12 by 12 foot area on a flat indoor floor. It needs no power at all, so it can go anywhere in the room \u2014 a corner near the parents\u2019 tables usually works best.' },
+      { q: 'Who supervises the children?', a: 'Parents do. The soft play area is not a childcare service and an adult needs to be watching at all times. It is built for ages 0 to 5, and we provide a rules board so everyone knows what is expected.' },
+      { q: 'Can you set up before guests arrive?', a: 'Yes, and we would rather. Tell us your venue access time and we will deliver and set up beforehand so it is ready and tidy when the room opens. We come back for it after the reception.' },
+    ],
+    relatedLinks: [
+      { name: 'Toddler Soft Play Playground', url: '/equipment/toddler-soft-play-playground' },
+      { name: 'All Equipment', url: '/equipment' },
+      { name: 'Kay County', url: '/water-slide-rental-kay-county-ok' },
+    ],
+  },
   graduation: {
     badge: 'Graduation Parties', name: 'Graduation Party', occasion: 'graduation party',
     serviceType: 'Water slide and bounce house rental for graduation parties',
@@ -743,6 +768,7 @@ router.get('/bounce-house-rental-birthday-party', (req, res) => renderEventPage(
 router.get('/church-event-bounce-house-rental', (req, res) => renderEventPage(res, 'church', '/church-event-bounce-house-rental'));
 router.get('/school-field-day-bounce-house-rental', (req, res) => renderEventPage(res, 'school', '/school-field-day-bounce-house-rental'));
 router.get('/graduation-party-bounce-house-rental', (req, res) => renderEventPage(res, 'graduation', '/graduation-party-bounce-house-rental'));
+router.get('/wedding-soft-play-rental', (req, res) => renderEventPage(res, 'wedding', '/wedding-soft-play-rental'));
 
 // Platform showcase / demo page (conference)
 router.get('/bounceintobiz', (req, res) => {
@@ -831,7 +857,8 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/bounce-house-rental-birthday-party', priority: '0.8', changefreq: 'monthly' },
     { loc: '/church-event-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
     { loc: '/school-field-day-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
-    { loc: '/graduation-party-bounce-house-rental', priority: '0.8', changefreq: 'monthly' }
+    { loc: '/graduation-party-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
+    { loc: '/wedding-soft-play-rental', priority: '0.8', changefreq: 'monthly' }
   ];
 
   const db = getDb();

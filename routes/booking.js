@@ -48,8 +48,11 @@ router.get('/select', (req, res) => {
   const equipment = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons' ORDER BY e.sort_order
-  `).all();
+    FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons'
+      -- Full-day-only units simply are not on the menu for a half-day search.
+      AND (e.full_day_only IS NULL OR e.full_day_only = 0 OR ? != '4hr')
+    ORDER BY e.sort_order
+  `).all(rentalDuration);
   const categories = db.prepare("SELECT * FROM categories WHERE active = 1 AND slug != 'add-ons' ORDER BY sort_order").all();
 
   const addons = db.prepare(`

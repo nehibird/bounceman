@@ -16,7 +16,7 @@ ${(function() {
     description: stripHtml(item.description) || item.short_description || item.name,
     image: imageUrl,
     sku: item.id,
-    category: (item.category || '').replace(/_/g, ' '),
+    category: (item.category || '').replace(/[-_]/g, ' '),
     brand: { '@type': 'Brand', name: 'Bounce Man Rentals' },
     offers: {
       '@type': 'Offer',
@@ -105,13 +105,14 @@ ${(function() {
 
       <!-- Right Column: Info & Booking -->
       <div class="col-lg-5">
-        <span class="badge-category mb-3 d-inline-block">${(item.category || '').replace(/_/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:#2563eb;color:white;font-weight:600;padding:4px 12px;border-radius:20px;font-size:12px;display:inline-block;margin-bottom:12px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
+        <span class="badge-category mb-3 d-inline-block">${(item.category || '').replace(/[-_]/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:#2563eb;color:white;font-weight:600;padding:4px 12px;border-radius:20px;font-size:12px;display:inline-block;margin-bottom:12px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
         <h1 style="color:var(--bm-blue);font-size:32px;font-weight:700;margin-bottom:12px">${item.name}</h1>
         <p class="text-muted" style="font-size:16px;line-height:1.6">${item.short_description || ''}</p>
 
         <style>.price-tier-card:hover{border-color:var(--bm-orange)!important;box-shadow:0 4px 15px rgba(255,107,53,0.2)}.price-tier-popular:hover{box-shadow:0 4px 15px rgba(0,78,137,0.3)}</style>
         <!-- Price Tiers -->
         <div class="row g-3 mb-3">
+          ${item.full_day_only ? '' : `
           <div class="col-4">
             <a href="/booking?preselect=${item.id}&rental_duration=4hr" style="text-decoration:none;color:inherit;display:block">
               <div class="price-tier-card" style="background:#f8f9fa;border-radius:12px;padding:15px;text-align:center;border:2px solid transparent;cursor:pointer;transition:border-color 0.2s,box-shadow 0.2s">
@@ -119,7 +120,7 @@ ${(function() {
                 <div style="font-size:24px;font-weight:700;color:var(--bm-orange)">$${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</div>
               </div>
             </a>
-          </div>
+          </div>`}
           <div class="col-4">
             <a href="/booking?preselect=${item.id}&rental_duration=daily" style="text-decoration:none;color:inherit;display:block">
               <div class="price-tier-popular" style="background:var(--bm-blue);border-radius:12px;padding:15px;text-align:center;color:white;position:relative;cursor:pointer;transition:box-shadow 0.2s">
@@ -225,10 +226,10 @@ ${(function() {
           <div class="equipment-card">
             <img src="${r.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${r.name}">
             <div class="card-body">
-              <span class="badge-category mb-2">${(r.category || '').replace(/_/g, ' ')}</span>
+              <span class="badge-category mb-2">${(r.category || '').replace(/[-_]/g, ' ')}</span>
               <h5 class="card-title mt-2">${r.name}</h5>
               <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="price-tag">From $${parseFloat(r.price_4hr || r.price_daily * 0.65).toFixed(0)}</span>
+                <span class="price-tag">From $${parseFloat(r.full_day_only ? r.price_daily : (r.price_4hr || r.price_daily * 0.65)).toFixed(0)}</span>
                 <a href="/equipment/${r.slug}" class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></a>
               </div>
             </div>

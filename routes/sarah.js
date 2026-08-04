@@ -79,7 +79,7 @@ router.post('/check-availability', async (req, res) => {
   }
 
   // Get all rentable equipment (not add-ons)
-  const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight, slug FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
+  const allEquipment = db.prepare("SELECT id, name, category, quantity, price_daily, price_4hr, price_overnight, slug, full_day_only FROM equipment WHERE status = 'available' AND category != 'add_ons' ORDER BY sort_order").all();
 
   // Check each time window separately for accurate per-slot availability
   const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00', '4hr');
@@ -198,6 +198,11 @@ router.post('/check-availability', async (req, res) => {
       const fullDay = e.fullDaySaving > 0
         ? `$${e.fullDayPrice} full day (${specialLabel}: normally $${e.regularFullDayPrice}, saves $${e.fullDaySaving})`
         : `$${e.fullDayPrice} full day`;
+      // A full-day-only unit must never be offered at a half-day price — Sarah has no
+      // way to know that from a price list, so say it in the tool result itself.
+      if (e.full_day_only) {
+        return `${e.name} (equipment_id: ${e.id}) — ${fullDay} [FULL DAY ONLY — do NOT offer a half day for this unit]${pageLink}`;
+      }
       return `${e.name} (equipment_id: ${e.id}) — $${e.price_4hr} half day, ${fullDay}, $${e.price_overnight} overnight${pageLink}`;
     }
     const slots = [e.morningOpen && 'morning half day (9 AM–1 PM)', e.afternoonOpen && 'afternoon half day (3–7 PM)'].filter(Boolean);

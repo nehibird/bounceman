@@ -102,11 +102,11 @@ ${featured.length > 0 ? featured.map(item => `
           <div class="equipment-card">
             <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.category === 'add_ons' || item.category === 'add-ons') ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
             <div class="card-body">
-              <span class="badge-category mb-2">${item.category.replace(/_/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:var(--bm-blue);color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
+              <span class="badge-category mb-2">${item.category.replace(/[-_]/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:var(--bm-blue);color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
               <h5 class="card-title mt-2">${item.name}${item.quantity > 1 ? ' <span style="background:#059669;color:white;font-weight:600;padding:2px 8px;border-radius:20px;font-size:11px;vertical-align:middle">x' + item.quantity + ' Available</span>' : ''}</h5>
               <p class="text-muted small">${item.short_description || ''}</p>
               <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="price-tag">From $${parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0)}</span>
+                <span class="price-tag">From $${parseFloat(item.full_day_only ? item.price_daily : (item.price_4hr || item.price_daily * 0.65)).toFixed(0)}</span>
                 <span class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></span>
               </div>
               <div style="font-size:11px;color:#059669;font-weight:600;margin-top:4px"><i class="fas fa-truck me-1"></i>FREE delivery in Kay County</div>

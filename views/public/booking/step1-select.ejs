@@ -71,14 +71,14 @@
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '">' +
               '<div class="card-body">' +
-                '<span class="badge-category mb-2">' + (item.category || '').replace(/_/g, ' ') + '</span>' +
+                '<span class="badge-category mb-2">' + (item.category || '').replace(/[-_]/g, ' ') + '</span>' +
                 '<h5 class="card-title mt-2">' + item.name + '</h5>' +
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                 '<div class="small text-muted mb-2">' +
                   (item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : '') +
                   (item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : '') +
                 '</div>' +
-                '<span class="price-tag">From $' + parseFloat(item.price_4hr || item.price_daily * 0.65).toFixed(0) + '</span>' +
+                '<span class="price-tag">From $' + parseFloat(item.full_day_only ? item.price_daily : (item.price_4hr || item.price_daily * 0.65)).toFixed(0) + '</span>' +
               '</div>' +
             '</div>' +
           '</div>'; }).join('')}

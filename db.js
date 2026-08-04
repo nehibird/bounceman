@@ -697,6 +697,13 @@ function initialize() {
   } catch { /* already exists */ }
 
 
+  // Migration: some units are full-day only. Soft play is many pieces to unload,
+  // arrange and sanitise — a half-day trip earns 65% of the money for 100% of the
+  // labour. Without this flag getPrice() INVENTS a half-day rate at 65% of daily
+  // whenever price_4hr is null, so leaving the field blank silently offers the
+  // discount rather than hiding the option.
+  try { d.prepare('ALTER TABLE equipment ADD COLUMN full_day_only INTEGER DEFAULT 0').run(); } catch {}
+
   // Migration: attribution on the CUSTOMER, not just the booking.
   // A lead who fills in the coupon popup and never books had no origin recorded
   // anywhere — which is backwards, because the top of the funnel is exactly where
