@@ -234,11 +234,64 @@ router.get('/check-zip', async (req, res) => {
 
 // Step 3 — customer details & delivery
 router.get('/details', (req, res) => {
+  const db = getDb();
   const settings = getSettings();
-  const zones = getDb().prepare('SELECT * FROM delivery_zones WHERE active = 1 ORDER BY delivery_fee').all();
+  const zones = db.prepare('SELECT * FROM delivery_zones WHERE active = 1 ORDER BY delivery_fee').all();
+
+  // Link preview. Sarah texts THIS url to close a booking, so the picture and title
+  // that unfurl in the customer's messages app are the last thing they see before
+  // deciding. The layout fell back to a hard-coded Buccaneer Bay photo and the title
+  // "Your Details", so every unit's link previewed as Buccaneer Bay — a customer who
+  // picked the Blue Crush got a text showing a different slide.
+  let ogImage, previewTitle, previewDesc;
+  try {
+    const ids = String(req.query.items || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (ids.length) {
+      // Prefer a jpg/png over a webp for the preview — several SMS clients still fail
+      // to unfurl webp and show a blank card instead of the unit. Exclude the
+      // "before we set up" rules card first: it is a PNG on units whose photos are all
+      // webp, so a naive non-webp preference picks the rules graphic and Sarah's
+      // checkout link previews as a list of rules instead of the slide.
+      const rows = db.prepare(`
+        SELECT e.id, e.name, e.short_description,
+          COALESCE(
+            (SELECT image_path FROM equipment_images
+              WHERE equipment_id = e.id
+                AND image_path NOT LIKE '%rules-card%'
+                AND lower(image_path) NOT LIKE '%.webp'
+              ORDER BY is_primary DESC, sort_order LIMIT 1),
+            (SELECT image_path FROM equipment_images
+              WHERE equipment_id = e.id AND image_path NOT LIKE '%rules-card%'
+              ORDER BY is_primary DESC, sort_order LIMIT 1),
+            (SELECT image_path FROM equipment_images
+              WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1)
+          ) AS image
+        FROM equipment e WHERE e.id IN (${ids.map(() => '?').join(',')})
+      `).all(...ids);
+      // Preserve the order the customer picked them in, so the first unit they chose
+      // is the one that shows.
+      const ordered = ids.map(id => rows.find(r => r.id === id)).filter(Boolean);
+      const first = ordered[0];
+      if (first) {
+        ogImage = first.image || undefined;
+        // "Book the The Gauntlet" — several unit names already start with "The".
+        const article = /^the\s/i.test(first.name) ? '' : 'the ';
+        previewTitle = ordered.length > 1
+          ? `Book ${first.name} + ${ordered.length - 1} more — Bounce Man`
+          : `Book ${article}${first.name} — Bounce Man`;
+        previewDesc = first.short_description ||
+          `Reserve the ${first.name} with Bounce Man — delivery, setup and pickup included across Kay County.`;
+      }
+    }
+  } catch (e) {
+    // A broken preview must never stop someone reaching the checkout form.
+    console.error('[BOOKING] details preview lookup failed:', e.message);
+  }
 
   res.render('public/booking/step3-details', {
-    title: 'Your Details - Bounce Man',
+    title: previewTitle || 'Your Details - Bounce Man',
+    metaDescription: previewDesc,
+    ogImage,
     settings, zones,
     page: 'booking'
   });
