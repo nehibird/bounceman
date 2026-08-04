@@ -245,12 +245,35 @@ router.post('/lead', async (req, res) => {
     const first_name = parts[0];
     const last_name = parts.slice(1).join(' ');
     const norm = (s) => String(s || '').replace(/\D/g, '').slice(-10);
+    // Where this lead came from. The attribution cookie was set on the page load,
+    // well before the popup appeared, and cookies ride along on this POST — so we
+    // already know; nothing was reading it.
+    const leadAttrib = readAttribution(req);
     const existing = db.prepare('SELECT id, email FROM customers').all().find((c) => norm(c.phone) === digits);
     if (!existing) {
-      db.prepare("INSERT INTO customers (id, first_name, last_name, email, phone, state, source) VALUES (?, ?, ?, ?, ?, 'OK', 'lead_popup')")
-        .run(uuid(), first_name, last_name || '', email || null, digits);
-    } else if (email && !existing.email) {
-      db.prepare("UPDATE customers SET email = ?, updated_at = datetime('now') WHERE id = ?").run(email, existing.id);
+      db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, state, source,
+        attrib_source, attrib_gclid, attrib_fbclid, attrib_utm_source, attrib_utm_medium,
+        attrib_utm_campaign, attrib_landing_page, attrib_referrer, attrib_first_seen_at)
+        VALUES (?, ?, ?, ?, ?, 'OK', 'lead_popup', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(uuid(), first_name, last_name || '', email || null, digits,
+          leadAttrib.source, leadAttrib.gclid, leadAttrib.fbclid, leadAttrib.utm_source,
+          leadAttrib.utm_medium, leadAttrib.utm_campaign, leadAttrib.landing_page,
+          leadAttrib.referrer, leadAttrib.first_seen_at);
+      console.log('[LEAD] captured', first_name, 'from', leadAttrib.source,
+        leadAttrib.landing_page ? '(landed on ' + leadAttrib.landing_page + ')' : '');
+    } else {
+      if (email && !existing.email) {
+        db.prepare("UPDATE customers SET email = ?, updated_at = datetime('now') WHERE id = ?").run(email, existing.id);
+      }
+      // A returning lead whose origin we never recorded — backfill it, but never
+      // overwrite an origin we already have (first touch wins here too).
+      db.prepare(`UPDATE customers SET attrib_source = COALESCE(NULLIF(attrib_source,''), ?),
+        attrib_gclid = COALESCE(attrib_gclid, ?), attrib_fbclid = COALESCE(attrib_fbclid, ?),
+        attrib_utm_source = COALESCE(attrib_utm_source, ?), attrib_landing_page = COALESCE(attrib_landing_page, ?),
+        attrib_referrer = COALESCE(attrib_referrer, ?), attrib_first_seen_at = COALESCE(attrib_first_seen_at, ?)
+        WHERE id = ?`).run(leadAttrib.source, leadAttrib.gclid, leadAttrib.fbclid,
+          leadAttrib.utm_source, leadAttrib.landing_page, leadAttrib.referrer,
+          leadAttrib.first_seen_at, existing.id);
     }
 
     // Text the code — this becomes Sarah's first turn, so their reply threads

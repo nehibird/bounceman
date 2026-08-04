@@ -697,6 +697,19 @@ function initialize() {
   } catch { /* already exists */ }
 
 
+  // Migration: attribution on the CUSTOMER, not just the booking.
+  // A lead who fills in the coupon popup and never books had no origin recorded
+  // anywhere — which is backwards, because the top of the funnel is exactly where
+  // ad spend lands. The cookie is already set on the page load before the popup
+  // even appears, so the data was there; nothing was reading it.
+  for (const col of [
+    'attrib_source TEXT', 'attrib_gclid TEXT', 'attrib_fbclid TEXT',
+    'attrib_utm_source TEXT', 'attrib_utm_medium TEXT', 'attrib_utm_campaign TEXT',
+    'attrib_landing_page TEXT', 'attrib_referrer TEXT', 'attrib_first_seen_at TEXT',
+  ]) {
+    try { d.prepare('ALTER TABLE customers ADD COLUMN ' + col).run(); } catch {}
+  }
+
   // Migration: ad attribution. We spend ~$60/month across Google and Meta and could not
   // say whether it produced a single booking — `source` was empty on 29 of 31 rows and
   // no click ID was captured anywhere in the app. All nullable on purpose: three test
