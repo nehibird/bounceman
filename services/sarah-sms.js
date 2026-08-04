@@ -24,6 +24,18 @@ const STOP_PHRASES = [
 ];
 const HELP_WORDS = ['help', 'info', 'support'];
 
+// Toll-free area codes. No parent in Kay County books a bounce house from an 800
+// number — these are call centres and cold-outreach shops. A website-sales pitch
+// came in from an 866 line and Sarah, doing exactly what her prompt says, replied
+// and promised Nehemiah would call them back: it confirmed the line is live and
+// monitored, which is the one thing you never want to tell a spammer.
+const TOLL_FREE = ['800', '833', '844', '855', '866', '877', '888', '822', '880', '887', '889'];
+function isTollFree(number) {
+  const d = String(number || '').replace(/\D/g, '');
+  const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+  return ten.length === 10 && TOLL_FREE.includes(ten.slice(0, 3));
+}
+
 function normalize(n) {
   const d = String(n || '').replace(/\D/g, '');
   if (d.length === 10) return '+1' + d;
@@ -225,6 +237,18 @@ async function handleInboundSms(from, body) {
     if (number === normalize(BM_NUMBER) || number === normalize(OWNER_CELL)) return;
     const mode = getMode(); if (mode === 'off') return;
     if (isThreadPaused(number)) return;
+    // Never engage a toll-free sender. Log it and mirror to Slack so Nehemiah still
+    // sees it, but send nothing back — silence is the correct reply to cold outreach.
+    if (isTollFree(number)) {
+      console.log('[SARAH-SMS] toll-free sender, not replying:', number, '-', (body || '').slice(0, 70));
+      try {
+        require('./notifications').sendSlackMessage({
+          text: ':no_entry: *Ignored a toll-free text* from ' + number +
+                ' (Sarah did not reply)\n>' + String(body || '').slice(0, 300),
+        }).catch(() => {});
+      } catch (e) { /* notification is best-effort */ }
+      return;
+    }
     const clean = (body || '').trim().toLowerCase().replace(/[^a-z]/g, '');
     const raw = String(body || '');
     // Opt-out has to short-circuit BEFORE the model call. Single words were already
