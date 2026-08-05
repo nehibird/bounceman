@@ -153,7 +153,12 @@ async function notifyNewBooking(booking, customer, items) {
       require('../db').getDb().prepare("UPDATE bookings SET slack_message_ts = ?, slack_message_channel = ? WHERE id = ?").run(resp.ts, BOOKINGS_CHANNEL, booking.id);
     } catch (e) { console.error('[SLACK] store ts failed:', e.message); }
   }
-  console.log('[SLACK] Comprehensive booking notification sent for', booking.booking_number);
+  // Only claim it was sent if it was. postToSlack returns null when DISABLE_SLACK is on,
+  // and this line used to log "sent" either way — which reads, on a sandbox run, exactly
+  // like a fake booking just landed in the real #bookings channel.
+  console.log(resp
+    ? '[SLACK] Comprehensive booking notification sent for ' + booking.booking_number
+    : '[SLACK] Comprehensive booking notification NOT sent (suppressed) for ' + booking.booking_number);
 }
 
 // Builds the "Delivery Tomorrow" card. Reflects current contract/payment state so the

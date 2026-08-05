@@ -1,7 +1,9 @@
 'use strict';
 const { test, expect } = require('@playwright/test');
 
-const BASE = 'http://localhost:3201';
+// BM_BASE lets the same specs run against the titan sandbox (live data copy, Stripe
+// test keys) instead of the throwaway Playwright server. Unset, nothing changes.
+const BASE = process.env.BM_BASE || 'http://localhost:3201';
 
 // Skip Sundays (business closed), then offset by days
 function futureDate(offsetDays = 14) {

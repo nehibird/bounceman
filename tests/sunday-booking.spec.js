@@ -7,7 +7,9 @@
 // couldn't click the date. Keep these tests; the failure mode is invisible without them.
 const { test, expect } = require('@playwright/test');
 
-const BASE = 'http://localhost:3201';
+// BM_BASE lets the same specs run against the titan sandbox (live data copy, Stripe
+// test keys) instead of the throwaway Playwright server. Unset, nothing changes.
+const BASE = process.env.BM_BASE || 'http://localhost:3201';
 
 // Next occurrence of a weekday, comfortably beyond the 24h lead-time rule.
 function nextDow(dow, minDaysOut = 7) {
