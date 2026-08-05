@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE } = require('../lib/helpers');
 const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
@@ -329,6 +329,12 @@ router.post('/review', bookingLimiter, async (req, res) => {
     return res.status(400).render('error', { title: 'Full-Day Rental Only', message: 'Labor Day and Memorial Day are full-day rentals only — please choose the Full Day option for that date.', status: 400 });
   }
 
+  // Sunday rentals are collected Monday morning, so the unit is unattended overnight —
+  // never in a park. The step-3 form blocks this, but a direct POST bypasses that.
+  if (isSundayRental(event_date) && isUnsecuredVenue(venue_type)) {
+    return res.status(400).render('error', { title: 'Sunday Park Setups Not Available', message: SUNDAY_PARK_MESSAGE, status: 400 });
+  }
+
   let subtotal = 0;
   const lineItems = [];
   for (const eqId of items) {
@@ -445,6 +451,12 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // Labor Day / Memorial Day are full-day single-day rentals only (mirrors the /review guard).
     if (isFullDayOnlyDate(data.event_date) && (submitDuration !== 'daily' || submitDays > 1)) {
       return res.status(400).render('error', { title: 'Full-Day Rental Only', message: 'Labor Day and Memorial Day are full-day rentals only — please choose the Full Day option for that date.', status: 400 });
+    }
+
+    // No park setups on Sundays — the unit stays out overnight for Monday pickup
+    // (mirrors the /review guard; this is the last stop before money changes hands).
+    if (isSundayRental(data.event_date) && isUnsecuredVenue(data.venue_type)) {
+      return res.status(400).render('error', { title: 'Sunday Park Setups Not Available', message: SUNDAY_PARK_MESSAGE, status: 400 });
     }
 
     let recalcSubtotal = 0;

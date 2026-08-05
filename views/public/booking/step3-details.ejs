@@ -137,6 +137,11 @@
                   <option value="Indoor">Indoor</option>
                   <option value="Commercial">Commercial</option>
                 </select>
+                <div id="sundayParkNote" style="display:none;margin-top:6px;font-size:12px;color:#b9521f;background:#fdf1ea;border-left:3px solid #d77c42;border-radius:4px;padding:8px 10px">
+                  <i class="fas fa-triangle-exclamation me-1"></i><strong>Not available on Sundays.</strong>
+                  Sunday rentals are picked up Monday morning, so the unit would sit in the park overnight.
+                  Please choose a backyard, indoor, or commercial location &mdash; or pick a Saturday instead.
+                </div>
               </div>
               <div class="col-md-6">
                 <label class="form-label">Surface Type *</label>
@@ -272,6 +277,14 @@
     var wetItems = params.get('wet_items') || '';
     var items = params.get('items') || '';
 
+    // No park setups on Sundays — see sundayParkSelected() below.
+    if (sundayParkSelected()) {
+      e.preventDefault();
+      showToast('We can\\'t set up at a park on Sundays — Sunday rentals are picked up Monday morning, so the unit would be left out overnight. Please choose a backyard, indoor, or commercial location, or pick a Saturday instead.', 'warning');
+      document.querySelector('select[name="venue_type"]').focus();
+      return;
+    }
+
     // Wet units require water hookup
     if (wetItems.length > 0) {
       var waterCheck = document.getElementById('waterCheck');
@@ -372,6 +385,28 @@
     }
     if (surf) surf.addEventListener('change', sync);
     if (venue) venue.addEventListener('change', sync);
+    sync();
+  })();
+
+  // Sunday + Park is refused: a Sunday rental is collected Monday morning, so the unit
+  // would be left unattended in a public park overnight. Warn at the moment they pick it
+  // rather than after they've filled the rest of the form in. The server re-checks this.
+  function isSundayEventDate() {
+    var d = document.getElementById('hiddenDate').value;
+    if (!d) return false;
+    var dt = new Date(d + 'T12:00:00');
+    return !isNaN(dt.getTime()) && dt.getDay() === 0;
+  }
+  function sundayParkSelected() {
+    var venue = document.querySelector('select[name="venue_type"]');
+    return isSundayEventDate() && /park/i.test((venue && venue.value) || '');
+  }
+  (function() {
+    var venue = document.querySelector('select[name="venue_type"]');
+    var note = document.getElementById('sundayParkNote');
+    if (!venue || !note) return;
+    function sync() { note.style.display = sundayParkSelected() ? '' : 'none'; }
+    venue.addEventListener('change', sync);
     sync();
   })();
 </script>

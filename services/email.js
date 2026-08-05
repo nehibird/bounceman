@@ -1,6 +1,6 @@
 'use strict';
 const nodemailer = require('nodemailer');
-const { rentalDays, formatRentalPeriod, fmtTime12 } = require('../lib/helpers');
+const { rentalDays, formatRentalPeriod, fmtTime12, sundayPickupApplies } = require('../lib/helpers');
 
 let _transporter = null;
 
@@ -122,6 +122,7 @@ ${rows}
 </td></tr>
 </table>
 
+${sundayPickupBlock(booking)}
 ${contractId ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td align="center" style="padding:8px 0;">
 <a href="https://bouncemanrentals.com/contract/${contractId}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:12px 28px;border-radius:8px;">Sign Rental Agreement</a>
@@ -186,6 +187,7 @@ ${actionButtons}
 ${hasBalance ? `<tr><td style="font-size:13px;color:#666;padding:3px 0;">&#10003; Balance ready (cash, card, or pay online above)</td></tr>` : ''}
 </table>
 
+${sundayPickupBlock(booking)}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:14px;color:#333;">Questions? Call <strong>${PHONE}</strong></td></tr>
 </table>
@@ -195,6 +197,20 @@ ${booking.tax_exempt_claimed ? `<table width="100%" cellpadding="0" cellspacing=
 </td></tr>
 </table>` : ''}
 `;
+}
+
+// Sunday rentals are collected Monday morning, not Sunday evening. Every customer-facing
+// message about a Sunday booking has to say this, or "your rental is Sunday" reads as
+// "we take it away Sunday night" and the crew gets a confused call Monday.
+function sundayPickupBlock(booking) {
+  if (!sundayPickupApplies(booking && booking.event_date)) return '';
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td style="font-size:13px;color:#333;background:#FDF1EA;border-left:4px solid ${ORANGE};border-radius:4px;padding:12px;">
+<strong>Sunday rental &mdash; we pick up Monday morning.</strong> Because your event is on a Sunday, the unit stays
+with you overnight at no extra charge and our crew collects it Monday morning. Please leave it set up and keep
+it accessible for pickup. Sunday rentals cannot be set up at a park or other public space.
+</td></tr>
+</table>`;
 }
 
 function reviewRequestBody(booking, customer) {

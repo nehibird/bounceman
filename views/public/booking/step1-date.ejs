@@ -146,6 +146,8 @@
 
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
               <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
+              We pick up <strong>Monday morning</strong>, so it stays with you overnight at no extra charge.
+              Because of that, Sunday setups can't be at a park or other public space.
             </div>
 
             <div id="holidayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
@@ -199,13 +201,24 @@
 
 `, scripts: `
 <script>
-  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ""}' .split(',').map(Number).filter(function(n) { return !isNaN(n) && n >= 0; });
+  // Drop empty entries BEFORE Number(). An empty setting means "block nothing", but
+  // ''.split(',') is [''] and Number('') is 0 — which is Sunday. That silently greyed
+  // out every Sunday on the calendar while the server happily allowed Sunday bookings.
+  var BLOCKED_WEEKDAYS = '${settings.blocked_weekdays || ""}'.split(',')
+    .map(function(s) { return s.trim(); })
+    .filter(function(s) { return s !== ''; })
+    .map(Number)
+    .filter(function(n) { return !isNaN(n) && n >= 0 && n <= 6; });
 
   var WEEKDAY_SPECIAL = {
     active: '${settings.weekday_special_active || ""}' === '1',
     start: '${settings.weekday_special_start || ""}',
     end: '${settings.weekday_special_end || ""}',
-    days: '${settings.weekday_special_days || "1,2,3,4,5"}'.split(',').map(Number).filter(function(n){ return !isNaN(n); })
+    days: '${settings.weekday_special_days || "1,2,3,4,5"}'.split(',')
+      .map(function(s) { return s.trim(); })
+      .filter(function(s) { return s !== ''; })
+      .map(Number)
+      .filter(function(n) { return !isNaN(n) && n >= 0 && n <= 6; })
   };
   function isWeekdaySpecialDate(dateStr) {
     if (!WEEKDAY_SPECIAL.active || !dateStr) return false;
