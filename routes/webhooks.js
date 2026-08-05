@@ -455,7 +455,7 @@ Return a JSON object with these fields:
   "email": "email or null if not provided",
   "phone": "phone or null if not provided",
   "event_date": "YYYY-MM-DD format",
-  "event_start_time": "HH:MM (24hr, default 09:00)",
+  "event_start_time": "HH:MM (24hr, default 11:00 for a full day)",
   "event_end_time": "HH:MM (24hr, default based on duration)",
   "equipment_ids": ["array of equipment IDs to book"],
   "duration_type": "4hr" or "daily" or "overnight",
@@ -466,7 +466,7 @@ Return a JSON object with these fields:
 }
 
 Rules:
-- "all day" = daily duration, times 09:00-19:00
+- "all day" = daily duration, times 11:00-19:00
 - "half day" = 4hr duration
 - "overnight" = overnight duration, times 09:00-23:59 (full day of use plus the night; 9 AM next-day pickup)
 - Match equipment names loosely (e.g., "Blue Crush slide" = Blue Crush Slide)

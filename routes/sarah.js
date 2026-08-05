@@ -84,7 +84,7 @@ router.post('/check-availability', async (req, res) => {
   // Check each time window separately for accurate per-slot availability
   const bookedMorning   = getBookedEquipmentIds(db, date, '09:00:00', '13:00:00', '4hr');
   const bookedAfternoon = getBookedEquipmentIds(db, date, '15:00:00', '19:00:00', '4hr');
-  const bookedFullDay   = getBookedEquipmentIds(db, date, '09:00:00', '19:00:00', 'daily');
+  const bookedFullDay   = getBookedEquipmentIds(db, date, '11:00:00', '19:00:00', 'daily');
 
   const slotAvail = (e, bookedMap) => (bookedMap.get(e.id) || 0) < (e.quantity || 1);
 
@@ -385,7 +385,7 @@ router.post('/create-and-send-link', async (req, res) => {
       return `${String(h).padStart(2, '0')}:${min}`;
     };
     let startTime, endTime;
-    if (dur === 'daily') { startTime = '09:00'; endTime = '19:00'; }
+    if (dur === 'daily') { startTime = '11:00'; endTime = '19:00'; }
     // Overnight = full day + the night: 9 AM drop-off, held through the night (stored 23:59
     // of day 1 so it occupies all of day 1); "9 AM next-day pickup" is display-only.
     else if (dur === 'overnight') { startTime = '09:00'; endTime = '23:59'; }
@@ -430,7 +430,7 @@ router.post('/create-and-send-link', async (req, res) => {
       // Sunday: whole-day occupancy (no half-day splitting on Sundays).
       checkStart = '00:00:00'; checkEnd = '23:59:59';
     } else if (dur === 'daily') {
-      checkStart = '09:00:00'; checkEnd = '19:00:00';
+      checkStart = '11:00:00'; checkEnd = '19:00:00';
     } else { // 4hr — determine morning vs afternoon from event_start_time
       const sh = event_start_time ? parseInt(String(event_start_time).match(/\d{1,2}/)?.[0] || '9', 10) : 9;
       if (sh >= 12) { checkStart = '15:00:00'; checkEnd = '19:00:00'; }
@@ -668,7 +668,7 @@ router.post('/send-checkout-link', async (req, res) => {
   // Time window by duration (matches the website + overnight 9->9 model).
   let startTime, endTime;
   if (dur === 'overnight') { startTime = '09:00'; endTime = '23:59'; }
-  else if (dur === 'daily') { startTime = '09:00'; endTime = '19:00'; }
+  else if (dur === 'daily') { startTime = '11:00'; endTime = '19:00'; }
   else { // 4hr — morning vs afternoon from requested start hour
     const sh = event_start_time ? parseInt(String(event_start_time).match(/\d{1,2}/)?.[0] || '9', 10) : 9;
     if (sh >= 12) { startTime = '15:00'; endTime = '19:00'; }
@@ -724,7 +724,7 @@ router.post('/send-checkout-link', async (req, res) => {
   // Re-check availability at send time — the unit may have been booked between
   // checkAvailability and the caller making up their mind.
   try {
-    const win = dur === 'overnight' ? ['09:00:00', '23:59:00'] : (dur === 'daily' ? ['09:00:00', '19:00:00'] : [startTime + ':00', endTime + ':00']);
+    const win = dur === 'overnight' ? ['09:00:00', '23:59:00'] : (dur === 'daily' ? ['11:00:00', '19:00:00'] : [startTime + ':00', endTime + ':00']);
     const bookedNow = getBookedEquipmentIds(db, eventDateISO, win[0], win[1], dur);
     const takenNames = [];
     for (const id of validIds) {

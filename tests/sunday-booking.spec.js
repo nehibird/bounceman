@@ -86,6 +86,55 @@ test('the Sunday note states Monday pickup and the park restriction', async ({ p
   await expect(note).toContainText(/park/i);
 });
 
+// ─── The Sunday terms modal ───────────────────────────────────────────────────
+test('picking a Sunday immediately shows the terms', async ({ page }) => {
+  await page.goto(`${BASE}/booking`);
+  await expect(page.locator('#sundayModal')).toBeHidden();
+
+  await clickCalendarDate(page, SUNDAY);
+  const modal = page.locator('#sundayModal');
+  await expect(modal).toBeVisible();
+
+  // The three things a customer must know before planning around a Sunday.
+  await expect(modal).toContainText(/Saturday evening/i);
+  await expect(modal).toContainText(/Monday morning/i);
+  await expect(modal).toContainText(/no parks or public spaces/i);
+  await expect(modal).toContainText(/free overnight/i);
+
+  await page.locator('#sundayModalOk').click();
+  await expect(modal).toBeHidden();
+  // Accepting keeps the date.
+  await expect(page.locator('#eventDateInput')).toHaveValue(SUNDAY);
+});
+
+test('a Saturday does not trigger the Sunday terms', async ({ page }) => {
+  await page.goto(`${BASE}/booking`);
+  await clickCalendarDate(page, SATURDAY);
+  await expect(page.locator('#sundayModal')).toBeHidden();
+});
+
+test('declining the Sunday terms clears the date', async ({ page }) => {
+  await page.goto(`${BASE}/booking`);
+  await clickCalendarDate(page, SUNDAY);
+  await expect(page.locator('#sundayModal')).toBeVisible();
+
+  await page.locator('#sundayModalCancel').click();
+  await expect(page.locator('#sundayModal')).toBeHidden();
+  // No Sunday left silently sitting in the form.
+  await expect(page.locator('#eventDateInput')).toHaveValue('');
+});
+
+// ─── Full-day window ──────────────────────────────────────────────────────────
+test('a full day runs 11 AM to 7 PM', async ({ page }) => {
+  await page.goto(`${BASE}/booking`);
+  await clickCalendarDate(page, SATURDAY);
+
+  await expect(page.locator('#hiddenDuration')).toHaveValue('daily');
+  await expect(page.locator('#hiddenStart')).toHaveValue('11:00');
+  await expect(page.locator('#hiddenEnd')).toHaveValue('19:00');
+  await expect(page.locator('#durFullDay')).toContainText(/11 AM/);
+});
+
 // ─── Step 3: Sunday + Park ────────────────────────────────────────────────────
 test('Sunday + Park warns the customer; other venues do not', async ({ page }) => {
   const itemId = await firstEquipmentId(page, SUNDAY);

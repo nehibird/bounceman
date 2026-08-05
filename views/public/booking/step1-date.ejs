@@ -130,7 +130,7 @@
               <div class="col-4">
                 <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
                   <span class="dur-label">Full Day</span>
-                  <span class="dur-sub">9 AM – 7 PM</span>
+                  <span class="dur-sub">11 AM – 7 PM</span>
                 </div>
               </div>
               <div class="col-4">
@@ -141,13 +141,14 @@
               </div>
             </div>
             <div id="fulldayNote" style="margin-top:12px;font-size:13px;color:#004E89;display:block;">
-              <i class="fas fa-info-circle me-1"></i> 9 AM – 7 PM — we set up before 9.
+              <i class="fas fa-info-circle me-1"></i> 11 AM – 7 PM — we set up before 11.
             </div>
 
             <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
-              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong> — no half day on Sundays.
-              We pick up <strong>Monday morning</strong>, so it stays with you overnight at no extra charge.
-              Because of that, Sunday setups can't be at a park or other public space.
+              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong>. We usually drop off
+              <strong>Saturday evening</strong> and pick up <strong>Monday morning</strong>, so you get the overnight
+              free. Because it stays out overnight, Sunday setups can't be at a park or other public space.
+              <a href="#" id="sundayTermsLink" style="color:#004E89;text-decoration:underline">See the details</a>
             </div>
 
             <div id="holidayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
@@ -198,6 +199,76 @@
     </div>
   </div>
 </section>
+
+<style>
+  /* The lead-capture coupon (#bml-root) sits at z-index 99999 and was covering the
+     modal's "Pick a different day" button. Terms the customer has to read outrank a
+     $10-off popup, so the modal and its backdrop go above it — and the coupon is
+     hidden outright while the modal is open rather than left peeking around it. */
+  .modal-backdrop.sunday-terms-backdrop { z-index: 100000; }
+  body.sunday-terms-open #bml-root { display: none !important; }
+</style>
+
+<!-- Sunday terms. Fires the moment a Sunday is picked, not at checkout: the delivery
+     window is different (usually Saturday evening) and parks are out, and a customer
+     who finds that out on the review page has already made plans around a guess. -->
+<div class="modal fade" id="sundayModal" tabindex="-1" aria-labelledby="sundayModalLabel" aria-hidden="true" style="z-index:100010">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border:none;border-radius:16px;overflow:hidden">
+      <div class="modal-header" style="background:var(--bm-blue,#004E89);color:#fff;border:none;padding:18px 22px">
+        <h5 class="modal-title" id="sundayModalLabel" style="font-weight:700">
+          <i class="fas fa-sun me-2"></i>About Sunday rentals
+        </h5>
+      </div>
+      <div class="modal-body" style="padding:22px">
+
+        <div style="background:#FFF3E8;border:1px solid #E8833A;border-radius:12px;padding:14px 16px;margin-bottom:18px">
+          <div style="font-weight:700;color:#15263A;font-size:16px;margin-bottom:4px">
+            <i class="fas fa-gift me-2" style="color:#E8833A"></i>You get a free overnight
+          </div>
+          <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
+            Sunday rentals are usually dropped off <strong>Saturday evening</strong> and picked up
+            <strong>Monday morning</strong> &mdash; so you keep it the whole weekend and through Sunday night
+            at no extra charge. Most people love this. We just want you to know before you book.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:14px">
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-ban"></i></div>
+          <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
+            <strong style="color:#15263A">No parks or public spaces on Sundays.</strong>
+            Because the unit stays out overnight, Sunday setups have to be at a home, indoors,
+            or on private business property &mdash; somewhere it can be looked after.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:14px">
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-clock"></i></div>
+          <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
+            <strong style="color:#15263A">Full day only.</strong>
+            We don't do half days on Sundays.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px">
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-house-chimney"></i></div>
+          <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
+            <strong style="color:#15263A">Please leave it set up overnight.</strong>
+            Keep it plugged in if you can, and make sure our crew can get to it Monday morning.
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="border:none;padding:0 22px 22px;gap:10px">
+        <button type="button" class="btn btn-link px-3" id="sundayModalCancel"
+                style="color:#8a8a8a;text-decoration:none">Pick a different day</button>
+        <button type="button" class="btn btn-book-now px-4" id="sundayModalOk">
+          Got it &mdash; that works for me
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 `, scripts: `
 <script>
@@ -297,9 +368,9 @@
     if (selectedDurationType !== 'halfday') {
       // Full Day and Multi Day both bill the full-day rate per day
       durVal = 'daily';
-      startVal = '09:00';
+      startVal = '11:00';
       endVal = '19:00';
-      readyByVal = '09:00';
+      readyByVal = '11:00';
     } else {
       durVal = '4hr';
       var sel = document.getElementById('readyBySelect');
@@ -406,6 +477,30 @@
     if ((isSunday || isSpecial) && selectedDurationType === 'halfday') { selectDurationType('allday'); return; }
   }
 
+  // Sunday terms, shown the instant a Sunday is picked. Sunday is not just "a day we're
+  // open" — delivery is usually the evening before, pickup is Monday, and parks are out.
+  // Surfacing that at checkout would be too late; they've already planned around it.
+  // Shown once per visit so re-picking dates doesn't turn into whack-a-mole.
+  var sundayModal = null, sundayTermsSeen = false;
+  function showSundayTerms() {
+    if (sundayTermsSeen) return;
+    var el = document.getElementById('sundayModal');
+    if (!el || typeof bootstrap === 'undefined' || !bootstrap.Modal) return; // never block booking
+    sundayTermsSeen = true;
+    if (!sundayModal) {
+      sundayModal = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
+      el.addEventListener('shown.bs.modal', function() {
+        document.body.classList.add('sunday-terms-open');
+        var bd = document.querySelector('.modal-backdrop:last-of-type');
+        if (bd) bd.classList.add('sunday-terms-backdrop');
+      });
+      el.addEventListener('hidden.bs.modal', function() {
+        document.body.classList.remove('sunday-terms-open');
+      });
+    }
+    sundayModal.show();
+  }
+
   flatpickr('#datePicker', {
     inline: true,
     minDate: 'today',
@@ -416,8 +511,32 @@
       document.getElementById('hiddenEndDate').value = isoOffset(dateStr, 0);
       applyDayRules();
       updateHiddenFields();
+      if (dateStr && new Date(dateStr + 'T12:00:00').getDay() === 0) showSundayTerms();
     }
   });
+
+  // "Pick a different day" clears the selection and reopens the calendar, so declining
+  // the terms doesn't leave a Sunday silently sitting in the form.
+  (function() {
+    var cancel = document.getElementById('sundayModalCancel');
+    var ok = document.getElementById('sundayModalOk');
+    var link = document.getElementById('sundayTermsLink');
+    if (link) link.addEventListener('click', function(e) {
+      e.preventDefault();
+      sundayTermsSeen = false; // an explicit request to re-read it
+      showSundayTerms();
+    });
+    if (ok) ok.addEventListener('click', function() { if (sundayModal) sundayModal.hide(); });
+    if (cancel) cancel.addEventListener('click', function() {
+      var fp = document.getElementById('datePicker') && document.getElementById('datePicker')._flatpickr;
+      if (fp) fp.clear();
+      document.getElementById('eventDateInput').value = '';
+      sundayTermsSeen = false; // they backed out — show it again if they pick another Sunday
+      applyDayRules();
+      updateHiddenFields();
+      if (sundayModal) sundayModal.hide();
+    });
+  })();
 
   document.getElementById('readyBySelect').addEventListener('change', function() {
     if (this.value) {

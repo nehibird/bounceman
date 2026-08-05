@@ -30,8 +30,13 @@ const SUN = { ...base, event_date: '2026-08-09' }; // Sunday
 const SAT = { ...base, event_date: '2026-08-08' }; // Saturday
 const MON = { ...base, event_date: '2026-08-10' }; // Monday
 
-const hasNotice = (html) => /pick up Monday morning/i.test(html);
-const hasParkRule = (html) => /cannot be set up at a park/i.test(html);
+// Match against whitespace-normalised text. The email bodies are hand-wrapped template
+// literals, so a phrase can straddle a newline ("cannot be set\nup at a park") and render
+// perfectly while a naive regex misses it.
+const flat = (html) => String(html).replace(/\s+/g, ' ');
+const hasNotice = (html) => /Monday morning/i.test(flat(html));
+const hasDropOff = (html) => /Saturday evening/i.test(flat(html));
+const hasParkRule = (html) => /cannot be set up at a park/i.test(flat(html));
 
 let pass = 0, fail = 0;
 function t(name, got, want) {
@@ -72,6 +77,8 @@ t('Saturday -> notice absent',  hasNotice(T.bookingConfirmationBody(SAT, cust, i
 t('Monday   -> notice absent',  hasNotice(T.bookingConfirmationBody(MON, cust, items, 'c1')), false);
 t('Sunday, no contract id',     hasNotice(T.bookingConfirmationBody(SUN, cust, items, null)), true);
 t('Sunday   -> park rule stated', hasParkRule(T.bookingConfirmationBody(SUN, cust, items, 'c1')), true);
+t('Sunday   -> Saturday drop-off stated', hasDropOff(T.bookingConfirmationBody(SUN, cust, items, 'c1')), true);
+t('Saturday -> no drop-off notice', hasDropOff(T.bookingConfirmationBody(SAT, cust, items, 'c1')), false);
 
 console.log('Sunday pickup notice — delivery reminder email:');
 t('Sunday   -> notice present', hasNotice(T.deliveryReminderBody(SUN, cust, 'c1')), true);

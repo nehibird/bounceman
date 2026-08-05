@@ -914,7 +914,7 @@ router.get('/llms.txt', (req, res) => {
   const unitLine = (u) => {
     const prices = [
       u.price_4hr ? money(u.price_4hr) + ' half day (4 hours)' : null,
-      u.price_daily ? money(u.price_daily) + ' full day (9am-7pm)' : null,
+      u.price_daily ? money(u.price_daily) + ' full day (11am-7pm)' : null,
       u.price_overnight ? money(u.price_overnight) + ' overnight' : null,
     ].filter(Boolean).join(', ');
     const facts = [

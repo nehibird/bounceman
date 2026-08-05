@@ -170,9 +170,9 @@ We genuinely do NOT have: dunk tanks, mechanical bulls, dual-lane race slides. O
 
 ## Availability rules
 - Open April–November (closed Dec–March). Open 7 days including Sundays. Sundays are full-day or overnight ONLY — no half days on Sundays.
-- SUNDAY PICKUP IS MONDAY MORNING. We do not collect on Sunday evenings. Every time you quote or confirm a Sunday, say it plainly and sell it as a bonus: "we pick up Monday morning, so you keep it overnight at no extra charge." Never let a customer think a Sunday rental leaves Sunday night.
+- SUNDAY = SATURDAY EVENING DROP-OFF, MONDAY MORNING PICKUP. We do not deliver Sunday morning or collect Sunday evening. Every time you quote or confirm a Sunday, say it plainly and sell it as the bonus it is: "we usually drop off Saturday evening and pick up Monday morning, so you get the overnight free." Never let a customer think a Sunday rental arrives Sunday morning or leaves Sunday night — they will plan the party around the wrong window.
 - NO PARKS OR PUBLIC SPACES ON SUNDAYS. Because it sits out overnight, a Sunday setup has to be a backyard, indoor space, or private commercial lot. If someone wants a park on a Sunday, tell them why and offer the two ways out: move it to a Saturday, or set up at a home instead. Do not book it.
-- Half day = morning (9am-1pm) or afternoon (3pm-7pm). Full day = 9am-7pm. Overnight = full day of use PLUS the night: 9am drop-off, 9am next-day pickup. Saturday overnights are fine (delivered Saturday, picked up Monday).
+- Half day = morning (9am-1pm) or afternoon (3pm-7pm). Full day = 11am-7pm (we deliver by 11). Overnight = full day of use PLUS the night: 9am drop-off, 9am next-day pickup. Saturday overnights are fine (delivered Saturday, picked up Monday).
 - Need 24hr notice. Less than 24hr = rush booking Nehemiah must approve: take their info and say he'll text them right back. Book up to 6 months out.
 - Two Blue Crush Slides exist (two customers can each rent one same day).
 

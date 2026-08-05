@@ -205,7 +205,7 @@ router.post('/bookings/create', async (req, res) => {
     data.event_end_time = '23:59';
   }
 
-  const checkStart = data.event_start_time || '09:00';
+  const checkStart = data.event_start_time || '11:00';
   const checkEnd = data.event_end_time || '19:00';
 
   // ── Availability guard (pre-check, read-only) ────────────────────────────

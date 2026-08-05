@@ -206,9 +206,10 @@ function sundayPickupBlock(booking) {
   if (!sundayPickupApplies(booking && booking.event_date)) return '';
   return `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
 <tr><td style="font-size:13px;color:#333;background:#FDF1EA;border-left:4px solid ${ORANGE};border-radius:4px;padding:12px;">
-<strong>Sunday rental &mdash; we pick up Monday morning.</strong> Because your event is on a Sunday, the unit stays
-with you overnight at no extra charge and our crew collects it Monday morning. Please leave it set up and keep
-it accessible for pickup. Sunday rentals cannot be set up at a park or other public space.
+<strong>Sunday rental &mdash; Saturday evening drop-off, Monday morning pickup.</strong> Because your event is on a
+Sunday, we usually deliver the evening before and collect Monday morning &mdash; so you keep it overnight at no
+extra charge. Please leave it set up and keep it accessible for our Monday pickup. Sunday rentals cannot be set
+up at a park or other public space.
 </td></tr>
 </table>`;
 }
