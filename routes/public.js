@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
-const { formatRentalPeriod } = require('../lib/helpers');
+const { formatRentalPeriod, formatPhoneUS } = require('../lib/helpers');
 
 // Helper: get settings as object
 function getSettings() {
@@ -211,7 +211,9 @@ const contactRateMap = {};
 router.post('/contact', (req, res) => {
   const db = getDb();
   const { v4: uuid } = require('uuid');
-  const { name, email, phone, message, event_date, website_url, _ts, captcha, _captcha_answer } = req.body;
+  const { name, email, message, event_date, website_url, _ts, captcha, _captcha_answer } = req.body;
+  // Normalize here so the SMS opener, Slack card and email forward all agree.
+  const phone = formatPhoneUS(req.body.phone);
 
   // Spam check 0: CAPTCHA — math challenge
   if (!captcha || !_captcha_answer || String(captcha).trim() !== String(_captcha_answer).trim()) {

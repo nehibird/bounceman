@@ -662,7 +662,7 @@ async function sendHazardChecks() {
       continue;
     }
     try {
-      const msg = `Hi ${b.first_name}! This is Nehemiah with Bounce Man 🎉 We're getting ready for your rental on ${fmtDate(b.event_date)}. Quick safety question: we anchor our units with stakes driven about 24 inches into the ground. Are there any underground hazards in your setup area we should know about — sprinkler/irrigation lines, buried electrical/utility lines, septic, etc. — or anything buried less than 24 inches deep? If you're not sure, calling 811 (it's free) gets your lines marked. Just reply and let us know — thank you!`;
+      const msg = `Hi ${b.first_name}! This is Nehemiah with Bounce Man 🎉 We're getting ready for your rental on ${fmtDate(b.event_date)}. Quick safety question: we anchor our units with stakes driven about 24 inches into the ground. Are there any underground hazards in your setup area we should know about — sprinkler/irrigation lines, buried electrical/utility lines, septic, etc. — or anything buried less than 24 inches deep? Just reply and let us know — thank you!`;
       await smsService.sendSms(b.phone, msg);
       db.prepare("UPDATE bookings SET hazard_check_sent = 1, updated_at = datetime('now') WHERE id = ?").run(b.id);
       sent++;

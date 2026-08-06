@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE, formatPhoneUS } = require('../lib/helpers');
 const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
@@ -418,7 +418,9 @@ router.post('/submit', bookingLimiter, async (req, res) => {
   data.first_name = sanitize(data.first_name, 100);
   data.last_name = sanitize(data.last_name, 100);
   data.email = sanitize(data.email, 254);
-  data.phone = sanitize(data.phone, 20);
+  // Normalize before storing — the client formatter is one POST away from being
+  // bypassed, and a mangled number is invisible until a delivery text bounces.
+  data.phone = formatPhoneUS(sanitize(data.phone, 20));
   data.delivery_address = sanitize(data.delivery_address, 300);
   data.delivery_city = sanitize(data.delivery_city, 100);
   data.delivery_zip = sanitize(data.delivery_zip, 10);

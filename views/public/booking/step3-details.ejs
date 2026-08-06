@@ -264,6 +264,10 @@
   // Phone formatting
   document.querySelector('input[name="phone"]').addEventListener('input', function(e) {
     var val = e.target.value.replace(/\\D/g, '');
+    // Drop a leading +1 before formatting. Without this, someone typing their own number
+    // as 15806281767 got saved as "(158) 062-8176" — the first three digits were taken as
+    // the area code and everything shifted. Silent, and only discovered when a text bounced.
+    if (val.length === 11 && val.charAt(0) === '1') val = val.slice(1);
     if (val.length >= 6) {
       e.target.value = '(' + val.substring(0,3) + ') ' + val.substring(3,6) + '-' + val.substring(6,10);
     } else if (val.length >= 3) {

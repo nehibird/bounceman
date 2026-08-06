@@ -9,7 +9,7 @@
     "lint": "eslint routes/*.js lib/*.js server.js db.js --fix",
     "lint:check": "eslint routes/*.js lib/*.js server.js db.js",
     "test": "playwright test",
-    "test:all": "node tests/pricing-availability.test.js && node tests/regression-pre-pr.test.js && node tests/sunday-rules.test.js && playwright test",
+    "test:all": "node tests/pricing-availability.test.js && node tests/regression-pre-pr.test.js && node tests/sunday-rules.test.js && node tests/phone-format.test.js && playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed"
   },

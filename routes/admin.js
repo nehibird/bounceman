@@ -326,7 +326,7 @@ router.post('/bookings/create', async (req, res) => {
       const customerId = uuid();
       db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source)
         VALUES (?, ?, ?, ?, ?, 'admin')`).run(
-        customerId, data.first_name, data.last_name, data.email || null, data.phone || null
+        customerId, data.first_name, data.last_name, data.email || null, adminHelpers.formatPhoneUS(data.phone) || null
       );
       customer = { id: customerId };
     }
