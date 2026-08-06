@@ -15,8 +15,8 @@
     <div class="stat-card">
       <div class="d-flex justify-content-between align-items-start">
         <div>
-          <div class="stat-label">Total Spend</div>
-          <div class="stat-value">$${parseFloat(stats.totalSpend).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div class="stat-label">Ad Spend (${win.clamped ? 'since ' + win.since : days + 'd'})</div>
+          <div class="stat-value" id="statSpend"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
         </div>
         <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-dollar-sign"></i></div>
       </div>
@@ -27,7 +27,8 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="stat-label">Bookings from Ads</div>
-          <div class="stat-value">${stats.totalConversions}</div>
+          <div class="stat-value">${stats.paidBookings}</div>
+          <div class="text-muted small">of ${stats.totalBookings} total</div>
         </div>
         <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-calendar-check"></i></div>
       </div>
@@ -38,7 +39,7 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="stat-label">Cost per Booking</div>
-          <div class="stat-value">${stats.costPerBooking ? '$' + stats.costPerBooking : 'N/A'}</div>
+          <div class="stat-value" id="statCpb"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
         </div>
         <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-tag"></i></div>
       </div>
@@ -48,11 +49,65 @@
     <div class="stat-card">
       <div class="d-flex justify-content-between align-items-start">
         <div>
-          <div class="stat-label">ROI</div>
-          <div class="stat-value">N/A</div>
+          <div class="stat-label">ROAS</div>
+          <div class="stat-value" id="statRoas"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
+          <div class="text-muted small">$${parseFloat(stats.paidRevenue).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} attributed revenue</div>
         </div>
         <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-chart-line"></i></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Attribution: spend vs. bookings actually produced -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="fas fa-crosshairs me-2"></i>Attribution — what the spend actually produced</span>
+    <div class="btn-group btn-group-sm">
+      ${[7, 30, 90].map(d => `<a href="/admin/ads?days=${d}" class="btn btn-outline-secondary ${d === days ? 'active' : ''}">${d}d</a>`).join('')}
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 rtable">
+        <thead><tr><th>Channel</th><th class="text-end">Spend</th><th class="text-end">Clicks</th><th class="text-end">Bookings</th><th class="text-end">Revenue</th><th class="text-end">Cost / Booking</th><th class="text-end">ROAS</th></tr></thead>
+        <tbody id="attribBody">
+          <tr><td colspan="7" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-1"></i>Pulling live spend from Google and Meta...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${win.clamped ? `
+  <div class="alert alert-warning mb-0 rounded-0 small">
+    <i class="fas fa-circle-info me-1"></i>
+    Showing <strong>${win.since} to ${win.until}</strong>, not the full ${days} days.
+    Attribution only started ${attributionStart}, and spend is clamped to match — otherwise
+    ${days} days of spend would be compared against a few days of tracked bookings and every
+    channel would look worse than it is.
+  </div>` : ''}
+  <div class="card-footer small text-muted">
+    Bookings are attributed from a first-touch <code>bm_attrib</code> cookie (90 days) captured on the visitor's first page view.
+    Attribution started ${attributionStart} — bookings before that read <code>unknown_pre_tracking</code> and are excluded from every channel.
+  </div>
+</div>
+
+<!-- Every channel, paid or not -->
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-signs-post me-2"></i>All booking sources — ${win.since} to ${win.until}</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 rtable">
+        <thead><tr><th>Source</th><th class="text-end">Bookings</th><th class="text-end">Revenue</th></tr></thead>
+        <tbody>
+          ${sources.map(s => `
+          <tr>
+            <td class="rt-primary"><code>${s.src}</code></td>
+            <td class="text-end" data-label="Bookings">${s.bookings}</td>
+            <td class="text-end" data-label="Revenue">$${(s.revenue || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          </tr>`).join('')}
+          ${sources.length === 0 ? '<tr><td colspan="3" class="text-center text-muted py-3">No bookings in this window</td></tr>' : ''}
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -202,4 +257,62 @@ async function loadDashboardStatus() {
   } catch(e) { console.error('Dashboard status check failed', e); }
 }
 loadDashboardStatus();
+
+// NOTE: this block lives inside a JS template literal, so backtick strings and stray
+// dollar-braces get evaluated at render time instead of reaching the browser. The one
+// line below is the only deliberate interpolation; keep the rest on plain concatenation.
+var ATTRIB_DAYS = ${days};
+
+function money(n) {
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Channel names are ours, but the error string is raw text from Google or Meta and
+// goes into innerHTML. Escape it rather than trust a third party's error formatting.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+async function loadAttribution() {
+  var body = document.getElementById('attribBody');
+  try {
+    var r = await fetch('/admin/api/ads/attribution?days=' + ATTRIB_DAYS);
+    var d = await r.json();
+
+    var rows = '', totalSpend = 0, totalBookings = 0, totalRevenue = 0, haveSpend = false;
+    d.channels.forEach(function (c) {
+      if (c.spend !== null) { totalSpend += c.spend; haveSpend = true; }
+      totalBookings += c.bookings;
+      totalRevenue += c.revenue;
+      rows += '<tr>' +
+        '<td class="rt-primary"><strong>' + esc(c.channel) + '</strong>' +
+          (c.error ? '<div class="text-danger small"><i class="fas fa-triangle-exclamation me-1"></i>' + esc(c.error) + '</div>'
+                   : '<div class="text-muted small"><code>' + esc(c.source) + '</code></div>') + '</td>' +
+        '<td class="text-end" data-label="Spend">' + (c.spend === null ? '<span class="text-muted">—</span>' : money(c.spend)) + '</td>' +
+        '<td class="text-end" data-label="Clicks">' + (c.clicks === null ? '<span class="text-muted">—</span>' : c.clicks) + '</td>' +
+        '<td class="text-end" data-label="Bookings">' + c.bookings + '</td>' +
+        '<td class="text-end" data-label="Revenue">' + money(c.revenue) + '</td>' +
+        '<td class="text-end" data-label="Cost / Booking">' + (c.costPerBooking === null ? '<span class="text-muted">—</span>' : money(c.costPerBooking)) + '</td>' +
+        '<td class="text-end" data-label="ROAS">' +
+          (c.roas === null ? '<span class="text-muted">—</span>'
+            : '<span class="badge ' + (c.roas >= 1 ? 'bg-success' : 'bg-danger') + '">' + c.roas.toFixed(2) + 'x</span>') +
+        '</td></tr>';
+    });
+    body.innerHTML = rows;
+
+    document.getElementById('statSpend').textContent = haveSpend ? money(totalSpend) : 'N/A';
+    document.getElementById('statCpb').textContent =
+      haveSpend && totalBookings > 0 ? money(totalSpend / totalBookings) : 'N/A';
+    document.getElementById('statRoas').textContent =
+      haveSpend && totalSpend > 0 ? (totalRevenue / totalSpend).toFixed(2) + 'x' : 'N/A';
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-3">Could not load attribution: ' + esc(e.message) + '</td></tr>';
+    ['statSpend', 'statCpb', 'statRoas'].forEach(function (id) {
+      document.getElementById(id).textContent = 'N/A';
+    });
+  }
+}
+loadAttribution();
 </script>` }) %>

@@ -99,6 +99,28 @@ async function getCampaignPerformance(campaignId, dateRange = { since: null, unt
   };
 }
 
+/**
+ * Whole-account spend for a window, for the attribution report. Account level, not
+ * campaign level, so archived and paused campaigns that spent inside the window still
+ * count against the bookings tagged facebook_cpc.
+ *
+ * @param {string} since 'YYYY-MM-DD'
+ * @param {string} until 'YYYY-MM-DD'
+ */
+async function getAccountSpend(since, until) {
+  const data = await fbGet(`/${FB_AD_ACCOUNT}/insights`, {
+    fields: 'impressions,clicks,spend',
+    level: 'account',
+    time_range: JSON.stringify({ since, until }),
+  });
+  const r = (data.data || [])[0] || {};
+  return {
+    spend: parseFloat(r.spend || '0'),
+    clicks: parseInt(r.clicks || '0', 10),
+    impressions: parseInt(r.impressions || '0', 10),
+  };
+}
+
 async function createCampaign(data) {
   // 1. Create Campaign
   const campaign = await fbPost(`/${FB_AD_ACCOUNT}/campaigns`, {
@@ -219,4 +241,4 @@ async function sendPixelEvent(eventName, eventData = {}, userData = {}) {
   }
 })();
 
-module.exports = { isConnected, getTokenInfo, getTokenExpiry, getCampaigns, getCampaignPerformance, createCampaign, updateCampaignStatus, updateCampaignBudget, sendPixelEvent };
+module.exports = { isConnected, getTokenInfo, getTokenExpiry, getCampaigns, getCampaignPerformance, getAccountSpend, createCampaign, updateCampaignStatus, updateCampaignBudget, sendPixelEvent };

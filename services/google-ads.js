@@ -143,6 +143,30 @@ async function getCampaignPerformance(campaignId, dateRange = 'LAST_30_DAYS') {
   };
 }
 
+/**
+ * Whole-account spend for a window, for the attribution report. Campaign-level numbers
+ * are not enough there — the question is "what did Google cost us in total against the
+ * bookings tagged google_cpc", so this deliberately sums every campaign including
+ * paused and removed ones that spent during the window.
+ *
+ * @param {string} since 'YYYY-MM-DD'
+ * @param {string} until 'YYYY-MM-DD'
+ */
+async function getAccountSpend(since, until) {
+  const data = await adsRequest(`
+    SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
+    FROM customer
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+  `);
+  const m = (data.results || [])[0]?.metrics || {};
+  return {
+    spend: Number(m.costMicros || 0) / 1e6,
+    clicks: Number(m.clicks || 0),
+    impressions: Number(m.impressions || 0),
+    conversions: Number(m.conversions || 0),
+  };
+}
+
 async function createCampaign(data) {
   // Note: With a test developer token, campaign creation requires a test account.
   // This is a placeholder that returns a structured error when in test mode.
@@ -284,4 +308,4 @@ async function uploadClickConversion(gclid, bookingNumber, value, when) {
   return body;
 }
 
-module.exports = { getAuthUrl, handleCallback, getAccessToken, isConnected, getCampaigns, getCampaignPerformance, createCampaign, updateCampaignStatus, updateCampaignBudget, uploadClickConversion };
+module.exports = { getAuthUrl, handleCallback, getAccessToken, isConnected, getCampaigns, getCampaignPerformance, getAccountSpend, createCampaign, updateCampaignStatus, updateCampaignBudget, uploadClickConversion };

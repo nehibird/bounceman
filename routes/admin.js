@@ -1466,28 +1466,133 @@ router.get('/events/:id', requireAuth, (req, res) => {
 
 // ==================== AD MANAGEMENT ====================
 
+/**
+ * Which bookings each channel produced, over the last N days.
+ *
+ * This is the number that decides whether either platform keeps its budget. It reads
+ * `bookings.source`, written on every booking path since 2026-08-03 by
+ * middleware/attribution.js. Rows created before that carry 'unknown_pre_tracking' and
+ * are reported separately rather than being folded into a channel they'd flatter.
+ */
+function bookingsBySource(db, since) {
+  return db.prepare(`
+    SELECT ifnull(nullif(source, ''), 'unset') AS src,
+           COUNT(*)                 AS bookings,
+           ROUND(SUM(total), 2)     AS revenue
+    FROM bookings
+    WHERE date(created_at) >= ?
+      AND status != 'cancelled'
+    GROUP BY src
+    ORDER BY revenue DESC, bookings DESC
+  `).all(since);
+}
+
+/** Cutoff before which no booking has real attribution — see the migration. */
+const ATTRIBUTION_START = '2026-08-03';
+
+/**
+ * Resolve a requested lookback into the window we can honestly report on.
+ *
+ * Spend and bookings MUST cover the same days. Asking for 30 days a week after
+ * tracking went live would otherwise put 30 days of spend against 3 days of
+ * attributed bookings and make every channel look worthless. Clamp to the day
+ * attribution started and say so.
+ */
+function attributionWindow(days) {
+  const until = new Date();
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const requested = fmt(new Date(until.getTime() - days * 86400000));
+  const since = requested < ATTRIBUTION_START ? ATTRIBUTION_START : requested;
+  return { since, until: fmt(until), requested, clamped: since !== requested, days };
+}
+
 // GET /admin/ads — Main ad dashboard
 router.get('/ads', requireAdmin, (req, res) => {
   const db = getDb();
   const settings = getSettings();
 
   const campaigns = db.prepare('SELECT * FROM ad_campaigns ORDER BY created_at DESC').all();
-  const totalSpend = db.prepare('SELECT COALESCE(SUM(spend), 0) as s FROM ad_performance').get().s;
-  const totalConversions = db.prepare('SELECT COALESCE(SUM(conversions), 0) as c FROM ad_performance').get().c;
   const rules = db.prepare('SELECT * FROM ad_rules ORDER BY created_at ASC').all();
+
+  // ad_performance is only populated by the internal sync, which has never run — using
+  // it for the headline numbers showed $0.00 / 0 bookings on a page whose whole job is
+  // reporting spend. Live spend comes from the platforms via /api/ads/attribution;
+  // the booking side is local and renders immediately.
+  const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+  const win = attributionWindow(days);
+  const sources = bookingsBySource(db, win.since);
+  const paid = sources.filter(r => r.src === 'google_cpc' || r.src === 'facebook_cpc');
 
   res.render('admin/ads-dashboard', {
     title: 'Ad Management',
     settings,
     campaigns,
     rules,
+    days,
+    win,
+    sources,
+    attributionStart: ATTRIBUTION_START,
     stats: {
-      totalSpend: parseFloat(totalSpend).toFixed(2),
-      totalConversions,
-      costPerBooking: totalConversions > 0 ? (totalSpend / totalConversions).toFixed(2) : null
+      totalBookings: sources.reduce((a, r) => a + r.bookings, 0),
+      totalRevenue: sources.reduce((a, r) => a + (r.revenue || 0), 0).toFixed(2),
+      paidBookings: paid.reduce((a, r) => a + r.bookings, 0),
+      paidRevenue: paid.reduce((a, r) => a + (r.revenue || 0), 0).toFixed(2),
     },
     page: 'ads',
     user: req.user
+  });
+});
+
+/**
+ * GET /admin/api/ads/attribution?days=30
+ * Joins live platform spend to locally attributed bookings. Loaded asynchronously by
+ * the dashboard so a slow or broken ads API never blocks the page.
+ */
+router.get('/api/ads/attribution', requireAdmin, async (req, res) => {
+  const db = getDb();
+  const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+  const win = attributionWindow(days);
+
+  const sources = bookingsBySource(db, win.since);
+  const bySrc = Object.fromEntries(sources.map(r => [r.src, r]));
+
+  // Fire both platforms in parallel; either one failing must not lose the other.
+  const [google, facebook] = await Promise.all([
+    googleAds.getAccountSpend(win.since, win.until).catch(e => ({ error: e.message })),
+    facebookAds.getAccountSpend(win.since, win.until).catch(e => ({ error: e.message })),
+  ]);
+
+  const channel = (label, src, live) => {
+    const b = bySrc[src] || { bookings: 0, revenue: 0 };
+    const spend = live && !live.error ? live.spend : null;
+    return {
+      channel: label,
+      source: src,
+      spend: spend === null ? null : Number(spend.toFixed(2)),
+      clicks: live && !live.error ? live.clicks : null,
+      impressions: live && !live.error ? live.impressions : null,
+      bookings: b.bookings,
+      revenue: Number((b.revenue || 0).toFixed(2)),
+      // Null, not zero: "we spent money and got nothing" and "we know nothing" are
+      // different answers and must not render the same.
+      costPerBooking: spend !== null && b.bookings > 0 ? Number((spend / b.bookings).toFixed(2)) : null,
+      roas: spend ? Number(((b.revenue || 0) / spend).toFixed(2)) : null,
+      error: (live && live.error) || null,
+    };
+  };
+
+  res.json({
+    days,
+    since: win.since,
+    until: win.until,
+    requestedSince: win.requested,
+    clamped: win.clamped,
+    attributionStart: ATTRIBUTION_START,
+    channels: [
+      channel('Google Ads', 'google_cpc', google),
+      channel('Meta Ads', 'facebook_cpc', facebook),
+    ],
+    sources,
   });
 });
 
