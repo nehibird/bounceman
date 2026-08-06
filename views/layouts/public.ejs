@@ -682,9 +682,14 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 <!-- ===== Lead-capture coupon popup ($10 off -> text -> Sarah) ===== -->
 <div id="bml-root" style="display:none">
   <button class="bml-x" id="bml-x" type="button" aria-label="Close">&times;</button>
-  <div id="bml-teaser" class="bml-step">
-    <div class="bml-burst">$10<span>OFF</span></div>
-    <div class="bml-head">Your Bounce!</div>
+  <div id="bml-teaser">
+    <div class="bml-art">
+      <img src="/assets/images/popup-art-v1.webp" width="1020" height="1020" alt="Bounce houses, water slides and combos available from Bounce Man">
+      <div class="bml-artcopy">
+        <div class="bml-burst">$10<span>OFF</span></div>
+        <div class="bml-head">Your Bounce!</div>
+      </div>
+    </div>
     <p class="bml-sub">Book any bounce house, water slide, or combo and take $10 off.</p>
     <button class="bml-cta" id="bml-open" type="button">Click Here!</button>
   </div>
@@ -712,14 +717,30 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 <style>
 #bml-root{position:fixed;left:20px;bottom:20px;z-index:99999;width:340px;max-width:calc(100vw - 32px);background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;font-family:inherit;animation:bmlIn .4s cubic-bezier(.18,.89,.32,1.28)}
 @keyframes bmlIn{from{transform:translateY(40px) scale(.9);opacity:0}to{transform:none;opacity:1}}
-.bml-x{position:absolute;top:8px;right:10px;z-index:2;background:rgba(0,0,0,.15);color:#fff;border:none;width:28px;height:28px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer}
+.bml-x{position:absolute;top:8px;right:10px;z-index:3;background:rgba(0,0,0,.3);color:#fff;border:none;width:28px;height:28px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer}
 .bml-x:hover{background:rgba(0,0,0,.35)}
 .bml-step{padding:26px 22px 22px;text-align:center}
-#bml-teaser{background:linear-gradient(160deg,var(--bm-orange,#f68b1e),#e0740a);color:#fff}
-.bml-burst{font-weight:900;font-size:58px;line-height:.9;letter-spacing:-1px;text-shadow:0 3px 0 rgba(0,0,0,.15)}
-.bml-burst span{display:block;font-size:26px;letter-spacing:6px}
-.bml-head{font-weight:900;font-size:24px;margin-top:6px;text-transform:uppercase}
-.bml-sub{font-size:14px;margin:10px 4px 16px;opacity:.95;line-height:1.4}
+/* Teaser is white so the artwork's baked-in white background disappears into it -
+   the die-cut reads correctly without the source PNG needing an alpha channel. */
+#bml-teaser{background:#fff;color:#123a6b;text-align:center;padding:0 0 18px}
+.bml-art{position:relative;line-height:0;container-type:inline-size}
+.bml-art>img{width:100%;height:auto;display:block}
+/* Sits inside the artwork's own white copy panel. Measured off the source at
+   x 16.0% / y 64.8% / 68.3% wide / 30.9% tall - keep these in sync if the art changes. */
+.bml-artcopy{position:absolute;left:16%;top:64.8%;width:68.3%;height:30.9%;padding:0 2%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+/* px first as the fallback, then cqw so the copy tracks the panel when the popup
+   goes full-width on mobile. Plain px would under-size it at wider viewports. */
+.bml-burst{font-weight:900;letter-spacing:-1px;color:#e8622a;line-height:.86;font-size:40px;font-size:11.8cqw}
+.bml-burst span{display:block;font-weight:900;color:#123a6b;letter-spacing:5px;margin-top:2px;font-size:17px;font-size:5cqw}
+.bml-head{font-weight:800;text-transform:uppercase;color:#123a6b;letter-spacing:.5px;margin-top:5px;font-size:14px;font-size:4.1cqw}
+.bml-sub{font-size:13.5px;color:#4a5b6b;margin:12px 20px 14px;line-height:1.4}
+/* --bm-blue is the brand NAVY (#1a212d). That read as an intentional dark button on the
+   old orange teaser, but against this artwork it's a black slab. Match the blue of the
+   panel border in the artwork instead (sampled: #0948c2). Teaser only - the form's
+   submit button keeps the site default. */
+#bml-teaser .bml-cta{background:#0948c2}
+#bml-teaser .bml-cta:hover{background:#0a52dd}
 .bml-cta{display:inline-block;background:var(--bm-blue,#1a73c7);color:#fff;font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.5px;border:none;border-radius:999px;padding:13px 30px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.18);transition:transform .1s}
 .bml-cta:hover{transform:translateY(-1px)}
 .bml-cta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
@@ -734,7 +755,7 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 .bml-err{color:#c0392b;font-size:13px;margin:10px 0 0;display:none}
 .bml-fine{font-size:9.5px;color:#aaa;line-height:1.4;margin:12px 2px 0;text-align:left}
 .bml-tick{width:56px;height:56px;margin:4px auto 10px;border-radius:50%;background:#2ecc71;color:#fff;font-size:32px;line-height:56px;font-weight:900}
-@media(max-width:520px){#bml-root{left:12px;right:12px;bottom:12px;width:auto}.bml-burst{font-size:52px}}
+@media(max-width:520px){#bml-root{left:12px;right:12px;bottom:12px;width:auto}}
 </style>
 <% if (typeof TURNSTILE_SITE_KEY !== 'undefined' && TURNSTILE_SITE_KEY) { %>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
