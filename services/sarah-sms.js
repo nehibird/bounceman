@@ -24,6 +24,50 @@ const STOP_PHRASES = [
 ];
 const HELP_WORDS = ['help', 'info', 'support'];
 
+// --- Things that arrive as a text but are not a message to answer ---------------
+//
+// TAPBACKS. When someone taps "Love" on an iMessage and the thread is SMS, the phone
+// sends the reaction to us as a plain text: Loved "Perfect! Thanks for letting us know…".
+// Sarah read one of those as a fresh customer message and replied to it — commenting on
+// the tone of her own text, in the third person, to the customer. RCS does the same with
+// Reacted 😂 to "…". A reaction is an acknowledgement; the correct response is nothing.
+const REACTION_PATTERNS = [
+  /^(loved|liked|disliked|laughed at|emphasi[sz]ed|questioned)\s+["“”]/i,
+  /^reacted\s+.{1,12}?\s+to\s+["“”]/i,          // Android/RCS: Reacted 👍 to "…"
+  /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s+to\s+["“”]/u, // bare-emoji variant
+];
+function isReaction(body) {
+  const t = String(body || '').trim();
+  return REACTION_PATTERNS.some((re) => re.test(t));
+}
+
+// CONVERSATION CLOSERS. "Thank you" is the end of a conversation, not a prompt. Sarah
+// answered one with "You bet! Looking forward to making Saturday awesome for you!" —
+// a text nobody needed, that costs money to send and gives the customer one more thing
+// to ignore. Only fires when the WHOLE message is a courtesy: anything with a question
+// mark, or any extra words, falls through to the model as normal.
+const CLOSERS = new Set([
+  'thanks', 'thank you', 'thankyou', 'thx', 'ty', 'thanks so much', 'thank you so much',
+  'thanks a lot', 'thanks again', 'thank you again', 'much appreciated', 'appreciate it',
+  'appreciated', 'ok', 'okay', 'okey', 'k', 'kk', 'got it', 'sounds good', 'perfect',
+  'great', 'awesome', 'cool', 'yep', 'yup', 'sure thing', 'will do', 'see you then',
+  'see you saturday', 'no problem', 'np', 'youre welcome', 'yw',
+]);
+function isConversationCloser(body) {
+  const t = String(body || '').trim();
+  if (!t || t.includes('?')) return false;
+  // Strip emoji and punctuation, collapse whitespace — "Thank you!! 🎉" -> "thank you"
+  const bare = t
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2764}]/gu, ' ')
+    .replace(/[^\p{L}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!bare) return true;              // emoji-only, e.g. a lone 👍
+  if (bare.split(' ').length > 4) return false;
+  return CLOSERS.has(bare);
+}
+
 // Toll-free area codes. No parent in Kay County books a bounce house from an 800
 // number — these are call centres and cold-outreach shops. A website-sales pitch
 // came in from an 866 line and Sarah, doing exactly what her prompt says, replied
@@ -251,6 +295,16 @@ async function handleInboundSms(from, body) {
       } catch (e) { /* notification is best-effort */ }
       return;
     }
+    // A tapback is not a message. Never reply to one.
+    if (isReaction(body)) {
+      console.log('[SARAH-SMS] reaction/tapback, not replying:', number, '-', String(body || '').slice(0, 70));
+      return;
+    }
+    // "Thanks" ends a conversation. Answering it starts a new one nobody asked for.
+    if (isConversationCloser(body)) {
+      console.log('[SARAH-SMS] conversation closer, not replying:', number, '-', String(body || '').slice(0, 70));
+      return;
+    }
     const clean = (body || '').trim().toLowerCase().replace(/[^a-z]/g, '');
     const raw = String(body || '');
     // Opt-out has to short-circuit BEFORE the model call. Single words were already
@@ -365,4 +419,6 @@ async function actOnSuggestion(id, act, actedBy) {
 }
 
 
-module.exports = { handleInboundSms, generateReply, buildSystemPrompt, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };
+module.exports = {
+  isReaction,
+  isConversationCloser, handleInboundSms, generateReply, buildSystemPrompt, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };
