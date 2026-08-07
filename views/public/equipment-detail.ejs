@@ -85,21 +85,71 @@ ${(function() {
       <!-- Left Column: Image Gallery -->
       <div class="col-lg-7">
         <div class="bg-white rounded-4 overflow-hidden shadow-sm">
+          ${(function() {
+            // Media strip = photos with the video spliced in at item.video_sort_order
+            // (1-based slot; default 2 = hero photo first, then the video).
+            // .webm and -poster.jpg are derived from the .mp4 basename — see
+            // migrations/2026-08-07-equipment-video.sql
+            var altFor = function(img, i) {
+              return img.image_path.includes('rules-card')
+                ? 'What we need on delivery day: power within 50 ft, flat grass or hard surface, an adult supervising, and a flat $50 deposit — delivery, setup and takedown included'
+                : item.name + ' photo ' + (i + 1);
+            };
+            var ordered = images.slice().sort(function(a, b) {
+              return (a.sort_order || 0) - (b.sort_order || 0);
+            });
+            var media = ordered.map(function(img, i) {
+              return { type: 'image', src: img.image_path, alt: altFor(img, i) };
+            });
+            if (item.video_path) {
+              var base = item.video_path.replace(/\.mp4$/, '');
+              var slot = Math.max(0, Math.min(media.length, (item.video_sort_order || 2) - 1));
+              media.splice(slot, 0, {
+                type: 'video',
+                src: item.video_path,
+                webm: base + '.webm',
+                poster: base + '-poster.jpg',
+                alt: item.name + ' video'
+              });
+            }
+            var firstImage = media.filter(function(m) { return m.type === 'image'; })[0];
+            var objectFit = (item.category === 'add_ons' || item.category === 'add-ons')
+              ? 'contain;background:#f8f9fa;padding:30px' : 'cover';
+            var video = media.filter(function(m) { return m.type === 'video'; })[0];
+
+            return `
           <div id="mainImageWrap" style="position:relative;width:100%;padding-top:66%;overflow:hidden;background:#f0f0f0">
             <img id="mainImage"
-              src="${images.length > 0 ? images.find(i => i.is_primary)?.image_path || images[0].image_path : '/assets/images/placeholder-bounce.svg'}"
-              alt="${item.name}"
-              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${(item.category === 'add_ons' || item.category === 'add-ons') ? 'contain;background:#f8f9fa;padding:30px' : 'cover'}">
+              src="${firstImage ? firstImage.src : '/assets/images/placeholder-bounce.svg'}"
+              alt="${firstImage ? firstImage.alt : item.name}"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${objectFit}">
+            ${video ? `
+            <video id="mainVideo" muted loop playsinline preload="none" poster="${video.poster}"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;background:#000;display:none">
+              <source src="${video.webm}" type="video/webm">
+              <source src="${video.src}" type="video/mp4">
+            </video>
+            ` : ''}
           </div>
-          ${images.length > 1 ? `
+          ${media.length > 1 ? `
           <div class="d-flex gap-2 p-3 flex-wrap" id="thumbRow">
-            ${images.map((img, i) => `
-              <img src="${img.image_path}" alt="${img.image_path.includes('rules-card') ? 'What we need on delivery day: power within 50 ft, flat grass or hard surface, an adult supervising, and a flat $50 deposit — delivery, setup and takedown included' : item.name + ' photo ' + (i + 1)}"
-                class="img-thumb" data-src="${img.image_path}"
-                style="width:80px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${img.is_primary ? 'var(--bm-orange)' : 'transparent'};opacity:${img.is_primary ? '1' : '0.6'};transition:all 0.2s">
+            ${media.map((m, i) => m.type === 'video' ? `
+              <div class="img-thumb" data-type="video" role="button" tabindex="0" aria-label="${m.alt}"
+                style="position:relative;width:80px;height:60px;border-radius:8px;cursor:pointer;border:3px solid transparent;opacity:0.6;transition:all 0.2s;background-image:url('${m.poster}');background-size:cover;background-position:center">
+                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+                  <span style="width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center">
+                    <i class="fas fa-play" style="color:#fff;font-size:9px;margin-left:2px"></i>
+                  </span>
+                </span>
+              </div>
+            ` : `
+              <img src="${m.src}" alt="${m.alt}"
+                class="img-thumb" data-type="image" data-src="${m.src}"
+                style="width:80px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${i === 0 ? 'var(--bm-orange)' : 'transparent'};opacity:${i === 0 ? '1' : '0.6'};transition:all 0.2s">
             `).join('')}
           </div>
-          ` : ''}
+          ` : ''}`;
+          })()}
         </div>
       </div>
 
@@ -245,21 +295,39 @@ ${(function() {
 
 `, scripts: `
 <script>
-  // Image gallery switching
-  document.querySelectorAll('.img-thumb').forEach(function(thumb) {
-    thumb.addEventListener('click', function() {
-      var src = this.getAttribute('data-src');
-      var main = document.getElementById('mainImage');
-      main.src = src;
-      main.alt = this.alt;
-      document.querySelectorAll('.img-thumb').forEach(function(t) {
+  // Media gallery switching — photos and (optionally) one video.
+  // The video only loads when its thumbnail is picked (preload="none"), so the
+  // page never pays for it unless someone asks.
+  (function() {
+    var thumbs = document.querySelectorAll('.img-thumb');
+    function select(thumb) {
+      var mainImage = document.getElementById('mainImage');
+      var mainVideo = document.getElementById('mainVideo');
+      if (thumb.getAttribute('data-type') === 'video' && mainVideo) {
+        mainImage.style.display = 'none';
+        mainVideo.style.display = 'block';
+        var playing = mainVideo.play();
+        if (playing && playing.catch) { playing.catch(function() {}); }
+      } else {
+        if (mainVideo) { mainVideo.pause(); mainVideo.style.display = 'none'; }
+        mainImage.style.display = 'block';
+        mainImage.src = thumb.getAttribute('data-src');
+        mainImage.alt = thumb.getAttribute('alt') || '';
+      }
+      thumbs.forEach(function(t) {
         t.style.border = '3px solid transparent';
         t.style.opacity = '0.6';
       });
-      this.style.border = '3px solid var(--bm-orange)';
-      this.style.opacity = '1';
+      thumb.style.border = '3px solid var(--bm-orange)';
+      thumb.style.opacity = '1';
+    }
+    thumbs.forEach(function(thumb) {
+      thumb.addEventListener('click', function() { select(this); });
+      thumb.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(this); }
+      });
     });
-  });
+  })();
 </script>
 <script>if(typeof fbq!=='undefined')fbq('track','ViewContent',{content_name:'Equipment Detail',content_type:'product'});</script>
 ` }) %>
