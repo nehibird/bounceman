@@ -684,14 +684,13 @@ document.getElementById("toast-container").addEventListener("click", function(e)
   <button class="bml-x" id="bml-x" type="button" aria-label="Close">&times;</button>
   <div id="bml-teaser">
     <div class="bml-art">
-      <img src="/assets/images/popup-art-v1.webp" width="1020" height="1020" alt="Bounce houses, water slides and combos available from Bounce Man">
+      <img src="/assets/images/popup-art-v2.webp" width="680" height="1020" alt="Bounce houses, water slides and combos available from Bounce Man">
       <div class="bml-artcopy">
         <div class="bml-burst">$10<span>OFF</span></div>
-        <div class="bml-head">Your Bounce!</div>
+        <p class="bml-psub">Any bounce house, water slide or combo</p>
+        <button class="bml-cta" id="bml-open" type="button">Click Here!</button>
       </div>
     </div>
-    <p class="bml-sub">Book any bounce house, water slide, or combo and take $10 off.</p>
-    <button class="bml-cta" id="bml-open" type="button">Click Here!</button>
   </div>
   <div id="bml-form" class="bml-step" style="display:none">
     <h3 class="bml-fh">Enter your info to get your $10 code</h3>
@@ -715,35 +714,40 @@ document.getElementById("toast-container").addEventListener("click", function(e)
   </div>
 </div>
 <style>
-#bml-root{position:fixed;left:20px;bottom:20px;z-index:99999;width:340px;max-width:calc(100vw - 32px);background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;font-family:inherit;animation:bmlIn .4s cubic-bezier(.18,.89,.32,1.28)}
+/* The teaser IS the die-cut - no card behind it. Steps 2 and 3 are a form and a
+   confirmation, which cannot live on a silhouette, so the shell becomes a real white
+   card the moment the form opens (.bml-boxed, added in showForm). */
+#bml-root{position:fixed;left:20px;bottom:20px;z-index:99999;width:340px;max-width:calc(100vw - 32px);background:none;border-radius:0;box-shadow:none;overflow:visible;font-family:inherit;animation:bmlIn .4s cubic-bezier(.18,.89,.32,1.28)}
+#bml-root.bml-boxed{background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden}
 @keyframes bmlIn{from{transform:translateY(40px) scale(.9);opacity:0}to{transform:none;opacity:1}}
-.bml-x{position:absolute;top:8px;right:10px;z-index:3;background:rgba(0,0,0,.3);color:#fff;border:none;width:28px;height:28px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer}
+.bml-x{position:absolute;top:5.5%;right:7%;z-index:3;background:rgba(15,30,60,.62);color:#fff;border:none;width:26px;height:26px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer}
+#bml-root.bml-boxed .bml-x{top:8px;right:10px;width:28px;height:28px;font-size:20px;background:rgba(0,0,0,.3)}
 .bml-x:hover{background:rgba(0,0,0,.35)}
 .bml-step{padding:26px 22px 22px;text-align:center}
-/* Teaser is white so the artwork's baked-in white background disappears into it -
-   the die-cut reads correctly without the source PNG needing an alpha channel. */
-#bml-teaser{background:#fff;color:#123a6b;text-align:center;padding:0 0 18px}
+/* Artwork carries its own white copy panel, so the teaser itself is just the image. */
+#bml-teaser{padding:0;text-align:center}
 .bml-art{position:relative;line-height:0;container-type:inline-size}
-.bml-art>img{width:100%;height:auto;display:block}
-/* Sits inside the artwork's own white copy panel. Measured off the source at
-   x 16.0% / y 64.8% / 68.3% wide / 30.9% tall - keep these in sync if the art changes. */
-.bml-artcopy{position:absolute;left:16%;top:64.8%;width:68.3%;height:30.9%;padding:0 2%;
+/* box-shadow would draw a rectangle's shadow; drop-shadow follows the die-cut. */
+.bml-art>img{width:100%;height:auto;display:block;filter:drop-shadow(0 10px 18px rgba(0,0,0,.38)) drop-shadow(0 2px 4px rgba(0,0,0,.2))}
+/* Panel measured off popup-art-v2: x 11.62% / y 53.91% / 76.46% wide / 30.60% tall.
+   Keep in sync if the artwork changes. */
+.bml-artcopy{position:absolute;left:11.62%;top:53.91%;width:76.46%;height:30.60%;padding:0 5%;box-sizing:border-box;
   display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
-/* px first as the fallback, then cqw so the copy tracks the panel when the popup
-   goes full-width on mobile. Plain px would under-size it at wider viewports. */
-.bml-burst{font-weight:900;letter-spacing:-1px;color:#e8622a;line-height:.86;font-size:40px;font-size:11.8cqw}
-.bml-burst span{display:block;font-weight:900;color:#123a6b;letter-spacing:5px;margin-top:2px;font-size:17px;font-size:5cqw}
-.bml-head{font-weight:800;text-transform:uppercase;color:#123a6b;letter-spacing:.5px;margin-top:5px;font-size:14px;font-size:4.1cqw}
-.bml-sub{font-size:13.5px;color:#4a5b6b;margin:12px 20px 14px;line-height:1.4}
-/* --bm-blue is the brand NAVY (#1a212d). That read as an intentional dark button on the
-   old orange teaser, but against this artwork it's a black slab. Match the blue of the
-   panel border in the artwork instead (sampled: #0948c2). Teaser only - the form's
-   submit button keeps the site default. */
-#bml-teaser .bml-cta{background:#0948c2}
-#bml-teaser .bml-cta:hover{background:#0a52dd}
+/* px first as the fallback, then cqw so the copy tracks the panel when the popup goes
+   full-width on mobile. Fixed px under-sizes it there. */
+.bml-burst{font-weight:900;color:#e8622a;letter-spacing:-1px;line-height:.85;font-size:34px;font-size:10cqw}
+.bml-burst span{display:block;color:#123a6b;letter-spacing:4px;margin-top:1px;font-size:14px;font-size:4.1cqw}
+.bml-psub{color:#41536b;font-weight:600;margin:5px 0 0;line-height:1.25;font-size:10.5px;font-size:3.05cqw}
 .bml-cta{display:inline-block;background:var(--bm-blue,#1a73c7);color:#fff;font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.5px;border:none;border-radius:999px;padding:13px 30px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.18);transition:transform .1s}
 .bml-cta:hover{transform:translateY(-1px)}
 .bml-cta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
+/* --bm-blue is the brand NAVY (#1a212d) and reads as a black slab here, so the teaser's
+   button takes the blue of the artwork's own panel border. Sized in cqw to fit the panel.
+   The form's submit button keeps the site default. */
+#bml-teaser .bml-cta{background:#0948c2;margin-top:7px;padding:9px 22px;padding:2.6cqw 6.5cqw;font-size:13px;font-size:3.9cqw;box-shadow:0 3px 0 rgba(0,0,0,.22)}
+#bml-teaser .bml-cta:hover{background:#0a52dd}
+/* Only step 3's confirmation copy uses this now - the teaser's sub is .bml-psub. */
+.bml-sub{font-size:13.5px;color:#4a5b6b;margin:10px 4px 4px;line-height:1.4}
 .bml-fh{font-weight:800;font-size:18px;color:#222;margin:2px 6px 14px}
 .bml-in{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:12px 14px;border:1.5px solid #e0e0e0;border-radius:12px;font-size:15px;background:#f7f7f8}
 .bml-in:focus{outline:none;border-color:var(--bm-orange,#f68b1e);background:#fff}
@@ -783,7 +787,7 @@ document.getElementById("toast-container").addEventListener("click", function(e)
       'error-callback': function(){ tsToken=''; }
     });
   }
-  function showForm(){ document.getElementById('bml-teaser').style.display='none'; document.getElementById('bml-form').style.display='block'; document.getElementById('bml-ts').value=Date.now(); renderTurnstile(0); }
+  function showForm(){ root.classList.add('bml-boxed'); document.getElementById('bml-teaser').style.display='none'; document.getElementById('bml-form').style.display='block'; document.getElementById('bml-ts').value=Date.now(); renderTurnstile(0); }
   function open(){ if(opened||seen()) return; opened=true; root.style.display='block'; }
   document.getElementById('bml-x').addEventListener('click', closePopup);
   document.getElementById('bml-open').addEventListener('click', showForm);
