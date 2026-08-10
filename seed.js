@@ -109,7 +109,8 @@ const extraSettings = {
   company_email: 'info@bouncemanrentals.com',
   company_phone: '(580) 308-9288',
   company_address: 'Tonkawa, OK 74653',
-  tax_rate: '0.1025', // NOTE: pricing is now per-delivery-city via getTaxRate(); this setting is informational only
+  // tax_rate removed: pricing is per-delivery-city via getTaxRate(). A single global
+  // rate is wrong for every city except Tonkawa and invites accidental reuse.
   deposit_percent: '25',
   damage_waiver_fee: '15',
   cancellation_hours: '48',

@@ -65,8 +65,14 @@
           <h6 class="text-muted mb-3">Pricing & Policies</h6>
           <div class="row g-3 mb-4">
             <div class="col-md-3">
-              <label class="form-label">Tax Rate (%)</label>
-              <input type="number" name="tax_rate" class="form-control" step="0.01" value="${settings.tax_rate || ''}">
+              <label class="form-label">Sales Tax</label>
+              <div class="form-control-plaintext small text-muted">
+                Per delivery city &mdash; <a href="/admin/reports">see the OkTAP worksheet</a>
+              </div>
+              <div class="form-text" style="font-size:11px">
+                Tonkawa 10.25% &middot; Ponca City 9.583% &middot; Blackwell 10.75% &middot; Newkirk 9.75%.
+                Rates come from the OTC chart, not a setting.
+              </div>
             </div>
             <div class="col-md-3">
               <label class="form-label">Deposit (%)</label>

@@ -447,13 +447,17 @@ function initialize() {
   `);
 
   // Seed default settings
+  // settings.tax_rate is deliberately NOT seeded. Sales tax is resolved per delivery
+  // city by getTaxRate(); a single global rate has been wrong since we started
+  // delivering outside Tonkawa. It was seeded at 0.085 and later 0.1025, and two early
+  // bookings were charged the stale value. Drop it so nothing can pick it back up.
+  try { d.prepare("DELETE FROM settings WHERE key = 'tax_rate'").run(); } catch (e) { /* fresh db */ }
   const insertSetting = d.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   const defaults = {
     'company_name': 'Bounce Man LLC',
     'company_email': 'nehi@birdherd.media',
     'company_phone': '',
     'company_address': '113 North Barrick Way, Tonkawa, OK 74653',
-    'tax_rate': '0.1025',
     'booking_lead_hours': '24',
     'max_booking_days_out': '180',
     'delivery_radius_miles': '50',
