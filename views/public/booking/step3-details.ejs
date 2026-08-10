@@ -17,6 +17,39 @@
   .form-control:focus, .form-select:focus { border-color: var(--bm-orange); box-shadow: 0 0 0 3px rgba(255,107,53,0.1); }
   .form-label { font-weight: 600; color: #555; }
   .delivery-note { background: #fff3cd; border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+
+  /* Wet/Dry chooser — mirrors step 2 so the question looks the same wherever it is
+     asked (amber = dry, blue = wet). Needed here because Sarah's texted links land
+     straight on this page and skip step 2 entirely. */
+  .wd-unit { margin-bottom: 18px; }
+  .wd-unit:last-child { margin-bottom: 0; }
+  .wd-q { font-size: 14.5px; font-weight: 700; color: #1c2733; margin-bottom: 11px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .wd-req { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #b9521f; background: #fdecdf; border: 1px solid #f6cda9; padding: 3px 9px; border-radius: 20px; }
+  .wd-req.wd-chosen { color: #1f7a3d; background: #e4f6ea; border-color: #bce5c9; }
+  .wd-req.wd-flash { animation: wdflash 0.55s ease; }
+  @keyframes wdflash { 0%,100%{ transform: scale(1); } 35%{ transform: scale(1.12); color:#fff; background:#e0492f; border-color:#e0492f; } }
+  .wd-row { display: flex; gap: 12px; }
+  .wd-btn {
+    flex: 1; display: flex; align-items: center; gap: 11px;
+    padding: 12px 13px; border-radius: 13px; cursor: pointer;
+    border: 2px solid #e3e7ec; background: #f7f9fb; text-align: left;
+    transition: all 0.18s;
+  }
+  .wd-btn:hover { border-color: #cfd6de; }
+  .wd-ic { width: 38px; height: 38px; min-width: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; font-size: 16px; }
+  .wd-t { font-size: 15.5px; font-weight: 700; color: #1c2733; line-height: 1.1; }
+  .wd-s { font-size: 12px; color: #6b7480; margin-top: 2px; }
+  .wd-btn[data-mode="dry"] .wd-ic i { color: #F39C12; }
+  .wd-btn[data-mode="wet"] .wd-ic i { color: #1C8FE0; }
+  .wd-btn[data-mode="dry"].wd-active { background: linear-gradient(135deg,#FBB034,#F39C12); border-color: #F39C12; box-shadow: 0 6px 16px rgba(243,156,18,.32); }
+  .wd-btn[data-mode="wet"].wd-active { background: linear-gradient(135deg,#27A9E5,#0E6BB8); border-color: #0E6BB8; box-shadow: 0 6px 16px rgba(14,107,184,.32); }
+  .wd-btn.wd-active .wd-ic { background: rgba(255,255,255,.25); }
+  .wd-btn.wd-active .wd-ic i { color: #fff; }
+  .wd-btn.wd-active .wd-t { color: #fff; }
+  .wd-btn.wd-active .wd-s { color: rgba(255,255,255,.92); }
+  .wd-btn.wd-disabled { opacity: .5; cursor: not-allowed; background: #f1f3f5; }
+  .wd-btn.wd-disabled:hover { border-color: #e3e7ec; }
+  .wd-why { font-size: 12px; color: #b9521f; margin-top: 8px; }
 </style>
 
 <section class="py-5">
@@ -63,6 +96,12 @@
 
       <div class="row justify-content-center">
         <div class="col-lg-8">
+
+          <!-- Wet or Dry. Built client-side from WD_UNITS below: this whole file is a
+               single EJS tag wrapping a JS template literal, so EJS tags cannot be used
+               here (they close the outer tag). Only rendered when the cart holds a
+               water-capable unit. -->
+          <div id="wetDryMount"></div>
 
           <!-- Customer Information -->
           <div class="details-card">
@@ -230,8 +269,96 @@
 
 `, scripts: `
 <script>
+  var WD_UNITS = ${ typeof cartUnits !== 'undefined' && cartUnits ? JSON.stringify(cartUnits).replace(/</g, '\\u003c') : '[]' };
+
+  // --- Wet/dry chooser ------------------------------------------------------
+  // Server-supplied cart, injected through the surrounding template literal
+  // (EJS tags cannot appear inside it). Each entry: {id, name, wetCapable, dryBlocked}.
+  // wdChoice[equipmentId] = true (wet) / false (dry). A wet-capable unit absent
+  // from this map has not been answered yet and blocks submit.
+  var wdChoice = {};
+
+  function wdEsc(t) {
+    return String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Render the card. Only water-capable units ask; add-ons and dry-only units skip it.
+  function wdRender() {
+    var mount = document.getElementById('wetDryMount');
+    if (!mount) return;
+    var units = WD_UNITS.filter(function(u) { return u.wetCapable; });
+    if (!units.length) return;
+
+    var html = '<div class="details-card" id="wetDryCard">' +
+      '<h5><i class="fas fa-tint me-2"></i>Wet or Dry?</h5>';
+    units.forEach(function(u) {
+      var id = wdEsc(u.id);
+      html += '<div class="wd-unit" data-unit-id="' + id + '" data-dry-blocked="' + (u.dryBlocked ? '1' : '0') + '">' +
+        '<div class="wd-q"><span>' + wdEsc(u.name) + '</span>' +
+        '<span class="wd-req" id="wdreq-' + id + '">Choose one</span></div>' +
+        '<div class="wd-row">' +
+          '<div class="wd-btn' + (u.dryBlocked ? ' wd-disabled' : '') + '" data-mode="dry" data-unit="' + id + '" id="wd-dry-' + id + '">' +
+            '<div class="wd-ic"><i class="fas fa-sun"></i></div>' +
+            '<div><div class="wd-t">Dry</div><div class="wd-s">No water — same price</div></div>' +
+          '</div>' +
+          '<div class="wd-btn" data-mode="wet" data-unit="' + id + '" id="wd-wet-' + id + '">' +
+            '<div class="wd-ic"><i class="fas fa-tint"></i></div>' +
+            '<div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide — same price</div></div>' +
+          '</div>' +
+        '</div>' +
+        (u.dryBlocked
+          ? '<div class="wd-why"><i class="fas fa-circle-info me-1"></i>This unit is booked wet shortly before your rental and needs time to dry, so dry is not available on this date. Wet is — or call (580) 308-9288 about another date.</div>'
+          : '') +
+      '</div>';
+    });
+    html += '</div>';
+    mount.innerHTML = html;
+  }
+
+  function wdUnitEls() {
+    return Array.prototype.slice.call(document.querySelectorAll('.wd-unit'));
+  }
+
+  function wdUnanswered() {
+    return wdUnitEls().filter(function(el) {
+      return typeof wdChoice[el.dataset.unitId] === 'undefined';
+    });
+  }
+
+  function wdSyncHidden() {
+    var wetIds = Object.keys(wdChoice).filter(function(id) { return wdChoice[id]; });
+    document.getElementById('hiddenWetItems').value = wetIds.join(',');
+    var wrap = document.getElementById('waterCheckWrap');
+    if (wrap) { wrap.style.display = wetIds.length > 0 ? '' : 'none'; }
+  }
+
+  function wdSet(unitId, isWet) {
+    var el = document.querySelector('.wd-unit[data-unit-id="' + unitId + '"]');
+    if (!el) return;
+    // Dry can be unavailable when the unit is out wet shortly beforehand.
+    if (!isWet && el.dataset.dryBlocked === '1') return;
+    wdChoice[unitId] = isWet;
+    var dryBtn = document.getElementById('wd-dry-' + unitId);
+    var wetBtn = document.getElementById('wd-wet-' + unitId);
+    if (dryBtn) { dryBtn.classList.toggle('wd-active', !isWet); }
+    if (wetBtn) { wetBtn.classList.toggle('wd-active', isWet); }
+    var req = document.getElementById('wdreq-' + unitId);
+    if (req) { req.textContent = isWet ? 'Wet' : 'Dry'; req.classList.add('wd-chosen'); }
+    wdSyncHidden();
+  }
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target && e.target.closest ? e.target.closest('.wd-btn') : null;
+    if (!btn || btn.classList.contains('wd-disabled')) return;
+    wdSet(btn.getAttribute('data-unit'), btn.getAttribute('data-mode') === 'wet');
+  });
+
   // Pull query params from previous step and populate hidden fields
   (function() {
+    // Build the wet/dry card first so the init below can see and pre-select it.
+    wdRender();
     var params = new URLSearchParams(window.location.search);
     var items = params.get('items') || '';
     var date = params.get('event_date') || '';
@@ -246,20 +373,35 @@
     document.getElementById('hiddenDuration').value = duration;
 
     var wetItems = params.get('wet_items') || '';
-    document.getElementById('hiddenWetItems').value = wetItems;
 
     // Carry the multi-day count forward so checkout charges/blocks the full rental
     document.getElementById('hiddenDays').value = params.get('rental_days') || '1';
     document.getElementById('hiddenEndDate').value = params.get('event_end_date') || date;
 
-    // Show water checkbox if any wet items selected
-    if (wetItems && wetItems.length > 0) {
-      document.getElementById('waterCheckWrap').style.display = '';
+    if (document.getElementById('wetDryCard')) {
+      // The chooser is on the page, so it owns wet_items from here on.
+      // wd=1 means step 2 already asked and the URL carries a real customer answer,
+      // so pre-select it. Sarah's texted links carry no wd flag — leave those blank
+      // so the customer is actually asked instead of inheriting a guess.
+      var preWet = wetItems.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      if (params.get('wd') === '1') {
+        wdUnitEls().forEach(function(el) {
+          wdSet(el.dataset.unitId, preWet.indexOf(el.dataset.unitId) !== -1);
+        });
+      }
+      wdSyncHidden();
+    } else {
+      // No water-capable units — preserve the old passthrough behaviour exactly.
+      document.getElementById('hiddenWetItems').value = wetItems;
+      if (wetItems && wetItems.length > 0) {
+        document.getElementById('waterCheckWrap').style.display = '';
+      }
     }
 
     // Build back link
     document.getElementById('backBtn').href = '/booking/select?event_date=' + date + '&rental_duration=' + duration + '&preselect=' + items;
   })();
+
 
   // Phone formatting
   document.querySelector('input[name="phone"]').addEventListener('input', function(e) {
@@ -278,8 +420,28 @@
   // Form validation
   document.getElementById('detailsForm').addEventListener('submit', function(e) {
     var params = new URLSearchParams(window.location.search);
-    var wetItems = params.get('wet_items') || '';
+    // Read the LIVE choice, not the URL — the customer may have changed it here.
+    var wetItems = document.getElementById('hiddenWetItems').value || '';
     var items = params.get('items') || '';
+
+    // Every water-capable unit needs an explicit answer. Previously this page
+    // inherited whatever the link said, so a texted link could book the wrong
+    // setup or dead-end at a 409 the customer could do nothing about.
+    var unanswered = wdUnanswered();
+    if (unanswered.length > 0) {
+      e.preventDefault();
+      var names = unanswered.map(function(el) {
+        var q = el.querySelector('.wd-q span');
+        return q ? q.textContent : 'your rental';
+      });
+      showToast('Please choose wet or dry for: ' + names.join(', '), 'warning');
+      unanswered.forEach(function(el) {
+        var req = el.querySelector('.wd-req');
+        if (req) { req.classList.remove('wd-flash'); void req.offsetWidth; req.classList.add('wd-flash'); }
+      });
+      unanswered[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
 
     // No park setups on Sundays — see sundayParkSelected() below.
     if (sundayParkSelected()) {

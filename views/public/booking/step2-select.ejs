@@ -575,7 +575,8 @@
       '&event_end_time=' + (params.get('event_end_time') || '19:00') +
       '&rental_days=' + effectiveDays +
       '&event_end_date=' + endDateParam +
-      '&ready_by=' + (params.get('ready_by') || params.get('event_start_time') || '09:00');
+      '&ready_by=' + (params.get('ready_by') || params.get('event_start_time') || '09:00') +
+      '&wd=1';  // step 2 asked wet/dry — tells step 3 the URL answer is a real choice
   }
 
   document.getElementById('categoryFilters').addEventListener('click', function(e) {

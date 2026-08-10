@@ -291,11 +291,51 @@ router.get('/details', (req, res) => {
     console.error('[BOOKING] details preview lookup failed:', e.message);
   }
 
+  // Wet/dry is normally chosen on step 2, but Sarah texts customers straight to this
+  // page — skipping that step entirely. Before this, wet_items was a hidden field fed
+  // only by the URL, so whatever Sarah guessed was locked in and the customer had no
+  // way to change it. A wrong guess dead-ended at a 409 on submit whose only button
+  // was "Go Home". Hand the view enough to ask the question here instead.
+  let cartUnits = [];
+  try {
+    const ids = String(req.query.items || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (ids.length) {
+      const rows = db.prepare(
+        `SELECT id, name, category, price_wet FROM equipment WHERE id IN (${ids.map(() => '?').join(',')})`
+      ).all(...ids);
+      // Same wet-capability test step 2 uses, so both steps agree on which units ask.
+      const WET_CATS = ['water_slides', 'water-slides', 'combo_units', 'combo-units'];
+      const checkDate = req.query.event_date || '';
+      const checkStart = req.query.event_start_time || '11:00';
+      cartUnits = ids
+        .map(id => rows.find(r => r.id === id))
+        .filter(Boolean)
+        .map(u => {
+          const wetCapable = WET_CATS.includes(u.category) ||
+            (u.price_wet !== null && u.price_wet !== undefined && u.price_wet !== '');
+          // Surface the wet->dry dry-out rule as a disabled option with a reason,
+          // rather than letting them pick dry and hit a wall at submit.
+          let dryBlocked = false;
+          if (wetCapable && checkDate) {
+            try {
+              dryBlocked = isBlockedByWetDryRule(db, u.id, checkDate, checkStart, false);
+            } catch (e) {
+              dryBlocked = false;
+            }
+          }
+          return { id: u.id, name: u.name, wetCapable, dryBlocked };
+        });
+    }
+  } catch (e) {
+    // Never block checkout over this — fall back to the old hidden-field behaviour.
+    console.error('[BOOKING] details cart lookup failed:', e.message);
+  }
+
   res.render('public/booking/step3-details', {
     title: previewTitle || 'Your Details - Bounce Man',
     metaDescription: previewDesc,
     ogImage,
-    settings, zones,
+    settings, zones, cartUnits,
     page: 'booking'
   });
 });

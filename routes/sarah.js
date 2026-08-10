@@ -634,7 +634,7 @@ router.post('/create-and-send-link', async (req, res) => {
 // deposit on the site, which calculates delivery + tax. No booking is created here.
 router.post('/send-checkout-link', async (req, res) => {
   const db = getDb();
-  const { equipment_ids, duration, wet, event_date, event_start_time, phone, days } = req.body;
+  const { equipment_ids, duration, event_date, event_start_time, phone, days } = req.body;
   const reqDays = Math.min(30, Math.max(1, parseInt(days) || 1));
 
   if (!phone) return res.status(400).json({ error: 'phone required' });
@@ -684,16 +684,14 @@ router.post('/send-checkout-link', async (req, res) => {
   const guard = validateBookingDate(db, eventDateISO, { duration: dur, startTime });
   if (guard) return res.json({ success: false, ...guard });
 
-  // Validate units + figure out which are wet.
+  // Validate units.
   const validIds = [];
-  const wetIds = [];
   const names = [];
   for (const id of equipment_ids) {
     const eq = db.prepare("SELECT * FROM equipment WHERE id = ? AND status = 'available'").get(id);
     if (!eq) continue;
     validIds.push(eq.id);
     names.push(eq.name);
-    if (wet === true && isWetCapable(eq)) wetIds.push(eq.id);
   }
   if (!validIds.length) {
     return res.json({ success: false, error: "I couldn't find that unit — want me to recheck what's available?" });
@@ -741,7 +739,13 @@ router.post('/send-checkout-link', async (req, res) => {
 
   const publicBase = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
   let q = `items=${validIds.join(',')}&event_date=${eventDateISO}&rental_duration=${dur}&event_start_time=${startTime}&event_end_time=${endTime}`;
-  if (wetIds.length) q += `&wet_items=${wetIds.join(',')}`;
+  // Deliberately NO wet_items and NO wd=1 here. Baking the wet/dry choice into a
+  // texted link locked the customer into whatever Sarah assumed — step 3 had no
+  // control to change it, so a wrong guess either booked the wrong setup or hit a
+  // 409 whose only button was "Go Home". Without these params step 3 asks, exactly
+  // like the website does. Pass wet on create-and-send-link instead, where the
+  // choice was actually made in conversation.
+
   if (reqDays > 1) q += `&rental_days=${reqDays}&event_end_date=${isoOffset(eventDateISO, reqDays - 1)}`;
   const link = `${publicBase}/booking/details?${q}`;
 
