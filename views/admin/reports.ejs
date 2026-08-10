@@ -82,6 +82,101 @@
   </div>
 </div>
 
+<!-- OkTAP Return Worksheet — fill form STS-20002-C straight off this -->
+<div class="row g-4 mt-1">
+  <div class="col-12">
+    <div class="stat-card">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h6 class="mb-0"><i class="fas fa-file-invoice-dollar me-2" style="color:#004E89"></i>OkTAP Return Worksheet
+          <span class="text-muted small">— form STS-20002-C (not the superseded -A)</span></h6>
+        <form method="GET" class="d-flex align-items-center gap-2">
+          <label class="small text-muted mb-0">Filing period</label>
+          <select name="month" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+            ${(filingMonths||[]).map(function(m){ return '<option value="'+m+'"'+(m===okReturn.month?' selected':'')+'>'+m+'</option>'; }).join('')}
+          </select>
+        </form>
+      </div>
+
+      ${okReturn.bookings === 0 ? '<div class="text-muted text-center py-4">No events in this period.</div>' : `
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <table class="table table-sm mb-2">
+            <tbody>
+              <tr><td class="text-muted">Line 1 — Total sales <span class="text-muted small">(gross receipts, tax excluded)</span></td><td class="text-end fw-semibold">$${okReturn.totalSales.toFixed(2)}</td></tr>
+              <tr><td class="text-muted">Line 3 — Exemptions <span class="text-muted small">(Schedule J)</span></td><td class="text-end">$${(okReturn.exemptSales + okReturn.deliveryExcluded).toFixed(2)}</td></tr>
+              <tr><td class="ps-4 text-muted small">· exempt customers</td><td class="text-end small text-muted">$${okReturn.exemptSales.toFixed(2)}</td></tr>
+              <tr><td class="ps-4 text-muted small">· separately-stated delivery <span title="Excluded from the tax base under OAC 710:65-19-70(b)">ⓘ</span></td><td class="text-end small text-muted">$${okReturn.deliveryExcluded.toFixed(2)}</td></tr>
+              <tr class="border-top"><td class="fw-semibold">Line 5 — Net taxable sales</td><td class="text-end fw-bold">$${okReturn.taxableSales.toFixed(2)}</td></tr>
+              <tr><td class="text-muted">Line 6 — State tax (4.5%)</td><td class="text-end">$${okReturn.stateTax.toFixed(2)}</td></tr>
+              <tr><td class="text-muted">Line 7 — City/County <span class="text-muted small">(STS-20021 Item P)</span></td><td class="text-end">$${okReturn.localTax.toFixed(2)}</td></tr>
+              <tr class="border-top"><td class="fw-bold">Line 8/11 — TOTAL DUE</td><td class="text-end fw-bold fs-5">$${okReturn.totalDue.toFixed(2)}</td></tr>
+            </tbody>
+          </table>
+          <div class="border rounded p-2 small">
+            <div class="d-flex justify-content-between"><span class="text-muted">Already collected from customers</span><span>$${okReturn.taxCollected.toFixed(2)}</span></div>
+            <div class="d-flex justify-content-between mt-1"><span class="fw-semibold">Out of your own pocket</span>
+              <span class="fw-bold ${okReturn.outOfPocket > 0 ? 'text-danger' : 'text-success'}">$${okReturn.outOfPocket.toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div class="col-lg-7">
+          <div class="small text-muted mb-1 fw-semibold">STS-20021 — city &amp; county supplement</div>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Jurisdiction</th><th class="text-end">Net sales</th><th class="text-end">Rate</th><th class="text-end">Tax</th></tr></thead>
+              <tbody>
+                ${okReturn.jurisdictions.map(function(j){
+                  return '<tr'+(j.resolved?'':' class="table-warning"')+'><td>'+j.city+(j.resolved?'':' <span class="badge bg-danger">unresolved jurisdiction</span>')+'</td>'
+                    +'<td class="text-end">$'+j.base.toFixed(2)+'</td>'
+                    +'<td class="text-end">'+(j.rate*100).toFixed(3)+'%</td>'
+                    +'<td class="text-end">$'+j.tax.toFixed(2)+'</td></tr>';
+                }).join('')}
+                ${okReturn.counties.map(function(c){
+                  return '<tr><td class="text-muted">'+c.county+' COUNTY</td>'
+                    +'<td class="text-end text-muted">$'+c.base.toFixed(2)+'</td>'
+                    +'<td class="text-end text-muted">'+(c.rate*100).toFixed(3)+'%</td>'
+                    +'<td class="text-end text-muted">$'+c.tax.toFixed(2)+'</td></tr>';
+                }).join('')}
+                <tr class="border-top"><td colspan="3" class="fw-semibold text-end">Item P total &rarr; Line 7</td><td class="text-end fw-bold">$${okReturn.localTax.toFixed(2)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      ${okReturn.lines.some(function(l){return l.mismatch || l.unresolved;}) ? `
+      <div class="alert alert-warning py-2 px-3 small mt-2 mb-2">
+        <i class="fas fa-triangle-exclamation me-1"></i><strong>Some bookings do not match the current rate table.</strong>
+        Tax charged at the time differs from what today's rates say, or the jurisdiction cannot be resolved. Review before filing.
+      </div>` : ''}
+
+      <div class="table-responsive mt-2">
+        <table class="table table-sm table-hover">
+          <thead><tr><th>Booking</th><th>Date</th><th>Customer</th><th>City</th><th class="text-end">Taxable</th><th class="text-end">Delivery</th><th class="text-end">Tax charged</th><th class="text-end">Per rate table</th><th>Exempt</th></tr></thead>
+          <tbody>
+            ${okReturn.lines.map(function(l){
+              var cls = l.unresolved ? ' class="table-danger"' : (l.mismatch ? ' class="table-warning"' : '');
+              var ex = l.exempt ? (l.cert ? '<span class="badge bg-success">'+l.cert+'</span>' : '<span class="badge bg-danger">UNBACKED</span>') : '';
+              return '<tr'+cls+'><td><a href="/admin/bookings?q='+l.booking_number+'">'+l.booking_number+'</a></td>'
+                +'<td>'+l.event_date+'</td><td>'+l.who+'</td><td>'+(l.city||'<span class="text-danger">none</span>')+'</td>'
+                +'<td class="text-end">$'+l.base.toFixed(2)+'</td>'
+                +'<td class="text-end text-muted">'+(l.delivery?'$'+l.delivery.toFixed(2):'—')+'</td>'
+                +'<td class="text-end">$'+l.taxCharged.toFixed(2)+'</td>'
+                +'<td class="text-end '+(l.mismatch?'fw-bold text-danger':'text-muted')+'">$'+l.shouldBe.toFixed(2)+'</td>'
+                +'<td>'+ex+'</td></tr>';
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="text-muted small mt-1">
+        Gross receipts exclude the tax itself. Delivery is in Line 1 and removed again on Schedule J
+        (&ldquo;other legal exemptions&rdquo;, note: separately-stated delivery charge). Rates from the
+        OTC COPO chart effective Jul&ndash;Sep 2026.
+      </div>`}
+    </div>
+  </div>
+</div>
+
 <!-- Sales Tax by Event Month (OkTAP filing basis) -->
 <div class="row g-4 mt-1">
   <div class="col-12">

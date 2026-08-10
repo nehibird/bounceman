@@ -7,6 +7,7 @@ const multer = require('multer');
 const path = require('path');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
+const { taxBreakdown, STATE_RATE: OK_STATE_RATE } = require('../lib/helpers');
 const bcrypt = require('bcryptjs');
 const vapiSvc = require('../services/vapi');
 const googleAds = require('../services/google-ads');
@@ -1018,11 +1019,112 @@ router.get('/reports', (req, res) => {
     ORDER BY b.event_date DESC
   `).all();
 
+  // === OkTAP return worksheet ==================================================
+  // Everything needed to fill in form STS-20002-C plus the STS-20021 city/county
+  // supplement for one filing period, so it is not reassembled by hand each month.
+  //
+  // The current form is STS-20002-C. STS-20002-A is superseded ("for Filing Returns
+  // Prior to August 1, 2024") and its line numbers are shifted by one — filing on the
+  // old form puts the city/county total into the State Tax box.
+  const filingMonth = /^\d{4}-\d{2}$/.test(req.query.month || '')
+    ? req.query.month
+    : dayjs().subtract(1, 'month').format('YYYY-MM');
+
+  const okReturn = (() => {
+    const rows = db.prepare(`
+      SELECT b.booking_number, b.event_date, b.delivery_city,
+             b.subtotal, b.discount_amount, b.delivery_fee, b.surface_fee, b.damage_waiver_fee,
+             b.tax_amount, b.total, b.tax_exempt_claimed,
+             c.first_name, c.last_name, c.tax_exempt_cert
+      FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+      WHERE b.status NOT IN ('cancelled','declined')
+        AND strftime('%Y-%m', b.event_date) = ?
+      ORDER BY b.event_date
+    `).all(filingMonth);
+
+    const byCity = {};
+    let totalSales = 0, exemptSales = 0, deliveryExcluded = 0, taxCollected = 0, taxableSales = 0;
+    const lines = [];
+
+    for (const r of rows) {
+      // Gross receipts on the return exclude the tax itself.
+      const gross = (r.total || 0) - (r.tax_amount || 0);
+      // Separately-stated delivery is EXCLUDED from the tax base (OAC 710:65-19-70(b)),
+      // but it IS part of gross receipts — so it goes in Line 1 and comes back out on
+      // Schedule J, which is how Line 1 reconciles down to Line 5.
+      const delivery = r.delivery_fee || 0;
+      const base = (r.subtotal || 0) - (r.discount_amount || 0) + (r.surface_fee || 0) + (r.damage_waiver_fee || 0);
+      const exempt = r.tax_exempt_claimed === 1;
+      const city = (taxBreakdown(r.delivery_city) || {}).key || ((r.delivery_city || '').trim().toUpperCase() || '(NO CITY ON BOOKING)');
+
+      totalSales += gross;
+      deliveryExcluded += delivery;
+      taxCollected += (r.tax_amount || 0);
+      if (exempt) exemptSales += base;
+      else { taxableSales += base; byCity[city] = (byCity[city] || 0) + base; }
+
+      // What the CURRENT rate table says this sale should have carried. Surfaces any
+      // booking whose stored tax no longer matches the jurisdiction it was sold into.
+      const bd = taxBreakdown(r.delivery_city);
+      const liveRate = exempt ? 0 : (bd ? bd.total : 0);
+      const shouldBe = Math.round(base * liveRate * 100) / 100;
+      lines.push({
+        booking_number: r.booking_number, event_date: r.event_date,
+        who: ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || '—',
+        city: r.delivery_city || '', base, delivery, exempt,
+        cert: r.tax_exempt_cert || '', taxCharged: r.tax_amount || 0, shouldBe,
+        mismatch: Math.abs(shouldBe - (r.tax_amount || 0)) > 0.01,
+        unresolved: !exempt && bd == null
+      });
+    }
+
+    const stateTax = Math.round(taxableSales * OK_STATE_RATE * 100) / 100;
+
+    // City lines for STS-20021.
+    const jurisdictions = Object.entries(byCity).map(([city, base]) => {
+      const bd = taxBreakdown(city);
+      const rate = bd ? bd.cityRate : 0;
+      return { city, base: Math.round(base * 100) / 100, rate, tax: Math.round(base * rate * 100) / 100,
+               county: bd ? bd.countyName : null, resolved: !!bd };
+    }).sort((a, b) => b.base - a.base);
+
+    // County lines are billed on the whole taxable base for that county, not per city.
+    const countyBase = {};
+    for (const j of jurisdictions) if (j.county) countyBase[j.county] = (countyBase[j.county] || 0) + j.base;
+    const counties = Object.entries(countyBase).map(([county, base]) => {
+      // Every city in a county shares the county rate, so take it from any member city.
+      const member = jurisdictions.find(j => j.county === county);
+      const rate = member ? (taxBreakdown(member.city) || {}).countyRate || 0 : 0;
+      return { county, base: Math.round(base * 100) / 100, rate, tax: Math.round(base * rate * 100) / 100 };
+    }).sort((a, b) => b.base - a.base);
+
+    const localTax = Math.round((jurisdictions.reduce((s, j) => s + j.tax, 0)
+      + counties.reduce((s, c) => s + c.tax, 0)) * 100) / 100;
+    const totalDue = Math.round((stateTax + localTax) * 100) / 100;
+
+    return {
+      month: filingMonth, bookings: rows.length,
+      totalSales: Math.round(totalSales * 100) / 100,
+      exemptSales: Math.round(exemptSales * 100) / 100,
+      deliveryExcluded: Math.round(deliveryExcluded * 100) / 100,
+      taxableSales: Math.round(taxableSales * 100) / 100,
+      stateTax, jurisdictions, counties, localTax, totalDue,
+      taxCollected: Math.round(taxCollected * 100) / 100,
+      outOfPocket: Math.round((totalDue - taxCollected) * 100) / 100,
+      lines
+    };
+  })();
+
+  // Only offer periods that actually have bookings.
+  const filingMonths = db.prepare(`SELECT DISTINCT strftime('%Y-%m', event_date) m FROM bookings
+    WHERE status NOT IN ('cancelled','declined') AND event_date IS NOT NULL
+    ORDER BY m DESC`).all().map(r => r.m).filter(Boolean);
+
   res.render('admin/reports', {
     title: 'Reports - Admin', user: req.user, settings,
     revenue: revenue.total, bookingCount: bookingCount.c, avgTicket: avgTicket.avg,
     topItems, revenueByMonth, statusBreakdown, period, page: 'reports',
-    taxByMonth, taxCollectedFuture, exemptions
+    taxByMonth, taxCollectedFuture, exemptions, okReturn, filingMonths
   });
 });
 
