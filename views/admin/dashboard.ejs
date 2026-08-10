@@ -64,9 +64,41 @@
       <div class="card-body">
         ${(typeof finance !== 'undefined' && finance) ? `
         <div class="mb-3 pb-3 border-bottom">
-          <div class="text-muted small text-uppercase" style="letter-spacing:.5px">Total Cash Position</div>
-          <div class="fs-2 fw-bold text-success">$${finance.cashPosition.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
-          <div class="text-muted small">$${finance.bankCash.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} in bank${finance.stripeIncoming > 0 ? ' + $' + finance.stripeIncoming.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' on the way from Stripe' : ''}</div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="text-muted small text-uppercase" style="letter-spacing:.5px">Total Cash Position</div>
+              <div class="fs-2 fw-bold text-success">$${finance.cashPosition.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+              <div class="text-muted small">$${finance.bankCash.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} available in bank${finance.stripeIncoming > 0 ? ' + $' + finance.stripeIncoming.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' on the way from Stripe' : ''}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
+                Sales Tax Owed
+                <i class="fas fa-circle-info ms-1" style="opacity:.5"
+                   title="Tax collected on events that have already happened, less what has been remitted to the OTC. Updates automatically the morning after an OkTAP payment clears your bank."></i>
+              </div>
+              <div class="fs-2 fw-bold ${analytics.taxOwed > 0 ? 'text-danger' : 'text-success'}">$${parseFloat(analytics.taxOwed).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+              <div class="text-muted small">
+                $${parseFloat(analytics.taxCollectedDelivered).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} collected &minus; $${parseFloat(analytics.taxRemitted).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} remitted${analytics.taxNotYetDue > 0 ? '<br>+ $' + parseFloat(analytics.taxNotYetDue).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' collected, not due yet' : ''}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
+                Safe to Spend
+                <i class="fas fa-circle-info ms-1" style="opacity:.5"
+                   title="Bank available balance minus every dollar of sales tax you are holding for Oklahoma — both what is due now and what is collected but not yet due. Do not go below zero."></i>
+              </div>
+              <div class="fs-2 fw-bold ${finance.safeToSpend >= 0 ? 'text-success' : 'text-danger'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+              <div class="text-muted small">
+                ${finance.safeToSpend < 0
+                  ? '<span class="text-danger fw-semibold">You are holding more tax than you have in the bank.</span>'
+                  : 'Bank available less tax held for the state'}
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center small text-muted mt-3 pt-2 border-top">
+            <span>Net liquid position <span class="text-muted">(bank + Stripe &minus; card)</span></span>
+            <strong class="${finance.netLiquid >= 0 ? 'text-success' : 'text-danger'}">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>
+          </div>
         </div>` : ''}
         <div class="row g-3">
           ${(bankAccounts || []).map(a => {
@@ -119,7 +151,7 @@
         <div class="text-center mb-3">
           <div class="text-muted small mb-1">Net Position</div>
           <div class="fs-2 fw-bold ${analytics.netPosition >= 0 ? 'text-success' : 'text-danger'}">
-            ${analytics.netPosition >= 0 ? '+' : ''}$${Math.abs(analytics.netPosition).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}
+            ${analytics.netPosition >= 0 ? '+' : '−'}$${Math.abs(analytics.netPosition).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}
           </div>
         </div>
         <div class="mb-2">
@@ -131,17 +163,22 @@
             <div class="progress-bar ${analytics.recoveryPct >= 100 ? 'bg-success' : 'bg-warning'}" style="width:${Math.min(analytics.recoveryPct, 100)}%"></div>
           </div>
           <div class="d-flex justify-content-between small text-muted mt-1">
-            <span>$${parseFloat(analytics.totalRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})} earned</span>
-            <span>$${parseFloat(analytics.totalExpenses).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})} invested</span>
+            <span>$${parseFloat(analytics.earnedNetOfTax).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})} earned to date</span>
+            <span>$${parseFloat(analytics.operatingExpenses).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})} invested</span>
           </div>
         </div>
+        ${Math.abs(analytics.booksGap) > 0.01 ? `
+        <div class="alert alert-danger py-2 px-3 small mb-2" role="alert">
+          <i class="fas fa-triangle-exclamation me-1"></i><strong>Books don't balance by $${Math.abs(analytics.booksGap).toFixed(2)}.</strong>
+          Booked should equal collected plus still-owed. Usually a booking carrying a deposit that was never paid.
+        </div>` : ''}
         <div class="row g-0 text-center border rounded mb-2 py-2">
           <div class="col-4">
-            <div class="text-muted" style="font-size:0.7rem">TOTAL BOOKED</div>
+            <div class="text-muted" style="font-size:0.7rem" title="Every live booking including events that have not happened yet. Not the same as earned.">BOOKED (INCL. FUTURE)</div>
             <div class="fw-bold small">${parseFloat(analytics.totalRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
           <div class="col-4 border-start border-end">
-            <div class="text-muted" style="font-size:0.7rem">CASH IN HAND</div>
+            <div class="text-muted" style="font-size:0.7rem" title="Everything ever collected, net of refunds. This is not your bank balance — see Safe to Spend above.">COLLECTED TO DATE</div>
             <div class="fw-bold small text-success">${parseFloat(analytics.cashCollected).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
           <div class="col-4">
@@ -151,14 +188,14 @@
         </div>
         ${analytics.reimburseOwed > 0 ? `
         <a href="/admin/expenses" class="text-decoration-none">
-          <div class="d-flex justify-content-between align-items-center border border-warning rounded px-3 py-2">
-            <span class="small"><i class="fas fa-hand-holding-usd me-1 text-warning"></i>Reimbursements owed</span>
-            <strong class="text-warning">$${parseFloat(analytics.reimburseOwed).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+          <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2">
+            <span class="small"><i class="fas fa-hand-holding-usd me-1 text-muted"></i>Owed back to you <span class="text-muted">— already counted above</span></span>
+            <strong class="text-muted">$${parseFloat(analytics.reimburseOwed).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
           </div>
         </a>` : ''}
         ${analytics.breakEven && analytics.breakEven.status === 'projected' ? `
         <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mt-2"
-             title="Estimate: ~${analytics.breakEven.bookingsNeeded} more bookings to cover the remaining deficit, at your recent booking pace, stretched for the ~5-month OK off-season. Updates live as bookings come in.">
+             title="Estimate: ~${analytics.breakEven.bookingsNeeded} more bookings to cover the remaining deficit, at your recent booking pace, stretched for the OK off-season (season modelled as ~6.5 active months). Updates live as bookings come in.">
           <span class="small"><i class="fas fa-flag-checkered me-1 text-primary"></i>Est. break-even</span>
           <span><strong>${analytics.breakEven.date}</strong> <span class="text-muted small">~${analytics.breakEven.bookingsNeeded} bookings</span></span>
         </div>` : analytics.breakEven && analytics.breakEven.status === 'reached' ? `

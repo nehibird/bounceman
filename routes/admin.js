@@ -72,24 +72,73 @@ router.get('/', async (req, res) => {
   const recentActivity = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 15').all();
 
   // Financial analytics
+  //
+  // Four different things get conflated if you are not careful, so they are named
+  // apart here: BOOKED (every live booking incl. future), EARNED (events that have
+  // actually happened), COLLECTED (money that reached the payments ledger), and
+  // BANKED (what the bank says). Only EARNED belongs in a profit or recovery figure.
   const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
-  const cashCollected = db.prepare("SELECT COALESCE(SUM(total - balance_due), 0) as r FROM bookings WHERE deposit_paid = 1 AND status NOT IN ('cancelled', 'declined')").get().r;
+
+  // Revenue for events that have already happened. Without the date bound, money for
+  // next month's parties counted as "earned" and flattered every downstream number.
+  const earnedRevenue = db.prepare(`SELECT COALESCE(SUM(total), 0) as r FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND date(event_date) <= date('now','localtime')`).get().r;
+  // Sales tax is the state's money, not income. Strip it from the numerator and strip
+  // remittances from the denominator so the recovery ratio compares like with like.
+  const earnedNetOfTax = db.prepare(`SELECT COALESCE(SUM(total - COALESCE(tax_amount,0)), 0) as r FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND date(event_date) <= date('now','localtime')`).get().r;
+
+  // Collected = the payments ledger, net of refunds. Derived from booking columns this
+  // missed refunds entirely (nothing writes them back) and the deposit_paid gate hid
+  // any booking paid in cash through the admin form.
+  const cashCollected = db.prepare(`SELECT COALESCE(SUM(p.amount - COALESCE(p.refund_amount, 0)), 0) as r
+    FROM payments p JOIN bookings b ON b.id = p.booking_id
+    WHERE p.status = 'completed' AND b.status NOT IN ('cancelled', 'declined')`).get().r;
   const balanceOwed = db.prepare("SELECT COALESCE(SUM(balance_due), 0) as r FROM bookings WHERE status NOT IN ('cancelled', 'declined')").get().r;
   const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses').get().t;
+  // NULL-safe: a bare <> would silently drop uncategorised rows in SQLite.
+  const operatingExpenses = db.prepare("SELECT COALESCE(SUM(amount), 0) as t FROM expenses WHERE category IS NULL OR category <> 'taxes'").get().t;
   const reimburseOwed = db.prepare('SELECT COALESCE(SUM(amount), 0) as t FROM expenses WHERE reimbursable = 1 AND reimbursed = 0').get().t;
-  const netPosition = totalRevenue - totalExpenses;
-  const recoveryPct = totalExpenses > 0 ? (totalRevenue / totalExpenses * 100) : 0;
+
+  // --- Sales tax held for Oklahoma -------------------------------------------
+  // OkTAP files on an EVENT-month basis, so tax becomes payable once the event has
+  // happened. Remittances arrive as expenses with category='taxes' — the nightly bank
+  // sync auto-tags anything matching OKLAHOMATAXPMTS — so this figure falls on its own
+  // once a payment clears. Nothing to remember to do.
+  const taxCollectedDelivered = db.prepare(`SELECT COALESCE(SUM(COALESCE(tax_amount,0)), 0) as t FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND date(event_date) <= date('now','localtime')`).get().t;
+  const taxRemitted = db.prepare("SELECT COALESCE(SUM(amount), 0) as t FROM expenses WHERE category = 'taxes'").get().t;
+  const taxOwed = Math.round((taxCollectedDelivered - taxRemitted) * 100) / 100;
+  // Collected on bookings whose event has not happened — not payable yet, but still
+  // not his money. Shown separately so the two are never confused.
+  const taxNotYetDue = db.prepare(`SELECT COALESCE(SUM(COALESCE(tax_amount,0)), 0) as t FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND date(event_date) > date('now','localtime')`).get().t;
+
+  const netPosition = earnedNetOfTax - operatingExpenses;
+  const recoveryPct = operatingExpenses > 0 ? (earnedNetOfTax / operatingExpenses * 100) : 0;
   const avgTicketRow = db.prepare("SELECT COALESCE(AVG(total), 350) as a FROM bookings WHERE status NOT IN ('cancelled', 'declined') AND total > 0").get();
   const avgTicket = avgTicketRow.a || 350;
   const bookingsToBreakEven = netPosition >= 0 ? 0 : Math.ceil(Math.abs(netPosition) / avgTicket);
+
+  // The three headline tiles must reconcile. A booking created with a pre-seeded
+  // balance_due but no payment used to put money in BOOKED and in neither of the
+  // other two, and nothing said so.
+  const booksGap = Math.round((totalRevenue - cashCollected - balanceOwed) * 100) / 100;
   const pipeline = db.prepare("SELECT COALESCE(SUM(total), 0) as r, COUNT(*) as c FROM bookings WHERE event_date > ? AND status IN ('confirmed', 'pending')").get(today);
   const creditCardDebt = parseFloat(settings.credit_card_debt || '0');
 
   // Live break-even projection by booking pace (stable vs. lumpy one-time capital like equipment/insurance).
   // remaining deficit -> # more bookings at the recent avg ticket -> calendar time at the recent booking pace,
   // stretched for the ~5-month OK off-season (~6.5 active months/yr).
-  const deficit = Math.max(0, totalExpenses - totalRevenue);
-  const bk120 = db.prepare("SELECT COUNT(*) as c, COALESCE(SUM(total),0) as r FROM bookings WHERE status NOT IN ('cancelled','declined') AND event_date >= ?").get(dayjs().subtract(120, 'day').format('YYYY-MM-DD'));
+  const deficit = Math.max(0, operatingExpenses - earnedNetOfTax);
+  // Bounded at BOTH ends. Open-ended, this swept in every future booking, so "recent
+  // pace" was an all-time average wearing a recency label — it could not detect a
+  // slowdown, and future bookings counted twice (shrinking the deficit AND inflating
+  // the pace that pays it off). total > 0 keeps comped bookings out of the average so
+  // this and bookingsToBreakEven stop disagreeing.
+  const bk120 = db.prepare(`SELECT COUNT(*) as c, COALESCE(SUM(total),0) as r FROM bookings
+    WHERE status NOT IN ('cancelled','declined') AND total > 0
+      AND event_date >= ? AND date(event_date) <= date('now','localtime')`).get(dayjs().subtract(120, 'day').format('YYYY-MM-DD'));
   const bookingsPerMonth = bk120.c / 4;
   const recentTicket = bk120.c > 0 ? bk120.r / bk120.c : avgTicket;
   let breakEven;
@@ -129,15 +178,32 @@ router.get('/', async (req, res) => {
   let stripePayouts = null;
   try { stripePayouts = await require('../services/stripe').getPayoutSummary(); } catch (e) { console.error('[DASH] stripe payouts failed:', e.message); }
 
-  // Total cash position: liquid bank balances (excluding credit lines) + money on the way from Stripe.
-  const bankCash = (bankAccounts || []).filter((a) => a.type !== 'credit').reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
+  // Total cash position: liquid bank balances (excluding credit lines) + money on the way
+  // from Stripe. Prefer `available` over `current` — a pending debit is already spent, and
+  // at these balances the difference decides whether something bounces.
+  const bankCash = (bankAccounts || []).filter((a) => a.type !== 'credit')
+    .reduce((s, a) => s + (parseFloat(a.available != null ? a.available : a.balance) || 0), 0);
   const stripeIncoming = stripePayouts ? stripePayouts.pendingCents / 100 : 0;
-  const finance = { bankCash, stripeIncoming, cashPosition: bankCash + stripeIncoming };
+  const cardDebt = (bankAccounts || []).filter((a) => a.type === 'credit').reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
+  // What is actually his: cash on hand, less the state's money sitting in the same account.
+  // taxNotYetDue is subtracted too — spending it only means being short next month.
+  const safeToSpend = Math.round((bankCash - taxOwed - taxNotYetDue) * 100) / 100;
+  const finance = {
+    bankCash, stripeIncoming, cardDebt,
+    cashPosition: bankCash + stripeIncoming,
+    netLiquid: Math.round((bankCash + stripeIncoming - cardDebt) * 100) / 100,
+    safeToSpend
+  };
 
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
     user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
-    analytics: { totalRevenue, cashCollected, balanceOwed, totalExpenses, netPosition, recoveryPct, avgTicket, bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven },
+    analytics: {
+      totalRevenue, earnedRevenue, earnedNetOfTax, cashCollected, balanceOwed,
+      totalExpenses, operatingExpenses, netPosition, recoveryPct, avgTicket,
+      bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven,
+      taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap
+    },
     monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
   });
 });
@@ -800,8 +866,18 @@ router.get('/customers/:id', (req, res) => {
 router.post('/customers/:id/tax-exempt', (req, res) => {
   const db = getDb();
   const { tax_exempt, tax_exempt_cert } = req.body;
-  db.prepare("UPDATE customers SET tax_exempt = ?, tax_exempt_cert = ?, updated_at = datetime('now') WHERE id = ?")
-    .run([].concat(tax_exempt).includes('1') ? 1 : 0, (tax_exempt_cert || '').trim() || null, req.params.id);
+  // Only touch a field the form actually submitted. This used to NULL an existing
+  // exemption certificate on any save that didn't happen to include the input —
+  // and a lost certificate turns an exempt sale into an unbacked one, where the
+  // burden of proof is on us (OAC 710:65-1-4(a)).
+  if (typeof tax_exempt_cert !== 'undefined') {
+    db.prepare("UPDATE customers SET tax_exempt_cert = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(String(tax_exempt_cert).trim() || null, req.params.id);
+  }
+  if (typeof tax_exempt !== 'undefined') {
+    db.prepare("UPDATE customers SET tax_exempt = ?, updated_at = datetime('now') WHERE id = ?")
+      .run([].concat(tax_exempt).includes('1') ? 1 : 0, req.params.id);
+  }
   console.log('[ADMIN] Tax exempt updated for customer:', req.params.id, 'exempt:', tax_exempt);
   res.redirect('/admin/customers/' + req.params.id);
 });
