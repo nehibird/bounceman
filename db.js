@@ -799,6 +799,20 @@ function initialize() {
   // Migration: add event_end_date to bookings (multiday support)
   try { d.prepare('ALTER TABLE bookings ADD COLUMN event_end_date TEXT').run(); } catch(e) {}
 
+  // Exemption proof belongs to the SALE, not the customer: the same customer can have
+  // one exempt booking (church event, church cheque) and one taxable one (their kid's
+  // birthday). Holding it only on the customer row meant an exemption silently applied
+  // to every future booking they ever made.
+  try { d.prepare('ALTER TABLE bookings ADD COLUMN tax_exempt_cert TEXT').run(); } catch(e) {}
+  // Backfill from the customer record so existing exempt bookings keep their proof.
+  try {
+    d.prepare(`UPDATE bookings SET tax_exempt_cert = (
+                 SELECT c.tax_exempt_cert FROM customers c WHERE c.id = bookings.customer_id
+               )
+               WHERE tax_exempt_claimed = 1
+                 AND (tax_exempt_cert IS NULL OR tax_exempt_cert = '')`).run();
+  } catch(e) {}
+
   // Migration: add rental_days to booking_items
   try { d.prepare('ALTER TABLE booking_items ADD COLUMN rental_days INTEGER DEFAULT 1').run(); } catch(e) {}
 

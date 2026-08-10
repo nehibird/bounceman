@@ -674,13 +674,19 @@ router.post('/submit', bookingLimiter, async (req, res) => {
           (got ? '' : ' — WARNING: limit was already reached, booking kept'));
       }
 
-      // Record the claimed exemption permit # on the customer for admin to verify.
-      // Does NOT set tax_exempt=1, so tax stays charged until an admin verifies the cert.
+      // Record the claimed exemption permit # for admin to verify. Deliberately does
+      // NOT set customers.tax_exempt = 1 — that flag means "an admin has seen the
+      // certificate", and a self-typed number is not that.
+      // Stored on the BOOKING as well as the customer: the exemption is a property of
+      // this sale, and the customer's next booking may well be taxable.
       if (data.tax_exempt_claimed === '1' && data.tax_exempt_cert) {
+        const cert = String(data.tax_exempt_cert).trim().slice(0, 100);
         try {
-          db.prepare('UPDATE customers SET tax_exempt_cert = ? WHERE id = ?')
-            .run(String(data.tax_exempt_cert).trim().slice(0, 100), customerId);
+          db.prepare('UPDATE customers SET tax_exempt_cert = ? WHERE id = ?').run(cert, customerId);
         } catch (e) { console.error('[BOOKING] store tax_exempt_cert failed:', e.message); }
+        try {
+          db.prepare('UPDATE bookings SET tax_exempt_cert = ? WHERE id = ?').run(cert, bookingId);
+        } catch (e) { console.error('[BOOKING] store booking tax_exempt_cert failed:', e.message); }
       }
 
       // Add line items using priceForBooking

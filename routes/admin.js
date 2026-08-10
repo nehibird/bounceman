@@ -1011,9 +1011,16 @@ router.get('/reports', (req, res) => {
   `).get().tax;
 
   // B8: exemptions — flag any claim not backed by a certificate on file.
+  // Prefer the certificate recorded against THIS sale; fall back to the customer's.
+  // Also carry the 90-day documentation clock: under OAC 710:65-7-6(c)(2) the vendor
+  // must hold the certificate within 90 days of the sale, or the sale is taxable and
+  // the burden of proof sits with us.
   const exemptions = db.prepare(`
-    SELECT b.booking_number, c.first_name, c.last_name, c.tax_exempt_cert,
-           b.total, b.tax_amount, b.event_date, b.status
+    SELECT b.booking_number, c.first_name, c.last_name,
+           COALESCE(NULLIF(TRIM(b.tax_exempt_cert),''), c.tax_exempt_cert) AS tax_exempt_cert,
+           b.total, b.tax_amount, b.event_date, b.status,
+           CAST(julianday(date(b.event_date,'+90 day')) - julianday(date('now','localtime')) AS INTEGER) AS days_left,
+           date(b.event_date,'+90 day') AS docs_due
     FROM bookings b JOIN customers c ON c.id = b.customer_id
     WHERE b.tax_exempt_claimed = 1 AND b.status NOT IN ('cancelled','declined')
     ORDER BY b.event_date DESC
