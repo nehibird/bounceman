@@ -170,7 +170,12 @@
         ${Math.abs(analytics.booksGap) > 0.01 ? `
         <div class="alert alert-danger py-2 px-3 small mb-2" role="alert">
           <i class="fas fa-triangle-exclamation me-1"></i><strong>Books don't balance by $${Math.abs(analytics.booksGap).toFixed(2)}.</strong>
-          Booked should equal collected plus still-owed. Usually a booking carrying a deposit that was never paid.
+          Booked should equal collected plus still-owed. Usually a refund that never came off the booking,
+          or a booking carrying a deposit nobody paid.
+        </div>` : ''}
+        ${analytics.overpaid > 0.01 ? `
+        <div class="d-flex justify-content-between small text-muted mb-2">
+          <span>Customer overpayments kept</span><span>$${parseFloat(analytics.overpaid).toFixed(2)}</span>
         </div>` : ''}
         <div class="row g-0 text-center border rounded mb-2 py-2">
           <div class="col-4">

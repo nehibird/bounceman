@@ -254,6 +254,37 @@ router.post('/stripe', async (req, res) => {
           db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?')
             .run(refundAmount, payment.id);
           console.log('[Stripe Webhook] charge.refunded: $' + refundAmount.toFixed(2) + ' recorded');
+
+          // Write the refund back to the BOOKING as well. Recording it only against the
+          // payment left bookings.total claiming revenue that had been given back, and
+          // nothing on the dashboard joins payments — so a refund could never reduce any
+          // reported figure. One partial refund silently overstated revenue by $72.82.
+          //
+          // A refund here is a price concession: it REDUCES the sale. It must not raise
+          // balance_due, or the "pay your remaining balance" SMS below fires at a customer
+          // who has just been given money back.
+          try {
+            const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
+            if (bk) {
+              const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
+                FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
+              // Never below what was actually kept, so the books cannot show a phantom debt.
+              const newTotal = Math.max(0, Math.round((bk.total - refundAmount) * 100) / 100);
+              const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
+              db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
+                payment_status = CASE WHEN ? <= 0 THEN 'paid' ELSE payment_status END,
+                internal_notes = TRIM(COALESCE(internal_notes,'') ||
+                  ' [refund] $' || ? || ' refunded ' || date('now') || '; total reduced to $' || ? || '.'),
+                updated_at = datetime('now') WHERE id = ?`)
+                .run(newTotal, newBalance, newBalance, refundAmount.toFixed(2), newTotal.toFixed(2), bk.id);
+              console.log('[Stripe Webhook] booking ' + bk.booking_number +
+                ' total ' + bk.total.toFixed(2) + ' -> ' + newTotal.toFixed(2) +
+                ', balance -> ' + newBalance.toFixed(2));
+            }
+          } catch (e) {
+            // Never fail the webhook over bookkeeping — Stripe would retry the refund event.
+            console.error('[Stripe Webhook] refund write-back failed:', e.message);
+          }
         } else {
           console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
         }

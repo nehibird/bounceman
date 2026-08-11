@@ -124,7 +124,19 @@ router.get('/', async (req, res) => {
   // The three headline tiles must reconcile. A booking created with a pre-seeded
   // balance_due but no payment used to put money in BOOKED and in neither of the
   // other two, and nothing said so.
-  const booksGap = Math.round((totalRevenue - cashCollected - balanceOwed) * 100) / 100;
+  //
+  // Overpayments are NOT an imbalance: a customer who hands over $358.94 against a
+  // $349.57 booking has genuinely paid that, and we keep it. Netting them out means
+  // the banner only fires on real drift — a refund that never came off the booking,
+  // or a deposit credited to a booking nobody paid for.
+  const overpaid = db.prepare(`
+    SELECT COALESCE(SUM(MAX(0, paid - b.total)), 0) AS o FROM (
+      SELECT b2.id, b2.total,
+             (SELECT COALESCE(SUM(p.amount - COALESCE(p.refund_amount,0)),0)
+                FROM payments p WHERE p.booking_id = b2.id AND p.status = 'completed') AS paid
+      FROM bookings b2 WHERE b2.status NOT IN ('cancelled','declined') AND b2.balance_due <= 0
+    ) b`).get().o;
+  const booksGap = Math.round((totalRevenue - cashCollected - balanceOwed + overpaid) * 100) / 100;
   const pipeline = db.prepare("SELECT COALESCE(SUM(total), 0) as r, COUNT(*) as c FROM bookings WHERE event_date > ? AND status IN ('confirmed', 'pending')").get(today);
   const creditCardDebt = parseFloat(settings.credit_card_debt || '0');
 
@@ -203,7 +215,7 @@ router.get('/', async (req, res) => {
       totalRevenue, earnedRevenue, earnedNetOfTax, cashCollected, balanceOwed,
       totalExpenses, operatingExpenses, netPosition, recoveryPct, avgTicket,
       bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven,
-      taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap
+      taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap, overpaid
     },
     monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
   });
