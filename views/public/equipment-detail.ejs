@@ -124,10 +124,10 @@ ${(function() {
               alt="${firstImage ? firstImage.alt : item.name}"
               style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${objectFit}">
             ${video ? `
-            <video id="mainVideo" muted loop playsinline preload="none" poster="${video.poster}"
+            <video id="mainVideo" muted loop playsinline preload="metadata" poster="${video.poster}"
               style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;background:#000;display:none">
-              <source src="${video.webm}" type="video/webm">
               <source src="${video.src}" type="video/mp4">
+              <source src="${video.webm}" type="video/webm">
             </video>
             ` : ''}
           </div>
@@ -306,8 +306,41 @@ ${(function() {
       if (thumb.getAttribute('data-type') === 'video' && mainVideo) {
         mainImage.style.display = 'none';
         mainVideo.style.display = 'block';
-        var playing = mainVideo.play();
-        if (playing && playing.catch) { playing.catch(function() {}); }
+        // Let layout settle before play(). Several mobile browsers refuse to start a
+        // video that was display:none in the same tick, and with preload="none" no
+        // source has been selected yet either — so load() first.
+        // Recovering from a stall is the whole point here. The element has
+        // background:#000, and the browser drops the poster as soon as play() is
+        // accepted — so a source that stalls without firing an error event (Safari
+        // does this with WebM) leaves the customer looking at a black rectangle with
+        // no controls and no way out. Watchdog it.
+        var giveUp = setTimeout(function() {
+          if (mainVideo.readyState < 2) {
+            mainVideo.setAttribute('controls', '');   // always a way to press play
+            mainVideo.removeAttribute('loop');        // don't loop something stalled
+            try { mainVideo.pause(); } catch (e) {}
+            mainVideo.load();                         // re-run source selection
+          }
+        }, 2500);
+        var clearGiveUp = function() { clearTimeout(giveUp); };
+        mainVideo.addEventListener('playing', clearGiveUp, { once: true });
+        mainVideo.addEventListener('loadeddata', clearGiveUp, { once: true });
+        // If a source errors outright, show controls immediately rather than waiting.
+        mainVideo.addEventListener('error', function() {
+          mainVideo.setAttribute('controls', '');
+        }, { once: true });
+
+        requestAnimationFrame(function() {
+          if (mainVideo.readyState === 0) { try { mainVideo.load(); } catch (e) {} }
+          var playing = mainVideo.play();
+          if (playing && playing.catch) {
+            playing.catch(function() {
+              // Autoplay refused (iOS Low Power Mode, data saver, per-site setting).
+              clearTimeout(giveUp);
+              mainVideo.setAttribute('controls', '');
+            });
+          }
+        });
       } else {
         if (mainVideo) { mainVideo.pause(); mainVideo.style.display = 'none'; }
         mainImage.style.display = 'block';
