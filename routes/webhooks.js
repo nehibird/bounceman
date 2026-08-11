@@ -313,6 +313,34 @@ router.post('/slack/events', async (req, res) => {
   const event = req.body.event;
   if (!event) return;
 
+  // Approve or bin a suggested SMS reply with an emoji, not just the buttons. On a phone
+  // a reaction is one tap on the message you are already reading, which is how this
+  // actually gets used. White check mark sends it; x / wastebasket dismisses it.
+  if (event.type === 'reaction_added' && event.item && event.item.type === 'message') {
+    const SEND = ['white_check_mark', 'heavy_check_mark', 'green_check_mark', '+1'];
+    const DROP = ['x', 'wastebasket', 'no_entry', 'no_entry_sign', '-1'];
+    const isSend = SEND.includes(event.reaction);
+    const isDrop = DROP.includes(event.reaction);
+    if (isSend || isDrop) {
+      try {
+        const { getDb } = require('../db');
+        // Match on the Slack message the suggestion was posted as.
+        const row = getDb().prepare(
+          "SELECT id FROM suggested_replies WHERE msg_ts = ? AND channel = ? AND status = 'pending'"
+        ).get(event.item.ts, event.item.channel);
+        if (row) {
+          const sarahSms = require('../services/sarah-sms');
+          const r = await sarahSms.actOnSuggestion(row.id, isSend ? 'send' : 'dismiss', event.user || 'slack');
+          console.log('[SLACK REACTION]', event.reaction, '->', isSend ? 'sent' : 'dismissed',
+            'suggestion', row.id, r && r.ok === false ? ('FAILED: ' + r.error) : 'ok');
+        }
+      } catch (e) {
+        console.error('[SLACK REACTION] failed:', e.message);
+      }
+    }
+    return;
+  }
+
   // App Home opened — publish dashboard view
   if (event.type === 'app_home_opened') {
     const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;

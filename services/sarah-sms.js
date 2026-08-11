@@ -281,6 +281,14 @@ async function handleInboundSms(from, body) {
     if (!OPENROUTER_KEY || !SARAH_API_KEY) return;
     const number = normalize(from);
     if (number === normalize(BM_NUMBER) || number === normalize(OWNER_CELL)) return;
+
+    // Owner heads-up FIRST, ahead of every other gate. Deliberately fires even when
+    // Sarah is off, the thread is paused, or the model later fails — a paused thread is
+    // exactly when he most needs to know someone is texting, because nobody is replying.
+    // On 2026-08-11 a customer texted five times over 70 minutes and nothing reached him.
+    try { await alertOwnerInbound(number, body); }
+    catch (e) { console.error('[SARAH-SMS] owner alert failed:', e.message); }
+
     const mode = getMode(); if (mode === 'off') return;
     if (isThreadPaused(number)) return;
     // Never engage a toll-free sender. Log it and mirror to Slack so Nehemiah still
@@ -359,6 +367,30 @@ function _customerName(db, phone10) {
   return null;
 }
 
+// Owner heads-up on every inbound customer text. Deliberately independent of the AI
+// path and fired BEFORE it: on 2026-08-11 a customer texted five times over 70 minutes
+// and nothing ever reached the owner, because everything hung off the model reply.
+async function alertOwnerInbound(number, body) {
+  const digits = String(number || '').replace(/\D/g, '').slice(-10);
+  const ownerDigits = OWNER_CELL.replace(/\D/g, '').slice(-10);
+  // Never alert on the owner's own texts, nor on our own business line (loop guard).
+  if (!digits || digits === ownerDigits || digits === '5803089288') return;
+
+  let who = '';
+  try {
+    const c = getDb().prepare(
+      "SELECT first_name, last_name FROM customers WHERE " +
+      "REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),'+1',''),'-',''),' ',''),'()','') LIKE ? LIMIT 1"
+    ).get('%' + digits + '%');
+    if (c) who = ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+  } catch (e) { /* the name is a nicety — never let it block the alert */ }
+
+  const pretty = '(' + digits.slice(0, 3) + ') ' + digits.slice(3, 6) + '-' + digits.slice(6);
+  const msg = 'Customer sent a text' + (who ? ' \u2014 ' + who : '') + '\n' + pretty +
+    '\n\n"' + String(body || '').slice(0, 220) + '"';
+  await smsService.sendSms(OWNER_CELL, msg);
+}
+
 async function postSuggestion(number, replyText) {
   try {
     const db = getDb();
@@ -421,4 +453,4 @@ async function actOnSuggestion(id, act, actedBy) {
 
 module.exports = {
   isReaction,
-  isConversationCloser, handleInboundSms, generateReply, buildSystemPrompt, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion };
+  isConversationCloser, handleInboundSms, generateReply, buildSystemPrompt, isEnabled, setEnabled, isThreadPaused, pauseThread, resumeThread, getMode, setMode, postSuggestion, actOnSuggestion, alertOwnerInbound };
