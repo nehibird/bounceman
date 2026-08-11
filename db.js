@@ -908,6 +908,12 @@ function initialize() {
       event_key TEXT PRIMARY KEY,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    -- Messenger delivery dedupe. Meta retries an undelivered webhook event for up to
+    -- 36 hours, so a slow LLM turn would otherwise double-reply to the customer.
+    CREATE TABLE IF NOT EXISTS messenger_events_seen (
+      event_key TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS suggested_replies (
       id TEXT PRIMARY KEY,
       phone10 TEXT NOT NULL,
