@@ -238,6 +238,17 @@ function buildDeliveryCardBlocks(booking, customer, items) {
       }
     });
   }
+  // Call the customer straight from the card. Rings the owner's phone first, then
+  // bridges to the customer with the business number as caller ID — so the customer
+  // sees Bounce Man, and the owner's personal cell is never exposed.
+  if (customer && customer.phone) {
+    elements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: ':telephone_receiver: Call Customer', emoji: true },
+      action_id: 'call_customer',
+      value: JSON.stringify({ booking_id: booking.id, phone: customer.phone, name: customer.first_name || '' })
+    });
+  }
   blocks.push({ type: 'actions', elements });
 
   blocks.push({
@@ -623,12 +634,18 @@ function buildEventCard(booking, customer) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '✅ *All done! Signed & Paid.*' } });
   }
 
-  blocks.push({
-    type: 'actions',
-    elements: [
-      { type: 'button', text: { type: 'plain_text', text: 'View Booking' }, url: adminUrl, action_id: 'view_booking_card' }
-    ]
-  });
+  const cardActions = [
+    { type: 'button', text: { type: 'plain_text', text: 'View Booking' }, url: adminUrl, action_id: 'view_booking_card' }
+  ];
+  if (customer && customer.phone) {
+    cardActions.push({
+      type: 'button',
+      text: { type: 'plain_text', text: ':telephone_receiver: Call Customer', emoji: true },
+      action_id: 'call_customer',
+      value: JSON.stringify({ booking_id: booking.id, phone: customer.phone, name: customer.first_name || '' })
+    });
+  }
+  blocks.push({ type: 'actions', elements: cardActions });
 
   return blocks;
 }

@@ -782,12 +782,64 @@ router.post('/slack/interactivity', async (req, res) => {
       await require('../services/sarah-sms').actOnSuggestion(value.id, 'dismiss', user && (user.name || user.id));
     } else if (actionId === 'call_back') {
       await handleCallBack(value, user, response_url, message, payload);
+    } else if (actionId === 'call_customer') {
+      await handleCallCustomer(value, user, response_url);
     }
 
   } catch (err) {
     console.error('[SLACK INTERACT] Error:', err.message);
   }
 });
+
+// Ring the owner's phone, then bridge it to the customer. The owner picks up his own
+// phone, hears the prompt, and is connected — his personal cell is never dialled by the
+// customer and never shown to them, because the bridge leg uses the business number as
+// caller ID.
+//
+// Also marks the customer for DIRECT ROUTING: once the owner has spoken to them, their
+// callback rings him instead of landing in Sarah's press-1 gate. That expires (see
+// DIRECT_ROUTE_HOURS) so a single conversation doesn't permanently route someone around
+// the assistant.
+const DIRECT_ROUTE_HOURS = 72;
+async function handleCallCustomer(value, user, response_url) {
+  const { phone, name, booking_id } = value || {};
+  const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) {
+    await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: No usable phone number on that booking.' });
+    return;
+  }
+  const toE164 = '+1' + digits;
+  const owner = process.env.OWNER_CELL || TRANSFER_TARGET;
+
+  try {
+    const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+    const call = await twilio.calls.create({
+      to: owner,                                   // ring the owner first
+      from: process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE || BM_NUMBER,
+      url: BASE + '/api/call/bridge?to=' + encodeURIComponent(toE164)
+    });
+
+    // Route their callback straight to the owner from here on.
+    try {
+      const { getDb } = require('../db');
+      const until = new Date(Date.now() + DIRECT_ROUTE_HOURS * 3600 * 1000).toISOString();
+      getDb().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run('direct_route:' + toE164, until);
+      console.log('[CALL] Direct routing set for', toE164, 'until', until);
+    } catch (e) { console.error('[CALL] direct-route flag failed:', e.message); }
+
+    console.log('[CALL] Ringing owner', owner, '-> bridging to', toE164, '| SID:', call.sid);
+    await respondToSlack(response_url, {
+      response_type: 'ephemeral',
+      text: ':telephone_receiver: Calling your phone now — answer it and you\'ll be connected to ' +
+            (name || toE164) + '. Their callbacks will reach you directly for the next ' + DIRECT_ROUTE_HOURS + ' hours.'
+    });
+  } catch (e) {
+    console.error('[CALL] failed:', e.message);
+    await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: Could not place the call: ' + e.message });
+  }
+}
 
 // Record a cash/check payment collected on delivery, then flip the card's Payment Status in place.
 async function handleRecordPayment(value, user, response_url) {
@@ -1435,6 +1487,37 @@ router.post('/twilio-entry', (req, res) => {
     logCall('allowed', null);
     console.log('[TWILIO ENTRY] Whitelisted number', from, '-> press-1 gate');
     return twimlGather();
+  }
+
+  // 0b. DIRECT ROUTE — the owner has called this customer from a Slack card, so their
+  // callback rings him instead of landing in Sarah's press-1 gate. Sits after the owner
+  // whitelist and BEFORE the spam/blocklist logic, because someone we deliberately phoned
+  // is by definition not spam.
+  //
+  // Fails OPEN: any error here falls through to the normal path rather than dropping the
+  // call. Rate limiting once permanently blocked two paying customers (see the note at the
+  // rate-limit branch below) — a new routing branch must never be the thing that blocks
+  // someone from reaching a human.
+  try {
+    if (from) {
+      const dr = db.prepare('SELECT value FROM settings WHERE key = ?').get('direct_route:' + from);
+      if (dr && dr.value && new Date(dr.value) > new Date()) {
+        logCall('allowed', 'direct_route');
+        console.log('[TWILIO ENTRY]', from, '-> DIRECT to owner (spoke to them recently, expires ' + dr.value + ')');
+        // BASE is declared locally inside the other handlers, not at module scope, so
+        // referencing it here would throw at runtime on a live customer callback.
+        const entryBase = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+        const recCb = entryBase + '/api/webhooks/twilio-recording';
+        return res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' +
+          '<Dial callerId="' + BM_NUMBER + '" timeout="30" record="record-from-answer-dual" ' +
+          'recordingStatusCallback="' + recCb + '" recordingStatusCallbackEvent="completed">' +
+          TRANSFER_TARGET + '</Dial>' +
+          '<Say voice="Polly.Joanna">Sorry, we could not reach anyone. Please try again shortly.</Say>' +
+          '</Response>');
+      }
+    }
+  } catch (e) {
+    console.error('[TWILIO ENTRY] direct-route lookup failed, falling through:', e.message);
   }
 
   // 1. Non-US numbers
