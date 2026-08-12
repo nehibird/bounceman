@@ -261,7 +261,13 @@ async function notifyDeliveryReminder(booking, customer, items, contract) {
       require('../db').getDb().prepare('UPDATE bookings SET slack_reminder_ts = ?, slack_reminder_channel = ? WHERE id = ?').run(resp.ts, DELIVERY_CHANNEL, booking.id);
     } catch (e) { console.error('[SLACK] store reminder ts failed:', e.message); }
   }
-  console.log('[SLACK] Delivery reminder sent for', booking.booking_number);
+  // Report truthfully. postToSlack swallows every failure and returns null, so this
+  // used to log "sent" and return void even when nothing reached the channel — and the
+  // caller took that silence as success and set the sent-flag, losing the card forever.
+  const ok = !!(resp && resp.ts);
+  if (ok) console.log('[SLACK] Delivery reminder sent for', booking.booking_number);
+  else console.error('[SLACK] Delivery reminder NOT posted for', booking.booking_number, '— will retry next sweep');
+  return ok;
 }
 
 // Re-render the delivery-reminder card in place (no new card) to reflect current payment state.
@@ -367,6 +373,66 @@ async function sendTodayBrief() {
   }
 }
 
+// LAST-RESORT BACKSTOP. Everything above depends on Slack: if the token expires, the
+// bot is removed from the channel, the channel is archived, or Slack is simply down,
+// the delivery card never appears and the scheduler cannot tell the difference between
+// "posted" and "quietly failed". This layer assumes Slack is broken and reaches the
+// owner by SMS anyway.
+//
+// Fires when an event starts within 12 hours and slack_reminder_ts is still empty —
+// i.e. no card was ever confirmed posted for it. Texts once per booking.
+async function deliveryWatchdog() {
+  try {
+    const { getDb } = require('../db');
+    const smsService = require('./sms');
+    const { todayCT } = require('../lib/helpers');
+    const db = getDb();
+    const today = todayCT();
+    const d = new Date(today + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    const tomorrow = d.toLocaleDateString('en-CA');
+
+    // Today's and tomorrow's events with no confirmed Slack card.
+    const orphans = db.prepare(`
+      SELECT b.*, c.first_name, c.last_name, c.phone
+      FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+      WHERE b.event_date IN (?, ?)
+        AND b.status NOT IN ('cancelled', 'declined')
+        AND (b.slack_reminder_ts IS NULL OR b.slack_reminder_ts = '')
+      ORDER BY b.event_date, b.event_start_time
+    `).all(today, tomorrow);
+    if (!orphans.length) return;
+
+    const OWNER = process.env.OWNER_CELL || '+15806281765';
+    for (const b of orphans) {
+      // Only once the event is genuinely close — otherwise this fires on every booking
+      // the moment it is made, long before a card is due.
+      const start = new Date(b.event_date + 'T' + ((b.event_start_time || '09:00') + ':00'));
+      const hoursOut = (start - new Date()) / 3600000;
+      if (hoursOut > 12 || hoursOut < -6) continue;
+
+      const key = 'watchdog_sent:' + b.booking_number;
+      const seen = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      if (seen && seen.value === b.event_date) continue;
+
+      const who = ((b.first_name || '') + ' ' + (b.last_name || '')).trim() || b.booking_number;
+      const bal = parseFloat(b.balance_due) || 0;
+      const msg = 'HEADS UP — no delivery card posted for this one.\n\n' +
+        (b.event_start_time || '').slice(0, 5) + '  ' + who + '\n' +
+        (b.delivery_address || 'NO ADDRESS') + ', ' + (b.delivery_city || '') + '\n' +
+        (bal > 0 ? 'COLLECT $' + bal.toFixed(2) + '\n' : 'paid in full\n') +
+        (b.phone ? b.phone + '\n' : '') +
+        '\nSlack may be down or the bot removed from the channel.';
+      await smsService.sendSms(OWNER, msg);
+      db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(key, b.event_date);
+      console.error('[WATCHDOG] No Slack card for', b.booking_number, '— owner texted directly');
+    }
+  } catch (e) {
+    console.error('[WATCHDOG] failed:', e.message);
+  }
+}
+
 async function checkDeliveryReminders() {
   try {
     const { getDb } = require('../db');
@@ -401,6 +467,11 @@ async function checkDeliveryReminders() {
     if (bookings.length === 0) return;
 
     for (const booking of bookings) {
+      // Each booking is isolated. Without this, one bad record — a broken contract
+      // template, a malformed address, an email throw — escaped to the function-level
+      // catch and abandoned EVERY remaining booking in the sweep. On a three-delivery
+      // Saturday that is two cards silently lost to an unrelated fault.
+      try {
       // Dedup per BOOKING against its own event_date, so one booking is reminded once
       // no matter how many times the window sweeps over it.
       const tomorrowStr = booking.event_date;
@@ -441,10 +512,14 @@ async function checkDeliveryReminders() {
         }
       }
 
-      // Slack reminder
+      // Slack reminder — flag it ONLY on a confirmed post. Marking it sent on a failed
+      // post is what turns a transient Slack error into a permanently missing card,
+      // because the flag is exactly what stops the next sweep retrying.
       if (!slackSent) {
-        await notifyDeliveryReminder(booking, customer, items, contract);
-        db.prepare('UPDATE bookings SET slack_reminder_sent_date = ? WHERE id = ?').run(tomorrowStr, booking.id);
+        const posted = await notifyDeliveryReminder(booking, customer, items, contract);
+        if (posted) {
+          db.prepare('UPDATE bookings SET slack_reminder_sent_date = ? WHERE id = ?').run(tomorrowStr, booking.id);
+        }
       }
 
       // Customer email reminder
@@ -458,6 +533,11 @@ async function checkDeliveryReminders() {
         }
       } else if (!customer.email) {
         console.log('[REMINDER] No email on file for', booking.booking_number);
+      }
+      } catch (perBooking) {
+        // Deliberately swallowed per booking: the sweep must continue. Nothing is
+        // flagged as sent on this path, so the next sweep retries in 15 minutes.
+        console.error('[REMINDER] FAILED for', booking.booking_number, '-', perBooking.message);
       }
     }
   } catch (e) {
@@ -781,4 +861,4 @@ async function sendHazardChecks() {
   return sent;
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendTodayBrief, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendTodayBrief, deliveryWatchdog, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };

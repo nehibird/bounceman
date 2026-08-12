@@ -154,7 +154,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Public: http://localhost:${PORT}`);
 
   // Daily delivery reminder check — runs at 8 AM CT (14:00 UTC)
-  const { checkDeliveryReminders, sendTodayBrief, sendHazardChecks } = require('./services/notifications');
+  const { checkDeliveryReminders, sendTodayBrief, deliveryWatchdog, sendHazardChecks } = require('./services/notifications');
   function scheduleReminders() {
     // HOURLY, with a catch-up shortly after boot — not a single daily setTimeout.
     //
@@ -170,6 +170,9 @@ app.listen(PORT, '0.0.0.0', () => {
     const runReminders = () => {
       Promise.resolve(checkDeliveryReminders()).catch((e) => console.error('[REMINDER] run failed:', e.message));
       Promise.resolve(sendTodayBrief()).catch((e) => console.error('[BRIEF] run failed:', e.message));
+      // Runs LAST and independently: it exists precisely for the case where the two
+      // above believe they succeeded but nothing reached Slack.
+      Promise.resolve(deliveryWatchdog()).catch((e) => console.error('[WATCHDOG] run failed:', e.message));
     };
     // Every 15 minutes, not hourly. The interval inherits whatever minute the container
     // last booted at, so an hourly tick would drift the 5 PM brief anywhere across the
