@@ -171,7 +171,11 @@ app.listen(PORT, '0.0.0.0', () => {
       Promise.resolve(checkDeliveryReminders()).catch((e) => console.error('[REMINDER] run failed:', e.message));
       Promise.resolve(sendTodayBrief()).catch((e) => console.error('[BRIEF] run failed:', e.message));
     };
-    setTimeout(() => { runReminders(); setInterval(runReminders, 60 * 60 * 1000); }, 45 * 1000);
+    // Every 15 minutes, not hourly. The interval inherits whatever minute the container
+    // last booted at, so an hourly tick would drift the 5 PM brief anywhere across the
+    // hour (a boot at 10:26 sends it at 5:26). At 15 minutes it lands by 5:15 at worst,
+    // and the extra sweeps cost two indexed queries that no-op once the flags are set.
+    setTimeout(() => { runReminders(); setInterval(runReminders, 15 * 60 * 1000); }, 45 * 1000);
     // Hazard checks run HOURLY, not with the daily reminder. It's a safety text and
     // it has to reach short-notice bookings too, so it can't wait for one fixed hour
     // a day — a restart past that hour used to skip the run entirely. The
@@ -179,7 +183,7 @@ app.listen(PORT, '0.0.0.0', () => {
     // daytime Central. First pass 90s after boot so it also acts as a catch-up.
     const runHazards = () => sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
     setTimeout(() => { runHazards(); setInterval(runHazards, 60 * 60 * 1000); }, 90 * 1000);
-    console.log('[BounceMan] Delivery reminders + today brief: hourly (catch-up 45s after boot); hazard checks hourly');
+    console.log('[BounceMan] Delivery reminders + 5 PM night-before brief: every 15 min (catch-up 45s after boot); hazard checks hourly');
   }
   // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
   // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,

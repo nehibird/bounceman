@@ -288,30 +288,44 @@ async function refreshDeliveryCard(bookingId) {
 }
 
 // Check for tomorrow's deliveries and send Slack + customer email reminders
-// Same-day brief, texted to the owner's cell. The 2-day-ahead reminder is a PLANNING
-// tool; this is the operational one — what is happening today, in time order, with the
-// money to collect. On 2026-08-11 nothing existed that told him a delivery was due that
-// morning, and a customer sat waiting three hours.
+// NIGHT-BEFORE brief, texted to the owner's cell: tomorrow's deliveries, in time order,
+// with the money to collect. Sent the evening before because that is when the trailer
+// gets loaded — a 9 AM delivery briefed at 7 AM is already too late to act on. The
+// 2-day-ahead reminder is a planning tool; this is the one you work from.
+//
+// On 2026-08-11 nothing existed that told him a delivery was due at all, and a customer
+// sat waiting three hours.
 //
 // Deliberately SMS rather than Slack or email: it has to reach him on a trailer with one
-// bar, not in an app he might not open. Idempotent via a settings key, so the hourly
-// runner sends it once per day and never repeats.
+// bar, not in an app he might not open. Idempotent on the DELIVERY date, so the hourly
+// runner sends it once and never repeats, even across restarts.
 async function sendTodayBrief() {
   try {
     const { getDb } = require('../db');
     const { todayCT } = require('../lib/helpers');
     const smsService = require('./sms');
     const db = getDb();
-    const today = todayCT();
 
-    const sentKey = 'today_brief_sent';
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(sentKey);
-    if (row && row.value === today) return; // already sent today
-
-    // Only run it in the morning Central — a brief at 2am helps nobody, and we do not
-    // want the hourly runner firing it the instant the container restarts at midnight.
+    // Target 5 PM Central. The runner sweeps every 15 min, so in normal operation this
+    // fires between 5:00 and 5:15. The window stays open until 9 PM purely as a catch-up:
+    // if the container is down at 5 and boots at 7, the brief still goes out that evening
+    // rather than being lost. Outside the window it does nothing, so a 3 AM restart
+    // cannot text him at 3 AM.
     const hourCT = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hour12: false }), 10);
-    if (hourCT < 6 || hourCT > 11) return;
+    if (hourCT < 17 || hourCT > 21) return;
+
+    // Tomorrow's deliveries, computed in Central so an evening send cannot roll the
+    // date forward the way a UTC calculation would after 7 PM.
+    const base = todayCT();
+    const d = new Date(base + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    const today = d.toLocaleDateString('en-CA'); // the DELIVERY date this brief covers
+
+    // Keyed on the delivery date, not on the day it was sent — so it goes out once for
+    // a given day's run no matter how many times the hourly job sweeps the window.
+    const sentKey = 'delivery_brief_sent';
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(sentKey);
+    if (row && row.value === today) return;
 
     const bookings = db.prepare(`
       SELECT b.*, c.first_name, c.last_name, c.phone
@@ -323,7 +337,7 @@ async function sendTodayBrief() {
     const OWNER = process.env.OWNER_CELL || '+15806281765';
     let msg;
     if (bookings.length === 0) {
-      msg = 'Bounce Man — nothing on the calendar today.';
+      msg = 'Bounce Man — nothing booked tomorrow.';
     } else {
       const lines = bookings.map((b) => {
         const who = ((b.first_name || '') + ' ' + (b.last_name || '')).trim() || b.booking_number;
@@ -337,7 +351,9 @@ async function sendTodayBrief() {
                (b.phone ? '\n   ' + b.phone : '');
       });
       const owed = bookings.reduce((sum, b) => sum + (parseFloat(b.balance_due) || 0), 0);
-      msg = 'Bounce Man — TODAY (' + bookings.length + ' ' + (bookings.length === 1 ? 'delivery' : 'deliveries') + ')\n\n' +
+      const dayName = new Date(today + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      msg = 'Bounce Man — TOMORROW, ' + dayName + ' (' + bookings.length + ' ' +
+            (bookings.length === 1 ? 'delivery' : 'deliveries') + ')\n\n' +
             lines.join('\n\n') +
             (owed > 0 ? '\n\nTotal to collect: $' + owed.toFixed(2) : '');
     }
@@ -345,7 +361,7 @@ async function sendTodayBrief() {
     await smsService.sendSms(OWNER, msg);
     db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(sentKey, today);
-    console.log('[BRIEF] Today brief sent —', bookings.length, 'delivery(ies)');
+    console.log('[BRIEF] Night-before brief sent for', today, '—', bookings.length, 'delivery(ies)');
   } catch (e) {
     console.error('[BRIEF] failed:', e.message);
   }
