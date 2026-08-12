@@ -288,21 +288,106 @@ async function refreshDeliveryCard(bookingId) {
 }
 
 // Check for tomorrow's deliveries and send Slack + customer email reminders
+// Same-day brief, texted to the owner's cell. The 2-day-ahead reminder is a PLANNING
+// tool; this is the operational one — what is happening today, in time order, with the
+// money to collect. On 2026-08-11 nothing existed that told him a delivery was due that
+// morning, and a customer sat waiting three hours.
+//
+// Deliberately SMS rather than Slack or email: it has to reach him on a trailer with one
+// bar, not in an app he might not open. Idempotent via a settings key, so the hourly
+// runner sends it once per day and never repeats.
+async function sendTodayBrief() {
+  try {
+    const { getDb } = require('../db');
+    const { todayCT } = require('../lib/helpers');
+    const smsService = require('./sms');
+    const db = getDb();
+    const today = todayCT();
+
+    const sentKey = 'today_brief_sent';
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(sentKey);
+    if (row && row.value === today) return; // already sent today
+
+    // Only run it in the morning Central — a brief at 2am helps nobody, and we do not
+    // want the hourly runner firing it the instant the container restarts at midnight.
+    const hourCT = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hour12: false }), 10);
+    if (hourCT < 6 || hourCT > 11) return;
+
+    const bookings = db.prepare(`
+      SELECT b.*, c.first_name, c.last_name, c.phone
+      FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+      WHERE b.event_date = ? AND b.status NOT IN ('cancelled', 'declined')
+      ORDER BY b.event_start_time
+    `).all(today);
+
+    const OWNER = process.env.OWNER_CELL || '+15806281765';
+    let msg;
+    if (bookings.length === 0) {
+      msg = 'Bounce Man — nothing on the calendar today.';
+    } else {
+      const lines = bookings.map((b) => {
+        const who = ((b.first_name || '') + ' ' + (b.last_name || '')).trim() || b.booking_number;
+        const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(b.id)
+          .map((i) => i.item_name).join(', ');
+        const t = (b.event_start_time || '').slice(0, 5);
+        const bal = parseFloat(b.balance_due) || 0;
+        return t + '  ' + who + '\n   ' + (items || 'no items') +
+               '\n   ' + (b.delivery_address || 'NO ADDRESS') + ', ' + (b.delivery_city || '') +
+               (bal > 0 ? '\n   COLLECT $' + bal.toFixed(2) : '\n   paid in full') +
+               (b.phone ? '\n   ' + b.phone : '');
+      });
+      const owed = bookings.reduce((sum, b) => sum + (parseFloat(b.balance_due) || 0), 0);
+      msg = 'Bounce Man — TODAY (' + bookings.length + ' ' + (bookings.length === 1 ? 'delivery' : 'deliveries') + ')\n\n' +
+            lines.join('\n\n') +
+            (owed > 0 ? '\n\nTotal to collect: $' + owed.toFixed(2) : '');
+    }
+
+    await smsService.sendSms(OWNER, msg);
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(sentKey, today);
+    console.log('[BRIEF] Today brief sent —', bookings.length, 'delivery(ies)');
+  } catch (e) {
+    console.error('[BRIEF] failed:', e.message);
+  }
+}
+
 async function checkDeliveryReminders() {
   try {
     const { getDb } = require('../db');
     const { sendDeliveryReminder } = require('./email');
     const { v4: uuid } = require('uuid');
     const db = getDb();
-    const target = new Date();
-    target.setDate(target.getDate() + 2); // remind 2 days ahead of the event
-    const tomorrowStr = target.toISOString().split('T')[0];
+    const { todayCT } = require('../lib/helpers');
 
-    const bookings = db.prepare("SELECT * FROM bookings WHERE event_date = ? AND status NOT IN ('cancelled', 'declined')").all(tomorrowStr);
+    // Scan a WINDOW (today .. today+2), not exactly today+2.
+    //
+    // The single-day query gave every booking exactly ONE chance, forever: a booking
+    // created after that morning's run on its day-2 was never looked at again, because
+    // the next day's run had already moved on to a different date. That is precisely how
+    // the 2026-08-11 delivery was missed — the customer booked at 12:52 PM, three hours
+    // and fifty-two minutes after the only run that would have caught her.
+    //
+    // Including TODAY also means a same-day booking gets a reminder within the hour
+    // instead of never. The sent-date flags below make repeat runs a no-op, so scanning
+    // a range and running often is safe.
+    const base = todayCT(); // Central, NOT toISOString — running hourly, a UTC date
+                            // would roll over to tomorrow every evening after 7 PM CT.
+    const days = [0, 1, 2].map((n) => {
+      const d = new Date(base + 'T12:00:00');
+      d.setDate(d.getDate() + n);
+      return d.toLocaleDateString('en-CA');
+    });
+
+    const bookings = db.prepare(
+      "SELECT * FROM bookings WHERE event_date IN (?, ?, ?) AND status NOT IN ('cancelled', 'declined') ORDER BY event_date"
+    ).all(days[0], days[1], days[2]);
 
     if (bookings.length === 0) return;
 
     for (const booking of bookings) {
+      // Dedup per BOOKING against its own event_date, so one booking is reminded once
+      // no matter how many times the window sweeps over it.
+      const tomorrowStr = booking.event_date;
       const slackSent = booking.slack_reminder_sent_date === tomorrowStr;
       const emailSent = booking.email_reminder_sent_date === tomorrowStr;
 
@@ -680,4 +765,4 @@ async function sendHazardChecks() {
   return sent;
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };
+module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendTodayBrief, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };

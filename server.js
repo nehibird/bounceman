@@ -154,18 +154,24 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BounceMan] Public: http://localhost:${PORT}`);
 
   // Daily delivery reminder check — runs at 8 AM CT (14:00 UTC)
-  const { checkDeliveryReminders, sendHazardChecks } = require('./services/notifications');
+  const { checkDeliveryReminders, sendTodayBrief, sendHazardChecks } = require('./services/notifications');
   function scheduleReminders() {
-    const now = new Date();
-    const target = new Date(now);
-    target.setUTCHours(14, 0, 0, 0); // 8 AM CT
-    if (target <= now) target.setDate(target.getDate() + 1);
-    const ms = target - now;
-    const runDaily = () => { checkDeliveryReminders(); };
-    setTimeout(() => {
-      runDaily();
-      setInterval(runDaily, 24 * 60 * 60 * 1000);
-    }, ms);
+    // HOURLY, with a catch-up shortly after boot — not a single daily setTimeout.
+    //
+    // The old version scheduled one timer at startup for 14:00 UTC. Any restart after
+    // that hour pushed it to the following day and skipped that day's run entirely, and
+    // every deploy restarts the container. Combined with the reminder query only looking
+    // at a single date, a booking could miss its one and only chance permanently — which
+    // is what happened on 2026-08-11.
+    //
+    // Both jobs are idempotent (reminder flags per booking/event_date; the brief keys off
+    // a settings row per day), so running them every hour is safe and means a booking
+    // created at any hour is picked up within one, instead of never.
+    const runReminders = () => {
+      Promise.resolve(checkDeliveryReminders()).catch((e) => console.error('[REMINDER] run failed:', e.message));
+      Promise.resolve(sendTodayBrief()).catch((e) => console.error('[BRIEF] run failed:', e.message));
+    };
+    setTimeout(() => { runReminders(); setInterval(runReminders, 60 * 60 * 1000); }, 45 * 1000);
     // Hazard checks run HOURLY, not with the daily reminder. It's a safety text and
     // it has to reach short-notice bookings too, so it can't wait for one fixed hour
     // a day — a restart past that hour used to skip the run entirely. The
@@ -173,7 +179,7 @@ app.listen(PORT, '0.0.0.0', () => {
     // daytime Central. First pass 90s after boot so it also acts as a catch-up.
     const runHazards = () => sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
     setTimeout(() => { runHazards(); setInterval(runHazards, 60 * 60 * 1000); }, 90 * 1000);
-    console.log(`[BounceMan] Delivery reminders scheduled for ${target.toISOString()}; hazard checks hourly`);
+    console.log('[BounceMan] Delivery reminders + today brief: hourly (catch-up 45s after boot); hazard checks hourly');
   }
   // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
   // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,
