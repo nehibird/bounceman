@@ -201,8 +201,18 @@ router.get('/', async (req, res) => {
   // What is actually his: cash on hand, less the state's money sitting in the same account.
   // taxNotYetDue is subtracted too — spending it only means being short next month.
   const safeToSpend = Math.round((bankCash - taxOwed - taxNotYetDue) * 100) / 100;
+  // Oldest sync across the linked accounts — the balance is only as fresh as its
+  // laggiest account. Feeds the "as of" line and the stale warning on the tile.
+  let bankSyncedAt = null;
+  for (const a of (bankAccounts || [])) {
+    if (!a.last_synced) continue;
+    const t = new Date(a.last_synced).getTime();
+    if (!isNaN(t) && (bankSyncedAt === null || t < bankSyncedAt)) bankSyncedAt = t;
+  }
+  const bankAgeMins = bankSyncedAt ? Math.round((Date.now() - bankSyncedAt) / 60000) : null;
+
   const finance = {
-    bankCash, stripeIncoming, cardDebt,
+    bankCash, stripeIncoming, cardDebt, bankSyncedAt, bankAgeMins,
     cashPosition: bankCash + stripeIncoming,
     netLiquid: Math.round((bankCash + stripeIncoming - cardDebt) * 100) / 100,
     safeToSpend

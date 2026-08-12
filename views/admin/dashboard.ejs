@@ -69,6 +69,18 @@
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">Total Cash Position</div>
               <div class="fs-2 fw-bold text-success">$${finance.cashPosition.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">$${finance.bankCash.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} available in bank${finance.stripeIncoming > 0 ? ' + $' + finance.stripeIncoming.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' on the way from Stripe' : ''}</div>
+              <div class="d-flex align-items-center gap-2 mt-1">
+                <button type="button" id="bankSyncBtn" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:12px">
+                  <i class="fas fa-rotate me-1"></i>Sync now
+                </button>
+                <span id="bankSyncedAt" class="small ${finance.bankAgeMins != null && finance.bankAgeMins > 120 ? 'text-warning fw-semibold' : 'text-muted'}">
+                  ${finance.bankAgeMins == null ? 'never synced'
+                    : finance.bankAgeMins < 2 ? 'just now'
+                    : finance.bankAgeMins < 60 ? 'as of ' + finance.bankAgeMins + ' min ago'
+                    : finance.bankAgeMins < 1440 ? 'as of ' + Math.round(finance.bankAgeMins/60) + 'h ago'
+                    : 'as of ' + Math.round(finance.bankAgeMins/1440) + 'd ago'}
+                </span>
+              </div>
             </div>
             <div class="col-md-4">
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
@@ -380,4 +392,30 @@ document.addEventListener("click", function(e) {
   });
 })();
 <\/script>
+
+<script>
+  (function() {
+    var btn = document.getElementById('bankSyncBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var label = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-rotate fa-spin me-1"></i>Syncing...';
+      fetch('/admin/banks/sync', { method: 'POST', headers: { 'Accept': 'application/json' } })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d && d.error) throw new Error(d.error);
+          // Reload so every figure that depends on the balance updates together —
+          // Safe to Spend and Net Liquid are computed server-side from it.
+          location.reload();
+        })
+        .catch(function(e) {
+          btn.disabled = false;
+          btn.innerHTML = label;
+          var at = document.getElementById('bankSyncedAt');
+          if (at) { at.textContent = 'sync failed: ' + e.message; at.className = 'small text-danger'; }
+        });
+    });
+  })();
+</script>
 ` }) %>
