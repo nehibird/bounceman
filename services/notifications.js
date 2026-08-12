@@ -57,12 +57,13 @@ async function postToSlack(channel, blocks, text, thread_ts) {
 
 function buildBookingBlocks(booking, customer, items) {
   // Structured booking notification — clean labeled sections, full info, minimal emoji.
+  items = Array.isArray(items) ? items : [];
   const days = Math.max(1, ...items.map(i => parseInt(i.rental_days) || 1));
   const itemList = items.map(i => {
     const wet = i.wet_or_dry === 'wet' ? ' (WET)' : (i.wet_or_dry === 'dry' ? ' (DRY)' : '');
     const d = (parseInt(i.rental_days) || 1) > 1 ? ' ×' + i.rental_days + ' days' : '';
     return '• ' + i.item_name + wet + d + ' — $' + parseFloat(i.unit_price).toFixed(2);
-  }).join('\n');
+  }).join('\n') || '_No items on this booking_';
 
   const address = [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ');
   const durationTxt = (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + ' – ' + fmtDate(booking.event_end_date) + ')' : '') : '');
@@ -139,6 +140,17 @@ function buildBookingBlocks(booking, customer, items) {
   blocks.push({ type: 'context', elements: [
     { type: 'mrkdwn', text: '*Created:* ' + fmtCentral(booking.created_at) + ' · <https://bouncemanrentals.com/admin/bookings/' + booking.id + '|View in Admin>' }
   ] });
+
+  // Ring the owner's phone and bridge it to the customer. Same action_id the
+  // delivery card uses, so one handler serves both.
+  if (customer && customer.phone) {
+    blocks.push({ type: 'actions', elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: '📞 Call Customer', emoji: true },
+      action_id: 'call_customer',
+      value: JSON.stringify({ booking_id: booking.id, phone: customer.phone, name: customer.first_name || '' })
+    }] });
+  }
 
   return blocks;
 }
@@ -660,7 +672,13 @@ async function updateBookingSlackCard(bookingId) {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
   if (!customer) return;
 
-  const blocks = buildEventCard(booking, customer);
+  // Rebuild with buildBookingBlocks - the builder that posted this card. Using the
+  // leaner buildEventCard here silently strips CUSTOMER/EQUIPMENT/PRICING on every refresh.
+  let bookingItems = [];
+  try {
+    bookingItems = db.prepare('SELECT * FROM booking_items WHERE booking_id = ?').all(booking.id) || [];
+  } catch (e) { console.error('[SLACK] item lookup failed for card refresh:', e.message); }
+  const blocks = buildBookingBlocks(booking, customer, bookingItems);
   // const allDone = booking.contract_signed && (booking.payment_status === 'paid');
   const statusLine = booking.booking_number + ': ' + customer.first_name + ' — ' +
     (booking.contract_signed ? 'Signed' : 'Not Signed') + ', ' +

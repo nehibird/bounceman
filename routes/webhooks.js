@@ -817,7 +817,7 @@ async function handleCallCustomer(value, user, response_url) {
     const call = await twilio.calls.create({
       to: owner,                                   // ring the owner first
       from: process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE || BM_NUMBER,
-      url: BASE + '/api/call/bridge?to=' + encodeURIComponent(toE164)
+      url: BASE + '/api/webhooks/call-bridge?to=' + encodeURIComponent(toE164)
     });
 
     // Route their callback straight to the owner from here on.
@@ -1646,6 +1646,25 @@ router.post('/transfer-accept', (req, res) => {
   console.log('[TRANSFER] Owner accepted transfer for parent', parent);
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting now.</Say></Response>`);
+});
+
+// Answered by the owner after he taps "Call Customer" in Slack. Dials the customer
+// and bridges the two legs. callerId is the business number, so the customer never
+// sees the owner's personal cell.
+router.post('/call-bridge', (req, res) => {
+  if (!guardTwilio(req, res)) return;
+  const digits = String(req.query.to || '').replace(/\D/g, '').slice(-10);
+  res.type('text/xml');
+  if (digits.length !== 10) {
+    console.error('[CALL BRIDGE] bad "to" param:', req.query.to);
+    return res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, that number is not valid. Goodbye.</Say><Hangup/></Response>');
+  }
+  const to = '+1' + digits;
+  console.log('[CALL BRIDGE] bridging owner ->', to);
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' +
+    '<Say voice="Polly.Joanna">Connecting you now.</Say>' +
+    '<Dial callerId="' + BM_NUMBER + '" timeout="30"><Number>' + to + '</Number></Dial>' +
+    '</Response>');
 });
 
 // Fires when the <Dial> to the owner ends. If he never accepted (no answer, busy,
