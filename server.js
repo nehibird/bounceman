@@ -196,11 +196,12 @@ app.listen(PORT, '0.0.0.0', () => {
   } else {
     scheduleReminders();
     // Auto-release abandoned unpaid holds so they stop reserving inventory: reminder at
-    // ~4h, release at 5h. Runs every 20 min (first pass 60s after boot).
+    // 10 min, release at 30 min. Runs every 5 min (first pass 60s after boot) — at the
+    // old 20-min cadence a 30-minute hold would not actually expire until 40-50 min.
     const { releaseExpiredHolds } = require('./services/scheduler');
     const runHoldRelease = () => releaseExpiredHolds().catch((e) => console.error('[HOLD] run failed:', e.message));
-    setTimeout(() => { runHoldRelease(); setInterval(runHoldRelease, 20 * 60 * 1000); }, 60 * 1000);
-    console.log('[BounceMan] Hold auto-release scheduled (every 20 min)');
+    setTimeout(() => { runHoldRelease(); setInterval(runHoldRelease, 5 * 60 * 1000); }, 60 * 1000);
+    console.log('[BounceMan] Hold auto-release scheduled (every 5 min; remind 10 min, release 30 min)');
   }
 
   // Google Business Profile reviews — sync on startup + daily.

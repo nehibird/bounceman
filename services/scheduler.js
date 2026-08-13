@@ -15,9 +15,14 @@ const smsService = require('./sms');
 const notifyService = require('./notifications');
 const { fmtDate } = require('../lib/helpers');
 
-// Unpaid online holds: remind ~1h before expiry, release (free the unit) after this many hours.
-const HOLD_RELEASE_HOURS = 5;
-const HOLD_REMIND_HOURS = 4;
+// Unpaid online holds. Measured against real behaviour: median time from booking to
+// deposit is 2.1 minutes, and the slowest genuine same-session payer took 24.9 minutes
+// (everything past that is a balance payment on an already-confirmed booking, not
+// checkout). A 5-hour hold was therefore reserving inventory for people who had long
+// since closed the tab, and kept an invisible unpaid booking alive for hours.
+// Release at 30 minutes, with a nudge at 10.
+const HOLD_RELEASE_HOURS = 0.5;      // 30 minutes
+const HOLD_REMIND_HOURS = 1 / 6;     // 10 minutes
 
 function getTomorrow() {
   const d = new Date();
@@ -177,7 +182,7 @@ async function releaseExpiredHolds() {
 
     if (b.age_hours >= HOLD_RELEASE_HOURS) {
       db.prepare(`UPDATE bookings SET status = 'cancelled', updated_at = datetime('now'),
-        internal_notes = COALESCE(internal_notes, '') || ' | Auto-released: deposit unpaid after ${HOLD_RELEASE_HOURS}h' WHERE id = ?`).run(b.id);
+        internal_notes = COALESCE(internal_notes, '') || ' | Auto-released: deposit unpaid after ${Math.round(HOLD_RELEASE_HOURS * 60)} min' WHERE id = ?`).run(b.id);
       released++;
       console.log('[HOLD] Released', b.booking_number, '(unpaid ' + b.age_hours.toFixed(1) + 'h) — unit freed');
       try {
@@ -185,7 +190,7 @@ async function releaseExpiredHolds() {
         await notifyService.sendSlackMessage({
           text: 'Hold released: ' + b.booking_number,
           blocks: [{ type: 'section', text: { type: 'mrkdwn',
-            text: ':hourglass_flowing_sand: *Hold released — unit freed*\n*' + b.first_name + ' ' + (b.last_name || '') + '* never paid the deposit (held ' + Math.round(b.age_hours) + 'h).\n' + (items || 'items') + ' · ' + fmtDate(b.event_date) + '\nBooking `' + b.booking_number + '` set to cancelled; the equipment is available again.' } }]
+            text: ':hourglass_flowing_sand: *Hold released — unit freed*\n*' + b.first_name + ' ' + (b.last_name || '') + '* never paid the deposit (held ' + Math.round(b.age_hours * 60) + ' min).\n' + (items || 'items') + ' · ' + fmtDate(b.event_date) + '\nBooking `' + b.booking_number + '` set to cancelled; the equipment is available again.' } }]
         });
       } catch (e) { console.error('[HOLD] release notify failed:', e.message); }
     } else if (b.age_hours >= HOLD_REMIND_HOURS && !b.hold_reminder_sent && (b.phone || b.email)) {
