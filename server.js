@@ -186,7 +186,16 @@ app.listen(PORT, '0.0.0.0', () => {
     // daytime Central. First pass 90s after boot so it also acts as a catch-up.
     const runHazards = () => sendHazardChecks().catch((e) => console.error('[HAZARD] run failed:', e.message));
     setTimeout(() => { runHazards(); setInterval(runHazards, 60 * 60 * 1000); }, 90 * 1000);
-    console.log('[BounceMan] Delivery reminders + 5 PM night-before brief: every 15 min (catch-up 45s after boot); hazard checks hourly');
+
+    // Wind watch: texts the owner when a unit that is currently OUT is forecast to see
+    // gusts over the threshold within the next few hours. Hourly is the right cadence —
+    // a 5-hour lookahead checked every hour never leaves a gap, and the per-booking
+    // dedupe keeps one windy afternoon down to a single text.
+    const { checkWindAlerts } = require('./services/weather-watch');
+    const runWindWatch = () => checkWindAlerts().catch((e) => console.error('[WIND] run failed:', e.message));
+    setTimeout(() => { runWindWatch(); setInterval(runWindWatch, 60 * 60 * 1000); }, 120 * 1000);
+
+    console.log('[BounceMan] Delivery reminders + 5 PM night-before brief: every 15 min (catch-up 45s after boot); hazard checks + wind watch hourly');
   }
   // Only the primary (production) instance runs the reminder scheduler. Dev/secondary
   // instances set DISABLE_SCHEDULER=true so they don't fire duplicate reminders, emails,
