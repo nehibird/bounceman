@@ -359,7 +359,7 @@ async function sendTodayBrief() {
     const bookings = db.prepare(`
       SELECT b.*, c.first_name, c.last_name, c.phone
       FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
-      WHERE b.event_date = ? AND b.status NOT IN ('cancelled', 'declined')
+      WHERE b.event_date = ? AND b.status IN ('confirmed', 'completed')
       ORDER BY b.event_start_time
     `).all(today);
 
@@ -420,7 +420,7 @@ async function deliveryWatchdog() {
       SELECT b.*, c.first_name, c.last_name, c.phone
       FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
       WHERE b.event_date IN (?, ?)
-        AND b.status NOT IN ('cancelled', 'declined')
+        AND b.status IN ('confirmed', 'completed')
         AND (b.slack_reminder_ts IS NULL OR b.slack_reminder_ts = '')
       ORDER BY b.event_date, b.event_start_time
     `).all(today, tomorrow);
@@ -484,7 +484,7 @@ async function checkDeliveryReminders() {
     });
 
     const bookings = db.prepare(
-      "SELECT * FROM bookings WHERE event_date IN (?, ?, ?) AND status NOT IN ('cancelled', 'declined') ORDER BY event_date"
+      "SELECT * FROM bookings WHERE event_date IN (?, ?, ?) AND status IN ('confirmed', 'completed') ORDER BY event_date"
     ).all(days[0], days[1], days[2]);
 
     if (bookings.length === 0) return;
@@ -854,7 +854,7 @@ async function sendHazardChecks() {
     SELECT b.id, b.booking_number, b.event_date, c.first_name, c.phone
     FROM bookings b JOIN customers c ON c.id = b.customer_id
     WHERE date(b.event_date) BETWEEN date('now') AND date('now', '+8 days')
-      AND b.status NOT IN ('cancelled', 'declined')
+      AND b.status IN ('confirmed', 'completed')
       AND (b.hazard_check_sent IS NULL OR b.hazard_check_sent = 0)
   `).all();
   let sent = 0;
