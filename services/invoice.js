@@ -9,7 +9,17 @@
  * rate we charged auditable against the OTC COPO chart.
  */
 const PDFDocument = require('pdfkit');
+const path = require('path');
+const fs = require('fs');
 const { taxBreakdown } = require('../lib/helpers');
+
+// The wordmark is a 600x600 PNG whose artwork only occupies the middle band, so a
+// naive placement leaves a pile of dead space above and below it. These offsets are
+// measured off the actual pixels: art runs roughly x 90-500, y 110-400 of 600.
+const LOGO_PATH = path.join(__dirname, '..', 'public', 'assets', 'images', 'wordmark-email.png');
+const LOGO_BOX = 150;                    // rendered width/height of the square
+const LOGO_ART_TOP = 110 / 600;          // where the art actually starts, as a fraction
+const LOGO_ART_BOTTOM = 400 / 600;
 
 const NAVY = '#1A212D';
 const ORANGE = '#D77C42';
@@ -51,20 +61,34 @@ function buildInvoicePdf(booking, customer, items, opts) {
     doc.on('error', reject);
 
     // ---- header -----------------------------------------------------------
-    doc.fillColor(NAVY).fontSize(22).font('Helvetica-Bold').text(BIZ.name, 50, 50);
-    doc.fontSize(9).font('Helvetica').fillColor(GREY)
-      .text(BIZ.addr, 50, 76).text(BIZ.city).text(BIZ.phone).text(BIZ.email);
+    // The wordmark PNG is a 600x600 square whose artwork only occupies the middle
+    // band. Rather than fight the padding, the logo gets the top-left corner to
+    // itself and the business address moves to the footer — it is already repeated
+    // in the PAYMENT box as the remit-to, so nothing is lost.
+    let logoBottom = 96;
+    try {
+      if (fs.existsSync(LOGO_PATH)) {
+        doc.image(LOGO_PATH, 46, 30 - LOGO_ART_TOP * LOGO_BOX, { width: LOGO_BOX });
+        logoBottom = 30 + (LOGO_ART_BOTTOM - LOGO_ART_TOP) * LOGO_BOX;
+      } else {
+        doc.fillColor(NAVY).fontSize(22).font('Helvetica-Bold').text(BIZ.name, 50, 50);
+      }
+    } catch (e) {
+      console.error('[INVOICE] logo failed, falling back to text:', e.message);
+      doc.fillColor(NAVY).fontSize(22).font('Helvetica-Bold').text(BIZ.name, 50, 50);
+    }
 
-    doc.fillColor(ORANGE).fontSize(28).font('Helvetica-Bold').text('INVOICE', 380, 50, { width: 165, align: 'right' });
+    doc.fillColor(ORANGE).fontSize(28).font('Helvetica-Bold').text('INVOICE', 380, 44, { width: 165, align: 'right' });
     doc.fillColor(NAVY).fontSize(9).font('Helvetica')
-      .text('Invoice #: ' + booking.booking_number, 330, 86, { width: 215, align: 'right' })
-      .text('Issued: ' + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), { width: 215, align: 'right' })
-      .text('Due: ' + (opts.terms || 'On or before the event date'), { width: 215, align: 'right' });
+      .text('Invoice #: ' + booking.booking_number, 300, 80, { width: 245, align: 'right' })
+      .text('Issued: ' + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), { width: 245, align: 'right' })
+      .text('Due: ' + (opts.terms || 'On or before the event date'), { width: 245, align: 'right' });
 
-    doc.moveTo(50, 140).lineTo(545, 140).strokeColor('#DDDDDD').stroke();
+    const headerBottom = Math.max(126, logoBottom + 16);
+    doc.moveTo(50, headerBottom).lineTo(545, headerBottom).strokeColor('#DDDDDD').stroke();
 
     // ---- bill to / event --------------------------------------------------
-    let y = 158;
+    let y = headerBottom + 18;
     doc.fontSize(8).fillColor(GREY).font('Helvetica-Bold').text('BILL TO', 50, y);
     doc.fontSize(10).fillColor(NAVY).font('Helvetica');
     let by = y + 14;
@@ -184,7 +208,8 @@ function buildInvoicePdf(booking, customer, items, opts) {
     }
 
     doc.fillColor('#AAAAAA').fontSize(8)
-      .text(BIZ.site + '  ·  ' + BIZ.phone, 50, 720, { width: 495, align: 'center' });
+      .text(BIZ.name + '  ·  ' + BIZ.addr + ', ' + BIZ.city, 50, 712, { width: 495, align: 'center' })
+      .text(BIZ.site + '  ·  ' + BIZ.phone + '  ·  ' + BIZ.email, 50, 724, { width: 495, align: 'center' });
 
     doc.end();
   });
