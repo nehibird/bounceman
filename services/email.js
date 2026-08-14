@@ -417,4 +417,60 @@ async function forwardContactForm(data) {
   console.log('[EMAIL] Contact form forwarded for ' + data.name);
 }
 
-module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendDepositLink, sendTestEmail, forwardContactForm, sendCouponCode };
+
+function invoiceEmailBody(booking, customer, opts) {
+  const who = opts.billTo || ((customer.first_name || '') + ' ' + (customer.last_name || '')).trim() || 'there';
+  return `
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;padding-bottom:4px;font-size:14px;color:#999;">Invoice ${booking.booking_number}</td></tr>
+<tr><td style="text-align:center;font-size:28px;font-weight:bold;color:${NAVY};padding-bottom:20px;">Invoice Attached</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="font-size:14px;color:#333;line-height:1.6;padding-bottom:14px;">
+Hi ${who},<br/><br/>
+Thanks for booking with us! Your invoice is attached as a PDF, with the sales tax broken out by
+jurisdiction for your records.
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;">
+<tr><td style="padding:20px;">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Invoice #:</strong> ${booking.booking_number}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Event:</strong> ${fmtDate(booking.event_date)}</td></tr>
+<tr><td style="font-size:14px;color:#333;padding:4px 0;"><strong>Location:</strong> ${[booking.delivery_address, booking.delivery_city].filter(Boolean).join(', ')}</td></tr>
+<tr><td style="font-size:14px;color:${ORANGE};padding:4px 0;"><strong>Balance Due:</strong> $${fmtMoney(booking.balance_due)}</td></tr>
+</table>
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">
+<tr><td style="font-size:13px;color:#333;line-height:1.6;">
+Checks are payable to <strong>Bounce Man LLC</strong>, 113 N Barrick Way, Tonkawa, OK 74653.
+We also take cash or card on the day of the event.
+</td></tr>
+<tr><td style="font-size:14px;color:#333;padding-top:14px;">Questions? Call <strong>${PHONE}</strong></td></tr>
+</table>
+`;
+}
+
+// Emails a PDF invoice. Used for the bookings that do not pay online — chambers,
+// schools, churches — where somebody has to hand a document to a treasurer.
+async function sendInvoice(booking, customer, items, opts) {
+  opts = opts || {};
+  const to = opts.to || customer.email;
+  if (!to) throw new Error('sendInvoice: no recipient email');
+  const { buildInvoicePdf } = require('./invoice');
+  const pdf = await buildInvoicePdf(booking, customer, items, opts);
+  await getTransporter().sendMail({
+    from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
+    to,
+    cc: opts.cc || undefined,
+    subject: 'Invoice ' + booking.booking_number + ' — Bounce Man Rentals',
+    html: wrap('Invoice ' + booking.booking_number, invoiceEmailBody(booking, customer, opts)),
+    attachments: [{ filename: 'BounceMan-Invoice-' + booking.booking_number + '.pdf', content: pdf, contentType: 'application/pdf' }],
+  });
+  console.log('[EMAIL] Invoice ' + booking.booking_number + ' sent to ' + to);
+  return true;
+}
+
+module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendDepositLink, sendTestEmail, forwardContactForm, sendCouponCode, sendInvoice };
