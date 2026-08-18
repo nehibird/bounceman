@@ -751,9 +751,35 @@ router.post('/send-checkout-link', async (req, res) => {
 
   const nameList = names.join(', ');
   const smsBody = `Here's your checkout link for ${nameList} on ${fmtDate(eventDateISO)}! Fill out your info and pay the deposit to lock it in — once the deposit's in, your date is reserved:\n\n${link}\n\nQuestions? Call (580) 308-9288`;
+
+  // Sarah calls this tool again when a caller says "I haven't got it yet" — the text is
+  // usually just slow, so the customer ends up with the same link twice a minute apart.
+  // Suppress an identical resend inside the window and tell her it is already gone, so
+  // she reassures the caller instead of firing another text.
+  const dedupeKey = 'checkout_link_sent:' + String(phone).replace(/\D/g, '').slice(-10) + ':' +
+    require('crypto').createHash('sha1').update(link).digest('hex').slice(0, 12);
+  const DEDUPE_MINUTES = 10;
+  try {
+    const prev = db.prepare('SELECT value FROM settings WHERE key = ?').get(dedupeKey);
+    if (prev && prev.value && (Date.now() - new Date(prev.value).getTime()) < DEDUPE_MINUTES * 60 * 1000) {
+      console.log('[SARAH] checkout link ALREADY sent to', phone, '- suppressing duplicate (sent', prev.value + ')');
+      return res.json({
+        success: true,
+        link,
+        sms_sent: false,
+        already_sent: true,
+        message: `That link is already on its way — I texted it a moment ago. Texts can take a minute to land, so give it a few seconds and check your messages. Want me to read the link out instead?`
+      });
+    }
+  } catch (e) { /* dedupe is best-effort; never block a real send */ }
+
   try {
     await smsService.sendSms(phone, smsBody);
     console.log('[SARAH] checkout link sent to', phone, '->', link);
+    try {
+      db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(dedupeKey, new Date().toISOString());
+    } catch (e) { /* non-fatal */ }
   } catch (smsErr) {
     console.error('[SARAH] checkout link SMS failed:', smsErr.message);
     return res.status(500).json({ success: false, error: `Couldn't send the text: ${smsErr.message}` });
