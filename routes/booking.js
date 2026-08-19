@@ -1072,7 +1072,7 @@ router.get('/pay/:bookingNumber', async (req, res) => {
   `).get(req.params.bookingNumber);
 
   if (!booking) {
-    return res.status(404).render('public/error', { title: 'Not Found', settings, message: 'Booking not found' });
+    return res.status(404).render('error', { title: 'Not Found', message: 'Booking not found', status: 404 });
   }
 
   if (parseFloat(booking.balance_due) <= 0) {
@@ -1084,11 +1084,17 @@ router.get('/pay/:bookingNumber', async (req, res) => {
     const stripe = require('../services/stripe');
     const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
 
+    // Stripe throws "Invalid email address" on an empty string, so a phone-taken
+    // booking with no email on file used to 500 here. Omit the field entirely and
+    // Stripe collects an address on its own checkout page.
+    const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(booking.email || '').trim())
+      ? String(booking.email).trim() : undefined;
+
     const session = await stripe.createCheckoutSession({
       bookingId: booking.id,
       bookingNumber: booking.booking_number,
       depositAmount: parseFloat(booking.balance_due),
-      customerEmail: booking.email,
+      customerEmail: validEmail,
       description: `Balance payment for booking ${booking.booking_number} - Event ${booking.event_date}`,
       successUrl: `${baseUrl}/booking/pay/${booking.booking_number}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${baseUrl}/booking/pay/${booking.booking_number}/cancel`
@@ -1097,7 +1103,8 @@ router.get('/pay/:bookingNumber', async (req, res) => {
     res.redirect(303, session.url);
   } catch (err) {
     console.error('[PAY BALANCE] Stripe error:', err.message);
-    res.status(500).render('public/error', { title: 'Payment Error', settings, message: 'Unable to process payment. Please try again or call us.' });
+    res.status(500).render('error', { title: 'Payment Error', status: 500,
+      message: 'Sorry — we could not start the payment. Please call or text us on (580) 308-9288 and we will sort it out.' });
   }
 });
 
@@ -1115,7 +1122,7 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
   `).get(req.params.bookingNumber);
 
   if (!booking) {
-    return res.status(404).render('public/error', { title: 'Not Found', settings, message: 'Booking not found' });
+    return res.status(404).render('error', { title: 'Not Found', message: 'Booking not found', status: 404 });
   }
 
   // Verify payment with Stripe
@@ -1186,7 +1193,7 @@ router.get('/manage/:bookingNumber', (req, res) => {
   `).get(req.params.bookingNumber);
 
   if (!booking) {
-    return res.status(404).render('public/error', { title: 'Not Found', settings, message: 'Booking not found' });
+    return res.status(404).render('error', { title: 'Not Found', message: 'Booking not found', status: 404 });
   }
 
   const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(booking.id);
