@@ -809,7 +809,9 @@ async function handleCallCustomer(value, user, response_url) {
     return;
   }
   const toE164 = '+1' + digits;
-  const owner = process.env.OWNER_CELL || TRANSFER_TARGET;
+  // Ring whoever pressed the button, not a single hardcoded owner. Same map the
+  // Call Back button on call cards uses, so both buttons behave identically.
+  const owner = CALLBACK_AGENTS[user && user.id] || process.env.OWNER_CELL || TRANSFER_TARGET;
 
   try {
     const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -825,7 +827,7 @@ async function handleCallCustomer(value, user, response_url) {
       const { getDb } = require('../db');
       const until = new Date(Date.now() + DIRECT_ROUTE_HOURS * 3600 * 1000).toISOString();
       getDb().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-        .run('direct_route:' + toE164, until);
+        .run('direct_route:' + toE164, until + '|' + owner);
       console.log('[CALL] Direct routing set for', toE164, 'until', until);
     } catch (e) { console.error('[CALL] direct-route flag failed:', e.message); }
 
@@ -952,7 +954,7 @@ async function handleOnMyWay(value, user, response_url, originalMessage, payload
 // (caller ID shows the Bounce Man business line, so personal cells stay private).
 const CALLBACK_AGENTS = {
   'U0AQ2GH9XFD': '+15806281765', // Nehemiah Reese
-  'U0AQ2GGNY0K': '+19403678241'  // Brana (The Bounce Babe)
+  'U0AQ2GGNY0K': '+19403678241'  // Brenna Reese (The Bounce Babe)
 };
 const CALLBACK_DEFAULT = '+15806281765'; // fallback -> Nehemiah
 
@@ -976,6 +978,12 @@ async function handleCallBack(value, user, response_url, originalMessage, payloa
     const recCb = `${recBase}/api/webhooks/callback-recording?customer=${encodeURIComponent(customerNumber)}`;
     const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to your Bounce Man customer now.</Say><Dial callerId="${BM_NUMBER}" timeout="30" record="record-from-answer-dual" recordingStatusCallback="${recCb}" recordingStatusCallbackEvent="completed">${customerNumber}</Dial></Response>`;
     await twilio.calls.create({ to: agentNumber, from: BM_NUMBER, twiml });
+    try {
+      const { getDb } = require('../db');
+      const until = new Date(Date.now() + DIRECT_ROUTE_HOURS * 3600 * 1000).toISOString();
+      getDb().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run('direct_route:' + customerNumber, until + '|' + agentNumber);
+    } catch (e) { console.error('[CALL BACK] direct-route flag failed:', e.message); }
     console.log('[CALL BACK] Ringing agent', agentNumber, '(slack', user.id + ') then bridging to', customerNumber);
   } catch (err) {
     console.error('[CALL BACK] error:', err.message);
@@ -1501,9 +1509,14 @@ router.post('/twilio-entry', (req, res) => {
   try {
     if (from) {
       const dr = db.prepare('SELECT value FROM settings WHERE key = ?').get('direct_route:' + from);
-      if (dr && dr.value && new Date(dr.value) > new Date()) {
+      // Value is "<iso-expiry>|<agent-e164>". Rows written before agent tracking existed
+      // are a bare timestamp, so fall back to the default agent for those.
+      const drParts = dr && dr.value ? String(dr.value).split('|') : [];
+      const drExpires = drParts[0];
+      const drAgent = /^\+1[2-9]\d{9}$/.test(drParts[1] || '') ? drParts[1] : TRANSFER_TARGET;
+      if (drExpires && new Date(drExpires) > new Date()) {
         logCall('allowed', 'direct_route');
-        console.log('[TWILIO ENTRY]', from, '-> DIRECT to owner (spoke to them recently, expires ' + dr.value + ')');
+        console.log('[TWILIO ENTRY]', from, '-> DIRECT to ' + drAgent + ' (spoke to them recently, expires ' + drExpires + ')');
         // BASE is declared locally inside the other handlers, not at module scope, so
         // referencing it here would throw at runtime on a live customer callback.
         const entryBase = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
@@ -1511,7 +1524,7 @@ router.post('/twilio-entry', (req, res) => {
         return res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' +
           '<Dial callerId="' + BM_NUMBER + '" timeout="30" record="record-from-answer-dual" ' +
           'recordingStatusCallback="' + recCb + '" recordingStatusCallbackEvent="completed">' +
-          TRANSFER_TARGET + '</Dial>' +
+          drAgent + '</Dial>' +
           '<Say voice="Polly.Joanna">Sorry, we could not reach anyone. Please try again shortly.</Say>' +
           '</Response>');
       }
