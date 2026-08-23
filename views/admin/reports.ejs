@@ -51,7 +51,7 @@
 <div class="row g-4 mb-4">
   <div class="col-lg-8">
     <div class="card">
-      <div class="card-header"><i class="fas fa-chart-bar me-2"></i>Revenue by Month</div>
+      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Revenue by Month</div>
       <div class="card-body">
         <canvas id="revenueChart" height="300"></canvas>
       </div>
@@ -62,6 +62,26 @@
       <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Bookings by Status</div>
       <div class="card-body">
         <canvas id="statusChart" height="300"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Trend lines -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Cumulative Revenue</div>
+      <div class="card-body">
+        <canvas id="cumulativeChart" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Average Ticket by Month</div>
+      <div class="card-body">
+        <canvas id="avgTicketChart" height="260"></canvas>
       </div>
     </div>
   </div>
@@ -219,17 +239,23 @@
 document.addEventListener('DOMContentLoaded', function() {
   var revenueCtx = document.getElementById('revenueChart').getContext('2d');
   new Chart(revenueCtx, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels: [${revenueByMonth.map(function(m) { return "'" + m.month + "'"; }).join(',')}],
       datasets: [{
         label: 'Revenue',
         data: [${revenueByMonth.map(function(m) { return m.revenue; }).join(',')}],
-        backgroundColor: 'rgba(255,107,53,0.7)', borderColor: '#FF6B35', borderWidth: 1, borderRadius: 6
+        borderColor: '#FF6B35', backgroundColor: 'rgba(255,107,53,0.12)',
+        borderWidth: 3, fill: true, tension: 0.35,
+        pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#FF6B35',
+        pointBorderColor: '#fff', pointBorderWidth: 2
       }, {
         label: 'Bookings',
         data: [${revenueByMonth.map(function(m) { return m.bookings; }).join(',')}],
-        backgroundColor: 'rgba(0,78,137,0.7)', borderColor: '#004E89', borderWidth: 1, borderRadius: 6, yAxisID: 'y1'
+        borderColor: '#004E89', backgroundColor: 'rgba(0,78,137,0.10)',
+        borderWidth: 3, fill: false, tension: 0.35,
+        pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#004E89',
+        pointBorderColor: '#fff', pointBorderWidth: 2, yAxisID: 'y1'
       }]
     },
     options: {
@@ -251,6 +277,50 @@ document.addEventListener('DOMContentLoaded', function() {
       datasets: [{ data: [${statusBreakdown.map(function(s) { return s.c; }).join(',')}], backgroundColor: [${statusBreakdown.map(function(s) { return "'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[s.status] || '#6c757d') + "'"; }).join(',')}], borderWidth: 2, borderColor: '#fff' }]
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+  });
+
+  // Season trajectory — running total, so a flat stretch reads as a stalled month.
+  var cumCtx = document.getElementById('cumulativeChart').getContext('2d');
+  new Chart(cumCtx, {
+    type: 'line',
+    data: {
+      labels: [${revenueByMonth.map(function(m) { return "'" + m.month + "'"; }).join(',')}],
+      datasets: [{
+        label: 'Season to date',
+        data: [${(function() { var t = 0; return revenueByMonth.map(function(m) { t += (m.revenue || 0); return t.toFixed(2); }).join(','); })()}],
+        borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.14)',
+        borderWidth: 3, fill: true, tension: 0.35,
+        pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#059669',
+        pointBorderColor: '#fff', pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { callback: function(v) { return '$' + v; } } } }
+    }
+  });
+
+  // Average ticket — revenue per booking, the number that moves when pricing changes.
+  var avgCtx = document.getElementById('avgTicketChart').getContext('2d');
+  new Chart(avgCtx, {
+    type: 'line',
+    data: {
+      labels: [${revenueByMonth.map(function(m) { return "'" + m.month + "'"; }).join(',')}],
+      datasets: [{
+        label: 'Avg ticket',
+        data: [${revenueByMonth.map(function(m) { return m.bookings ? (m.revenue / m.bookings).toFixed(2) : 0; }).join(',')}],
+        borderColor: '#7B2D8E', backgroundColor: 'rgba(123,45,142,0.12)',
+        borderWidth: 3, fill: true, tension: 0.35,
+        pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#7B2D8E',
+        pointBorderColor: '#fff', pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { callback: function(v) { return '$' + v; } } } }
+    }
   });
 });
 </script>

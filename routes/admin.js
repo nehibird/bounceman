@@ -178,8 +178,14 @@ router.get('/', async (req, res) => {
   }
 
   // Equipment utilization
+  // The status test stays in the ON clause so units with zero bookings still show up,
+  // but it must gate what we COUNT/SUM too. A LEFT JOIN only nulls b.* on a failed ON —
+  // the booking_items row survives, so counting bi.* directly tallied cancelled bookings.
+  // Counting b.id (NULLs ignored) and guarding the SUM is what actually excludes them.
   const equipmentUtil = db.prepare(`
-    SELECT e.name, COUNT(DISTINCT bi.booking_id) as bookings, COALESCE(SUM(bi.total_price), 0) as revenue
+    SELECT e.name,
+           COUNT(DISTINCT b.id) as bookings,
+           COALESCE(SUM(CASE WHEN b.id IS NOT NULL THEN bi.total_price END), 0) as revenue
     FROM equipment e
     LEFT JOIN booking_items bi ON bi.equipment_id = e.id
     LEFT JOIN bookings b ON b.id = bi.booking_id AND b.status NOT IN ('cancelled', 'declined')
@@ -999,12 +1005,17 @@ router.get('/reports', (req, res) => {
   const bookingCount = db.prepare('SELECT COUNT(*) as c FROM bookings WHERE created_at >= ? AND status != \'cancelled\'').get(dateFilter);
   const avgTicket = db.prepare('SELECT COALESCE(AVG(total), 0) as avg FROM bookings WHERE created_at >= ? AND status != \'cancelled\'').get(dateFilter);
 
+  // Group by the equipment row, not bi.item_name — item_name bakes the wet/dry choice
+  // into the text ("Buccaneer Bay" vs "Buccaneer Bay (Wet)"), which split every unit in
+  // half. Filter on event_date, not created_at: we want rentals that HAPPEN in the window
+  // plus everything still upcoming, not bookings that happened to be created recently.
   const topItems = db.prepare(`
-    SELECT bi.item_name, COUNT(*) as rentals, SUM(bi.total_price) as revenue
+    SELECT e.name as item_name, COUNT(*) as rentals, SUM(bi.total_price) as revenue
     FROM booking_items bi
     JOIN bookings b ON b.id = bi.booking_id
-    WHERE b.created_at >= ? AND b.status != 'cancelled'
-    GROUP BY bi.item_name ORDER BY rentals DESC LIMIT 10
+    JOIN equipment e ON e.id = bi.equipment_id
+    WHERE b.event_date >= ? AND b.status NOT IN ('cancelled', 'declined')
+    GROUP BY e.id ORDER BY rentals DESC LIMIT 10
   `).all(dateFilter);
 
   const revenueByMonth = db.prepare(`
