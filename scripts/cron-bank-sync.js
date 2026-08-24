@@ -25,6 +25,18 @@ const { syncAll } = require('./lib/plaid-sync');
     else db.prepare("INSERT INTO settings (key, value) VALUES ('credit_card_debt', ?)").run(v);
   }
 
+  // Permanent suppression list. Deleting a wrongly-imported expense row is NOT enough: the id is
+  // derived from the bank transaction, so the next run simply inserts it again. Anything removed from
+  // the books on purpose has to be recorded here or it comes back every morning. Learned the hard way
+  // on 2026-08-24, when three rows deleted during the books cleanup reappeared on the very next run.
+  // Table is created here rather than in db.js so this script stays self-contained.
+  db.exec(`CREATE TABLE IF NOT EXISTS expense_import_exclusions (
+    txn_id TEXT PRIMARY KEY,
+    reason TEXT NOT NULL,
+    added_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const excluded = new Set(db.prepare('SELECT txn_id FROM expense_import_exclusions').all().map((r) => r.txn_id));
+
   // --- Auto-import business-card charges into expenses (Chase = all charges; FNBOK = direct payments only) ---
   const sinceRow = db.prepare("SELECT value FROM settings WHERE key='expense_import_since'").get();
   const since = sinceRow ? sinceRow.value : '2026-06-24';
@@ -85,8 +97,9 @@ const { syncAll } = require('./lib/plaid-sync');
 
   const insExp = db.prepare(`INSERT OR IGNORE INTO expenses (id,date,category,vendor,description,amount,payment_method,notes,reimbursable,reimbursed)
     VALUES (?,?,?,?,?,?,?,?,0,0)`);
-  let imp = 0, flagged = 0;
+  let imp = 0, flagged = 0, skipped = 0;
   for (const c of charges) {
+    if (excluded.has(c.id)) { skipped++; continue; }
     const vendor = (c.description || '').replace(/\*.*$/, '').replace(/\s{2,}.*$/, '').trim().slice(0, 40) || (c.type === 'credit' ? 'Chase' : 'FNBOK');
     const method = c.type === 'credit' ? 'credit' : 'fnbok';
     const src = c.type === 'credit' ? 'Chase Ink card' : 'FNBOK';
@@ -100,5 +113,6 @@ const { syncAll } = require('./lib/plaid-sync');
   }
 
   console.log(new Date().toISOString(), 'bank sync:', JSON.stringify(res), 'cc_debt:', cc && cc.balance,
-    '| expenses auto-imported:', imp, '(since ' + since + ')', '| flagged as possible duplicates:', flagged);
+    '| expenses auto-imported:', imp, '(since ' + since + ')',
+    '| flagged as possible duplicates:', flagged, '| suppressed:', skipped);
 })().catch((e) => { console.error(new Date().toISOString(), 'bank sync ERR', e.message); process.exit(1); });

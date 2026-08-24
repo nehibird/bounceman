@@ -44,6 +44,25 @@ The run log prints how many were flagged.
 It is deliberately narrow so genuine repeat charges — the recurring $5.00 Facebook ad debits, for
 instance — keep importing normally.
 
+### Suppression list — read this before deleting an imported row
+
+`expense_import_exclusions (txn_id, reason, added_at)`.
+
+**Deleting a wrongly-imported expense is not enough.** The expense id is derived from the bank
+transaction id, so the next run just inserts it again. On 2026-08-24 three rows removed during the
+books cleanup — both True Light Christmas insurance charges and a duplicated sales-tax remittance —
+reappeared on the very next sync.
+
+Whenever you delete an auto-imported row on purpose, add its transaction id here with a reason:
+
+```sql
+INSERT OR IGNORE INTO expense_import_exclusions (txn_id, reason)
+VALUES ('plaid-XXXX', 'True Light Christmas insurance, wrong entity');
+```
+
+The expense id is the transaction id prefixed with `ccimport-`, so strip that prefix to get `txn_id`.
+The run log reports how many rows were suppressed.
+
 ### Categorization
 
 Description is checked before the Plaid category, because FNBOK rows have no Plaid category.
