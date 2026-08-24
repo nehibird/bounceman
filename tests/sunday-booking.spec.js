@@ -23,7 +23,21 @@ const SUNDAY = nextDow(0);
 const SATURDAY = nextDow(6);
 
 // Click a specific date in the flatpickr calendar by its ISO date.
+// Flatpickr only renders the visible month plus enough trailing days to finish the
+// last week. When the target Sunday sits past that (August 2026 shows through Sep 5,
+// so Sep 6 is absent), the cell simply is not in the DOM: isDateDisabled returned
+// 'not-found' and clickCalendarDate silently clicked nothing. A real customer pages
+// the calendar forward, so the helpers have to as well.
+async function jumpToMonth(page, iso) {
+  await page.evaluate((target) => {
+    const host = [...document.querySelectorAll('*')].find((e) => e._flatpickr);
+    if (host) host._flatpickr.jumpToDate(target, true);
+  }, iso);
+  await page.waitForTimeout(150);
+}
+
 async function clickCalendarDate(page, iso) {
+  await jumpToMonth(page, iso);
   await page.evaluate((target) => {
     const cell = [...document.querySelectorAll('.flatpickr-day')].find((el) => {
       const d = el.dateObj;
@@ -37,6 +51,7 @@ async function clickCalendarDate(page, iso) {
 }
 
 async function isDateDisabled(page, iso) {
+  await jumpToMonth(page, iso);
   return page.evaluate((target) => {
     const cell = [...document.querySelectorAll('.flatpickr-day')].find((el) => {
       const d = el.dateObj;

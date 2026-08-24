@@ -595,6 +595,20 @@ async function notifyContactForm(data) {
     }
   ];
 
+  // A contact form is a lead with a phone number and no booking yet, so the card had
+  // nothing actionable on it — you had to copy the number out by hand. Same action_id
+  // and same value shape the booking and delivery cards use, minus booking_id (the
+  // handler only needs phone + name), so one handler still serves every card.
+  if (data.phone) {
+    blocks.push({ type: 'actions', elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: '📞 Call Customer', emoji: true },
+      style: 'primary',
+      action_id: 'call_customer',
+      value: JSON.stringify({ phone: data.phone, name: (data.name || '').split(' ')[0] })
+    }] });
+  }
+
   await postToSlack(BOOKINGS_CHANNEL, blocks, 'New contact form from ' + data.name);
   console.log('[SLACK] Contact form notification sent for', data.name);
 }
