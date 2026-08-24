@@ -1,0 +1,113 @@
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Recurring Costs</h4>
+  <div class="text-muted small">Held back from Safe to Spend: <strong>$${reserved.total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong></div>
+</div>
+
+<div class="alert alert-light border small">
+  <strong>Only some of these are business expenses.</strong>
+  <span class="badge bg-secondary">expense</span> books to the expenses table.
+  <span class="badge bg-info text-dark">liability</span> repays a debt whose asset was already expensed — booking it again would double-count.
+  <span class="badge bg-warning text-dark">draw</span> is your personal money leaving the business, never a deduction.
+  All three reduce Safe to Spend, because all three are cash that leaves on a schedule.
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold">Scheduled</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead><tr>
+          <th>Name</th><th>Kind</th><th class="text-end">Amount</th><th>Due</th>
+          <th>Next owed</th><th class="text-end">Balance</th><th></th>
+        </tr></thead>
+        <tbody>
+        ${obligations.length ? obligations.map(function(o) {
+          const badge = o.kind === 'expense' ? 'bg-secondary' : (o.kind === 'liability' ? 'bg-info text-dark' : 'bg-warning text-dark');
+          const next = o.next
+            ? '<span class="' + (o.next.overdue ? 'text-danger fw-semibold' : '') + '">' + o.next.period + (o.next.overdue ? ' — overdue' : '') + '</span>'
+            : '<span class="text-muted">nothing owed</span>';
+          return '<tr' + (o.active ? '' : ' class="opacity-50"') + '>' +
+            '<td><strong>' + o.name + '</strong>' + (o.notes ? '<br><span class="text-muted" style="font-size:.75rem">' + String(o.notes).slice(0,150) + '</span>' : '') + '</td>' +
+            '<td><span class="badge ' + badge + '">' + o.kind + '</span></td>' +
+            '<td class="text-end">$' + parseFloat(o.amount).toFixed(2) + '</td>' +
+            '<td>day ' + o.day_of_month + '</td>' +
+            '<td>' + next + '</td>' +
+            '<td class="text-end">' + (o.balance != null ? '$' + o.balance.toFixed(2) : '—') + '</td>' +
+            '<td class="text-end text-nowrap">' +
+              (o.next ? '<form method="POST" action="/admin/obligations/' + o.id + '/pay" class="d-inline">' +
+                '<input type="hidden" name="period" value="' + o.next.period + '">' +
+                '<button class="btn btn-sm btn-success">Mark ' + o.next.period + ' paid</button></form> ' : '') +
+              '<form method="POST" action="/admin/obligations/' + o.id + '/toggle" class="d-inline">' +
+                '<button class="btn btn-sm btn-outline-secondary">' + (o.active ? 'Pause' : 'Resume') + '</button></form>' +
+            '</td></tr>';
+        }).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">Nothing scheduled yet.</td></tr>'}
+        </tbody>
+        <tfoot><tr class="fw-semibold">
+          <td colspan="2">Monthly total (active)</td>
+          <td class="text-end">$${monthlyTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+          <td colspan="4"></td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-semibold">Add a recurring cost</div>
+      <div class="card-body">
+        <form method="POST" action="/admin/obligations" class="row g-2">
+          <div class="col-8"><label class="form-label small mb-1">Name</label>
+            <input name="name" class="form-control form-control-sm" placeholder="House rent" required></div>
+          <div class="col-4"><label class="form-label small mb-1">Amount</label>
+            <input name="amount" type="number" step="0.01" min="0.01" class="form-control form-control-sm" required></div>
+          <div class="col-6"><label class="form-label small mb-1">Kind</label>
+            <select name="kind" class="form-select form-select-sm">
+              <option value="expense">expense — a business cost</option>
+              <option value="draw">draw — personal money</option>
+              <option value="liability">liability — repays a debt</option>
+            </select></div>
+          <div class="col-6"><label class="form-label small mb-1">Category (expense only)</label>
+            <input name="category" class="form-control form-control-sm" placeholder="storage"></div>
+          <div class="col-4"><label class="form-label small mb-1">Due day</label>
+            <input name="day_of_month" type="number" min="1" max="28" value="1" class="form-control form-control-sm"></div>
+          <div class="col-4"><label class="form-label small mb-1">Starts</label>
+            <input name="start_month" placeholder="2026-09" class="form-control form-control-sm"></div>
+          <div class="col-4"><label class="form-label small mb-1">Ends (optional)</label>
+            <input name="end_month" placeholder="2028-02" class="form-control form-control-sm"></div>
+          <div class="col-6"><label class="form-label small mb-1">Pay method</label>
+            <input name="payment_method" class="form-control form-control-sm" placeholder="venmo"></div>
+          <div class="col-6"><label class="form-label small mb-1">Principal (liability only)</label>
+            <input name="principal" type="number" step="0.01" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small mb-1">Notes</label>
+            <input name="notes" class="form-control form-control-sm"></div>
+          <div class="col-12 mt-3"><button class="btn btn-bm btn-sm">Add</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-semibold">Payment history</div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Paid</th><th>What</th><th>Period</th><th class="text-end">Amount</th></tr></thead>
+            <tbody>
+              ${history.length ? history.map(function(h) {
+                return '<tr><td>' + h.paid_date + '</td><td>' + h.name +
+                  (h.expense_id ? '' : ' <span class="text-muted" style="font-size:.7rem">(not an expense)</span>') +
+                  '</td><td>' + h.period + '</td><td class="text-end">$' + parseFloat(h.amount).toFixed(2) + '</td></tr>';
+              }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No payments recorded yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+` }) %>

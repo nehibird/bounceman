@@ -206,7 +206,12 @@ router.get('/', async (req, res) => {
   const cardDebt = (bankAccounts || []).filter((a) => a.type === 'credit').reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
   // What is actually his: cash on hand, less the state's money sitting in the same account.
   // taxNotYetDue is subtracted too — spending it only means being short next month.
-  const safeToSpend = Math.round((bankCash - taxOwed - taxNotYetDue) * 100) / 100;
+  // Recurring obligations come out for the same reason: storage rent, the repayment to
+  // Reagan and personal rent are all already spoken for. Note they are NOT all expenses —
+  // see lib/obligations.js — but every one of them is cash that leaves on a schedule,
+  // and this figure answers "what can I spend", not "what is deductible".
+  const obligations = require('../lib/obligations').reserved(db);
+  const safeToSpend = Math.round((bankCash - taxOwed - taxNotYetDue - obligations.total) * 100) / 100;
   // Oldest sync across the linked accounts — the balance is only as fresh as its
   // laggiest account. Feeds the "as of" line and the stale warning on the tile.
   let bankSyncedAt = null;
@@ -219,6 +224,7 @@ router.get('/', async (req, res) => {
 
   const finance = {
     bankCash, stripeIncoming, cardDebt, bankSyncedAt, bankAgeMins,
+    taxOwed, taxNotYetDue, obligations,
     cashPosition: bankCash + stripeIncoming,
     netLiquid: Math.round((bankCash + stripeIncoming - cardDebt) * 100) / 100,
     safeToSpend
@@ -1168,7 +1174,87 @@ router.get('/reports', (req, res) => {
   });
 });
 
+// === RECURRING OBLIGATIONS ===
+// Money that leaves on a schedule. kind decides the accounting: 'expense' books to
+// the expenses table, 'liability' repays a debt whose asset was already expensed,
+// 'draw' is the owner's personal money. All three reduce Safe to Spend; only the
+// first is a business cost. See lib/obligations.js.
+router.get('/obligations', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const ob = require('../lib/obligations');
+  const rows = db.prepare('SELECT * FROM recurring_obligations ORDER BY active DESC, day_of_month, name').all();
+  const reserved = ob.reserved(db);
+  const reservedById = {};
+  reserved.items.forEach((i) => { reservedById[i.id] = i; });
+
+  const list = rows.map((o) => ({
+    ...o,
+    next: reservedById[o.id] || null,
+    balance: o.kind === 'liability' ? ob.liabilityBalance(db, o.id) : null,
+    paidCount: db.prepare('SELECT COUNT(*) c FROM recurring_payments WHERE obligation_id = ?').get(o.id).c
+  }));
+
+  const history = db.prepare(`SELECT p.*, o.name, o.kind FROM recurring_payments p
+    JOIN recurring_obligations o ON o.id = p.obligation_id
+    ORDER BY p.paid_date DESC, p.period DESC LIMIT 40`).all();
+
+  const monthlyTotal = rows.filter((o) => o.active)
+    .reduce((s, o) => s + (parseFloat(o.amount) || 0), 0);
+
+  res.render('admin/obligations', {
+    title: 'Recurring Costs - Admin', user: req.user, settings, page: 'obligations',
+    obligations: list, reserved, history,
+    monthlyTotal: Math.round(monthlyTotal * 100) / 100,
+    thisPeriod: new Date().toISOString().slice(0, 7)
+  });
+});
+
+router.post('/obligations', (req, res) => {
+  const db = getDb();
+  const b = req.body || {};
+  const kind = ['expense', 'liability', 'draw'].includes(b.kind) ? b.kind : 'expense';
+  const amount = parseFloat(b.amount);
+  if (!b.name || !isFinite(amount) || amount <= 0) return res.redirect('/admin/obligations?err=1');
+  const day = Math.min(28, Math.max(1, parseInt(b.day_of_month, 10) || 1));
+  db.prepare(`INSERT INTO recurring_obligations
+    (id,name,amount,kind,category,day_of_month,payment_method,start_month,end_month,principal,active,notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,1,?)`)
+    .run(require('crypto').randomUUID(), String(b.name).trim(), amount, kind,
+      kind === 'expense' ? (b.category || 'other') : null, day,
+      b.payment_method || null,
+      b.start_month || new Date().toISOString().slice(0, 7),
+      b.end_month || null,
+      b.principal ? parseFloat(b.principal) : null,
+      b.notes || null);
+  res.redirect('/admin/obligations');
+});
+
+router.post('/obligations/:id/pay', (req, res) => {
+  const db = getDb();
+  const ob = require('../lib/obligations');
+  const period = (req.body && req.body.period) || new Date().toISOString().slice(0, 7);
+  try {
+    ob.markPaid(db, req.params.id, period, {
+      paid_date: (req.body && req.body.paid_date) || undefined,
+      amount: (req.body && req.body.amount) || undefined
+    });
+  } catch (e) {
+    console.error('[OBLIGATIONS] markPaid failed:', e.message);
+    return res.redirect('/admin/obligations?err=' + encodeURIComponent(e.message));
+  }
+  res.redirect('/admin/obligations');
+});
+
+router.post('/obligations/:id/toggle', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT active FROM recurring_obligations WHERE id = ?').get(req.params.id);
+  if (row) db.prepare('UPDATE recurring_obligations SET active = ? WHERE id = ?').run(row.active ? 0 : 1, req.params.id);
+  res.redirect('/admin/obligations');
+});
+
 // === SETTINGS ===
+
 router.get('/settings', requireAdmin, (req, res) => {
   const settings = getSettings();
   const db = getDb();

@@ -677,6 +677,45 @@ function initialize() {
   } catch { /* column already exists */ }
 
 
+  // Migration: recurring obligations — money that leaves on a schedule (storage rent,
+  // the loan repayment to Reagan, personal rent). kind decides the accounting:
+  //   expense   = real business cost, books to expenses
+  //   liability = repays a debt whose asset was already expensed (do NOT expense again)
+  //   draw      = owner's personal money (never a business deduction)
+  // All three reduce Safe to Spend; only 'expense' touches the P&L.
+  try {
+    d.prepare(`CREATE TABLE IF NOT EXISTS recurring_obligations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'expense',
+      category TEXT,
+      day_of_month INTEGER NOT NULL DEFAULT 1,
+      payment_method TEXT,
+      start_month TEXT,
+      end_month TEXT,
+      principal REAL,
+      active INTEGER DEFAULT 1,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`).run();
+  } catch { /* already exists */ }
+
+  // Migration: one row per obligation per month actually paid. The UNIQUE key is what
+  // stops a double payment, and its absence is what makes Safe to Spend reserve.
+  try {
+    d.prepare(`CREATE TABLE IF NOT EXISTS recurring_payments (
+      id TEXT PRIMARY KEY,
+      obligation_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paid_date TEXT NOT NULL,
+      expense_id TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(obligation_id, period)
+    )`).run();
+  } catch { /* already exists */ }
+
   // Migration: blocked_numbers table for spam call filtering
   try {
     d.prepare(`CREATE TABLE IF NOT EXISTS blocked_numbers (

@@ -97,14 +97,27 @@
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
                 Safe to Spend
                 <i class="fas fa-circle-info ms-1" style="opacity:.5"
-                   title="Bank available balance minus every dollar of sales tax you are holding for Oklahoma — both what is due now and what is collected but not yet due. Do not go below zero."></i>
+                   title="Bank available balance, minus sales tax held for Oklahoma, minus recurring money already committed (storage, the loan to Reagan, rent). Do not go below zero."></i>
               </div>
               <div class="fs-2 fw-bold ${finance.safeToSpend >= 0 ? 'text-success' : 'text-danger'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">
                 ${finance.safeToSpend < 0
-                  ? '<span class="text-danger fw-semibold">You are holding more tax than you have in the bank.</span>'
-                  : 'Bank available less tax held for the state'}
+                  ? '<span class="text-danger fw-semibold">Committed money exceeds what is in the bank.</span>'
+                  : 'Bank available less tax and committed costs'}
               </div>
+              ${(finance.obligations && finance.obligations.items.length) ? `
+              <div class="small text-muted mt-2 pt-2" style="border-top:1px dashed rgba(0,0,0,.12)">
+                <div class="text-uppercase" style="font-size:.65rem;letter-spacing:.5px">Also held back</div>
+                ${finance.obligations.items.map(function(o) {
+                  return '<div class="d-flex justify-content-between"><span>' + o.name +
+                    (o.overdue ? ' <span class="text-danger fw-semibold">overdue</span>' : '') +
+                    ' <span class="text-muted">' + o.period + '</span></span><span>$' +
+                    o.amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span></div>';
+                }).join('')}
+                <div class="d-flex justify-content-between fw-semibold"><span>Committed</span><span>$${finance.obligations.total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>
+                <a href="/admin/obligations" class="d-inline-block mt-1" style="font-size:.7rem">Manage recurring costs</a>
+              </div>` : `
+              <div class="small mt-2"><a href="/admin/obligations" style="font-size:.7rem">Add recurring costs</a></div>`}
             </div>
           </div>
           <div class="d-flex justify-content-between align-items-center small text-muted mt-3 pt-2 border-top">
