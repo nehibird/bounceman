@@ -960,7 +960,7 @@ Farther out is usually still possible; the website calculates the exact fee from
 - Deposit: a flat $${deposit} books any unit, whatever the total. The balance is due on delivery day.
 - The $${deposit} deposit is non-refundable, but it is never lost — it transfers to any future date if you cancel or reschedule.
 - If WE call off the rental for unsafe weather, you choose: reschedule in full, or a full refund.
-- Season: April through November. Closed December through March.
+- Open year-round, every month. Winter events are welcome — indoor spaces are ideal, and outdoor winter setups depend on weather and ground conditions.
 - Open 7 days a week including Sundays. Sundays are full-day or overnight only — no half days.
 - We need at least 24 hours notice. Less than that is a rush booking the owner has to approve.
 - Wet or dry costs the same on any water-capable unit — the water hookup is included at no extra charge.

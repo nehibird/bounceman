@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE, formatPhoneUS } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE, formatPhoneUS, validateBookingDate } = require('../lib/helpers');
 const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
@@ -375,6 +375,20 @@ router.post('/review', bookingLimiter, async (req, res) => {
     return res.status(400).render('error', { title: 'Sunday Park Setups Not Available', message: SUNDAY_PARK_MESSAGE, status: 400 });
   }
 
+    // Same rule set Sarah enforces (lib/helpers.validateBookingDate) — chiefly: no
+    // Sunday half days, and globally blocked dates. The web flow never called this, so
+    // the website and Sarah disagreed; a Sunday half-day the website accepted is
+    // already on the books (BM-MPSXAFQC-2HZ, 2026-05-31 09:00-13:00).
+    //
+    // requires_approval (a rush booking under 24h) is deliberately NOT blocked here.
+    // That flag is Sarah's take-their-info-and-call-back workflow. The website already
+    // accepts same-day bookings with a card in hand, and refusing them would remove
+    // revenue that works today.
+    const dateGuard = validateBookingDate(db, event_date, { duration: duration, startTime: event_start_time || '09:00' });
+    if (dateGuard && dateGuard.error && !dateGuard.requires_approval) {
+      return res.status(400).render('error', { title: 'Check That Date', message: dateGuard.error, status: 400 });
+    }
+
   let subtotal = 0;
   const lineItems = [];
   for (const eqId of items) {
@@ -499,6 +513,20 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // (mirrors the /review guard; this is the last stop before money changes hands).
     if (isSundayRental(data.event_date) && isUnsecuredVenue(data.venue_type)) {
       return res.status(400).render('error', { title: 'Sunday Park Setups Not Available', message: SUNDAY_PARK_MESSAGE, status: 400 });
+    }
+
+    // Same rule set Sarah enforces (lib/helpers.validateBookingDate) — chiefly: no
+    // Sunday half days, and globally blocked dates. The web flow never called this, so
+    // the website and Sarah disagreed; a Sunday half-day the website accepted is
+    // already on the books (BM-MPSXAFQC-2HZ, 2026-05-31 09:00-13:00).
+    //
+    // requires_approval (a rush booking under 24h) is deliberately NOT blocked here.
+    // That flag is Sarah's take-their-info-and-call-back workflow. The website already
+    // accepts same-day bookings with a card in hand, and refusing them would remove
+    // revenue that works today.
+    const dateGuard = validateBookingDate(db, data.event_date, { duration: submitDuration, startTime: data.event_start_time || '09:00' });
+    if (dateGuard && dateGuard.error && !dateGuard.requires_approval) {
+      return res.status(400).render('error', { title: 'Check That Date', message: dateGuard.error, status: 400 });
     }
 
     let recalcSubtotal = 0;
