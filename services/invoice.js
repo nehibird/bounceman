@@ -92,7 +92,15 @@ function buildInvoicePdf(booking, customer, items, opts) {
     doc.fontSize(8).fillColor(GREY).font('Helvetica-Bold').text('BILL TO', 50, y);
     doc.fontSize(10).fillColor(NAVY).font('Helvetica');
     let by = y + 14;
-    if (opts.billTo) { doc.font('Helvetica-Bold').text(opts.billTo, 50, by); by += 14; doc.font('Helvetica'); }
+    if (opts.billTo) {
+      // Advance by the block's real height. This used to add a flat 14pt no matter how
+      // many lines billTo had, so a multi-line address was overprinted by Attn/email/phone.
+      doc.font('Helvetica-Bold');
+      const bh = doc.heightOfString(opts.billTo, { width: 240 });
+      doc.text(opts.billTo, 50, by, { width: 240 });
+      by += bh + 4;
+      doc.font('Helvetica');
+    }
     const who = ((customer.first_name || '') + ' ' + (customer.last_name || '')).trim();
     if (who) { doc.text((opts.billTo ? 'Attn: ' : '') + who, 50, by); by += 14; }
     if (customer.email) { doc.text(customer.email, 50, by); by += 14; }
@@ -130,12 +138,16 @@ function buildInvoicePdf(booking, customer, items, opts) {
         .text(money(it.total_price != null ? it.total_price : it.unit_price), 460, y, { width: 78, align: 'right' });
       y += 32;
     }
-    if (parseFloat(booking.delivery_fee) > 0) {
-      doc.text('Delivery & setup', 58, y, { width: 310 })
+    const extraLine = (label, amount) => {
+      doc.text(label, 58, y, { width: 310 })
         .text('1', 380, y, { width: 40, align: 'right' })
-        .text(money(booking.delivery_fee), 460, y, { width: 78, align: 'right' });
+        .text(money(amount), 460, y, { width: 78, align: 'right' });
       y += 24;
-    }
+    };
+    if (parseFloat(booking.delivery_fee) > 0) extraLine('Delivery & setup', booking.delivery_fee);
+    if (parseFloat(booking.surface_fee) > 0) extraLine('Surface setup (non-grass)', booking.surface_fee);
+    if (parseFloat(booking.damage_waiver_fee) > 0) extraLine('Damage waiver', booking.damage_waiver_fee);
+    if (parseFloat(booking.discount_amount) > 0) extraLine('Discount', -Math.abs(parseFloat(booking.discount_amount)));
 
     doc.moveTo(50, y).lineTo(545, y).strokeColor('#DDDDDD').stroke();
     y += 12;
@@ -148,9 +160,13 @@ function buildInvoicePdf(booking, customer, items, opts) {
       y += bold ? 20 : 16;
     };
 
-    const subtotal = parseFloat(booking.subtotal) || 0;
-    const fee = parseFloat(booking.delivery_fee) || 0;
-    line('Subtotal', money(subtotal + fee));
+    const num = (v) => parseFloat(v) || 0;
+    const subtotal = num(booking.subtotal);
+    const fee = num(booking.delivery_fee);
+    // Must equal TOTAL minus tax, or the customer sees an invoice that does not add up.
+    const preTax = subtotal + fee + num(booking.surface_fee) + num(booking.damage_waiver_fee)
+      - Math.abs(num(booking.discount_amount));
+    line('Subtotal', money(preTax));
 
     const taxAmt = parseFloat(booking.tax_amount) || 0;
     if (booking.tax_exempt_claimed) {
