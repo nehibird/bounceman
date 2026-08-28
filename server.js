@@ -44,7 +44,7 @@ app.use((req, res, next) => {
   // signature pad and swallowed the taps — Playwright's actionability check named it
   // outright: "<img popup-art-v2.webp> from <div id=bml-root> subtree intercepts
   // pointer events". A $10-off advert must never outrank the button that takes the money.
-  res.locals.isBookingFlow = /^\/(booking|contract|event)(\/|$)/.test(req.path);
+  res.locals.isBookingFlow = /^\/(booking|contract|event|delivery|service-areas)(\/|$)/.test(req.path);
   next();
 });
 
