@@ -1,0 +1,162 @@
+<%- include('../layouts/public', { body: `
+
+<style>
+  .dl-hero{background:var(--bm-gradient-cool);color:#fff;padding:56px 0 44px;text-align:center}
+  .dl-hero h1{font-size:44px;margin:0 0 10px;letter-spacing:-.02em}
+  .dl-hero p{font-size:18px;opacity:.92;margin:0 auto;max-width:620px}
+  .dl-check{max-width:620px;margin:-34px auto 0;background:#fff;border-radius:18px;
+    box-shadow:0 14px 40px rgba(0,0,0,.13);padding:26px 24px;position:relative;z-index:5}
+  .dl-check h2{font-size:20px;margin:0 0 4px;color:var(--bm-blue)}
+  .dl-check .sub{font-size:14px;color:#6b7684;margin:0 0 16px}
+  .dl-inputrow{display:flex;gap:10px}
+  .dl-inputrow input{flex:1;font-size:20px;letter-spacing:2px;text-align:center;padding:14px;
+    border:2px solid #e3e8ef;border-radius:12px;font-weight:700;color:var(--bm-blue);min-width:0}
+  .dl-inputrow input:focus{outline:none;border-color:var(--bm-orange)}
+  .dl-inputrow button{background:var(--bm-orange);color:#fff;border:none;border-radius:12px;
+    padding:0 26px;font-weight:800;font-size:16px;cursor:pointer;white-space:nowrap}
+  .dl-result{margin-top:16px;border-radius:12px;padding:16px 18px;display:none;font-size:16px}
+  .dl-result.free{background:#e9f9ef;border:1px solid #b7e6c8;color:#12643a}
+  .dl-result.fee{background:#fff4e6;border:1px solid #ffd8a8;color:#8a4b08}
+  .dl-result.bad{background:#fdeaea;border:1px solid #f5c2c2;color:#8a1c1c}
+  .dl-result strong{display:block;font-size:22px;margin-bottom:2px}
+  .dl-zones{max-width:1040px;margin:52px auto 0;padding:0 16px}
+  .dl-zone{background:#fff;border-radius:18px;border:1px solid #eceff3;padding:24px 26px;margin-bottom:18px;
+    box-shadow:0 3px 14px rgba(0,0,0,.05)}
+  .dl-zone.free{border-left:6px solid #16a34a}
+  .dl-zone.mid{border-left:6px solid var(--bm-orange)}
+  .dl-zone.far{border-left:6px solid #7B2D8E}
+  .dl-zone .top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+  .dl-zone h3{margin:0;font-size:22px;color:var(--bm-blue)}
+  .dl-price{font-size:30px;font-weight:900;line-height:1}
+  .dl-zone.free .dl-price{color:#16a34a}
+  .dl-zone.mid .dl-price{color:var(--bm-orange)}
+  .dl-zone.far .dl-price{color:#7B2D8E}
+  .dl-note{font-size:14px;color:#6b7684;margin:4px 0 14px}
+  .dl-towns{display:flex;flex-wrap:wrap;gap:8px}
+  .dl-town{background:#f5f7fa;border-radius:999px;padding:6px 13px;font-size:14px;color:#3c4756;white-space:nowrap}
+  .dl-town b{color:var(--bm-blue)}
+  .dl-town .mi{color:#93a0b0;font-size:12px;margin-left:4px}
+  .dl-incl{max-width:1040px;margin:36px auto 0;padding:0 16px}
+  .dl-incl .card-body{padding:26px}
+  .dl-incl ul{margin:0;padding-left:22px;line-height:2;color:#3c4756}
+  @media(max-width:600px){
+    .dl-hero h1{font-size:32px}.dl-hero{padding:40px 0 40px}
+    .dl-check{margin:-28px 16px 0;padding:22px 18px}
+    .dl-inputrow{flex-direction:column}.dl-inputrow button{padding:14px}
+  }
+</style>
+
+<div class="dl-hero">
+  <h1>Delivery</h1>
+  <p>We deliver, set up, anchor and take down — every time. Free across Kay County and the towns around it.</p>
+</div>
+
+<div class="dl-check">
+  <h2>Do we deliver to you?</h2>
+  <p class="sub">Type your ZIP code for an instant answer.</p>
+  <div class="dl-inputrow">
+    <input id="dlZip" type="tel" inputmode="numeric" maxlength="5" placeholder="74653" aria-label="ZIP code">
+    <button id="dlGo" type="button">Check</button>
+  </div>
+  <div id="dlResult" class="dl-result"></div>
+</div>
+
+<div class="dl-zones">
+  ${(function() {
+    var towns = {
+      '74653':['Tonkawa',0],'74631':['Blackwell',9],'74601':['Ponca City',13],'74602':['Ponca City',10],
+      '74604':['Ponca City',15],'74632':['Braman',18],'74644':['Marland',14],'74646':['Nardin',12],
+      '74647':['Newkirk',18],'74641':['Kaw City',26],'74643':['Lamont',14],'74630':['Billings',12],
+      '74636':['Deer Creek',14],'74651':['Red Rock',16],
+      '74633':['Burbank',null],'73077':['Perry',null],'67140':['South Haven, KS',null],'73766':['Pond Creek',null],
+      '73757':['Lucien',null],'74640':['Hunter',null],'73738':['Garber',null],
+      '73730':['Covington',null],'73759':['Medford',null],'73073':['Orlando',null],'73061':['Morrison',null],
+      '73736':['Fairmont',null],'67022':['Caldwell, KS',null],'74637':['Fairfax',null],'74652':['Shidler',null],
+      '73753':['Kremlin',null],'67005':['Arkansas City, KS',null],'73761':['Nash',null],'73733':['Douglas',null],
+      '74650':['Ralston',null],'73701':['Enid',null],'73703':['Enid',null],'67051':['Geuda Springs, KS',null],
+      '74075':['Stillwater',null]
+    };
+    var css = { 0:'free', 60:'mid', 95:'far' };
+    var blurb = {
+      0:'No charge at all. Delivery, setup, anchoring and takedown are included.',
+      60:'Just outside the county — one flat fee, no matter how many units you rent.',
+      95:'A bit further out — still one flat fee for the whole order.'
+    };
+    return zones.map(function(z) {
+      var fee = parseFloat(z.delivery_fee) || 0;
+      var seen = {}, list = [];
+      z.zip_codes.split(',').forEach(function(raw) {
+        var zip = raw.trim(); var t = towns[zip];
+        var name = t ? t[0] : zip; var mi = t ? t[1] : null;
+        if (seen[name]) return; seen[name] = true;
+        list.push('<span class="dl-town"><b>' + name + '</b>' + (mi !== null && mi !== undefined ? '<span class="mi">' + mi + ' mi</span>' : '') + '</span>');
+      });
+      return '<div class="dl-zone ' + (css[fee] || 'far') + '">' +
+        '<div class="top"><h3>' + (fee === 0 ? 'Free Delivery' : 'Flat $' + fee.toFixed(0) + ' Delivery') + '</h3>' +
+        '<div class="dl-price">' + (fee === 0 ? 'FREE' : '$' + fee.toFixed(0)) + '</div></div>' +
+        '<p class="dl-note">' + (blurb[fee] || 'One flat fee for the whole order.') + '</p>' +
+        '<div class="dl-towns">' + list.join('') + '</div></div>';
+    }).join('');
+  })()}
+
+  <div class="dl-zone far" style="border-left-color:#93a0b0">
+    <div class="top"><h3>Somewhere else?</h3><div class="dl-price" style="color:#93a0b0;font-size:22px">We'll quote it</div></div>
+    <p class="dl-note" style="margin-bottom:0">We go well beyond these towns. Enter your address on the booking page and you'll see the exact delivery cost straight away — no waiting on a call back. Or just <a href="/contact" style="color:var(--bm-orange);font-weight:600">ask us</a>.</p>
+  </div>
+</div>
+
+<div class="dl-incl">
+  <div class="card">
+    <div class="card-body">
+      <h3 style="margin:0 0 14px;color:var(--bm-blue);font-size:22px">What delivery includes</h3>
+      <ul>
+        <li>We bring it, set it up and anchor it properly — stakes on grass, sandbags on concrete or indoors, <strong>no extra charge either way</strong></li>
+        <li>We come back and take it down at the end. You don't touch a thing.</li>
+        <li>One flat delivery fee per order, however many units you rent</li>
+        <li>Setup needs a standard outlet within 100 feet, or add our generator</li>
+      </ul>
+      <div style="margin-top:20px">
+        <a href="/booking" class="btn btn-bm rounded-pill px-4 py-2">Check your date</a>
+        <a href="/equipment" class="btn btn-bm-outline rounded-pill px-4 py-2 ms-2">See the units</a>
+      </div>
+    </div>
+  </div>
+</div>
+<div style="height:56px"></div>
+`, scripts: `
+<script>
+(function(){
+  var input=document.getElementById('dlZip'), btn=document.getElementById('dlGo'), out=document.getElementById('dlResult');
+  if(!input||!btn||!out) return;
+  function show(cls, head, body){
+    out.className='dl-result '+cls;
+    out.innerHTML='<strong>'+head+'</strong>'+(body||'');
+    out.style.display='block';
+  }
+  function check(){
+    var z=(input.value||'').replace(/[^0-9]/g,'').slice(0,5);
+    if(z.length!==5){ show('bad','That does not look right','Enter a 5-digit ZIP code.'); return; }
+    btn.disabled=true; btn.textContent='...';
+    fetch('/booking/check-zip?zip='+z)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        btn.disabled=false; btn.textContent='Check';
+        if(!d || d.valid===false){ show('bad','We could not find that ZIP','Give us a call at (580) 308-9288 and we will sort it out.'); return; }
+        var fee=parseFloat(d.fee||0);
+        // The distance quote is unbounded — 90210 comes back as $5,396, which is a real
+        // number and a ridiculous thing to put in front of someone. Past a genuine day
+        // trip we stop quoting and start a conversation.
+        if(fee===0) show('free','Yes — and delivery is free','We deliver to you at no charge. Setup, anchoring and takedown included.');
+        else if(fee>350) show('fee','That is a long way from us','We would love to help, but it is far enough that we need to talk it through. Call or text (580) 308-9288 and we will see what we can do.');
+        else show('fee','Yes — delivery is $'+fee.toFixed(0),'One flat fee for the whole order, however many units you rent.');
+      })
+      .catch(function(){
+        btn.disabled=false; btn.textContent='Check';
+        show('bad','Something went wrong','Give us a call at (580) 308-9288.');
+      });
+  }
+  btn.addEventListener('click', check);
+  input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+})();
+</script>
+` }) %>

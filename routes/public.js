@@ -371,12 +371,19 @@ router.get('/faq', (req, res) => {
 });
 
 // Service areas
-router.get('/service-areas', (req, res) => {
+function renderDelivery(req, res) {
   const db = getDb();
   const settings = getSettings();
   const zones = db.prepare('SELECT * FROM delivery_zones WHERE active = 1 ORDER BY delivery_fee').all();
-  res.render('public/service-areas', { title: 'Service Areas | Bounce Man | Tonkawa, Ponca City, Blackwell, Stillwater OK', metaDescription: 'Bounce Man delivers bounce houses and water slides across Kay County, Oklahoma including Tonkawa, Ponca City, Blackwell, Newkirk, Kaw City & Stillwater. Check delivery fees.', canonicalPath: '/service-areas', settings, zones, page: 'service-areas' });
-});
+  res.render('public/delivery', {
+    title: 'Delivery Areas & Fees | Bounce Man | Tonkawa, Ponca City, Blackwell OK',
+    metaDescription: 'Free bounce house delivery across Kay County, Oklahoma — Tonkawa, Ponca City, Blackwell, Newkirk, Lamont, Deer Creek and more. Check your ZIP for an instant delivery quote.',
+    canonicalPath: '/delivery', settings, zones, page: 'delivery'
+  });
+}
+router.get('/delivery', renderDelivery);
+// Kept so older links, the footer and the FAQ reference keep working.
+router.get('/service-areas', renderDelivery);
 
 // Privacy Policy
 router.get('/privacy', (req, res) => {
