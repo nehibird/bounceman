@@ -535,8 +535,34 @@ function check(){
   }
   var hit = byZip[zip];
   if(!hit){
-    say('ask','That one is not on our map',
-      'It does not mean no &mdash; we go further than this. <a href="tel:+15803089288">Call or text (580) 308-9288</a> and we will sort it out.');
+    /* Not in the baked table. Do NOT conclude we don't go there — ask the server,
+       which prices every ZIP by distance and is the source of truth at checkout.
+       A gap in this table already told Ponca City customers on 74604 that their
+       own town was "not on our map". The local table is a speed optimisation, not
+       the authority, so an unknown ZIP falls back to the network rather than to a
+       wrong answer. */
+    say('ask','Checking&hellip;','One moment.');
+    fetch('/booking/check-zip?zip=' + zip)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var f = d && d.valid !== false ? parseFloat(d.fee || 0) : null;
+        if(f === null){
+          say('ask','That one is not on our map',
+            'It does not mean no &mdash; we go further than this. <a href="tel:+15803089288">Call or text (580) 308-9288</a> and we will sort it out.');
+        } else if(f === 0){
+          say('free','Yes &mdash; and delivery is free','We come to you at no charge. Setup, anchoring and takedown included.');
+        } else if(f > 350){
+          say('ask','That is a fair drive from us',
+            'Further than our usual run, but not a no. <a href="tel:+15803089288">Call or text (580) 308-9288</a> and we will work it out.');
+        } else {
+          say('fee','Yes &mdash; delivery is $' + f.toFixed(0),
+            'One flat $' + f.toFixed(0) + ' for the whole order, however many units you rent.');
+        }
+      })
+      .catch(function(){
+        say('ask','We could not check that one just now',
+          '<a href="tel:+15803089288">Call or text (580) 308-9288</a> and we will tell you straight away.');
+      });
     clearTown();          /* pull back to the whole territory, so "further than
                              this" has something to be further than */
     return;
@@ -558,7 +584,14 @@ go.addEventListener('click', check);
 input.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); check(); } });
 input.addEventListener('input', function(){
   this.value = this.value.replace(/[^0-9]/g,'').slice(0,5);
-  if(this.value.length === 5) check();          /* five digits in, answer out */
+  if(this.value.length === 5){ check(); }       /* five digits in, answer out */
+  else if(out.className !== 'dm-res'){
+    /* Start retyping and the previous town's answer must go. Otherwise you delete
+       74653, type 902, and Tonkawa's "delivery is free" is still sitting there
+       under a ZIP a thousand miles away. */
+    out.className = 'dm-res';
+    clearTown();
+  }
 });
 reset.addEventListener('click', function(){
   clearTown();
