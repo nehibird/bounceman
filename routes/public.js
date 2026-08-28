@@ -88,8 +88,8 @@ router.post('/equipment/suggest', (req, res) => {
     try {
       // Escape Slack control chars so input can't inject links or @channel/@here pings.
       const slackEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const { sendSlackMessage } = require('../services/notifications');
-      sendSlackMessage({
+      const { sendAlert } = require('../services/notifications');
+      sendAlert({
         text: 'Equipment suggestion from the website',
         blocks: [{ type: 'section', text: { type: 'mrkdwn', text: ':bulb: *Equipment suggestion from the website*\n> ' + slackEsc(suggestion).replace(/[\r\n]+/g, ' ') + (email ? '\n_from ' + slackEsc(email) + '_' : '') } }]
       }).catch(() => {});

@@ -187,7 +187,7 @@ async function releaseExpiredHolds() {
       console.log('[HOLD] Released', b.booking_number, '(unpaid ' + b.age_hours.toFixed(1) + 'h) — unit freed');
       try {
         const items = db.prepare('SELECT item_name FROM booking_items WHERE booking_id = ?').all(b.id).map(i => i.item_name).join(', ');
-        await notifyService.sendSlackMessage({
+        await notifyService.sendAlert({
           text: 'Hold released: ' + b.booking_number,
           blocks: [{ type: 'section', text: { type: 'mrkdwn',
             text: ':hourglass_flowing_sand: *Hold released — unit freed*\n*' + b.first_name + ' ' + (b.last_name || '') + '* never paid the deposit (held ' + Math.round(b.age_hours * 60) + ' min).\n' + (items || 'items') + ' · ' + fmtDate(b.event_date) + '\nBooking `' + b.booking_number + '` set to cancelled; the equipment is available again.' } }]

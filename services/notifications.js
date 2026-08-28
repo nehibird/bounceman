@@ -717,6 +717,18 @@ async function updateBookingSlackCard(bookingId) {
   }
 }
 
+// #alerts — system noise only: hold releases, undeliverable hazard checks, watchdog
+// warnings, website suggestions. Deliberately NOT bookings, delivery cards, texts or
+// calls; those each have their own channel and get buried if alerts share them.
+const ALERTS_CHANNEL = process.env.SLACK_ALERTS_CHANNEL || 'C0BU9GUAQMN';
+
+// Same as sendSlackMessage but always lands in #alerts. New alerts should use this so
+// nobody has to remember a channel id.
+async function sendAlert(opts) {
+  opts = opts || {};
+  return postToSlack(ALERTS_CHANNEL, opts.blocks, opts.text || 'Bounce Man alert');
+}
+
 async function sendSlackMessage(opts) {
   opts = opts || {};
   const channel = opts.channel || BOOKINGS_CHANNEL;
@@ -879,7 +891,7 @@ async function sendHazardChecks() {
   const giveUp = (b, why) => {
     db.prepare("UPDATE bookings SET hazard_check_sent = 2, updated_at = datetime('now') WHERE id = ?").run(b.id);
     console.error('[HAZARD] giving up on', b.booking_number, '—', why);
-    sendSlackMessage({ text: ':warning: *Hazard check could not be delivered* — ' + b.booking_number +
+    sendAlert({ text: ':warning: *Hazard check could not be delivered* — ' + b.booking_number +
       ' (' + b.first_name + ', ' + fmtDate(b.event_date) + ')\n' + why +
       '\nThey have NOT been warned about buried lines. Fix the number in admin or call them — ' +
       'this alert will not repeat.' }).catch(() => {});
@@ -910,4 +922,4 @@ async function sendHazardChecks() {
   return sent;
 }
 
-module.exports = { sendSlackMessage, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendTodayBrief, deliveryWatchdog, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };
+module.exports = { sendSlackMessage, sendAlert, ALERTS_CHANNEL, notifyNewBooking, buildBookingBlocks, notifyDeliveryReminder, buildDeliveryCardBlocks, refreshDeliveryCard, checkDeliveryReminders, sendTodayBrief, deliveryWatchdog, sendHazardChecks, notifyContactForm, buildEventCard, updateBookingSlackCard, postSmsToThread, threadPhone, reactToSlack, ensureSmsThread, uploadFileToThread, uploadFileToChannel };
