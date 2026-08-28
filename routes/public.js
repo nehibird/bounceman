@@ -371,6 +371,70 @@ router.get('/faq', (req, res) => {
 });
 
 // Service areas
+// Towns, ZIPs, coordinates and real driving distances for the delivery map and the
+// zone cards. Baked in rather than geocoded per request: these do not move, and a page
+// render should not depend on an outside lookup. Regenerate if delivery_zones changes.
+// z = ZIP, n = name, s = state, la/lo = coordinates, mi = driving miles from Tonkawa.
+const DELIVERY_TOWNS = {
+  "0": [
+    {z:"74653",n:"Tonkawa",s:"OK",la:36.6806,lo:-97.3063,mi:0},
+    {z:"74631",n:"Blackwell",s:"OK",la:36.8006,lo:-97.2867,mi:9},
+    {z:"74646",n:"Nardin",s:"OK",la:36.8155,lo:-97.4325,mi:12},
+    {z:"74630",n:"Billings",s:"OK",la:36.5246,lo:-97.4189,mi:12},
+    {z:"74601",n:"Ponca City",s:"OK",la:36.7031,lo:-97.0784,mi:13},
+    {z:"74644",n:"Marland",s:"OK",la:36.5591,lo:-97.0976,mi:14},
+    {z:"74643",n:"Lamont",s:"OK",la:36.6939,lo:-97.5601,mi:14},
+    {z:"74636",n:"Deer Creek",s:"OK",la:36.8048,lo:-97.5136,mi:14},
+    {z:"74651",n:"Red Rock",s:"OK",la:36.4748,lo:-97.1640,mi:16},
+    {z:"74632",n:"Braman",s:"OK",la:36.9331,lo:-97.3082,mi:18},
+    {z:"74647",n:"Newkirk",s:"OK",la:36.8400,lo:-97.0561,mi:18},
+    {z:"74641",n:"Kaw City",s:"OK",la:36.8382,lo:-96.8833,mi:26}
+  ],
+  "60": [
+    {z:"74640",n:"Hunter",s:"OK",la:36.5603,lo:-97.6425,mi:20},
+    {z:"73738",n:"Garber",s:"OK",la:36.4392,lo:-97.5789,mi:22},
+    {z:"67140",n:"South Haven",s:"KS",la:37.0500,lo:-97.4042,mi:26},
+    {z:"73077",n:"Perry",s:"OK",la:36.2875,lo:-97.2842,mi:27},
+    {z:"73766",n:"Pond Creek",s:"OK",la:36.6643,lo:-97.8019,mi:27},
+    {z:"74633",n:"Burbank",s:"OK",la:36.6966,lo:-96.7869,mi:29},
+    {z:"73757",n:"Lucien",s:"OK",la:36.2753,lo:-97.4526,mi:29}
+  ],
+  "95": [
+    {z:"73759",n:"Medford",s:"OK",la:36.8142,lo:-97.7202,mi:25},
+    {z:"73730",n:"Covington",s:"OK",la:36.3099,lo:-97.5752,mi:29},
+    {z:"67051",n:"Geuda Springs",s:"KS",la:37.0809,lo:-97.1795,mi:29},
+    {z:"73061",n:"Morrison",s:"OK",la:36.2902,lo:-97.0228,mi:31},
+    {z:"73736",n:"Fairmont",s:"OK",la:36.3400,lo:-97.6848,mi:31},
+    {z:"67022",n:"Caldwell",s:"KS",la:37.0452,lo:-97.6247,mi:31},
+    {z:"67005",n:"Arkansas City",s:"KS",la:37.0676,lo:-97.0357,mi:31},
+    {z:"73753",n:"Kremlin",s:"OK",la:36.5207,lo:-97.8542,mi:32},
+    {z:"74650",n:"Ralston",s:"OK",la:36.4992,lo:-96.7755,mi:32},
+    {z:"74637",n:"Fairfax",s:"OK",la:36.5577,lo:-96.6997,mi:35},
+    {z:"73733",n:"Douglas",s:"OK",la:36.2481,lo:-97.6896,mi:36},
+    {z:"73701",n:"Enid",s:"OK",la:36.4028,lo:-97.8623,mi:36},
+    {z:"73073",n:"Orlando",s:"OK",la:36.1420,lo:-97.3960,mi:37},
+    {z:"74652",n:"Shidler",s:"OK",la:36.7819,lo:-96.6607,mi:37},
+    {z:"73761",n:"Nash",s:"OK",la:36.6961,lo:-98.0258,mi:40},
+    {z:"74075",n:"Stillwater",s:"OK",la:36.1396,lo:-97.0630,mi:40}
+  ]
+};
+
+// How each fee tier presents itself, on the map and in the cards below it. Kept here
+// so the territory band, the label written across it and the card can never disagree.
+// `at` is where the zone name sits on the map — hand-placed to clear the shop marker
+// and the neighbouring bands. Nudge it if the zone membership changes shape.
+const DELIVERY_TIERS = [
+  { fee:95, cls:'z95',  color:'#4c5666', fill:.05, dash:'3 6', label:'$95 zone',
+    lbl:'dm-lbl-95',   at:[36.280,-97.620], title:'Flat $95',
+    note:'Sixteen towns, out as far as 40 miles. Still one flat fee.' },
+  { fee:60, cls:'z60',  color:'#d77c42', fill:.10, dash:'5 6', label:'$60 zone',
+    lbl:'dm-lbl-60',   at:[36.700,-97.760], title:'Flat $60',
+    note:'Seven towns, out as far as 29 miles. One flat fee for the order.' },
+  { fee:0,  cls:'free', color:'#ee5626', fill:.16, dash:null,  label:'Free delivery',
+    lbl:'dm-lbl-free', at:[36.575,-97.310], title:'Free delivery',
+    note:'Twelve towns, out as far as 26 miles. No charge at all.' }
+];
+
 function renderDelivery(req, res) {
   const db = getDb();
   const settings = getSettings();
@@ -378,7 +442,8 @@ function renderDelivery(req, res) {
   res.render('public/delivery', {
     title: 'Delivery Areas & Fees | Bounce Man | Tonkawa, Ponca City, Blackwell OK',
     metaDescription: 'Free bounce house delivery across Kay County, Oklahoma — Tonkawa, Ponca City, Blackwell, Newkirk, Lamont, Deer Creek and more. Check your ZIP for an instant delivery quote.',
-    canonicalPath: '/delivery', settings, zones, page: 'delivery'
+    canonicalPath: '/delivery', settings, zones,
+    townsByFee: DELIVERY_TOWNS, tiers: DELIVERY_TIERS, page: 'delivery'
   });
 }
 router.get('/delivery', renderDelivery);
