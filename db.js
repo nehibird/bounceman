@@ -716,6 +716,32 @@ function initialize() {
     )`).run();
   } catch { /* already exists */ }
 
+  // Migration: booking_leads — everything a customer typed, kept even when they never
+  // finish. POST /booking/review already receives their name, email, phone, address, date
+  // and units, and until now persisted NONE of it: the first write of customer data was at
+  // /booking/submit. So anyone who reached the review page, saw the total and walked away
+  // left no trace at all — which is exactly the population worth understanding.
+  // A lead is keyed on (email, event_date) so revisiting the page updates rather than
+  // duplicates, and 'converted' flips when they go on to submit.
+  try {
+    d.prepare(`CREATE TABLE IF NOT EXISTS booking_leads (
+      id TEXT PRIMARY KEY,
+      first_name TEXT, last_name TEXT, email TEXT, phone TEXT,
+      delivery_address TEXT, delivery_city TEXT, delivery_zip TEXT,
+      event_date TEXT, rental_duration TEXT, event_start_time TEXT, event_end_time TEXT,
+      venue_type TEXT, surface_type TEXT,
+      item_names TEXT, equipment_ids TEXT,
+      subtotal REAL, delivery_fee REAL, tax_amount REAL, total REAL, deposit_amount REAL,
+      discount_code TEXT,
+      converted INTEGER DEFAULT 0,
+      booking_number TEXT,
+      reached_review_at TEXT DEFAULT (datetime('now')),
+      last_seen_at TEXT DEFAULT (datetime('now')),
+      user_agent TEXT
+    )`).run();
+    d.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_email_date ON booking_leads(email, event_date)').run();
+  } catch { /* already exists */ }
+
   // Migration: blocked_numbers table for spam call filtering
   try {
     d.prepare(`CREATE TABLE IF NOT EXISTS blocked_numbers (

@@ -398,6 +398,7 @@ router.get('/data-deletion', (req, res) => {
 
 // Digital contract signing
 router.get('/contract/:id', (req, res) => {
+  console.log('[CONTRACT] opened ' + req.params.id + ' ua=' + String(req.get('user-agent') || '').slice(0, 60));
   const db = getDb();
   const settings = getSettings();
   const contract = db.prepare(`
@@ -426,8 +427,11 @@ router.post('/contract/:id/sign', (req, res) => {
   // Look up by id only (NOT "AND signed = 0") so a retry / double-tap on an
   // already-signed contract is idempotent instead of stranding the customer
   // with a 404 and no path to payment.
+  console.log('[SIGN] attempt contract=' + req.params.id + ' name=' + (signer_name || '(none)') +
+    ' sigBytes=' + String(signature_data || '').length + ' ip=' + ip);
   const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!contract) {
+    console.warn('[SIGN] REJECTED — no such contract ' + req.params.id);
     if (wantsJson) return res.status(404).json({ error: 'Contract not found' });
     return res.status(404).render('public/404', { title: 'Not Found', settings: getSettings(), page: '404' });
   }
@@ -453,6 +457,7 @@ router.post('/contract/:id/sign', (req, res) => {
   // paid yet; otherwise (e.g. signing later via the email link) show the signed page.
   const bk = db.prepare('SELECT booking_number, deposit_paid FROM bookings WHERE id = ?').get(contract.booking_id);
   const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
+  console.log('[SIGN] ' + (justSigned ? 'SIGNED' : 'already signed') + ' ' + (bk ? bk.booking_number : '?') + ' -> ' + next);
 
   // Safety net for the rare device (in-app browsers commonly block the Stripe
   // redirect) where the customer signs but never lands on checkout. We DON'T send

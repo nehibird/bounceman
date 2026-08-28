@@ -442,6 +442,43 @@ router.post('/review', bookingLimiter, async (req, res) => {
   if (isComp) { discount_amount = rawTotal; total = 0; }
   const deposit_amount = Math.min(parseFloat(settings.deposit_flat || '50'), total);  // flat $50 deposit
 
+  // Keep what they typed, whether or not they go through with it. This is the last point
+  // in the flow where we know the customer AND the price they are about to see, and it is
+  // the moment people are most likely to walk. Best-effort only: a failure here must never
+  // stop someone booking, so everything is inside a try/catch that swallows.
+  try {
+    const leadId = require('crypto').randomUUID();
+    const itemNames = items.map((id) => {
+      const e = db.prepare('SELECT name FROM equipment WHERE id = ?').get(id);
+      return e ? e.name : id;
+    }).join(', ');
+    db.prepare(`INSERT INTO booking_leads
+      (id, first_name, last_name, email, phone, delivery_address, delivery_city, delivery_zip,
+       event_date, rental_duration, event_start_time, event_end_time, venue_type, surface_type,
+       item_names, equipment_ids, subtotal, delivery_fee, tax_amount, total, deposit_amount,
+       discount_code, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(email, event_date) DO UPDATE SET
+        first_name=excluded.first_name, last_name=excluded.last_name, phone=excluded.phone,
+        delivery_address=excluded.delivery_address, delivery_city=excluded.delivery_city,
+        delivery_zip=excluded.delivery_zip, rental_duration=excluded.rental_duration,
+        event_start_time=excluded.event_start_time, event_end_time=excluded.event_end_time,
+        venue_type=excluded.venue_type, surface_type=excluded.surface_type,
+        item_names=excluded.item_names, equipment_ids=excluded.equipment_ids,
+        subtotal=excluded.subtotal, delivery_fee=excluded.delivery_fee,
+        tax_amount=excluded.tax_amount, total=excluded.total,
+        deposit_amount=excluded.deposit_amount, discount_code=excluded.discount_code,
+        last_seen_at=datetime('now')`)
+      .run(leadId, first_name || null, last_name || null, (email || '').trim().toLowerCase() || null,
+        phone || null, delivery_address || null, delivery_city || null, delivery_zip || null,
+        event_date, duration, event_start_time || null, event_end_time || null,
+        venue_type || null, surface_type || null, itemNames, items.join(','),
+        subtotal, delivery_fee, tax_amount, total, deposit_amount,
+        discount_code || null, String(req.get('user-agent') || '').slice(0, 200));
+    console.log('[LEAD] review reached — ' + (first_name || '?') + ' ' + (last_name || '') +
+      ' <' + (email || 'no email') + '> ' + event_date + ' ' + itemNames + ' $' + total.toFixed(2));
+  } catch (e) { console.error('[LEAD] capture failed (booking unaffected):', e.message); }
+
   res.render('public/booking/step4-review', {
     title: 'Review Your Booking - Bounce Man',
     settings,
@@ -765,6 +802,16 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     });
 
     insertTxn();
+
+    // They finished — take them off the abandoned list. Best-effort; the booking is
+    // already committed and must not be affected by a bookkeeping update.
+    try {
+      const leadEmail = (data.email || '').trim().toLowerCase();
+      if (leadEmail) {
+        db.prepare("UPDATE booking_leads SET converted = 1, booking_number = ?, last_seen_at = datetime('now') WHERE email = ? AND event_date = ?")
+          .run(bookingNumber, leadEmail, data.event_date);
+      }
+    } catch (e) { console.error('[LEAD] convert flag failed (booking unaffected):', e.message); }
 
     // Underground-hazard safety text. Fire-and-forget right now so a short-notice
     // booking gets it immediately instead of waiting for the hourly sweep; the job
