@@ -1,162 +1,572 @@
 <%- include('../layouts/public', { body: `
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  .dl-hero{background:var(--bm-gradient-cool);color:#fff;padding:56px 0 44px;text-align:center}
-  .dl-hero h1{font-size:44px;margin:0 0 10px;letter-spacing:-.02em}
-  .dl-hero p{font-size:18px;opacity:.92;margin:0 auto;max-width:620px}
-  .dl-check{max-width:620px;margin:-34px auto 0;background:#fff;border-radius:18px;
-    box-shadow:0 14px 40px rgba(0,0,0,.13);padding:26px 24px;position:relative;z-index:5}
-  .dl-check h2{font-size:20px;margin:0 0 4px;color:var(--bm-blue)}
-  .dl-check .sub{font-size:14px;color:#6b7684;margin:0 0 16px}
-  .dl-inputrow{display:flex;gap:10px}
-  .dl-inputrow input{flex:1;font-size:20px;letter-spacing:2px;text-align:center;padding:14px;
-    border:2px solid #e3e8ef;border-radius:12px;font-weight:700;color:var(--bm-blue);min-width:0}
-  .dl-inputrow input:focus{outline:none;border-color:var(--bm-orange)}
-  .dl-inputrow button{background:var(--bm-orange);color:#fff;border:none;border-radius:12px;
-    padding:0 26px;font-weight:800;font-size:16px;cursor:pointer;white-space:nowrap}
-  .dl-result{margin-top:16px;border-radius:12px;padding:16px 18px;display:none;font-size:16px}
-  .dl-result.free{background:#e9f9ef;border:1px solid #b7e6c8;color:#12643a}
-  .dl-result.fee{background:#fff4e6;border:1px solid #ffd8a8;color:#8a4b08}
-  .dl-result.bad{background:#fdeaea;border:1px solid #f5c2c2;color:#8a1c1c}
-  .dl-result strong{display:block;font-size:22px;margin-bottom:2px}
-  .dl-zones{max-width:1040px;margin:52px auto 0;padding:0 16px}
-  .dl-zone{background:#fff;border-radius:18px;border:1px solid #eceff3;padding:24px 26px;margin-bottom:18px;
-    box-shadow:0 3px 14px rgba(0,0,0,.05)}
-  .dl-zone.free{border-left:6px solid #16a34a}
-  .dl-zone.mid{border-left:6px solid var(--bm-orange)}
-  .dl-zone.far{border-left:6px solid #7B2D8E}
-  .dl-zone .top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
-  .dl-zone h3{margin:0;font-size:22px;color:var(--bm-blue)}
-  .dl-price{font-size:30px;font-weight:900;line-height:1}
-  .dl-zone.free .dl-price{color:#16a34a}
-  .dl-zone.mid .dl-price{color:var(--bm-orange)}
-  .dl-zone.far .dl-price{color:#7B2D8E}
-  .dl-note{font-size:14px;color:#6b7684;margin:4px 0 14px}
-  .dl-towns{display:flex;flex-wrap:wrap;gap:8px}
-  .dl-town{background:#f5f7fa;border-radius:999px;padding:6px 13px;font-size:14px;color:#3c4756;white-space:nowrap}
-  .dl-town b{color:var(--bm-blue)}
-  .dl-town .mi{color:#93a0b0;font-size:12px;margin-left:4px}
-  .dl-incl{max-width:1040px;margin:36px auto 0;padding:0 16px}
-  .dl-incl .card-body{padding:26px}
-  .dl-incl ul{margin:0;padding-left:22px;line-height:2;color:#3c4756}
-  @media(max-width:600px){
-    .dl-hero h1{font-size:32px}.dl-hero{padding:40px 0 40px}
-    .dl-check{margin:-28px 16px 0;padding:22px 18px}
-    .dl-inputrow{flex-direction:column}.dl-inputrow button{padding:14px}
-  }
+/* ───────────────────────────────────────────────────────────────
+   Delivery area. The map is the page — everything below it is a
+   caption. All rules are scoped to .dmp so nothing leaks into the
+   shared layout or Bootstrap.
+   Colours are pinned rather than inherited from --bm-orange: that
+   variable is admin-configurable, and this page's territory bands
+   have to stay legible against the OSM tiles underneath them.
+   ─────────────────────────────────────────────────────────────── */
+.dmp{
+  --dm-ember:#ee5626;   /* free zone, primary action */
+  --dm-clay:#d77c42;    /* $60 band */
+  --dm-slate:#4c5666;   /* $95 band */
+  --dm-ink:#1a212d;
+  --dm-paper:#FFF9F0;
+  --dm-sun:#FFD166;
+  --dm-rule:#e8ddcd;
+  --dm-muted:#6f6558;
+  color:var(--dm-ink); font-size:16px; line-height:1.55;
+}
+.dmp h1,.dmp h2,.dmp h3{font-family:Poppins,Inter,sans-serif;font-weight:800;letter-spacing:-.025em;margin:0}
+.dmp a{color:var(--dm-ember)}
+.dmp :focus-visible{outline:3px solid var(--dm-sun);outline-offset:2px;border-radius:6px}
+
+/* ── The map, treated as a printed county map ────────────────── */
+.dmp .dm-sheet{position:relative;background:var(--dm-paper);overflow:hidden}
+.dmp #dmMap{height:clamp(560px,78vh,720px);width:100%;background:var(--dm-paper);z-index:1}
+
+/* OSM ships cold blue-grey tiles. Warm them to the cream of the page so the
+   map reads as ink on paper instead of a screen inside a screen. Tile pane
+   only — zone bands, dots and labels keep their true brand colours. */
+.dmp .leaflet-tile-pane{filter:sepia(.42) saturate(.62) hue-rotate(-8deg) brightness(1.06) contrast(.9)}
+.dmp .leaflet-container{background:var(--dm-paper);font-family:Inter,sans-serif}
+
+/* Paper grain, and a soft edge so the map dissolves into the page. */
+.dmp .dm-sheet::after{
+  content:"";position:absolute;inset:0;z-index:400;pointer-events:none;
+  background-image:
+    radial-gradient(120% 85% at 50% 45%,transparent 55%,rgba(255,249,240,.55) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.32'/%3E%3C/svg%3E");
+  mix-blend-mode:multiply;opacity:.5;
+}
+
+/* ── Headline sitting on the map ─────────────────────────────── */
+.dmp .dm-head{position:absolute;top:24px;left:26px;right:26px;z-index:500;max-width:440px;pointer-events:none}
+.dmp .dm-eyebrow{
+  font-family:Poppins,sans-serif;font-weight:700;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dm-clay);margin:0 0 8px;
+  text-shadow:0 1px 0 var(--dm-paper),0 0 14px var(--dm-paper);
+}
+.dmp .dm-head h1{
+  font-size:clamp(30px,7vw,50px);line-height:1.02;color:var(--dm-ink);
+  text-shadow:0 1px 0 var(--dm-paper),0 0 22px var(--dm-paper),0 0 40px var(--dm-paper);
+}
+.dmp .dm-head h1 em{font-style:normal;color:var(--dm-ember)}
+.dmp #dmSub{
+  margin:12px 0 0;font-size:15.5px;max-width:34ch;color:#3d3629;font-weight:500;
+  text-shadow:0 1px 0 var(--dm-paper),0 0 16px var(--dm-paper),0 0 28px var(--dm-paper);
+}
+
+/* ── ZIP checker, docked into the map ────────────────────────── */
+.dmp .dm-check{
+  position:absolute;z-index:600;left:26px;bottom:26px;width:400px;
+  background:#fff;border:1px solid var(--dm-rule);border-radius:20px;
+  padding:20px 20px 18px;box-shadow:0 16px 40px rgba(26,33,45,.18);
+}
+.dmp .dm-check label{display:block;font-family:Poppins,sans-serif;font-weight:700;font-size:17px;margin-bottom:10px}
+.dmp .dm-row{display:flex;gap:10px}
+.dmp .dm-row input{
+  flex:1;min-width:0;font-family:Poppins,sans-serif;font-size:24px;font-weight:700;
+  letter-spacing:.14em;text-align:center;padding:13px 10px;color:var(--dm-ink);
+  background:var(--dm-paper);border:2px solid var(--dm-rule);border-radius:13px;
+}
+.dmp .dm-row input::placeholder{color:#c3b6a4;letter-spacing:.14em}
+.dmp .dm-row input:focus{outline:none;border-color:var(--dm-ember);background:#fff}
+.dmp .dm-row input:focus-visible{outline:3px solid var(--dm-sun);outline-offset:2px}
+.dmp .dm-row button{
+  background:var(--dm-ember);color:#fff;border:0;border-radius:13px;padding:0 26px;
+  font-family:Poppins,sans-serif;font-weight:700;font-size:16px;cursor:pointer;white-space:nowrap;
+  transition:transform .12s ease,background .12s ease;
+}
+.dmp .dm-row button:hover{background:#d94716}
+.dmp .dm-row button:active{transform:translateY(1px)}
+
+/* The answer. One line you can read from arm's length. */
+.dmp .dm-res{margin-top:14px;border-radius:14px;padding:14px 16px;display:none;border:1px solid}
+.dmp .dm-res.on{display:block;animation:dmRise .3s cubic-bezier(.2,.8,.3,1)}
+@keyframes dmRise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dmp .dm-res strong{display:block;font-family:Poppins,sans-serif;font-size:20px;line-height:1.2;margin-bottom:3px}
+.dmp .dm-res span{display:block;font-size:14.5px;line-height:1.5}
+.dmp .dm-res.free{background:#fdf0e9;border-color:#f6c9b3;color:#8f2f0c}
+.dmp .dm-res.free strong{color:var(--dm-ember)}
+.dmp .dm-res.fee{background:#fbf2e9;border-color:#ecd3b6;color:#7a4a1c}
+.dmp .dm-res.fee strong{color:var(--dm-clay)}
+.dmp .dm-res.ask{background:#f2f3f5;border-color:#dcdfe4;color:#454e5c}
+.dmp .dm-res.ask strong{color:var(--dm-ink)}
+.dmp .dm-res a{color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+
+.dmp .dm-reset{
+  display:none;margin-top:11px;background:none;border:0;padding:0;cursor:pointer;
+  font-family:Inter,sans-serif;font-size:13.5px;font-weight:600;color:var(--dm-muted);
+  text-decoration:underline;text-underline-offset:3px;
+}
+.dmp .dm-reset.on{display:inline-block}
+
+/* ── Tap-to-explore: keeps a thumb on the map from trapping the
+      page scroll on a phone. Desktop never sees it. ──────────── */
+.dmp .dm-veil{
+  position:absolute;inset:0;z-index:550;display:none;align-items:flex-end;justify-content:center;
+  background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.dmp .dm-veil.on{display:flex;padding:0 0 14px}
+.dmp .dm-veil span{
+  align-self:flex-start;margin:14px 14px 0 auto;background:rgba(26,33,45,.86);color:#fff;
+  font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:999px;
+  box-shadow:0 6px 18px rgba(26,33,45,.28);
+}
+
+/* ── Cartography: zone names written on the territory ────────── */
+.dmp .dm-maplabel{
+  font-family:Poppins,sans-serif;font-weight:800;text-transform:uppercase;
+  white-space:nowrap;text-align:center;background:none;border:0;pointer-events:none;
+  text-shadow:0 0 4px var(--dm-paper),0 0 8px var(--dm-paper),0 0 14px var(--dm-paper),0 1px 0 var(--dm-paper);
+}
+.dmp .dm-lbl-free{font-size:17px;letter-spacing:.18em;color:var(--dm-ember)}
+.dmp .dm-lbl-60{font-size:12.5px;letter-spacing:.15em;color:#b9682f}
+.dmp .dm-lbl-95{font-size:12.5px;letter-spacing:.15em;color:var(--dm-slate)}
+
+/* Home base */
+.dmp .dm-home i{
+  display:block;width:15px;height:15px;border-radius:50%;background:var(--dm-ink);
+  box-shadow:0 0 0 4px var(--dm-sun),0 0 0 6px rgba(26,33,45,.18);
+}
+.dmp .dm-home b{
+  position:absolute;left:24px;top:-2px;font-family:Poppins,sans-serif;font-size:11px;
+  font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--dm-ink);white-space:nowrap;
+  text-shadow:0 0 4px var(--dm-paper),0 0 9px var(--dm-paper),0 1px 0 var(--dm-paper);
+}
+/* Your town, after a ZIP search */
+.dmp .dm-you i{
+  display:block;width:17px;height:17px;border-radius:50%;background:var(--dm-ember);
+  border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3);position:relative;z-index:2;
+}
+.dmp .dm-you::before{
+  content:"";position:absolute;left:-9px;top:-9px;width:35px;height:35px;border-radius:50%;
+  background:var(--dm-ember);opacity:.35;animation:dmPing 1.9s ease-out infinite;
+}
+@keyframes dmPing{0%{transform:scale(.45);opacity:.5}70%,100%{transform:scale(1);opacity:0}}
+.dmp .dm-you b{
+  position:absolute;left:50%;transform:translateX(-50%);bottom:26px;
+  background:var(--dm-ink);color:#fff;font-family:Poppins,sans-serif;font-size:12px;font-weight:700;
+  padding:5px 11px;border-radius:999px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25);
+}
+
+/* Leaflet chrome, quieted down */
+.dmp .leaflet-popup-content{margin:11px 14px;font-family:Inter,sans-serif;font-size:14px;line-height:1.5}
+.dmp .leaflet-popup-content b{font-family:Poppins,sans-serif;font-size:15px;color:var(--dm-ink)}
+.dmp .leaflet-popup-content-wrapper{border-radius:12px;box-shadow:0 8px 26px rgba(26,33,45,.2)}
+.dmp .leaflet-bar a{color:var(--dm-ink);border-radius:0}
+.dmp .leaflet-touch .leaflet-bar a:first-child{border-radius:9px 9px 0 0}
+.dmp .leaflet-touch .leaflet-bar a:last-child{border-radius:0 0 9px 9px}
+
+.dmp .dm-credit{margin:0;padding:9px 20px 0;text-align:right;font-size:11px;color:#a1988b}
+.dmp .dm-credit a{color:#a1988b;text-decoration:underline}
+
+/* ── Below the map ───────────────────────────────────────────── */
+.dmp .dm-body{max-width:1040px;margin:0 auto;padding:52px 20px 0}
+.dmp .dm-sec-head{margin-bottom:20px}
+.dmp .dm-sec-head h2{font-size:clamp(23px,4vw,30px)}
+.dmp .dm-sec-head p{margin:7px 0 0;color:var(--dm-muted);font-size:15.5px}
+
+.dmp .dm-zone{
+  background:#fff;border:1px solid var(--dm-rule);border-left:5px solid var(--dm-ink);
+  border-radius:16px;padding:20px 22px;margin-bottom:14px;
+}
+.dmp .dm-zone.free{border-left-color:var(--dm-ember)}
+.dmp .dm-zone.z60{border-left-color:var(--dm-clay)}
+.dmp .dm-zone.z95{border-left-color:var(--dm-slate)}
+.dmp .dm-zone .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.dmp .dm-zone h3{font-size:19px}
+.dmp .dm-fee{font-family:Poppins,sans-serif;font-weight:800;font-size:30px;line-height:1;letter-spacing:-.03em}
+.dmp .dm-zone.free .dm-fee{color:var(--dm-ember)}
+.dmp .dm-zone.z60 .dm-fee{color:var(--dm-clay)}
+.dmp .dm-zone.z95 .dm-fee{color:var(--dm-slate)}
+.dmp .dm-zone .note{margin:6px 0 14px;font-size:14.5px;color:var(--dm-muted)}
+.dmp .dm-towns{display:flex;flex-wrap:wrap;gap:7px}
+.dmp .dm-town{
+  display:inline-flex;align-items:baseline;gap:6px;background:var(--dm-paper);
+  border:1px solid var(--dm-rule);border-radius:999px;padding:5px 12px;font-size:13.5px;font-weight:600;
+}
+.dmp .dm-town s{text-decoration:none;color:#9c9184;font-size:12px;font-variant-numeric:tabular-nums}
+
+.dmp .dm-far{
+  background:none;border:1px dashed #d9cbb6;border-radius:16px;padding:18px 22px;margin-bottom:14px;
+  font-size:14.5px;color:#4a4238;
+}
+.dmp .dm-far b{font-family:Poppins,sans-serif;display:block;font-size:16px;color:var(--dm-ink);margin-bottom:4px}
+
+.dmp .dm-incl{margin-top:44px;background:var(--dm-ink);border-radius:20px;padding:30px 28px;color:#fff}
+.dmp .dm-incl h2{font-size:clamp(22px,4vw,27px);color:#fff}
+.dmp .dm-incl > p{margin:8px 0 22px;color:#b9c1cd;font-size:15.5px}
+.dmp .dm-incl ul{list-style:none;margin:0;padding:0;display:grid;gap:14px;grid-template-columns:1fr 1fr}
+.dmp .dm-incl li{position:relative;padding-left:28px;font-size:15px;line-height:1.55;color:#e6e9ee}
+.dmp .dm-incl li::before{
+  content:"";position:absolute;left:0;top:7px;width:13px;height:13px;border-radius:50%;
+  background:var(--dm-sun);box-shadow:0 0 0 3px rgba(255,209,102,.2);
+}
+.dmp .dm-incl li b{color:#fff}
+
+.dmp .dm-cta{display:flex;gap:11px;flex-wrap:wrap;margin-top:26px}
+.dmp .dm-btn{
+  display:inline-block;font-family:Poppins,sans-serif;font-weight:700;font-size:16px;
+  padding:13px 26px;border-radius:999px;text-decoration:none;transition:transform .12s ease;
+}
+.dmp .dm-btn:active{transform:translateY(1px)}
+.dmp .dm-btn-p{background:var(--dm-ember);color:#fff}
+.dmp .dm-btn-p:hover{background:#d94716;color:#fff}
+.dmp .dm-btn-s{background:transparent;color:#fff;border:2px solid rgba(255,255,255,.35)}
+.dmp .dm-btn-s:hover{border-color:#fff;color:#fff}
+.dmp .dm-tail{padding:34px 20px 60px;text-align:center;color:var(--dm-muted);font-size:14.5px}
+.dmp .dm-tail a{font-weight:700;text-decoration:none}
+
+/* ── Phones. The majority case, not an afterthought. ─────────── */
+@media (max-width:860px){
+  .dmp #dmMap{height:clamp(470px,80vh,640px)}
+  .dmp .dm-head{top:16px;left:18px;right:18px}
+  .dmp #dmSub{font-size:14.5px;max-width:30ch}
+  .dmp .dm-check{left:12px;right:12px;bottom:12px;width:auto;padding:16px 16px 14px;border-radius:18px}
+  .dmp .dm-check label{font-size:15.5px;margin-bottom:8px}
+  .dmp .dm-row input{font-size:21px;padding:12px 8px}
+  .dmp .dm-row button{padding:0 20px;font-size:15px}
+  .dmp .dm-res strong{font-size:18px}
+  .dmp .dm-lbl-free{font-size:14px;letter-spacing:.14em}
+  .dmp .dm-lbl-60,.dmp .dm-lbl-95{font-size:11px}
+  .dmp .dm-body{padding:38px 16px 0}
+  .dmp .dm-zone{padding:18px 18px}
+  .dmp .dm-incl{padding:26px 22px;border-radius:18px}
+  .dmp .dm-incl ul{grid-template-columns:1fr}
+  .dmp .dm-cta .dm-btn{flex:1;text-align:center}
+}
+@media (max-width:400px){
+  .dmp .dm-head h1{font-size:26px}
+  .dmp #dmSub{display:none}      /* the map already says it */
+  .dmp .dm-check{padding:14px 14px 12px}
+  .dmp .dm-row input{font-size:19px}
+  .dmp .dm-row button{padding:0 16px;font-size:14.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .dmp *,.dmp *::before,.dmp *::after{animation:none!important;transition:none!important}
+}
 </style>
 
-<div class="dl-hero">
-  <h1>Delivery</h1>
-  <p>We deliver, set up, anchor and take down — every time. Free across Kay County and the towns around it.</p>
-</div>
+<div class="dmp">
 
-<div class="dl-check">
-  <h2>Do we deliver to you?</h2>
-  <p class="sub">Type your ZIP code for an instant answer.</p>
-  <div class="dl-inputrow">
-    <input id="dlZip" type="tel" inputmode="numeric" maxlength="5" placeholder="74653" aria-label="ZIP code">
-    <button id="dlGo" type="button">Check</button>
-  </div>
-  <div id="dlResult" class="dl-result"></div>
-</div>
+  <div class="dm-sheet">
+    <div id="dmMap"></div>
 
-<div class="dl-zones">
-  ${(function() {
-    var towns = {
-      '74653':['Tonkawa',0],'74631':['Blackwell',9],'74601':['Ponca City',13],'74602':['Ponca City',10],
-      '74604':['Ponca City',15],'74632':['Braman',18],'74644':['Marland',14],'74646':['Nardin',12],
-      '74647':['Newkirk',18],'74641':['Kaw City',26],'74643':['Lamont',14],'74630':['Billings',12],
-      '74636':['Deer Creek',14],'74651':['Red Rock',16],
-      '74633':['Burbank',null],'73077':['Perry',null],'67140':['South Haven, KS',null],'73766':['Pond Creek',null],
-      '73757':['Lucien',null],'74640':['Hunter',null],'73738':['Garber',null],
-      '73730':['Covington',null],'73759':['Medford',null],'73073':['Orlando',null],'73061':['Morrison',null],
-      '73736':['Fairmont',null],'67022':['Caldwell, KS',null],'74637':['Fairfax',null],'74652':['Shidler',null],
-      '73753':['Kremlin',null],'67005':['Arkansas City, KS',null],'73761':['Nash',null],'73733':['Douglas',null],
-      '74650':['Ralston',null],'73701':['Enid',null],'73703':['Enid',null],'67051':['Geuda Springs, KS',null],
-      '74075':['Stillwater',null]
-    };
-    var css = { 0:'free', 60:'mid', 95:'far' };
-    var blurb = {
-      0:'No charge at all. Delivery, setup, anchoring and takedown are included.',
-      60:'Just outside the county — one flat fee, no matter how many units you rent.',
-      95:'A bit further out — still one flat fee for the whole order.'
-    };
-    return zones.map(function(z) {
-      var fee = parseFloat(z.delivery_fee) || 0;
-      var seen = {}, list = [];
-      z.zip_codes.split(',').forEach(function(raw) {
-        var zip = raw.trim(); var t = towns[zip];
-        var name = t ? t[0] : zip; var mi = t ? t[1] : null;
-        if (seen[name]) return; seen[name] = true;
-        list.push('<span class="dl-town"><b>' + name + '</b>' + (mi !== null && mi !== undefined ? '<span class="mi">' + mi + ' mi</span>' : '') + '</span>');
-      });
-      return '<div class="dl-zone ' + (css[fee] || 'far') + '">' +
-        '<div class="top"><h3>' + (fee === 0 ? 'Free Delivery' : 'Flat $' + fee.toFixed(0) + ' Delivery') + '</h3>' +
-        '<div class="dl-price">' + (fee === 0 ? 'FREE' : '$' + fee.toFixed(0)) + '</div></div>' +
-        '<p class="dl-note">' + (blurb[fee] || 'One flat fee for the whole order.') + '</p>' +
-        '<div class="dl-towns">' + list.join('') + '</div></div>';
-    }).join('');
-  })()}
+    <div class="dm-head">
+      <p class="dm-eyebrow">Tonkawa, Oklahoma</p>
+      <h1>We deliver <em>free</em><br>out to 26 miles.</h1>
+      <p id="dmSub">Twelve towns, no charge. Past that it&rsquo;s one flat fee for the whole order.</p>
+    </div>
 
-  <div class="dl-zone far" style="border-left-color:#93a0b0">
-    <div class="top"><h3>Somewhere else?</h3><div class="dl-price" style="color:#93a0b0;font-size:22px">We'll quote it</div></div>
-    <p class="dl-note" style="margin-bottom:0">We go well beyond these towns. Enter your address on the booking page and you'll see the exact delivery cost straight away — no waiting on a call back. Or just <a href="/contact" style="color:var(--bm-orange);font-weight:600">ask us</a>.</p>
-  </div>
-</div>
+    <div class="dm-veil" id="dmVeil"><span>Tap to explore</span></div>
 
-<div class="dl-incl">
-  <div class="card">
-    <div class="card-body">
-      <h3 style="margin:0 0 14px;color:var(--bm-blue);font-size:22px">What delivery includes</h3>
-      <ul>
-        <li>We bring it, set it up and anchor it properly — stakes on grass, sandbags on concrete or indoors, <strong>no extra charge either way</strong></li>
-        <li>We come back and take it down at the end. You don't touch a thing.</li>
-        <li>One flat delivery fee per order, however many units you rent</li>
-        <li>Setup needs a standard outlet within 100 feet, or add our generator</li>
-      </ul>
-      <div style="margin-top:20px">
-        <a href="/booking" class="btn btn-bm rounded-pill px-4 py-2">Check your date</a>
-        <a href="/equipment" class="btn btn-bm-outline rounded-pill px-4 py-2 ms-2">See the units</a>
+    <div class="dm-check">
+      <label for="dmZip">Check your ZIP code</label>
+      <div class="dm-row">
+        <input id="dmZip" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="postal-code"
+               maxlength="5" placeholder="74653" aria-describedby="dmRes">
+        <button id="dmGo" type="button">Check</button>
       </div>
+      <div id="dmRes" class="dm-res" role="status" aria-live="polite"></div>
+      <button class="dm-reset" id="dmReset" type="button">Show the whole map again</button>
     </div>
   </div>
+
+  <p class="dm-credit">Map data &copy; <a href="https://www.openstreetmap.org/copyright" rel="nofollow">OpenStreetMap</a> contributors</p>
+
+  <div class="dm-body">
+    <div class="dm-sec-head">
+      <h2>Every town, and what it costs</h2>
+      <p>Driving miles from our shop in Tonkawa. One fee per order, however many units you rent.</p>
+    </div>
+
+    <!-- Rendered server-side, not by the map script: the town names are why this
+         page ranks, and they have to be in the HTML a crawler sees. -->
+    ${tiers.slice().reverse().map(function(tier) {
+      var towns = (townsByFee[tier.fee] || []).slice().sort(function(a, b) { return a.mi - b.mi; });
+      return '<div class="dm-zone ' + tier.cls + '">' +
+        '<div class="top"><h3>' + tier.title + '</h3>' +
+        '<div class="dm-fee">' + (tier.fee === 0 ? 'Free' : '$' + tier.fee) + '</div></div>' +
+        '<p class="note">' + tier.note + '</p>' +
+        '<div class="dm-towns">' + towns.map(function(t) {
+          return '<span class="dm-town">' + t.n + (t.s === 'KS' ? ', KS' : '') +
+                 ' <s>' + t.mi + ' mi</s></span>';
+        }).join('') + '</div></div>';
+    }).join('')}
+
+    <div class="dm-far">
+      <b>Further out than this?</b>
+      That is not a no. Put your address in on the booking page for an exact quote, or
+      <a href="tel:+15803089288">call or text (580) 308-9288</a> and we will work it out.
+    </div>
+
+    <div class="dm-incl">
+      <h2>What the fee covers</h2>
+      <p>Whether it is free or ninety-five dollars, you get the same thing.</p>
+      <ul>
+        <li>We haul it out and <b>set it up</b> where you want it.</li>
+        <li>We <b>anchor it</b> &mdash; stakes on grass, sandbags on concrete or indoors. <b>No extra charge either way.</b></li>
+        <li>We come back and <b>take it down.</b> You do not touch a thing.</li>
+        <li><b>One fee per order.</b> Rent one unit or four, the delivery cost is the same.</li>
+        <li>All we need is a <b>standard outlet within 100 feet</b> of the setup spot.</li>
+      </ul>
+      <div class="dm-cta">
+        <a class="dm-btn dm-btn-p" href="/booking">Check your date</a>
+        <a class="dm-btn dm-btn-s" href="/equipment">See the units</a>
+      </div>
+    </div>
+
+    <p class="dm-tail">
+      Questions about your spot? <a href="tel:+15803089288">Call or text (580) 308-9288</a> &mdash; 8am to 7pm, every day.
+    </p>
+  </div>
+
 </div>
-<div style="height:56px"></div>
 `, scripts: `
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
-  var input=document.getElementById('dlZip'), btn=document.getElementById('dlGo'), out=document.getElementById('dlResult');
-  if(!input||!btn||!out) return;
-  function show(cls, head, body){
-    out.className='dl-result '+cls;
-    out.innerHTML='<strong>'+head+'</strong>'+(body||'');
-    out.style.display='block';
+'use strict';
+
+/* Interpolated by the surrounding template literal, NOT by an EJS tag. EJS
+   closes the outer include at the first closing delimiter it meets, so an EJS
+   tag anywhere inside this string truncates the whole page. Same reason the
+   zone cards above are built with template-literal interpolation. */
+var ZONES = ${JSON.stringify(townsByFee)};
+var TIERS = ${JSON.stringify(tiers)};
+var HOME  = [36.6781,-97.3103];
+
+/* ─── SHAPE MATH ────────────────────────────────────────────────
+   The map used to scatter 35 dots inside dashed range rings. Rings are a lie
+   anyway — the zones are not circles. Instead: hull the towns in each tier
+   (cumulatively, so the bands nest), push the edge out past the towns, and
+   round the corners. Three warm bands of territory that read like a printed
+   county map rather than a radar sweep.
+   ──────────────────────────────────────────────────────────────── */
+function hull(pts){
+  var p = pts.map(function(a){ return [a[1],a[0]]; })                // [x=lng, y=lat]
+             .sort(function(a,b){ return a[0]-b[0] || a[1]-b[1]; });
+  if(p.length < 3) return pts.slice();
+  function cross(o,a,b){ return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]); }
+  var lower=[], upper=[], i;
+  for(i=0;i<p.length;i++){
+    while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p[i])<=0) lower.pop();
+    lower.push(p[i]);
   }
-  function check(){
-    var z=(input.value||'').replace(/[^0-9]/g,'').slice(0,5);
-    if(z.length!==5){ show('bad','That does not look right','Enter a 5-digit ZIP code.'); return; }
-    btn.disabled=true; btn.textContent='...';
-    fetch('/booking/check-zip?zip='+z)
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        btn.disabled=false; btn.textContent='Check';
-        if(!d || d.valid===false){ show('bad','We could not find that ZIP','Give us a call at (580) 308-9288 and we will sort it out.'); return; }
-        var fee=parseFloat(d.fee||0);
-        // The distance quote is unbounded — 90210 comes back as $5,396, which is a real
-        // number and a ridiculous thing to put in front of someone. Past a genuine day
-        // trip we stop quoting and start a conversation.
-        if(fee===0) show('free','Yes — and delivery is free','We deliver to you at no charge. Setup, anchoring and takedown included.');
-        else if(fee>350) show('fee','That is a long way from us','We would love to help, but it is far enough that we need to talk it through. Call or text (580) 308-9288 and we will see what we can do.');
-        else show('fee','Yes — delivery is $'+fee.toFixed(0),'One flat fee for the whole order, however many units you rent.');
-      })
-      .catch(function(){
-        btn.disabled=false; btn.textContent='Check';
-        show('bad','Something went wrong','Give us a call at (580) 308-9288.');
-      });
+  for(i=p.length-1;i>=0;i--){
+    while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p[i])<=0) upper.pop();
+    upper.push(p[i]);
   }
-  btn.addEventListener('click', check);
-  input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  lower.pop(); upper.pop();
+  return lower.concat(upper).map(function(a){ return [a[1],a[0]]; });  // back to [lat,lng]
+}
+
+/* Push every vertex away from the centroid so towns sit inside the band,
+   not pinned to its edge. */
+function grow(ring, scale, offset){
+  var cy=0, cx=0;
+  ring.forEach(function(p){ cy+=p[0]; cx+=p[1]; });
+  cy/=ring.length; cx/=ring.length;
+  return ring.map(function(p){
+    var dy=p[0]-cy, dx=p[1]-cx, d=Math.sqrt(dy*dy+dx*dx) || 1;
+    return [cy + dy*scale + (dy/d)*offset, cx + dx*scale + (dx/d)*offset];
+  });
+}
+
+/* Chaikin corner-cutting — turns the hard hull into a drawn-by-hand outline. */
+function round(ring, passes){
+  for(var k=0;k<passes;k++){
+    var out=[];
+    for(var i=0;i<ring.length;i++){
+      var a=ring[i], b=ring[(i+1)%ring.length];
+      out.push([a[0]*.75+b[0]*.25, a[1]*.75+b[1]*.25]);
+      out.push([a[0]*.25+b[0]*.75, a[1]*.25+b[1]*.75]);
+    }
+    ring=out;
+  }
+  return ring;
+}
+
+/* ─── MAP ───────────────────────────────────────────────────────── */
+var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var touch  = window.matchMedia && window.matchMedia('(hover: none)').matches;
+
+var map = L.map('dmMap', {
+  scrollWheelZoom:false,
+  dragging:!touch,               /* re-enabled on tap; see the veil below */
+  zoomControl:false,
+  zoomSnap:0, zoomDelta:.5,      /* whole-number zooms overshoot badly at this
+                                    aspect ratio and strand the territory in
+                                    the middle of three states */
+  attributionControl:false,      /* credited in the page instead; the control
+                                    lands on top of the ZIP card on a phone */
+  minZoom:7, maxZoom:14
+});
+if(!touch) L.control.zoom({position:'topright'}).addTo(map);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:16 }).addTo(map);
+
+/* Bands, widest first so free ends up on top. */
+var cumulative = [], bands = {};
+[0,60,95].forEach(function(fee){
+  cumulative = cumulative.concat((ZONES[String(fee)]||[]).map(function(t){ return [t.la,t.lo]; }));
+  bands[fee] = cumulative.slice();
+});
+
+TIERS.forEach(function(tier){
+  var ring = round(grow(hull(bands[tier.fee]), 1.12, .028), 3);
+  L.polygon(ring, {
+    color:tier.color, weight:tier.fee===0 ? 2.5 : 1.6, opacity:tier.fee===0 ? .95 : .6,
+    dashArray:tier.dash, fillColor:tier.color, fillOpacity:tier.fill,
+    lineJoin:'round', interactive:false
+  }).addTo(map);
+
+  /* The zone name is written on the territory, the way a paper map names a
+     county. This is the legend — there isn't a second one. */
+  L.marker(tier.at, {
+    interactive:false, keyboard:false,
+    icon:L.divIcon({className:'dm-maplabel '+tier.lbl, html:tier.label, iconSize:[170,20], iconAnchor:[85,10]})
+  }).addTo(map);
+});
+
+/* Towns. Small on purpose — the tiles already print the names, these just
+   mark which band each one falls in. */
+var byZip = {};
+TIERS.forEach(function(tier){
+  (ZONES[String(tier.fee)]||[]).forEach(function(t){
+    byZip[t.z] = { t:t, tier:tier };
+    L.circleMarker([t.la,t.lo], {
+      radius:tier.fee===0 ? 5 : 4, color:'#FFF9F0', weight:1.5,
+      fillColor:tier.color, fillOpacity:1
+    }).addTo(map).bindPopup(
+      '<b>'+t.n+', '+t.s+'</b><br>'+t.mi+' miles &middot; '+
+      (tier.fee===0 ? 'free delivery' : '$'+tier.fee+' delivery')
+    );
+  });
+});
+
+L.marker(HOME, {
+  icon:L.divIcon({className:'dm-home', html:'<i></i><b>Our shop</b>', iconSize:[15,15], iconAnchor:[7,7]}),
+  zIndexOffset:500
+}).addTo(map);
+
+/* Frame every town we serve, with room for the headline and the ZIP card. */
+var all = [];
+Object.keys(ZONES).forEach(function(f){ ZONES[f].forEach(function(t){ all.push([t.la,t.lo]); }); });
+var full = L.latLngBounds(all).pad(.04);
+
+function frameAll(animate){
+  var narrow = window.innerWidth < 860;
+  map.fitBounds(full, {
+    paddingTopLeft:  narrow ? [18,104] : [40,104],
+    paddingBottomRight: narrow ? [18,158] : [40,44],
+    animate:!!animate && !reduce
+  });
+}
+frameAll(false);
+window.addEventListener('resize', function(){ if(!youMarker) frameAll(false); });
+
+/* Touch: the map stays inert until tapped, so a thumb landing on it while
+   scrolling never traps the page. */
+var veil = document.getElementById('dmVeil');
+if(touch){
+  veil.classList.add('on');
+  veil.addEventListener('click', function(){
+    veil.classList.remove('on');
+    map.dragging.enable();
+    L.control.zoom({position:'topright'}).addTo(map);
+  });
+} else {
+  map.on('click', function(){ map.scrollWheelZoom.enable(); });
+}
+
+/* ─── THE ANSWER ────────────────────────────────────────────────
+   Looked up in the page, not over the network — rural signal is not something
+   to bet a five-second answer on, and this data is already in the HTML.
+   /booking/check-zip stays the source of truth for actual pricing at checkout.
+   ──────────────────────────────────────────────────────────────── */
+var input = document.getElementById('dmZip'),
+    go    = document.getElementById('dmGo'),
+    out   = document.getElementById('dmRes'),
+    reset = document.getElementById('dmReset'),
+    youMarker = null;
+
+function say(kind, head, body){
+  out.className = 'dm-res on ' + kind;
+  out.innerHTML = '<strong>'+head+'</strong><span>'+body+'</span>';
+}
+
+/* Centre the town clear of the ZIP card instead of behind it. */
+function focusTown(t){
+  /* Zoom 10 keeps the shop and the zone edge in frame alongside your town —
+     any closer and the answer loses the context that makes it believable. */
+  var zoom = 10,
+      narrow = window.innerWidth < 860,
+      pt = map.project([t.la,t.lo], zoom);
+  pt = narrow ? pt.add([0, 78]) : pt.subtract([150, 0]);
+  map[reduce ? 'setView' : 'flyTo'](map.unproject(pt, zoom), zoom, {duration:1});
+
+  if(youMarker) map.removeLayer(youMarker);
+  youMarker = L.marker([t.la,t.lo], {
+    icon:L.divIcon({className:'dm-you', html:'<i></i><b>'+t.n+' &middot; '+t.mi+' mi</b>', iconSize:[17,17], iconAnchor:[8,8]}),
+    zIndexOffset:1000, interactive:false
+  }).addTo(map);
+  reset.classList.add('on');
+}
+
+function clearTown(){
+  if(youMarker){ map.removeLayer(youMarker); youMarker = null; }
+  reset.classList.remove('on');
+  frameAll(true);
+}
+
+function check(){
+  var zip = (input.value||'').replace(/[^0-9]/g,'').slice(0,5);
+  if(zip.length !== 5){
+    say('ask','That needs to be five digits','Type the ZIP where the party is happening.');
+    input.focus();
+    return;
+  }
+  var hit = byZip[zip];
+  if(!hit){
+    say('ask','That one is not on our map',
+      'It does not mean no &mdash; we go further than this. <a href="tel:+15803089288">Call or text (580) 308-9288</a> and we will sort it out.');
+    clearTown();          /* pull back to the whole territory, so "further than
+                             this" has something to be further than */
+    return;
+  }
+  var t = hit.t, fee = hit.tier.fee;
+  if(fee === 0){
+    say('free','Yes &mdash; and delivery is free',
+      t.n + ' is ' + (t.mi === 0 ? 'right here in town' : t.mi + ' miles out') +
+      '. We set it up, anchor it, and come back for it. No delivery charge.');
+  } else {
+    say('fee','Yes &mdash; delivery is $'+fee,
+      t.n + ' is ' + t.mi + ' miles out. One flat $' + fee +
+      ' for the whole order, however many units you rent.');
+  }
+  focusTown(t);
+}
+
+go.addEventListener('click', check);
+input.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); check(); } });
+input.addEventListener('input', function(){
+  this.value = this.value.replace(/[^0-9]/g,'').slice(0,5);
+  if(this.value.length === 5) check();          /* five digits in, answer out */
+});
+reset.addEventListener('click', function(){
+  clearTown();
+  out.className = 'dm-res';
+  input.value = '';
+  input.focus();
+});
+
 })();
 </script>
 ` }) %>
