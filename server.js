@@ -38,7 +38,13 @@ app.locals.TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '';
 // Flag the booking flow so the shared layout can drop the footer's outbound
 // social links there — nothing on a checkout page should lead off-site.
 app.use((req, res, next) => {
-  res.locals.isBookingFlow = /^\/booking(\/|$)/.test(req.path);
+  // Pages where the customer is transacting, not browsing. Marketing furniture is
+  // suppressed on all of them. The coupon is position:fixed at z-index 99999 and goes
+  // full-bleed under 520px, so on a phone it sat on top of the equipment grid and the
+  // signature pad and swallowed the taps — Playwright's actionability check named it
+  // outright: "<img popup-art-v2.webp> from <div id=bml-root> subtree intercepts
+  // pointer events". A $10-off advert must never outrank the button that takes the money.
+  res.locals.isBookingFlow = /^\/(booking|contract|event)(\/|$)/.test(req.path);
   next();
 });
 
