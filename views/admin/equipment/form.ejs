@@ -127,6 +127,14 @@
           <div class="form-text text-danger">Required for multi-day bookings.</div>
         </div>
         <div class="col-md-3">
+          <label class="form-label">Ride-Along Price <span class="text-muted small">(blank = none)</span></label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="price_addon" class="form-control" step="0.01" min="0" value="${item ? item.price_addon || '' : ''}">
+          </div>
+          <div class="form-text">Charged when this goes out alongside a pricier unit. Booked on its own it still costs full price. Leave blank for units that are never an add-on.</div>
+        </div>
+        <div class="col-md-3">
           <label class="form-label">Deposit Amount</label>
           <div class="input-group">
             <span class="input-group-text">$</span>

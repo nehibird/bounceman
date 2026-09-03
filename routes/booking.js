@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE, formatPhoneUS, validateBookingDate } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, getDistanceFee, resolveDeliveryFee, resolveTaxCity, calcPricing, availabilityWindow, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isFullDayOnlyDate, maxExtraDaysAvailable, freeExtraDayDiscount, surfaceSurcharge, isoOffset, isBlockedByWetDryRule, formatRentalPeriod, fmtTime12, rentalDays, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, isSundayRental, isUnsecuredVenue, SUNDAY_PARK_MESSAGE, formatPhoneUS, validateBookingDate } = require('../lib/helpers');
 const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
@@ -48,7 +48,7 @@ router.get('/select', (req, res) => {
   const equipment = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' AND e.category != 'add-ons'
+    FROM equipment e WHERE e.status = 'available' AND e.category NOT IN ('add_ons','add-ons')
       -- Full-day-only units simply are not on the menu for a half-day search.
       AND (e.full_day_only IS NULL OR e.full_day_only = 0 OR ? != '4hr')
     ORDER BY e.sort_order
@@ -58,7 +58,7 @@ router.get('/select', (req, res) => {
   const addons = db.prepare(`
     SELECT e.*,
       (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
-    FROM equipment e WHERE e.status = 'available' AND e.category = 'add-ons' ORDER BY e.sort_order
+    FROM equipment e WHERE e.status = 'available' AND e.category IN ('add_ons','add-ons') ORDER BY e.sort_order
   `).all();
 
   const bookedCounts = getBookedEquipmentIds(db, eventDate, eventStartTime, eventEndTime, rentalDuration);
@@ -95,6 +95,8 @@ router.get('/select', (req, res) => {
 
     // Weekday special: single full-day booking on a qualifying weekday is priced at the
     // half-day rate. Expose the original (struck-through) full-day price for the badge.
+    item.addonPrice = addonRate(item);
+
     item.specialApplies = (rentalDuration === 'daily' && rentalDays <= 1 && eventDate)
       ? weekdaySpecialApplies(db, eventDate) : false;
     if (item.specialApplies) {
@@ -136,6 +138,11 @@ router.get('/select', (req, res) => {
     } catch(e) {
       item.computedPrice = item.price_daily || 0;
     }
+    // Nothing is selected yet on this page, so the anchor is unknowable. Show the ride-along
+    // rate when there is one -- it is what the customer pays in the normal case of adding it
+    // to a unit -- and let the standalone price stand as the fallback.
+    item.addonPrice = addonRate(item);
+    if (item.addonPrice !== null) item.computedPrice = item.addonPrice;
   });
 
   const TIME_WINDOWS = [
@@ -391,13 +398,21 @@ router.post('/review', bookingLimiter, async (req, res) => {
 
   let subtotal = 0;
   const lineItems = [];
+  // Ride-along pricing. Everything except the priciest unit in the cart is charged its
+  // add-on rate when it has one, so cornhole is $20 next to a water slide and $75 on its
+  // own. Resolved once per cart so the anchor cannot shift between line items.
+  const reviewAddonIds = addonPricedIds(
+    db,
+    items.map((id) => db.prepare('SELECT * FROM equipment WHERE id = ?').get(id)).filter(Boolean),
+    { duration, days, date: event_date }
+  );
   for (const eqId of items) {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
     if (!eq) continue;
     const isWet = wetItemIds.has(eqId);
     let unitPrice;
     try {
-      unitPrice = priceForBooking(db, eq, { duration, days, wet: isWet, date: event_date });
+      unitPrice = priceForBooking(db, eq, { duration, days, wet: isWet, date: event_date, asAddon: reviewAddonIds.has(eqId) });
     } catch(e) {
       const basePrice = getPrice(eq, duration);
       unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
@@ -567,15 +582,23 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     }
 
     let recalcSubtotal = 0;
+  // Ride-along pricing. Everything except the priciest unit in the cart is charged its
+  // add-on rate when it has one, so cornhole is $20 next to a water slide and $75 on its
+  // own. Resolved once per cart so the anchor cannot shift between line items.
+    const submitAddonIds = addonPricedIds(
+      db,
+      submitItems.map((id) => db.prepare('SELECT * FROM equipment WHERE id = ?').get(id)).filter(Boolean),
+      { duration: submitDuration, days: submitDays, date: data.event_date }
+    );
     for (const eqId of submitItems) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
       if (!eq) continue;
       const isWet = submitWetIdsSet.has(eqId);
       let unitPrice;
       try {
-        unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date });
+        unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date, asAddon: submitAddonIds.has(eqId) });
       } catch(e) {
-        const basePrice = getPrice(eq, submitDuration);
+        const basePrice = submitAddonIds.has(eqId) ? addonRate(eq) : getPrice(eq, submitDuration);
         unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
       }
       recalcSubtotal += unitPrice;
@@ -754,16 +777,26 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         } catch (e) { console.error('[BOOKING] store booking tax_exempt_cert failed:', e.message); }
       }
 
-      // Add line items using priceForBooking
+      // Add line items using priceForBooking. Recomputed rather than carried over from the
+      // recalc loop above, but from identical inputs, so the stored lines always sum to the
+      // subtotal the customer was charged.
+  // Ride-along pricing. Everything except the priciest unit in the cart is charged its
+  // add-on rate when it has one, so cornhole is $20 next to a water slide and $75 on its
+  // own. Resolved once per cart so the anchor cannot shift between line items.
+      const lineAddonIds = addonPricedIds(
+        db,
+        submitItems.map((id) => db.prepare('SELECT * FROM equipment WHERE id = ?').get(id)).filter(Boolean),
+        { duration: submitDuration, days: submitDays, date: data.event_date }
+      );
       for (const eqId of submitItems) {
         const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
         if (!eq) continue;
         const isWet = submitWetIdsSet.has(eqId);
         let unitPrice;
         try {
-          unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date });
+          unitPrice = priceForBooking(db, eq, { duration: submitDuration, days: submitDays, wet: isWet, date: data.event_date, asAddon: lineAddonIds.has(eqId) });
         } catch(e) {
-          const basePrice = getPrice(eq, submitDuration);
+          const basePrice = lineAddonIds.has(eqId) ? addonRate(eq) : getPrice(eq, submitDuration);
           unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
         }
         const itemName = isWet ? eq.name + ' (Wet)' : eq.name;

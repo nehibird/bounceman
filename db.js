@@ -891,6 +891,13 @@ function initialize() {
   // Migration: add price_extra_day to equipment
   try { d.prepare('ALTER TABLE equipment ADD COLUMN price_extra_day REAL').run(); } catch(e) {}
 
+  // Migration: ride-along ("add-on") pricing.
+  // A unit with price_addon set is charged that flat rate when it goes out alongside a more
+  // expensive unit, and its ordinary rate when it is booked on its own. Cornhole is the case
+  // this exists for: $75 is fair for a trip made only for cornhole, $20 is fair when it rides
+  // along on a delivery already happening.
+  try { d.prepare('ALTER TABLE equipment ADD COLUMN price_addon REAL').run(); } catch(e) {}
+
   // Migration: demand_dates table for demand pricing hook
   d.prepare(`CREATE TABLE IF NOT EXISTS demand_dates (
     id TEXT PRIMARY KEY,

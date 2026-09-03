@@ -1,5 +1,13 @@
 const express = require('express');
 const router = express.Router();
+
+// An empty ride-along price means "this item has no add-on rate", not "it is free". Blank,
+// zero and anything unparseable all store NULL so priceForBooking falls back to full price.
+function addonInput(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = parseFloat(v);
+  return (isNaN(n) || n <= 0) ? null : n;
+}
 const { getDb } = require('../db');
 const plaidSync = require('../lib/plaid-sync');
 const { requireAuth, requireAdmin } = require('./auth');
@@ -349,6 +357,13 @@ router.post('/bookings/create', async (req, res) => {
   }
 
   // ── Reprice using priceForBooking ──────────────────────────────────────────
+  // Ride-along pricing, same anchor rule the booking flow uses. Each admin line carries its
+  // own duration, so the anchor is resolved from per-item options rather than one shared set.
+  const adminAddonIds = helpersLib.addonPricedIds(db, equipIds.map((id) => {
+    const row = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
+    if (!row) return null;
+    return { eq: row, opts: { duration: data['duration_' + id] || 'daily', days: rentalDays, date: data.event_date } };
+  }).filter(Boolean));
   let subtotal = 0;
   const lineItemsForInsert = [];
   for (const eqId of equipIds) {
@@ -358,7 +373,7 @@ router.post('/bookings/create', async (req, res) => {
     const isWet = (data['wet_' + eqId] === '1');
     let unitPrice;
     try {
-      unitPrice = priceForBooking(db, eq, { duration: durationType, days: rentalDays, wet: isWet, date: data.event_date });
+      unitPrice = priceForBooking(db, eq, { duration: durationType, days: rentalDays, wet: isWet, date: data.event_date, asAddon: adminAddonIds.has(eq.id) });
     } catch(e) {
       const basePrice = getPrice(eq, durationType);
       unitPrice = isWet ? basePrice + getWetUpcharge(eq) : basePrice;
@@ -707,15 +722,15 @@ router.post('/equipment', upload.array('images', 10), (req, res) => {
 
   db.prepare(`INSERT INTO equipment (id, name, slug, category, description, short_description,
     dimensions, weight_lbs, capacity_kids, age_range, setup_time_min, power_required,
-    price_hourly, price_4hr, price_daily, price_weekend, price_overnight, price_wet, price_extra_day, deposit_amount,
+    price_hourly, price_4hr, price_daily, price_weekend, price_overnight, price_wet, price_extra_day, price_addon, deposit_amount,
     replacement_cost, manufacturer, model, serial_number, purchase_date, condition, status, featured, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     itemId, data.name, slug, data.category, data.description, data.short_description,
     data.dimensions, data.weight_lbs || null, data.capacity_kids || null, data.age_range,
     data.setup_time_min || 15, data.power_required || '1 standard outlet',
     data.price_hourly || null, data.price_4hr || null, data.price_daily,
     data.price_weekend || null, data.price_overnight || null, data.price_wet || null,
-    parseFloat(data.price_extra_day), data.deposit_amount || 50,
+    parseFloat(data.price_extra_day), addonInput(data.price_addon), data.deposit_amount || 50,
     data.replacement_cost || null, data.manufacturer, data.model, data.serial_number,
     data.purchase_date || null, data.condition || 'excellent', data.status || 'available',
     data.featured ? 1 : 0, data.sort_order || 0
@@ -768,7 +783,7 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
 
   db.prepare(`UPDATE equipment SET name=?, slug=?, category=?, description=?, short_description=?,
     dimensions=?, weight_lbs=?, capacity_kids=?, age_range=?, setup_time_min=?, power_required=?,
-    price_hourly=?, price_4hr=?, price_daily=?, price_weekend=?, price_overnight=?, price_wet=?, price_extra_day=?, deposit_amount=?,
+    price_hourly=?, price_4hr=?, price_daily=?, price_weekend=?, price_overnight=?, price_wet=?, price_extra_day=?, price_addon=?, deposit_amount=?,
     replacement_cost=?, manufacturer=?, model=?, serial_number=?, purchase_date=?, condition=?,
     status=?, featured=?, sort_order=?, updated_at=datetime('now')
     WHERE id=?`).run(
@@ -777,7 +792,7 @@ router.post('/equipment/:id', upload.array('images', 10), (req, res) => {
     data.setup_time_min || 15, data.power_required || '1 standard outlet',
     data.price_hourly || null, data.price_4hr || null, data.price_daily,
     data.price_weekend || null, data.price_overnight || null, data.price_wet || null,
-    parseFloat(data.price_extra_day), data.deposit_amount || 50,
+    parseFloat(data.price_extra_day), addonInput(data.price_addon), data.deposit_amount || 50,
     data.replacement_cost || null, data.manufacturer, data.model, data.serial_number,
     data.purchase_date || null, data.condition || 'excellent', data.status || 'available',
     data.featured ? 1 : 0, data.sort_order || 0, req.params.id

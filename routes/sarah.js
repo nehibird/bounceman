@@ -6,7 +6,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -300,11 +300,18 @@ router.post('/get-quote', async (req, res) => {
   let subtotal = 0;
   const lineItems = [];
 
+    // Ride-along pricing, identical to the website. Sarah has to quote what the booking
+    // will actually charge or the caller hears one number and the invoice shows another.
+  const quoteAddonIds = addonPricedIds(
+    db,
+    equipment_ids.map((id) => db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(id, 'available')).filter(Boolean),
+    { duration: dur, days: reqDaysQuote, date: req.body.date || null }
+  );
   for (const eqId of equipment_ids) {
     const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
     if (!eq) continue;
     const useWet = wet === true && isWetCapable(eq);
-    const price = priceForBooking(db, eq, { duration: dur, days: reqDaysQuote, wet: useWet, date: req.body.date || null });
+    const price = priceForBooking(db, eq, { duration: dur, days: reqDaysQuote, wet: useWet, date: req.body.date || null, asAddon: quoteAddonIds.has(eq.id) });
     lineItems.push({ id: eq.id, name: useWet ? eq.name + ' (Wet)' : eq.name, price, duration: dur });
     subtotal += price;
   }
@@ -408,11 +415,18 @@ router.post('/create-and-send-link', async (req, res) => {
     const reqDays = Math.min(30, Math.max(1, parseInt(req.body.days) || 1));
     let subtotal = 0;
     const lineItems = [];
+    // Ride-along pricing, identical to the website. Sarah has to quote what the booking
+    // will actually charge or the caller hears one number and the invoice shows another.
+    const bookAddonIds = addonPricedIds(
+      db,
+      equipment_ids.map((id) => db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(id, 'available')).filter(Boolean),
+      { duration: dur, days: reqDays, date: eventDateISO }
+    );
     for (const eqId of equipment_ids) {
       const eq = db.prepare('SELECT * FROM equipment WHERE id = ? AND status = ?').get(eqId, 'available');
       if (!eq) continue;
       const useWet = wet === true && isWetCapable(eq);
-      const unitPrice = priceForBooking(db, eq, { duration: dur, days: reqDays, wet: useWet, date: eventDateISO });
+      const unitPrice = priceForBooking(db, eq, { duration: dur, days: reqDays, wet: useWet, date: eventDateISO, asAddon: bookAddonIds.has(eq.id) });
       lineItems.push({ equipment_id: eq.id, item_name: useWet ? eq.name + ' (Wet)' : eq.name, unit_price: unitPrice, total_price: unitPrice, duration_type: dur, wet_option: useWet ? 1 : 0 });
       subtotal += unitPrice;
     }
