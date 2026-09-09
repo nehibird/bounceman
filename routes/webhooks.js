@@ -1038,6 +1038,9 @@ const BM_NUMBER = '+15803089288'; // BounceMan's Twilio number — appears as SI
 
 // ── Internal tool executor: calls our sarah endpoints from within the webhook ──
 const TRANSFER_TARGET = '+15806281765'; // Nehemiah's cell
+// How long after an event a customer still counts as "booked" for call routing. Covers the
+// next-morning pickup question. After this they are a sales lead again and Sarah takes them.
+const BOOKED_GRACE_DAYS = 1;
 
 async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
   if (name === 'transferCall') {
@@ -1531,6 +1534,41 @@ router.post('/twilio-entry', (req, res) => {
     }
   } catch (e) {
     console.error('[TWILIO ENTRY] direct-route lookup failed, falling through:', e.message);
+  }
+
+  // 0c. A BOOKED CUSTOMER ALWAYS REACHES A HUMAN.
+  //
+  // Sarah is a sales agent, not a support line. Once someone has money down and a date on
+  // the calendar every question they have is support -- where are you, can I move my time,
+  // the blower tripped a breaker -- and an assistant answering confidently from availability
+  // data it is reading wrong does real damage. On 2026-08-29 Sarah told Jessika Johnstone
+  // that moving her Castle Clash to 1-5pm was "fully booked" when the only Castle Clash out
+  // that day was her own booking. She kept the wrong time for eleven days and we only found
+  // it by listening back to the call.
+  //
+  // Unlike direct_route this needs no upkeep and cannot lapse: it is derived from the
+  // booking itself, so it switches on when they book and off BOOKED_GRACE_DAYS after their
+  // event -- at which point they are a sales lead again and Sarah should have them.
+  //
+  // Fails OPEN, exactly like the direct-route branch above: on any error we fall through to
+  // the normal path rather than dropping a live call.
+  try {
+    const active = require('../lib/helpers').activeBookingForPhone(db, from, BOOKED_GRACE_DAYS);
+    if (active) {
+      logCall('allowed', 'booked_customer');
+      console.log('[TWILIO ENTRY]', from, '-> DIRECT to ' + TRANSFER_TARGET
+        + ' (booked customer: ' + active.booking_number + ' on ' + active.event_date + ')');
+      const bcBase = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+      const bcRecCb = bcBase + '/api/webhooks/twilio-recording';
+      return res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' +
+        '<Dial callerId="' + BM_NUMBER + '" timeout="30" record="record-from-answer-dual" ' +
+        'recordingStatusCallback="' + bcRecCb + '" recordingStatusCallbackEvent="completed">' +
+        TRANSFER_TARGET + '</Dial>' +
+        '<Say voice="Polly.Joanna">Sorry, we could not reach anyone. Please try again shortly.</Say>' +
+        '</Response>');
+    }
+  } catch (e) {
+    console.error('[TWILIO ENTRY] booked-customer lookup failed, falling through:', e.message);
   }
 
   // 1. Non-US numbers
