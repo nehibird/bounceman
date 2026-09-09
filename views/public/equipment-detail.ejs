@@ -113,7 +113,7 @@ ${(function() {
               });
             }
             var firstImage = media.filter(function(m) { return m.type === 'image'; })[0];
-            var objectFit = (item.category === 'add_ons' || item.category === 'add-ons')
+            var objectFit = (item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons'))
               ? 'contain;background:#f8f9fa;padding:30px' : 'cover';
             var video = media.filter(function(m) { return m.type === 'video'; })[0];
 

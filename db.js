@@ -898,6 +898,14 @@ function initialize() {
   // along on a delivery already happening.
   try { d.prepare('ALTER TABLE equipment ADD COLUMN price_addon REAL').run(); } catch(e) {}
 
+  // Migration: how a unit's photo should fill its card.
+  // The card styling used to key off category -- add-ons got object-fit:contain with padding,
+  // because the speaker and generator are product cutouts on white and cropping them looks
+  // broken. That assumption breaks for the branded cornhole set, which is a scene photo on
+  // grass like the inflatables and should fill the card. Category was always the wrong
+  // signal; the image is. NULL keeps the old category-based behaviour.
+  try { d.prepare('ALTER TABLE equipment ADD COLUMN image_fit TEXT').run(); } catch(e) {}
+
   // Migration: demand_dates table for demand pricing hook
   d.prepare(`CREATE TABLE IF NOT EXISTS demand_dates (
     id TEXT PRIMARY KEY,

@@ -88,11 +88,11 @@
   </div>
 </section>
 
-<!-- Featured Equipment -->
+<!-- Featured Rentals -->
 <section class="py-5">
   <div class="container py-4">
     <div class="section-title">
-      <h2>Featured Equipment</h2>
+      <h2>Featured Rentals</h2>
       <p>Our most popular rentals — book yours today!</p>
     </div>
     <div class="row g-4">
@@ -100,7 +100,7 @@ ${featured.length > 0 ? featured.map(item => `
       <div class="col-md-6 col-lg-4">
         <a href="/equipment/${item.slug}" class="equipment-card-link" style="text-decoration:none;color:inherit;display:block">
           <div class="equipment-card">
-            <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.category === 'add_ons' || item.category === 'add-ons') ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
+            <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
             <div class="card-body">
               <span class="badge-category mb-2">${item.category.replace(/[-_]/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:var(--bm-blue);color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
               <h5 class="card-title mt-2">${item.name}${item.quantity > 1 ? ' <span style="background:#059669;color:white;font-weight:600;padding:2px 8px;border-radius:20px;font-size:11px;vertical-align:middle">x' + item.quantity + ' Available</span>' : ''}</h5>
