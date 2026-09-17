@@ -323,6 +323,18 @@ ${(function() {
           }
         }, 2500);
         var clearGiveUp = function() { clearTimeout(giveUp); };
+        // A phone-shot video is portrait. The media box is landscape (padding-top:66%),
+        // so object-fit:cover crops a tall video down to a narrow horizontal band and the
+        // customer sees a sliver. Switch to contain once the real dimensions are known,
+        // which also leaves landscape clips filling the frame as before.
+        var fitToOrientation = function() {
+          if (!mainVideo.videoWidth || !mainVideo.videoHeight) return;
+          if (mainVideo.videoHeight > mainVideo.videoWidth) {
+            mainVideo.style.objectFit = 'contain';
+          }
+        };
+        mainVideo.addEventListener('loadedmetadata', fitToOrientation, { once: true });
+        fitToOrientation();   // already buffered from a previous open
         mainVideo.addEventListener('playing', clearGiveUp, { once: true });
         mainVideo.addEventListener('loadeddata', clearGiveUp, { once: true });
         // If a source errors outright, show controls immediately rather than waiting.
