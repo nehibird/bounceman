@@ -122,6 +122,7 @@ ${(function() {
             <img id="mainImage"
               src="${firstImage ? firstImage.src : '/assets/images/placeholder-bounce.svg'}"
               alt="${firstImage ? firstImage.alt : item.name}"
+              data-fit="${objectFit === 'cover' ? 'cover' : 'contain'}"
               style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${objectFit}">
             ${video ? `
             <video id="mainVideo" muted loop playsinline preload="metadata" poster="${video.poster}"
@@ -300,6 +301,25 @@ ${(function() {
   // page never pays for it unless someone asks.
   (function() {
     var thumbs = document.querySelectorAll('.img-thumb');
+
+    // Same problem the video has: the media box is landscape (padding-top:66%), so
+    // object-fit:cover crops a portrait photo top and bottom. On a tall water slide
+    // that means losing the entire top of the unit. Switch to contain once the real
+    // dimensions are known and back to cover for landscape, so wide shots still fill
+    // the frame. Units pinned to contain (add-ons) carry data-fit="contain" and opt out.
+    function fitImageToOrientation(img) {
+      if (!img || img.getAttribute('data-fit') !== 'cover') return;
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      img.style.objectFit = img.naturalHeight > img.naturalWidth ? 'contain' : 'cover';
+    }
+
+    var mainImageEl = document.getElementById('mainImage');
+    if (mainImageEl) {
+      // Fires on every src swap, not just the first.
+      mainImageEl.addEventListener('load', function() { fitImageToOrientation(mainImageEl); });
+      fitImageToOrientation(mainImageEl);   // already cached, so no load event is coming
+    }
+
     function select(thumb) {
       var mainImage = document.getElementById('mainImage');
       var mainVideo = document.getElementById('mainVideo');
