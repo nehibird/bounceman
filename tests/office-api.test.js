@@ -7,10 +7,11 @@
 //
 // Run from the app root: node tests/office-api.test.js
 
-process.env.DB_PATH = require('path').join(
-  require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bm-office-api-')),
-  'test.db'
-);
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-office-api-'));
+process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SMTP_HOST', 'SMTP_USER',
   'SMTP_PASS', 'SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'VAPI_SERVER_SECRET', 'VAPI_API_KEY']) {
   delete process.env[k];
@@ -216,6 +217,8 @@ async function main() {
   t('audit rows all belong to this key', body.audit.length > 0 && body.audit.every((row) => row.key_name === 'test-full'), body.audit.length);
 
   server.close();
+  database.close();
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

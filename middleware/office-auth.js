@@ -64,9 +64,31 @@ function requireScope(...required) {
 //     not permanently frozen as "the answer".
 //   - on response finish, writes an api_audit_log row (redacted request) and a
 //     matching activity_log row so the write shows up in existing admin views
-// GET requests pass straight through — reads are not audited or idempotency-gated.
+// GET requests are never idempotency-gated (they have no side effect to dedupe), but they
+// DO get a lightweight api_audit_log row — method, full path incl. query string, status,
+// key, ip — so a customer-PII read is attributable to the key that made it. No request/
+// response body, no reason, no idempotency_key, and no activity_log row (that log is for
+// actions taken, not records viewed). idempotency_key is left NULL, which SQLite's unique
+// index on (key_id, idempotency_key) allows any number of times per key (NULLs are never
+// equal to each other), so this can never collide with — or be confused with — a write's
+// idempotency bookkeeping.
 function auditAndIdempotency(req, res, next) {
-  if (req.method === 'GET') return next();
+  if (req.method === 'GET') {
+    const db = getDb();
+    const keyId = req.apiKey.id;
+    const keyName = req.apiKey.name;
+    const ip = req.ip;
+    res.on('finish', () => {
+      try {
+        db.prepare(`INSERT INTO api_audit_log (id, key_id, key_name, method, path, action, status_code, ip, created_at)
+          VALUES (?, ?, ?, 'GET', ?, 'office_api_read', ?, ?, datetime('now'))`)
+          .run(uuid(), keyId, keyName, req.originalUrl, res.statusCode, ip);
+      } catch (e) {
+        console.error('[OFFICE-AUTH] read-audit write failed:', e.message);
+      }
+    });
+    return next();
+  }
 
   const reason = req.body && typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
   if (!reason) return res.status(400).json({ error: 'reason is required on all write requests' });
@@ -102,9 +124,15 @@ function auditAndIdempotency(req, res, next) {
         return res.json({ replayed: true });
       }
     }
-    // Prior attempt failed — free up the key so this one can actually run.
-    try { db.prepare('DELETE FROM api_audit_log WHERE id = ?').run(existing.id); }
-    catch (e) { console.error('[OFFICE-AUTH] failed to clear stale failed-attempt audit row:', e.message); }
+    // Prior attempt failed — keep it in the audit trail (a failed refund attempt is
+    // exactly the kind of thing an owner wants a record of), but rename its
+    // idempotency_key off to the side so the unique index frees up the real key for
+    // this retry. The renamed value can never collide with a real Idempotency-Key
+    // header (nothing else can set one containing ":failed:").
+    try {
+      db.prepare('UPDATE api_audit_log SET idempotency_key = ? WHERE id = ?')
+        .run(`${idempotencyKey}:failed:${existing.id}`, existing.id);
+    } catch (e) { console.error('[OFFICE-AUTH] failed to retire stale failed-attempt audit row:', e.message); }
   }
 
   // Route handlers may set res.locals.audit = { entity_type, entity_id, action, before,

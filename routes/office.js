@@ -524,7 +524,9 @@ router.post('/bookings/:booking_number/payment-link', requireScope('payments:lin
   }
 
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
-  const baseUrl = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
+  // Same base as routes/booking.js's own pay routes — not EVENT_BASE_URL (that's for the
+  // walk-up event flow and has nothing to do with a booking's pay pages).
+  const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
 
   let session;
   try {
@@ -535,8 +537,15 @@ router.post('/bookings/:booking_number/payment-link', requireScope('payments:lin
       customerEmail: (customer && customer.email) || undefined,
       description: req.body.description || undefined,
       metadata: { api_key: req.apiKey.name },
-      successUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}&paid=1`,
-      cancelUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}`,
+      // /pay/:num/success self-records whatever session.amount_total actually was
+      // (dedup on the payment intent, same key the checkout.session.completed webhook
+      // uses) — unlike GET /booking/lookup, which ignores its own query string and
+      // shows an empty "check your booking" form with no recording at all. A payment
+      // link's amount is arbitrary (not necessarily the deposit or the full balance),
+      // so it needs a success page that records exactly what was paid, not one that
+      // assumes a fixed amount or does nothing.
+      successUrl: `${baseUrl}/booking/pay/${booking.booking_number}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${baseUrl}/booking/pay/${booking.booking_number}/cancel`,
     });
   } catch (err) {
     console.error('[OFFICE API] createPaymentLink failed:', err.message);

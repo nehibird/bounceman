@@ -8,10 +8,11 @@
 //
 // Run from the app root: node tests/office-money.test.js
 
-process.env.DB_PATH = require('path').join(
-  require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bm-office-money-')),
-  'test.db'
-);
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-office-money-'));
+process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SMTP_HOST', 'SMTP_USER',
   'SMTP_PASS', 'SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'VAPI_SERVER_SECRET', 'VAPI_API_KEY']) {
   delete process.env[k];
@@ -87,7 +88,8 @@ async function main() {
     maxRefundCents: 5000,
     dailyRefundCapCents: 6000,
   });
-  const { rawKey: sarahLikeKey } = createApiKey(database, { name: 'sarah-office', scopes: ['*'] });
+  const sarahLikeKeyRow = createApiKey(database, { name: 'sarah-office', scopes: ['*'] });
+  const sarahLikeKey = sarahLikeKeyRow.rawKey;
 
   // --- App ----------------------------------------------------------------
   const app = express();
@@ -133,6 +135,68 @@ async function main() {
   t('payment-link send_sms -> 201, sms_sent true', r.status === 201 && body.sms_sent === true, body);
   t('sms service was actually called', smsCalls.length === 1 && smsCalls[0].phone === '5552223333', smsCalls);
   t('payment-link session in Stripe fake', stripeCalls.checkoutSessions.length === 2, stripeCalls.checkoutSessions.length);
+
+  // 3b. A payment-link session, once completed, must be recorded by the EXISTING
+  // checkout.session.completed webhook for exactly the CUSTOM amount that was paid —
+  // not a hardcoded deposit assumption. Uses a dedicated booking + a separate app/server
+  // (the webhook route needs its own express.raw() body parser ahead of any express.json(),
+  // which the main `app` above already has mounted globally for the office routes).
+  const webhookCustomerId = uuid();
+  database.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone)
+    VALUES (?, 'Weblink', 'Payer', 'weblink@example.com', '5554447777')`).run(webhookCustomerId);
+  const webhookBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
+     subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-MONEY-WEBHOOK', ?, 'pending', '2026-11-15', '11:00', '19:00', 150, 150, 50, 150, 'unpaid')`)
+    .run(webhookBookingId, webhookCustomerId);
+
+  r = await write('POST', '/bookings/BM-MONEY-WEBHOOK/payment-link', moneyKey, {
+    idempotencyKey: 'idem-link-webhook', reason: 'custom amount link', amount_cents: 6789,
+  });
+  body = await r.json();
+  t('payment-link for the webhook fixture -> 201', r.status === 201 && body.amount_cents === 6789, body);
+  const webhookSessionId = body.session_id;
+
+  process.env.SARAH_API_KEY = process.env.SARAH_API_KEY || 'test-sarah-key';
+  process.env.STRIPE_EVENT_WEBHOOK_SECRET = process.env.STRIPE_EVENT_WEBHOOK_SECRET || 'whsec_test_dummy';
+  // Stub signature verification the same way tests/refund-webhook.test.js does — no real
+  // network call, no real HMAC needed to test the office-created-session -> webhook path.
+  fakeStripe.webhooks = { constructEvent: (rawBody) => JSON.parse(rawBody.toString('utf8')) };
+  const webhookRoutes = require('../routes/webhooks');
+  const webhookApp = express();
+  webhookApp.use('/stripe', express.raw({ type: 'application/json' }));
+  webhookApp.use('/', webhookRoutes);
+  const webhookServer = webhookApp.listen(0);
+  const webhookBase = `http://127.0.0.1:${webhookServer.address().port}`;
+
+  const completedEvent = JSON.stringify({
+    id: 'evt_office_paymentlink_1',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: webhookSessionId,
+        payment_intent: 'pi_office_paymentlink_1',
+        amount_total: 6789, // the CUSTOM amount, not the $50 deposit or the $150 balance
+        payment_status: 'paid',
+        metadata: { booking_id: webhookBookingId, booking_number: 'BM-MONEY-WEBHOOK' },
+      },
+    },
+  });
+  r = await fetch(`${webhookBase}/stripe`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'stripe-signature': 'test' },
+    body: completedEvent,
+  });
+  body = await r.json();
+  t('webhook accepts the completed payment-link session', r.status === 200 && body.received === true, body);
+
+  const webhookPayment = database.prepare('SELECT * FROM payments WHERE stripe_payment_id = ?').get('pi_office_paymentlink_1');
+  t('webhook recorded a payment for the CUSTOM amount ($67.89), not the deposit or full balance', webhookPayment && webhookPayment.amount === 67.89, webhookPayment);
+  const webhookBookingAfter = database.prepare('SELECT * FROM bookings WHERE id = ?').get(webhookBookingId);
+  t('balance_due reduced by exactly the custom amount paid (150 - 67.89 = 82.11)', Math.abs(webhookBookingAfter.balance_due - 82.11) < 0.001, webhookBookingAfter.balance_due);
+  t('booking flipped to confirmed/deposit_paid (custom amount exceeded the deposit)', webhookBookingAfter.status === 'confirmed' && webhookBookingAfter.payment_status === 'deposit_paid', webhookBookingAfter);
+  webhookServer.close();
 
   // --- Refunds --------------------------------------------------------------
   // 4. Missing confirmed_by -> 400
@@ -192,10 +256,11 @@ async function main() {
   t('refund pushing past daily_refund_cap_cents -> 403', r.status === 403 && /daily_refund_cap_cents/.test(body.error || ''), body);
 
   // 11. Stripe error -> 502, then retrying with the SAME Idempotency-Key succeeds. The
-  // failed attempt's audit row is only cleared lazily, on the NEXT request that reuses
-  // the same idempotency key — right after the 502 it's still there (that's fine; it's
-  // just an audit trail entry), and the real guarantee under test is that it doesn't
-  // block or get replayed as "the answer" on retry.
+  // failed attempt's audit row is renamed off to the side (idempotency_key gets a
+  // ":failed:<id>" suffix) rather than deleted — a failed refund attempt is exactly the
+  // kind of thing that belongs in the audit trail — and the real guarantee under test is
+  // that the renamed row doesn't block or get replayed as "the answer" on retry.
+  const auditCountBeforeRetry = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
   forceNextRefundError = true;
   r = await write('POST', '/bookings/BM-MONEY-1/refunds', moneyKey, {
     idempotencyKey: 'idem-refund-retry', reason: 'stripe is down', confirmed_by: 'Nehemiah', amount_cents: 1000,
@@ -208,7 +273,11 @@ async function main() {
   body = await r.json();
   t('retry after a Stripe failure succeeds', r.status === 201 && !!body.refund_id, body);
   const rowsForRetryKey = database.prepare("SELECT status_code FROM api_audit_log WHERE idempotency_key = 'idem-refund-retry'").all();
-  t('exactly one audit row remains for that key, reflecting the success', rowsForRetryKey.length === 1 && rowsForRetryKey[0].status_code === 201, rowsForRetryKey);
+  t('exactly one row now matches that exact idempotency key, reflecting the success', rowsForRetryKey.length === 1 && rowsForRetryKey[0].status_code === 201, rowsForRetryKey);
+  const renamedFailedRow = database.prepare("SELECT * FROM api_audit_log WHERE idempotency_key LIKE 'idem-refund-retry:failed:%'").get();
+  t('the failed attempt is still in the audit trail, just renamed off to the side', !!renamedFailedRow && renamedFailedRow.status_code === 502, renamedFailedRow);
+  const auditCountAfterRetry = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+  t('both the failed attempt AND the successful retry are present (nothing deleted)', auditCountAfterRetry === auditCountBeforeRetry + 2, { before: auditCountBeforeRetry, after: auditCountAfterRetry });
 
   // --- Reports (sarah-like full-scope key) -----------------------------------
   r = await get('/reports/summary', sarahLikeKey);
@@ -225,7 +294,26 @@ async function main() {
   body = await r.json();
   t('GET /bookings/:num/payments -> 200 with refundable_cents', r.status === 200 && body.payments.some((p) => typeof p.refundable_cents === 'number'), body);
 
+  // 12. GET requests write a lightweight, attributable read-audit row — and SQLite's
+  // unique index on (key_id, idempotency_key) allows any number of NULL idempotency_key
+  // rows for the same key (NULLs are never equal to each other), so the 4 reads above for
+  // sarahLikeKey must all have landed without a single unique-constraint failure.
+  const readRows = database.prepare(
+    "SELECT * FROM api_audit_log WHERE key_id = ? AND action = 'office_api_read'"
+  ).all(sarahLikeKeyRow.id);
+  t('4 GET requests each wrote their own read-audit row', readRows.length === 4, readRows.length);
+  t('read-audit rows carry no idempotency_key (NULL, not deduped against each other)', readRows.every((r2) => r2.idempotency_key === null), readRows.map((r2) => r2.idempotency_key));
+  t('read-audit rows record method/path/status/ip, attributable to the key', readRows.every((r2) =>
+    r2.method === 'GET' && typeof r2.path === 'string' && r2.path.length > 0 && r2.status_code === 200 && !!r2.ip), readRows);
+  t('read-audit rows store no response_json, no reason', readRows.every((r2) => r2.response_json === null && r2.reason === null), readRows);
+  const readActivityRows = database.prepare(
+    "SELECT COUNT(*) c FROM activity_log WHERE details LIKE '%\"actor\":\"sarah-office\"%'"
+  ).get().c;
+  t('reads do NOT create activity_log rows (writes do; sarah-office made none here)', readActivityRows === 0, readActivityRows);
+
   server.close();
+  database.close();
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

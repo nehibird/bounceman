@@ -5,10 +5,11 @@
 //
 // Run from the app root: node tests/sarah-auth.test.js
 
-process.env.DB_PATH = require('path').join(
-  require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bm-sarah-auth-')),
-  'test.db'
-);
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-sarah-auth-'));
+process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SMTP_HOST', 'SMTP_USER',
   'SMTP_PASS', 'SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'VAPI_SERVER_SECRET', 'VAPI_API_KEY', 'SARAH_API_KEY']) {
   delete process.env[k];
@@ -58,6 +59,8 @@ async function main() {
   t('right key reaches the route handler', body.success === true, JSON.stringify(body));
 
   server.close();
+  db.getDb().close();
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

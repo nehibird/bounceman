@@ -9,10 +9,11 @@
 //
 // Run from the app root: node tests/refund-webhook.test.js
 
-process.env.DB_PATH = require('path').join(
-  require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bm-refund-webhook-')),
-  'test.db'
-);
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-refund-webhook-'));
+process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 process.env.STRIPE_EVENT_WEBHOOK_SECRET = 'whsec_test_dummy';
 process.env.SARAH_API_KEY = 'test-sarah-key'; // routes/webhooks.js requires this to even load
 for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SMTP_HOST', 'SMTP_USER',
@@ -134,6 +135,8 @@ async function main() {
   t('booking.total = 30 after retry (delta of 20 from the prior 50)', booking.total === 30, booking.total);
 
   server.close();
+  database.close();
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }
