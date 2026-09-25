@@ -55,8 +55,13 @@ function requireScope(...required) {
 // Mount AFTER requireOfficeKey. For every non-GET request:
 //   - requires `reason` in the body (400 if missing)
 //   - requires an Idempotency-Key header (400 if missing)
-//   - replays the stored response verbatim if this (key, idempotency key) pair was
-//     already used for the SAME method+path; 409s if it was used for a different one
+//   - replays the stored response verbatim if this (key, idempotency key) pair
+//     previously SUCCEEDED (2xx) for the SAME method+path; 409s if that success was for
+//     a different one. A prior FAILED attempt (4xx/5xx — e.g. a Stripe timeout) never
+//     took a lasting effect, so it does not lock the idempotency key: its stale row is
+//     cleared and the request is processed fresh. This matters for a refund call in
+//     particular — a 502 from Stripe must be retryable with the same Idempotency-Key,
+//     not permanently frozen as "the answer".
 //   - on response finish, writes an api_audit_log row (redacted request) and a
 //     matching activity_log row so the write shows up in existing admin views
 // GET requests pass straight through — reads are not audited or idempotency-gated.
@@ -70,6 +75,7 @@ function auditAndIdempotency(req, res, next) {
   if (!idempotencyKey || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
     return res.status(400).json({ error: 'Idempotency-Key header is required on all write requests' });
   }
+  req.idempotencyKey = idempotencyKey;
 
   const db = getDb();
   const keyId = req.apiKey.id;
@@ -84,20 +90,26 @@ function auditAndIdempotency(req, res, next) {
   }
 
   if (existing) {
-    if (existing.method !== req.method || existing.path !== path) {
-      return res.status(409).json({ error: 'Idempotency-Key was already used for a different request' });
+    const priorSucceeded = existing.status_code >= 200 && existing.status_code < 300;
+    if (priorSucceeded) {
+      if (existing.method !== req.method || existing.path !== path) {
+        return res.status(409).json({ error: 'Idempotency-Key was already used for a different request' });
+      }
+      res.status(existing.status_code || 200);
+      try {
+        return res.json(existing.response_json ? JSON.parse(existing.response_json) : {});
+      } catch (e) {
+        return res.json({ replayed: true });
+      }
     }
-    res.status(existing.status_code || 200);
-    try {
-      return res.json(existing.response_json ? JSON.parse(existing.response_json) : {});
-    } catch (e) {
-      return res.json({ replayed: true });
-    }
+    // Prior attempt failed — free up the key so this one can actually run.
+    try { db.prepare('DELETE FROM api_audit_log WHERE id = ?').run(existing.id); }
+    catch (e) { console.error('[OFFICE-AUTH] failed to clear stale failed-attempt audit row:', e.message); }
   }
 
   // Route handlers may set res.locals.audit = { entity_type, entity_id, action, before,
-  // after, stripe_object_id } before responding, to enrich the audit row. Left unset,
-  // these all default to null.
+  // after, stripe_object_id, amount_cents } before responding, to enrich the audit row.
+  // Left unset, these all default to null.
   const requestJson = JSON.stringify(redact(req.body || {}));
   let responseBody;
   const origJson = res.json.bind(res);
@@ -108,8 +120,8 @@ function auditAndIdempotency(req, res, next) {
       const entity = res.locals.audit || {};
       db.prepare(`INSERT INTO api_audit_log
         (id, key_id, key_name, method, path, entity_type, entity_id, action, reason, idempotency_key,
-         request_json, before_json, after_json, status_code, response_json, stripe_object_id, ip, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+         request_json, before_json, after_json, status_code, response_json, stripe_object_id, amount_cents, ip, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
         uuid(), keyId, req.apiKey.name, req.method, path,
         entity.entity_type || null, entity.entity_id || null, entity.action || `office_api_${req.method.toLowerCase()}`,
         reason, idempotencyKey,
@@ -119,6 +131,7 @@ function auditAndIdempotency(req, res, next) {
         res.statusCode,
         JSON.stringify(responseBody === undefined ? null : responseBody),
         entity.stripe_object_id || null,
+        entity.amount_cents !== undefined ? entity.amount_cents : null,
         req.ip,
       );
       db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)

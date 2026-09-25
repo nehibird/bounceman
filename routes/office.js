@@ -4,7 +4,10 @@ const router = express.Router();
 const { v4: uuid } = require('uuid');
 const { getDb } = require('../db');
 const { requireOfficeKey, requireScope, auditAndIdempotency, rateLimitByMethod } = require('../middleware/office-auth');
-const { getBookedEquipmentIds, validateBookingDate } = require('../lib/helpers');
+const { getBookedEquipmentIds, validateBookingDate, todayCT } = require('../lib/helpers');
+const { recordManualPayment } = require('../lib/payments');
+const stripeService = require('../services/stripe');
+const smsService = require('../services/sms');
 
 // All office API responses are JSON, all dates are Central Time (matching lib/helpers'
 // todayCT/validateBookingDate, which every date-touching route below defers to).
@@ -428,6 +431,347 @@ router.get('/audit', requireScope('audit:read'), (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
   res.json({ audit: rows, count: rows.length });
+});
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+function serializePayment(p) {
+  const isStripe = !!(p.stripe_payment_id || p.stripe_charge_id);
+  const refundableCents = isStripe ? Math.max(0, Math.round(((p.amount || 0) - (p.refund_amount || 0)) * 100)) : null;
+  return { ...p, refundable_cents: refundableCents };
+}
+
+router.get('/bookings/:booking_number/payments', requireScope('payments:read'), (req, res) => {
+  const db = getDb();
+  const booking = findBookingByNumber(db, req.params.booking_number);
+  if (!booking) return res.status(404).json({ error: 'booking not found' });
+
+  const payments = db.prepare('SELECT * FROM payments WHERE booking_id = ? ORDER BY created_at').all(booking.id);
+  res.json({ booking_number: booking.booking_number, payments: payments.map(serializePayment) });
+});
+
+const MANUAL_PAYMENT_METHODS = new Set(['cash', 'check', 'cashapp', 'venmo', 'zelle', 'card_offline']);
+
+// Records money that already changed hands OFFLINE (cash in an envelope, a Venmo
+// transfer, etc) — this endpoint never touches Stripe or a card. notify defaults to
+// false so a backfilled/historical payment doesn't retroactively text or email the
+// customer; pass notify:true for a payment recorded live, at drop-off.
+router.post('/bookings/:booking_number/payments', requireScope('payments:record'), (req, res) => {
+  const db = getDb();
+  const booking = findBookingByNumber(db, req.params.booking_number);
+  if (!booking) return res.status(404).json({ error: 'booking not found' });
+
+  const { amount, payment_method, notes, notify } = req.body;
+  if (!MANUAL_PAYMENT_METHODS.has(payment_method)) {
+    return res.status(400).json({ error: `payment_method must be one of: ${[...MANUAL_PAYMENT_METHODS].join(', ')}` });
+  }
+
+  let result;
+  try {
+    result = recordManualPayment(db, {
+      bookingId: booking.id, amount, paymentMethod: payment_method, notes,
+      actor: req.apiKey.name, notifySlack: !!notify, sendConfirmationEmail: !!notify,
+    });
+  } catch (err) {
+    if (err.code === 'INVALID_AMOUNT') return res.status(400).json({ error: 'amount must be > 0' });
+    throw err;
+  }
+
+  const amountCents = Math.round(parseFloat(amount) * 100);
+  res.locals.audit = {
+    entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_payment_record',
+    after: { payment_id: result.paymentId, amount, payment_method, new_balance: result.newBalance, new_status: result.newStatus },
+    amount_cents: amountCents,
+  };
+  res.status(201).json({
+    payment_id: result.paymentId,
+    booking_number: booking.booking_number,
+    amount,
+    payment_method,
+    new_balance: result.newBalance,
+    new_status: result.newStatus,
+    card_charged: false, // this is a manual/offline record — no card was ever charged
+  });
+});
+
+// Creates a Stripe Checkout link for an amount (balance due by default) and optionally
+// texts it to the customer. Doesn't touch internal_notes' stripe_session:cs_... marker
+// (that's the DEPOSIT session routes/sarah.js's check-payment parses) — it appends a
+// separate, differently-worded note line so the two can never be confused.
+const MAX_PAYMENT_LINK_CENTS = 1000000; // $10,000.00
+router.post('/bookings/:booking_number/payment-link', requireScope('payments:link'), async (req, res) => {
+  const db = getDb();
+  const booking = findBookingByNumber(db, req.params.booking_number);
+  if (!booking) return res.status(404).json({ error: 'booking not found' });
+  if (booking.status === 'cancelled' || booking.status === 'declined') {
+    return res.status(400).json({ error: `cannot create a payment link for a ${booking.status} booking` });
+  }
+
+  const amountCents = req.body.amount_cents !== undefined
+    ? Math.round(req.body.amount_cents)
+    : Math.round((parseFloat(booking.balance_due) || 0) * 100);
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return res.status(400).json({ error: 'amount_cents must be a positive integer (this booking has no balance due — pass amount_cents for a custom amount)' });
+  }
+  if (amountCents > MAX_PAYMENT_LINK_CENTS) {
+    return res.status(400).json({ error: `amount_cents may not exceed ${MAX_PAYMENT_LINK_CENTS}` });
+  }
+
+  const sendSms = !!req.body.send_sms;
+  if (req.body.dry_run) {
+    return res.json({ dry_run: true, booking_number: booking.booking_number, amount_cents: amountCents, description: req.body.description || null, send_sms: sendSms });
+  }
+
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+  const baseUrl = (process.env.EVENT_BASE_URL || 'https://bouncemanrentals.com/event').replace('/event', '');
+
+  let session;
+  try {
+    session = await stripeService.createPaymentLink({
+      bookingId: booking.id,
+      bookingNumber: booking.booking_number,
+      amountCents,
+      customerEmail: (customer && customer.email) || undefined,
+      description: req.body.description || undefined,
+      metadata: { api_key: req.apiKey.name },
+      successUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}&paid=1`,
+      cancelUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}`,
+    });
+  } catch (err) {
+    console.error('[OFFICE API] createPaymentLink failed:', err.message);
+    return res.status(502).json({ error: `Stripe error: ${err.message}` });
+  }
+
+  const timestamp = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' });
+  const noteEntry = `\n${timestamp} CT [office:${req.apiKey.name}] payment link created for $${(amountCents / 100).toFixed(2)} (checkout session ${session.id})`;
+  db.prepare("UPDATE bookings SET internal_notes = COALESCE(internal_notes, '') || ?, updated_at = datetime('now') WHERE id = ?")
+    .run(noteEntry, booking.id);
+
+  let smsSent = false;
+  if (sendSms && customer && customer.phone) {
+    try {
+      await smsService.sendSms(customer.phone, `Bounce Man payment link for booking #${booking.booking_number}: ${session.url}`);
+      smsSent = true;
+    } catch (err) {
+      console.error('[OFFICE API] payment-link SMS failed:', err.message);
+    }
+  }
+
+  res.locals.audit = {
+    entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_payment_link',
+    after: { session_id: session.id, amount_cents: amountCents, sms_sent: smsSent },
+    amount_cents: amountCents,
+    stripe_object_id: session.id,
+  };
+  res.status(201).json({ url: session.url, session_id: session.id, amount_cents: amountCents, sms_sent: smsSent });
+});
+
+// Sum, in cents, of this key's SUCCESSFUL refunds recorded today in Central time — the
+// basis for enforcing daily_refund_cap_cents. Central time because that's the business's
+// clock (lib/helpers.todayCT); created_at is stored as UTC by SQLite's datetime('now').
+function sumTodaysRefundCentsCT(db, keyId) {
+  const today = todayCT();
+  const rows = db.prepare(`
+    SELECT amount_cents, created_at FROM api_audit_log
+    WHERE key_id = ? AND action = 'office_api_refund' AND status_code BETWEEN 200 AND 299 AND amount_cents IS NOT NULL
+  `).all(keyId);
+  let sum = 0;
+  for (const row of rows) {
+    const ctDate = new Date(`${row.created_at}Z`).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    if (ctDate === today) sum += row.amount_cents;
+  }
+  return sum;
+}
+
+router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'), async (req, res) => {
+  const db = getDb();
+  const booking = findBookingByNumber(db, req.params.booking_number);
+  if (!booking) return res.status(404).json({ error: 'booking not found' });
+
+  const confirmedBy = typeof req.body.confirmed_by === 'string' ? req.body.confirmed_by.trim() : '';
+  if (!confirmedBy) return res.status(400).json({ error: 'confirmed_by is required' });
+
+  const amountCents = Math.round(req.body.amount_cents);
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return res.status(400).json({ error: 'amount_cents must be a positive integer' });
+  }
+
+  let payment;
+  if (req.body.payment_id) {
+    payment = db.prepare('SELECT * FROM payments WHERE id = ? AND booking_id = ?').get(req.body.payment_id, booking.id);
+    if (!payment) return res.status(400).json({ error: 'payment_id does not belong to this booking' });
+  } else {
+    payment = db.prepare(`
+      SELECT * FROM payments
+      WHERE booking_id = ? AND status = 'completed'
+        AND (stripe_payment_id IS NOT NULL OR stripe_charge_id IS NOT NULL)
+        AND (amount - COALESCE(refund_amount, 0)) > 0
+      ORDER BY created_at DESC LIMIT 1
+    `).get(booking.id);
+    if (!payment) return res.status(400).json({ error: 'no refundable Stripe payment found for this booking' });
+  }
+
+  const paymentIntentId = payment.stripe_payment_id && payment.stripe_payment_id.startsWith('pi_') ? payment.stripe_payment_id : null;
+  const chargeId = !paymentIntentId && payment.stripe_charge_id && payment.stripe_charge_id.startsWith('ch_') ? payment.stripe_charge_id : null;
+  if (!paymentIntentId && !chargeId) {
+    return res.status(400).json({ error: 'payment has no Stripe pi_/ch_ id and cannot be refunded via this endpoint' });
+  }
+
+  const refundableCents = Math.round(((payment.amount || 0) - (payment.refund_amount || 0)) * 100);
+  if (amountCents > refundableCents) {
+    return res.status(400).json({ error: 'amount_cents exceeds the refundable remainder', refundable_cents: refundableCents });
+  }
+
+  const key = req.apiKey;
+  if (key.max_refund_cents !== null && key.max_refund_cents !== undefined && amountCents > key.max_refund_cents) {
+    return res.status(403).json({ error: "amount exceeds this key's max_refund_cents limit", max_refund_cents: key.max_refund_cents });
+  }
+
+  const alreadyRefundedTodayCents = sumTodaysRefundCentsCT(db, key.id);
+  if (key.daily_refund_cap_cents !== null && key.daily_refund_cap_cents !== undefined
+      && (alreadyRefundedTodayCents + amountCents) > key.daily_refund_cap_cents) {
+    return res.status(403).json({
+      error: "this refund would exceed the key's daily_refund_cap_cents",
+      daily_refund_cap_cents: key.daily_refund_cap_cents,
+      already_refunded_today_cents: alreadyRefundedTodayCents,
+    });
+  }
+
+  if (req.body.dry_run) {
+    return res.json({
+      dry_run: true,
+      booking_number: booking.booking_number,
+      payment_id: payment.id,
+      amount_cents: amountCents,
+      refundable_cents: refundableCents,
+      max_refund_cents: key.max_refund_cents,
+      daily_refund_cap_cents: key.daily_refund_cap_cents,
+      already_refunded_today_cents: alreadyRefundedTodayCents,
+    });
+  }
+
+  let refund;
+  try {
+    refund = await stripeService.createRefund({
+      paymentIntentId,
+      chargeId,
+      amountCents,
+      idempotencyKey: `office-refund-${key.id}-${req.idempotencyKey}`,
+      metadata: {
+        booking_number: booking.booking_number,
+        payment_id: payment.id,
+        api_key: key.name,
+        reason: String(req.body.reason || '').slice(0, 450),
+        confirmed_by: confirmedBy,
+      },
+    });
+  } catch (err) {
+    console.error('[OFFICE API] Stripe refund failed:', err.message);
+    return res.status(502).json({ error: `Stripe error: ${err.message}` });
+  }
+
+  // Bookkeeping (payments.refund_amount, bookings.total/balance_due) is intentionally
+  // NOT done here — routes/webhooks.js's charge.refunded handler is the single place
+  // that reduces the booking's books, so a webhook retry or delay can never be
+  // double-counted against a write this endpoint also made.
+  res.locals.audit = {
+    entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_refund',
+    after: { refund_id: refund.id, payment_id: payment.id, amount_cents: amountCents },
+    amount_cents: amountCents,
+    stripe_object_id: refund.id,
+  };
+  res.status(201).json({
+    refund_id: refund.id,
+    booking_number: booking.booking_number,
+    payment_id: payment.id,
+    amount_cents: amountCents,
+    status: refund.status,
+    bookkeeping_via: 'stripe_webhook',
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+router.get('/reports/summary', requireScope('reports:read'), (req, res) => {
+  const db = getDb();
+  const { from, to } = req.query;
+  if (from && !ISO_DATE_RE.test(from)) return res.status(400).json({ error: 'from must be YYYY-MM-DD' });
+  if (to && !ISO_DATE_RE.test(to)) return res.status(400).json({ error: 'to must be YYYY-MM-DD' });
+
+  // Gross/count/avg scoped by created_at (when the booking was MADE) and top units
+  // scoped by event_date (when the rental HAPPENS) — the same split admin.js's GET
+  // /reports uses. Cash collected/refunds follow the admin dashboard's payments-net-
+  // of-refunds logic, scoped by when the money actually moved (payments.created_at).
+  const bookingClauses = ["status != 'cancelled'"];
+  const bookingParams = [];
+  if (from) { bookingClauses.push('created_at >= ?'); bookingParams.push(from); }
+  if (to) { bookingClauses.push('created_at <= ?'); bookingParams.push(`${to} 23:59:59`); }
+  const bookingWhere = bookingClauses.join(' AND ');
+
+  const grossTotal = db.prepare(`SELECT COALESCE(SUM(total), 0) r FROM bookings WHERE ${bookingWhere}`).get(...bookingParams).r;
+  const bookingsCount = db.prepare(`SELECT COUNT(*) c FROM bookings WHERE ${bookingWhere}`).get(...bookingParams).c;
+  const avgTicket = db.prepare(`SELECT COALESCE(AVG(total), 0) a FROM bookings WHERE ${bookingWhere}`).get(...bookingParams).a;
+
+  const itemClauses = ["b.status NOT IN ('cancelled', 'declined')"];
+  const itemParams = [];
+  if (from) { itemClauses.push('b.event_date >= ?'); itemParams.push(from); }
+  if (to) { itemClauses.push('b.event_date <= ?'); itemParams.push(to); }
+  const topUnits = db.prepare(`
+    SELECT e.name AS item_name, COUNT(*) AS rentals, COALESCE(SUM(bi.total_price), 0) AS revenue
+    FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id JOIN equipment e ON e.id = bi.equipment_id
+    WHERE ${itemClauses.join(' AND ')}
+    GROUP BY e.id ORDER BY rentals DESC LIMIT 10
+  `).all(...itemParams);
+
+  const paymentClauses = ["p.status = 'completed'", "b.status NOT IN ('cancelled', 'declined')"];
+  const paymentParams = [];
+  if (from) { paymentClauses.push('p.created_at >= ?'); paymentParams.push(from); }
+  if (to) { paymentClauses.push('p.created_at <= ?'); paymentParams.push(`${to} 23:59:59`); }
+  const paymentWhere = paymentClauses.join(' AND ');
+  const cashCollected = db.prepare(`
+    SELECT COALESCE(SUM(p.amount - COALESCE(p.refund_amount, 0)), 0) r
+    FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE ${paymentWhere}
+  `).get(...paymentParams).r;
+  const refunds = db.prepare(`
+    SELECT COALESCE(SUM(p.refund_amount), 0) r
+    FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE ${paymentWhere}
+  `).get(...paymentParams).r;
+
+  res.json({
+    from: from || null,
+    to: to || null,
+    bookings_count: bookingsCount,
+    gross_total: Math.round(grossTotal * 100) / 100,
+    refunds: Math.round(refunds * 100) / 100,
+    net_revenue: Math.round((grossTotal - refunds) * 100) / 100,
+    cash_collected: Math.round(cashCollected * 100) / 100,
+    avg_ticket: Math.round(avgTicket * 100) / 100,
+    top_units: topUnits,
+  });
+});
+
+router.get('/reports/outstanding', requireScope('reports:read'), (req, res) => {
+  const db = getDb();
+  // "Upcoming" is anchored to todayCT(), not SQLite's date('now','localtime') (the
+  // server's OS timezone, not necessarily Central) — same clock every other date
+  // comparison in this file uses.
+  const rows = db.prepare(`
+    SELECT b.booking_number, b.event_date, b.status, b.total, b.deposit_amount, b.balance_due, b.payment_status,
+           c.first_name, c.last_name, c.phone, c.email
+    FROM bookings b JOIN customers c ON c.id = b.customer_id
+    WHERE b.status NOT IN ('cancelled', 'declined')
+      AND date(b.event_date) >= date(?)
+      AND (b.deposit_paid = 0 OR b.balance_due > 0)
+    ORDER BY b.event_date
+  `).all(todayCT());
+  res.json({ outstanding: rows, count: rows.length });
+});
+
+router.get('/reports/payouts', requireScope('reports:read'), async (req, res) => {
+  const data = await stripeService.getPayoutSummary();
+  res.json({ payouts: data || null });
 });
 
 module.exports = router;

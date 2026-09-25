@@ -1106,6 +1106,11 @@ function initialize() {
     );
   `);
 
+  // Migration: track the dollar amount (in cents) a money-moving office API write
+  // touched — refunds, manual payments, payment links — so a key's daily refund cap can
+  // be summed straight off the audit trail instead of a second ledger.
+  try { d.prepare('ALTER TABLE api_audit_log ADD COLUMN amount_cents INTEGER').run(); } catch { /* column already exists */ }
+
   console.log('[DB] Database initialized successfully');
 }
 

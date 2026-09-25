@@ -116,30 +116,27 @@ async function createPaymentLink(opts) {
 }
 
 /**
- * Refund a payment intent, partial or full.
+ * Refund a payment intent (or, lacking one, a charge directly), partial or full.
  * @param {object} opts
- * @param {string} opts.paymentIntentId
- * @param {number} opts.amountCents      - amount to refund, in cents
+ * @param {string} [opts.paymentIntentId] - preferred identifier
+ * @param {string} [opts.chargeId]        - fallback for older payment rows recorded by charge id only
+ * @param {number} opts.amountCents       - amount to refund, in cents
  * @param {string} opts.idempotencyKey
  * @param {object} [opts.metadata]
  * @returns {Promise<Stripe.Refund>}
  */
-async function createRefund({ paymentIntentId, amountCents, idempotencyKey, metadata } = {}) {
-  if (!paymentIntentId) throw new Error('paymentIntentId is required');
+async function createRefund({ paymentIntentId, chargeId, amountCents, idempotencyKey, metadata } = {}) {
+  if (!paymentIntentId && !chargeId) throw new Error('paymentIntentId or chargeId is required');
   const amount = Math.round(amountCents);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('amountCents must be a positive integer');
   if (!idempotencyKey) throw new Error('idempotencyKey is required');
 
   const stripe = getStripe();
-  return stripe.refunds.create(
-    {
-      payment_intent: paymentIntentId,
-      amount,
-      reason: 'requested_by_customer',
-      metadata: metadata || {},
-    },
-    { idempotencyKey },
-  );
+  const params = { amount, reason: 'requested_by_customer', metadata: metadata || {} };
+  if (paymentIntentId) params.payment_intent = paymentIntentId;
+  else params.charge = chargeId;
+
+  return stripe.refunds.create(params, { idempotencyKey });
 }
 
 /**
