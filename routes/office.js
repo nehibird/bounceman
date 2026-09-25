@@ -782,13 +782,24 @@ router.post('/bookings/:booking_number/payment-link', requireScope('payments:lin
 // ---------------------------------------------------------------------------
 // Refunds (C1) — see docs/office-api.md for the full reservation-ledger design.
 //
-// The refundable-balance rule: refundable_cents = captured_cents - MAX(webhook-recorded
-// refund_amount, sum of this key's own pending+succeeded+needs_review ledger rows for
-// this payment). Using MAX (not a sum of both) is what keeps a refund from being
-// double-counted once the Stripe webhook lands and independently updates
-// payments.refund_amount for the SAME refund this ledger already reserved: the two
-// numbers describe the same money from two different vantage points, so the larger one
-// is always the more complete picture, and they're never additive.
+// The refundable-balance rule (across ALL keys — the ledger sums below are scoped only
+// by payment_id, never by key_id, because a payment can only be refunded once no matter
+// which key initiates it):
+//
+//   confirmed_cents = MAX(webhook-recorded refund_amount,
+//                         live Stripe amount_refunded (C1.4, best-effort),
+//                         sum of SUCCEEDED office_refunds rows for this payment)
+//   reserved_cents  = confirmed_cents + sum of PENDING/NEEDS_REVIEW office_refunds rows
+//   refundable_cents = captured_cents - reserved_cents
+//
+// Confirmed sources (webhook / live Stripe / succeeded ledger rows) are combined with
+// MAX, not summed — they describe the same already-happened money from different
+// vantage points, and summing them would double-count a refund this ledger itself made
+// once Stripe's webhook (or a live lookup) independently confirms it. PENDING and
+// NEEDS_REVIEW rows are added on top unconditionally: this is deliberately conservative
+// (a crashed-but-actually-refunded pending row can be double-counted against the
+// remainder) so that an unresolved reservation fails safe — never granting more
+// headroom — until scripts/reconcile-office-refunds.js resolves it one way or the other.
 // ---------------------------------------------------------------------------
 
 // L8: bounded scan (last 2 days is more than enough to cover any UTC/CT boundary) plus
@@ -808,21 +819,46 @@ function sumTodaysReservedCentsCT(db, keyId) {
   return sum;
 }
 
-function sumReservedCentsForPayment(db, paymentId) {
+// Scoped by payment_id only (never key_id) — every key's succeeded refunds on this
+// payment are money that's actually gone out the door, regardless of which key sent it.
+function sumSucceededCentsForPayment(db, paymentId) {
   const row = db.prepare(`
     SELECT COALESCE(SUM(amount_cents), 0) s FROM office_refunds
-    WHERE payment_id = ? AND status IN ('pending', 'succeeded', 'needs_review')
+    WHERE payment_id = ? AND status = 'succeeded'
   `).get(paymentId);
   return row.s || 0;
 }
 
-function computeRefundLimits(db, key, payment) {
+// Also scoped by payment_id only, across all keys — an in-flight reservation from ANY
+// key reserves against the same payment's shared balance.
+function sumPendingOrNeedsReviewCentsForPayment(db, paymentId) {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(amount_cents), 0) s FROM office_refunds
+    WHERE payment_id = ? AND status IN ('pending', 'needs_review')
+  `).get(paymentId);
+  return row.s || 0;
+}
+
+// liveRefundedCents: the amount_refunded fetched live from Stripe just before this call
+// (services/stripe.js's getLiveRefundedCents), or null/undefined if that lookup wasn't
+// made or failed — never awaited inside here, so this stays synchronous and safe to call
+// inside reserveRefund's transaction.
+function computeRefundLimits(db, key, payment, liveRefundedCents) {
   const maxRefundCents = effectiveMaxRefundCents(key.max_refund_cents);
   const dailyCapCents = effectiveDailyRefundCapCents(key.daily_refund_cap_cents);
   const alreadyTodayCents = sumTodaysReservedCentsCT(db, key.id);
+
   const webhookRefundedCents = Math.round((payment.refund_amount || 0) * 100);
-  const ledgerReservedCents = sumReservedCentsForPayment(db, payment.id);
-  const reservedCents = Math.max(webhookRefundedCents, ledgerReservedCents);
+  const succeededLedgerCents = sumSucceededCentsForPayment(db, payment.id);
+  const pendingOrReviewLedgerCents = sumPendingOrNeedsReviewCentsForPayment(db, payment.id);
+
+  const confirmedCandidates = [webhookRefundedCents, succeededLedgerCents];
+  if (typeof liveRefundedCents === 'number' && Number.isFinite(liveRefundedCents)) {
+    confirmedCandidates.push(liveRefundedCents);
+  }
+  const confirmedCents = Math.max(...confirmedCandidates);
+
+  const reservedCents = confirmedCents + pendingOrReviewLedgerCents;
   const capturedCents = Math.round((payment.amount || 0) * 100);
   const refundableCents = capturedCents - reservedCents;
   return { maxRefundCents, dailyCapCents, alreadyTodayCents, refundableCents };
@@ -834,9 +870,9 @@ function computeRefundLimits(db, key, payment) {
 // mid-check even though the rest of this route handler is async and awaits Stripe. This is
 // what makes the per-key caps and the refundable-remainder check hold under real
 // concurrency, not just when calls happen to be serialized.
-function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey, requestHash, reason, confirmedBy }) {
+function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey, requestHash, reason, confirmedBy, liveRefundedCents }) {
   const attempt = db.transaction(() => {
-    const limits = computeRefundLimits(db, key, payment);
+    const limits = computeRefundLimits(db, key, payment, liveRefundedCents);
 
     // Data-integrity check first (can this payment even cover the amount), then
     // per-key policy caps — mirrors dry_run's own preview ordering.
@@ -931,8 +967,23 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
     return res.status(400).json({ error: 'payment has no Stripe pi_/ch_ id and cannot be refunded via this endpoint' });
   }
 
+  // C1.4: best-effort live check against Stripe's own record of the charge, so a refund
+  // issued from the Stripe Dashboard (or anywhere outside this app) that the
+  // `charge.refunded` webhook hasn't caught up on yet still shrinks the refundable
+  // remainder. Fetched OUTSIDE reserveRefund's synchronous transaction (it's a network
+  // call), then passed in as a plain number — the reservation's atomicity guarantee
+  // doesn't depend on this call, only on the ledger checks already inside it.
+  let liveRefundedCents = null;
+  let liveChargeChecked = true;
+  try {
+    liveRefundedCents = await stripeService.getLiveRefundedCents({ paymentIntentId, chargeId });
+  } catch (err) {
+    liveChargeChecked = false;
+    console.warn('[OFFICE API] live charge lookup failed, falling back to webhook/ledger values for the refundable-remainder check:', err.message);
+  }
+
   if (req.body.dry_run) {
-    const limits = computeRefundLimits(db, req.apiKey, payment);
+    const limits = computeRefundLimits(db, req.apiKey, payment, liveRefundedCents);
     return res.json({
       dry_run: true,
       booking_number: booking.booking_number,
@@ -942,15 +993,16 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
       max_refund_cents: limits.maxRefundCents,
       daily_refund_cap_cents: limits.dailyCapCents,
       already_refunded_today_cents: limits.alreadyTodayCents,
+      live_charge_checked: liveChargeChecked,
     });
   }
 
   const reservation = reserveRefund(db, {
     key: req.apiKey, booking, payment, amountCents,
     idempotencyKey: req.idempotencyKey, requestHash: req.requestHash,
-    reason: String(req.body.reason || '').slice(0, 450), confirmedBy,
+    reason: String(req.body.reason || '').slice(0, 450), confirmedBy, liveRefundedCents,
   });
-  if (!reservation.ok) return res.status(reservation.status).json(reservation.body);
+  if (!reservation.ok) return res.status(reservation.status).json({ ...reservation.body, live_charge_checked: liveChargeChecked });
 
   // Written explicitly, at reservation time, BEFORE the Stripe call — never dependent on
   // res 'finish' alone, so a client disconnect mid-refund (see middleware/office-auth.js's
@@ -990,7 +1042,7 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
     };
     console.error('[OFFICE API] Stripe refund failed:', err.message);
     if (res.writableEnded || res.destroyed) return undefined;
-    return res.status(502).json({ error: `Stripe error: ${err.message}` });
+    return res.status(502).json({ error: `Stripe error: ${err.message}`, live_charge_checked: liveChargeChecked });
   }
 
   // L2: Stripe's own 'failed'/'canceled' refund statuses must not count toward the cap —
@@ -1019,6 +1071,7 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
     status: refund.status,
     ledger_status: ledgerStatus,
     bookkeeping_via: 'stripe_webhook',
+    live_charge_checked: liveChargeChecked,
   });
 }));
 

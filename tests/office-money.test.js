@@ -29,6 +29,11 @@ const { recordManualPayment } = require('../lib/payments');
 
 const stripeService = require('../services/stripe');
 let forceNextRefundError = false;
+// C1.4: configurable live-charge stub — liveRefundedByPI simulates a Dashboard refund
+// (or any refund made outside this app) that the webhook hasn't recorded yet.
+// forceLiveFetchError simulates the live lookup itself being unreachable.
+let forceLiveFetchError = false;
+const liveRefundedByPI = {}; // pi_xxx -> cents already refunded, per Stripe's own record
 const stripeCalls = { refunds: [], checkoutSessions: [] };
 const fakeStripe = {
   refunds: {
@@ -47,6 +52,18 @@ const fakeStripe = {
         stripeCalls.checkoutSessions.push(params);
         return { id: `cs_test_${stripeCalls.checkoutSessions.length}`, url: `https://checkout.stripe.com/test/${stripeCalls.checkoutSessions.length}` };
       },
+    },
+  },
+  paymentIntents: {
+    retrieve: async (id) => {
+      if (forceLiveFetchError) throw new Error('simulated Stripe outage (live charge lookup)');
+      return { id, latest_charge: { id: `ch_fake_for_${id}`, amount_refunded: liveRefundedByPI[id] || 0 } };
+    },
+  },
+  charges: {
+    retrieve: async (id) => {
+      if (forceLiveFetchError) throw new Error('simulated Stripe outage (live charge lookup)');
+      return { id, amount_refunded: 0 };
     },
   },
   balance: { retrieve: async () => ({ pending: [{ amount: 1000 }], available: [{ amount: 2000 }] }) },
@@ -453,6 +470,68 @@ async function main() {
     recordManualPayment(database, { bookingId, amount: '-5', paymentMethod: 'cash', notifySlack: false, sendConfirmationEmail: false });
   } catch (e) { threw = e; }
   t('recordManualPayment rejects a negative amount directly', threw && threw.code === 'INVALID_AMOUNT', threw && threw.code);
+
+  // --- C1.4: live Stripe charge check folded into the refundable remainder ------------
+  const { rawKey: liveKey } = createApiKey(database, {
+    name: 'test-money-live', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000,
+  });
+
+  function makeLivePayment(bookingNumber, piId) {
+    const custId = uuid();
+    database.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, 'Live', 'Charge', 'live@example.com', '5556667777')`).run(custId);
+    const bkId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, ?, ?, 'confirmed', '2026-11-08', '11:00', '19:00', 200, 200, 50, 0, 'paid')`).run(bkId, bookingNumber, custId);
+    const payId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 200, 'charge', 'stripe', ?, 'completed', 0)`).run(payId, bkId, custId, piId);
+    return { bkId, payId };
+  }
+
+  // (a) Stripe Dashboard already refunded $100 (webhook hasn't recorded it yet) — an
+  // office refund of $150 on the remaining $100 must be rejected using the LIVE figure.
+  makeLivePayment('BM-LIVE-A', 'pi_live_a');
+  liveRefundedByPI['pi_live_a'] = 10000;
+  r = await write('POST', '/bookings/BM-LIVE-A/refunds', liveKey, {
+    idempotencyKey: 'idem-live-a', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 15000,
+  });
+  body = await r.json();
+  t('(a) Dashboard $100 refunded, not yet webhooked: office $150 -> 400 using the live figure', r.status === 400 && body.refundable_cents === 10000, body);
+  t('(a) response reports the live charge WAS checked', body.live_charge_checked === true, body);
+
+  // (b) Same Dashboard $100, PLUS a pending office reservation of $50 on the same
+  // payment (from any key) — a further $100 must be rejected, but exactly $50 succeeds.
+  const { bkId: bId, payId: pId } = makeLivePayment('BM-LIVE-B', 'pi_live_b');
+  liveRefundedByPI['pi_live_b'] = 10000;
+  const liveKeyId = database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-money-live').id;
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'other in-flight refund', datetime('now'), datetime('now'))`)
+    .run(uuid(), liveKeyId, 'test-money-live', 'idem-live-b-other', bId, pId);
+
+  r = await write('POST', '/bookings/BM-LIVE-B/refunds', liveKey, {
+    idempotencyKey: 'idem-live-b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 10000,
+  });
+  body = await r.json();
+  t('(b) Dashboard $100 + pending office $50: a further $100 -> 400 (only $50 left)', r.status === 400 && body.refundable_cents === 5000, body);
+
+  r = await write('POST', '/bookings/BM-LIVE-B/refunds', liveKey, {
+    idempotencyKey: 'idem-live-b-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+  });
+  t('(b) exactly the remaining $50 succeeds', r.status === 201, r.status);
+
+  // (c) The live lookup itself fails (Stripe unreachable) — must fall back to the
+  // webhook/ledger view and STILL correctly enforce it, with live_charge_checked:false.
+  const { payId: cPayId } = makeLivePayment('BM-LIVE-C', 'pi_live_c');
+  database.prepare('UPDATE payments SET refund_amount = 100 WHERE id = ?').run(cPayId); // simulates the webhook having already recorded a $100 refund
+  forceLiveFetchError = true;
+  r = await write('POST', '/bookings/BM-LIVE-C/refunds', liveKey, {
+    idempotencyKey: 'idem-live-c', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 15000,
+  });
+  body = await r.json();
+  forceLiveFetchError = false;
+  t('(c) live lookup throws: falls back to the webhook-recorded $100, still rejects $150 on $100 remaining', r.status === 400 && body.refundable_cents === 10000, body);
+  t('(c) response reports the live charge was NOT checked', body.live_charge_checked === false, body);
 
   server.close();
   database.close();

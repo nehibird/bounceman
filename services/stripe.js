@@ -146,6 +146,36 @@ async function createRefund({ paymentIntentId, chargeId, amountCents, idempotenc
 }
 
 /**
+ * C1.4: look up the LIVE amount already refunded on a charge, straight from Stripe —
+ * catches a refund issued from the Stripe Dashboard (or anywhere else outside this app)
+ * that the `charge.refunded` webhook hasn't recorded into `payments.refund_amount` yet.
+ * Best-effort: routes/office.js falls back to the webhook/ledger-only view if this
+ * throws (network error, deleted/invalid Stripe object, etc).
+ * @param {object} opts
+ * @param {string} [opts.paymentIntentId]
+ * @param {string} [opts.chargeId]
+ * @returns {Promise<number>} amount_refunded, in cents
+ */
+async function getLiveRefundedCents({ paymentIntentId, chargeId } = {}) {
+  const stripe = getStripe();
+  if (paymentIntentId) {
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['latest_charge'] });
+    const charge = pi && pi.latest_charge;
+    if (charge && typeof charge === 'object') return charge.amount_refunded || 0;
+    if (typeof charge === 'string') {
+      const ch = await stripe.charges.retrieve(charge);
+      return ch.amount_refunded || 0;
+    }
+    return 0;
+  }
+  if (chargeId) {
+    const ch = await stripe.charges.retrieve(chargeId);
+    return ch.amount_refunded || 0;
+  }
+  throw new Error('paymentIntentId or chargeId is required');
+}
+
+/**
  * Reconciliation lookup (C1/scripts/reconcile-office-refunds.js): find the Stripe refund
  * matching a stuck-'pending' office_refunds row by its office_refund_id metadata, which
  * routes/office.js sets on every refund it creates. Returns the matching Stripe refund
@@ -236,6 +266,7 @@ module.exports = {
   createCheckoutSession,
   createPaymentLink,
   createRefund,
+  getLiveRefundedCents,
   findRefundByOfficeId,
   retrieveSession,
   constructWebhookEvent,

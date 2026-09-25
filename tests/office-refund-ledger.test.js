@@ -39,6 +39,11 @@ const fakeStripe = {
       }, refundDelayMs);
     }),
   },
+  // C1.4: the refunds route also does a live amount_refunded check before reserving.
+  // No test in this file needs a non-zero figure — a stable 0 keeps every concurrency/
+  // disconnect assertion's math exactly as it was before that check existed.
+  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_fake_for_${id}`, amount_refunded: 0 } }) },
+  charges: { retrieve: async (id) => ({ id, amount_refunded: 0 }) },
 };
 stripeService._setStripeForTests(fakeStripe);
 
