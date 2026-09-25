@@ -19,6 +19,8 @@ db.initialize();
 
 const { createApiKey, revokeApiKey } = require('../lib/api-keys');
 const { requireOfficeKey, requireScope, auditAndIdempotency } = require('../middleware/office-auth');
+const { shouldSkipGlobalLimiter } = require('../lib/global-limiter-skip');
+const { effectiveMaxRefundCents, effectiveDailyRefundCapCents } = require('../lib/refund-caps');
 const officeRoutes = require('../routes/office');
 
 let pass = 0, fail = 0;
@@ -58,6 +60,15 @@ async function main() {
   let body = await r.json();
   t('good key -> 200', r.status === 200);
   t('whoami returns key name', body.name === 'test-key', JSON.stringify(body));
+
+  // 3b. H3: a key created with NO caps (NULL columns) must resolve to the DEFAULTS, never
+  // to unlimited. (This mini-app's own /whoami route only echoes the name — exercise
+  // lib/refund-caps.js directly, which is what routes/office.js's real /whoami calls.)
+  createApiKey(database, { name: 'no-caps-key', scopes: ['refunds:create'] });
+  const noCapsRow = database.prepare('SELECT * FROM api_keys WHERE name = ?').get('no-caps-key');
+  t('a key created with no flags stores NULL caps', noCapsRow.max_refund_cents === null && noCapsRow.daily_refund_cap_cents === null, noCapsRow);
+  t('NULL max_refund_cents resolves to the $100 default, not unlimited', effectiveMaxRefundCents(noCapsRow.max_refund_cents) === 10000, effectiveMaxRefundCents(noCapsRow.max_refund_cents));
+  t('NULL daily_refund_cap_cents resolves to the $250 default, not unlimited', effectiveDailyRefundCapCents(noCapsRow.daily_refund_cap_cents) === 25000, effectiveDailyRefundCapCents(noCapsRow.daily_refund_cap_cents));
 
   // 4. Missing scope -> 403
   r = await fetch(`${base}/refunds`, {
@@ -198,12 +209,17 @@ async function main() {
   // below, which deliberately blocks this same loopback IP for the rest of the process.
   const siteApp = express();
   siteApp.use(express.json());
+  t('shouldSkipGlobalLimiter("/office/v1/whoami") is true', shouldSkipGlobalLimiter('/office/v1/whoami') === true);
+  t('shouldSkipGlobalLimiter("/sarah/status") is true', shouldSkipGlobalLimiter('/sarah/status') === true);
+  t('shouldSkipGlobalLimiter("/webhooks/stripe") is true', shouldSkipGlobalLimiter('/webhooks/stripe') === true);
+  t('shouldSkipGlobalLimiter("/booking/lookup") is false', shouldSkipGlobalLimiter('/booking/lookup') === false);
+
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path.startsWith('/sarah') || req.path.startsWith('/webhooks') || req.path.startsWith('/office'),
+    skip: (req) => shouldSkipGlobalLimiter(req.path),
   });
   siteApp.use('/api/', globalLimiter);
   siteApp.use('/api/office/v1', officeRoutes);
