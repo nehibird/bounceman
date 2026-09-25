@@ -25,6 +25,7 @@ db.initialize();
 const database = db.getDb();
 
 const { createApiKey } = require('../lib/api-keys');
+const { recordManualPayment } = require('../lib/payments');
 
 const stripeService = require('../services/stripe');
 let forceNextRefundError = false;
@@ -196,6 +197,38 @@ async function main() {
   const webhookBookingAfter = database.prepare('SELECT * FROM bookings WHERE id = ?').get(webhookBookingId);
   t('balance_due reduced by exactly the custom amount paid (150 - 67.89 = 82.11)', Math.abs(webhookBookingAfter.balance_due - 82.11) < 0.001, webhookBookingAfter.balance_due);
   t('booking flipped to confirmed/deposit_paid (custom amount exceeded the deposit)', webhookBookingAfter.status === 'confirmed' && webhookBookingAfter.payment_status === 'deposit_paid', webhookBookingAfter);
+
+  // M3: a payment-link paid AFTER a booking is already completed must never demote it
+  // back to 'confirmed'.
+  const completedCustomerId = uuid();
+  database.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, 'Already', 'Done', 'done@example.com', '5559990000')`).run(completedCustomerId);
+  const completedBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-MONEY-COMPLETED', ?, 'completed', '2026-09-01', '11:00', '19:00', 150, 150, 50, 0, 'paid')`)
+    .run(completedBookingId, completedCustomerId);
+  const demotionEvent = JSON.stringify({
+    id: 'evt_office_demotion_1',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_test_demotion',
+        payment_intent: 'pi_office_demotion_1',
+        amount_total: 6000, // > deposit_amount(50), so depositPaid becomes true — this is the case the M3 fix must not demote on
+        payment_status: 'paid',
+        metadata: { booking_id: completedBookingId, booking_number: 'BM-MONEY-COMPLETED' },
+      },
+    },
+  });
+  r = await fetch(`${webhookBase}/stripe`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'stripe-signature': 'test' },
+    body: demotionEvent,
+  });
+  t('a later payment-link payment on a completed booking is still recorded (webhook 200)', r.status === 200, r.status);
+  const completedBookingAfter = database.prepare('SELECT * FROM bookings WHERE id = ?').get(completedBookingId);
+  t('M3: a completed booking is NEVER demoted back to confirmed by a later payment', completedBookingAfter.status === 'completed', completedBookingAfter.status);
+
   webhookServer.close();
 
   // --- Refunds --------------------------------------------------------------
@@ -405,6 +438,21 @@ async function main() {
   r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, { idempotencyKey: 'idem-h7-manual-legacy', reason: 'x', amount: 50, payment_method: 'cash' });
   body = await r.json();
   t('legacy `amount` field on manual payment -> 400, clear message (H4)', r.status === 400 && /amount_cents/.test(body.error || ''), body);
+
+  // lib/payments.recordManualPayment's OWN guard, called directly — the office API's
+  // amount_cents validation (parseCents) already rejects <= 0 before this is ever
+  // reached from HTTP, but the admin UI calls this function directly with a dollar
+  // string, so its own defense must independently reject <= 0 amounts too.
+  let threw = null;
+  try {
+    recordManualPayment(database, { bookingId, amount: '0', paymentMethod: 'cash', notifySlack: false, sendConfirmationEmail: false });
+  } catch (e) { threw = e; }
+  t('recordManualPayment rejects amount "0" directly (not just via the HTTP layer)', threw && threw.code === 'INVALID_AMOUNT', threw && threw.code);
+  threw = null;
+  try {
+    recordManualPayment(database, { bookingId, amount: '-5', paymentMethod: 'cash', notifySlack: false, sendConfirmationEmail: false });
+  } catch (e) { threw = e; }
+  t('recordManualPayment rejects a negative amount directly', threw && threw.code === 'INVALID_AMOUNT', threw && threw.code);
 
   server.close();
   database.close();
