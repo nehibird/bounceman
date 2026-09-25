@@ -35,7 +35,7 @@ async function main() {
   app.use(auditAndIdempotency);
   app.get('/whoami', (req, res) => res.json({ name: req.apiKey.name }));
   app.post('/refunds', requireScope('refunds:create'), (req, res) => {
-    req._officeEntity = { type: 'booking', id: 'BM-TEST', action: 'office_api_refund' };
+    res.locals.audit = { entity_type: 'booking', entity_id: 'BM-TEST', action: 'office_api_refund' };
     res.json({ ok: true, echo: req.body.amount_cents });
   });
 
@@ -130,7 +130,7 @@ async function main() {
   // then hit a genuinely different POST route reusing the same key.
   t('GET ignores Idempotency-Key header', r.status === 200);
 
-  app.post('/other-write', requireScope('refunds:create'), (req, res) => { req._officeEntity = {}; res.json({ ok: true }); });
+  app.post('/other-write', requireScope('refunds:create'), (req, res) => { res.locals.audit = {}; res.json({ ok: true }); });
   r = await fetch(`${base}/other-write`, {
     method: 'POST',
     headers: { 'x-office-key': goodKey, 'content-type': 'application/json', 'idempotency-key': 'idem-42' },

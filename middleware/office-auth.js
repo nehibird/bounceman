@@ -95,9 +95,9 @@ function auditAndIdempotency(req, res, next) {
     }
   }
 
-  // Route handlers may set req._officeEntity = { type, id, action, before, after,
-  // stripeObjectId } before responding, to enrich the audit row. None of this turn's
-  // routes exist yet, so these default to null.
+  // Route handlers may set res.locals.audit = { entity_type, entity_id, action, before,
+  // after, stripe_object_id } before responding, to enrich the audit row. Left unset,
+  // these all default to null.
   const requestJson = JSON.stringify(redact(req.body || {}));
   let responseBody;
   const origJson = res.json.bind(res);
@@ -105,27 +105,27 @@ function auditAndIdempotency(req, res, next) {
 
   res.on('finish', () => {
     try {
-      const entity = req._officeEntity || {};
+      const entity = res.locals.audit || {};
       db.prepare(`INSERT INTO api_audit_log
         (id, key_id, key_name, method, path, entity_type, entity_id, action, reason, idempotency_key,
          request_json, before_json, after_json, status_code, response_json, stripe_object_id, ip, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
         uuid(), keyId, req.apiKey.name, req.method, path,
-        entity.type || null, entity.id || null, entity.action || `office_api_${req.method.toLowerCase()}`,
+        entity.entity_type || null, entity.entity_id || null, entity.action || `office_api_${req.method.toLowerCase()}`,
         reason, idempotencyKey,
         requestJson,
         entity.before !== undefined ? JSON.stringify(entity.before) : null,
         entity.after !== undefined ? JSON.stringify(entity.after) : null,
         res.statusCode,
         JSON.stringify(responseBody === undefined ? null : responseBody),
-        entity.stripeObjectId || null,
+        entity.stripe_object_id || null,
         req.ip,
       );
       db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
         VALUES (?, ?, ?, ?, ?, ?)`).run(
         uuid(),
         entity.action || `office_api_${req.method.toLowerCase()}`,
-        entity.type || null, entity.id || null,
+        entity.entity_type || null, entity.entity_id || null,
         JSON.stringify({ via: 'office-api', actor: req.apiKey.name, reason }),
         req.ip,
       );
