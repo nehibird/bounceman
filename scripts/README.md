@@ -1,5 +1,23 @@
 # scripts/ — operational scripts
 
+## api-key.js
+
+Office API key management CLI (`/api/office/v1`, see `docs/office-api.md`). Creates,
+lists, revokes, and adjusts the scopes/refund caps of `api_keys` rows. `create` reads the
+raw key from stdin when piped in (so it's generated elsewhere and never printed by this
+process); otherwise it generates one and prints it exactly once.
+
+## reconcile-office-refunds.js
+
+Sweeps office refund-ledger rows (`office_refunds`) stuck in `pending` and finalizes them
+against Stripe's own record — see `docs/office-api.md` §5 for the full design. Run on a
+schedule (e.g. every few minutes via cron); exits non-zero if any row ends
+`needs_review`, so a cron wrapper can alert.
+
+```bash
+node scripts/reconcile-office-refunds.js [--older-than-minutes 15]
+```
+
 ## cron-bank-sync.js
 
 Daily Plaid refresh + auto-import of card/bank charges into the `expenses` table.
