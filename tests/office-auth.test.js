@@ -13,11 +13,13 @@ for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
 }
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 db.initialize();
 
 const { createApiKey, revokeApiKey } = require('../lib/api-keys');
 const { requireOfficeKey, requireScope, auditAndIdempotency } = require('../middleware/office-auth');
+const officeRoutes = require('../routes/office');
 
 let pass = 0, fail = 0;
 function t(name, ok, detail) {
@@ -188,8 +190,42 @@ async function main() {
   });
   t('wildcard "*" scope does NOT grant refunds:create', r.status === 403, r.status);
 
-  // 13. M7: a pre-auth per-IP limiter trips after enough FAILED auth attempts, and once
+  // 13. M7: the site-wide /api limiter must skip /office — replicate server.js's exact
+  // limiter + skip config (100/15min per IP) in front of the real office router, then
+  // fire 150 authenticated GETs (split across two keys so neither individually crosses
+  // the OFFICE router's own 120/min-per-key read limit) from one IP and confirm none of
+  // them hit the SITE-WIDE limiter's 429. Runs BEFORE the pre-auth failure-limiter test
+  // below, which deliberately blocks this same loopback IP for the rest of the process.
+  const siteApp = express();
+  siteApp.use(express.json());
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/sarah') || req.path.startsWith('/webhooks') || req.path.startsWith('/office'),
+  });
+  siteApp.use('/api/', globalLimiter);
+  siteApp.use('/api/office/v1', officeRoutes);
+  const siteServer = siteApp.listen(0);
+  const siteBase = `http://127.0.0.1:${siteServer.address().port}/api/office/v1`;
+
+  const { rawKey: siteKeyA } = createApiKey(database, { name: 'site-limit-key-a', scopes: ['bookings:read'] });
+  const { rawKey: siteKeyB } = createApiKey(database, { name: 'site-limit-key-b', scopes: ['bookings:read'] });
+  const siteStatuses = [];
+  for (let i = 0; i < 150; i++) {
+    const key = i % 2 === 0 ? siteKeyA : siteKeyB;
+    // eslint-disable-next-line no-await-in-loop
+    const rr = await fetch(`${siteBase}/whoami`, { headers: { 'x-office-key': key } });
+    siteStatuses.push(rr.status);
+  }
+  t('150 authenticated GETs (75 per key) never hit the site-wide 100/15min limiter', siteStatuses.every((s) => s === 200), siteStatuses.filter((s) => s !== 200));
+
+  siteServer.close();
+
+  // 14. M7: a pre-auth per-IP limiter trips after enough FAILED auth attempts, and once
   // tripped it blocks even a perfectly valid key (blocked by IP, before key lookup).
+  // This deliberately blocks 127.0.0.1 for the rest of the process, so it runs last.
   let got429 = false;
   for (let i = 0; i < 30; i++) {
     const rr = await fetch(`${base}/whoami`, { headers: { 'x-office-key': 'bmo_' + 'f'.repeat(64) } });
