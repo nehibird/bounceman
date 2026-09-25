@@ -314,6 +314,98 @@ async function main() {
   ).get().c;
   t('reads do NOT create activity_log rows (writes do; sarah-office made none here)', readActivityRows === 0, readActivityRows);
 
+  // --- H7 gap coverage -------------------------------------------------------
+  // Fresh keys per group below: POST /refunds carries its own 10/hour-per-key limiter
+  // (M7), and moneyKey already spent most of its budget on the tests above.
+  const { rawKey: edgeKey } = createApiKey(database, {
+    name: 'test-money-edge', scopes: ['payments:read', 'payments:record', 'payments:link', 'refunds:create'],
+    maxRefundCents: 5000, dailyRefundCapCents: 6000,
+  });
+
+  // Zero/negative/non-integer refund amounts -> 400
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-zero', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 0 });
+  t('zero refund -> 400', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-neg', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: -500 });
+  t('negative refund -> 400', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-str', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: '2500' });
+  t('string amount_cents -> 400 (H4)', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-bool', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: true });
+  t('boolean amount_cents -> 400 (H4)', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-arr', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: [1500] });
+  t('array amount_cents -> 400 (H4)', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-dec', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 99.5 });
+  t('decimal amount_cents -> 400 (H4)', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', edgeKey, { idempotencyKey: 'idem-h7-self', reason: 'x', confirmed_by: 'test-money-edge', amount_cents: 100 });
+  t('confirmed_by equal to the key name -> 400 (H3)', r.status === 400, r.status);
+
+  const { rawKey: scopeKey } = createApiKey(database, {
+    name: 'test-money-scope', scopes: ['payments:read', 'refunds:create'], maxRefundCents: 5000, dailyRefundCapCents: 6000,
+  });
+
+  // A second booking with its own separate Stripe payment, to prove refund scoping
+  const otherCustomerId = uuid();
+  database.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, 'Other', 'Booking', 'other@example.com', '5551110000')`).run(otherCustomerId);
+  const otherBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-MONEY-OTHER', ?, 'confirmed', '2026-11-05', '11:00', '19:00', 90, 90, 50, 40, 'deposit_paid')`).run(otherBookingId, otherCustomerId);
+  const otherPaymentId = uuid();
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 90, 'charge', 'stripe', 'pi_test_other_1', 'completed', 0)`).run(otherPaymentId, otherBookingId, otherCustomerId);
+
+  r = await write('POST', '/bookings/BM-MONEY-1/refunds', scopeKey, {
+    idempotencyKey: 'idem-h7-crossbooking', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 1000, payment_id: otherPaymentId,
+  });
+  body = await r.json();
+  t('payment_id from a DIFFERENT booking -> 400, never refunds another customer\'s charge (H7)', r.status === 400, body);
+  const otherPaymentUnchanged = database.prepare('SELECT refund_amount FROM payments WHERE id = ?').get(otherPaymentId);
+  t('the other booking\'s payment was never touched', otherPaymentUnchanged.refund_amount === 0, otherPaymentUnchanged);
+
+  // The FALLBACK (no payment_id) lookup must also stay scoped to the URL's booking —
+  // refund BM-MONEY-OTHER's own balance without payment_id and confirm it only ever
+  // touches that booking's own payment, never bleeding into another booking's charge.
+  r = await write('POST', '/bookings/BM-MONEY-OTHER/refunds', scopeKey, {
+    idempotencyKey: 'idem-h7-fallback-scope', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 1000,
+  });
+  body = await r.json();
+  t('fallback (no payment_id) refund on a fresh booking -> 201, scoped to its own payment', r.status === 201 && body.payment_id === otherPaymentId, body);
+
+  // Payment-link $10k hard cap
+  r = await write('POST', '/bookings/BM-MONEY-1/payment-link', moneyKey, {
+    idempotencyKey: 'idem-h7-linkcap', reason: 'too big', amount_cents: 1000001, allow_overpay: true, overpay_reason: 'test',
+  });
+  t('payment-link amount over the $10k hard cap -> 400', r.status === 400, r.status);
+
+  // Payment link amount above balance_due requires allow_overpay + overpay_reason (M2)
+  database.prepare("UPDATE bookings SET balance_due = 50 WHERE id = ?").run(bookingId);
+  r = await write('POST', '/bookings/BM-MONEY-1/payment-link', moneyKey, { idempotencyKey: 'idem-m2-overpay-noconsent', reason: 'x', amount_cents: 7500 });
+  body = await r.json();
+  t('amount_cents over balance_due without allow_overpay -> 400 (M2)', r.status === 400 && body.balance_due_cents === 5000, body);
+  r = await write('POST', '/bookings/BM-MONEY-1/payment-link', moneyKey, { idempotencyKey: 'idem-m2-overpay-noreason', reason: 'x', amount_cents: 7500, allow_overpay: true });
+  t('allow_overpay without overpay_reason -> 400 (M2)', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/payment-link', moneyKey, {
+    idempotencyKey: 'idem-m2-overpay-ok', reason: 'x', amount_cents: 7500, allow_overpay: true, overpay_reason: 'customer wants to prepay next season',
+  });
+  body = await r.json();
+  t('allow_overpay + overpay_reason succeeds over balance_due (M2)', r.status === 201 && body.amount_cents === 7500, body);
+  const overpayCall = stripeCalls.checkoutSessions[stripeCalls.checkoutSessions.length - 1];
+  t('M2: payment-link session has a short expires_at set', typeof overpayCall.expires_at === 'number' && overpayCall.expires_at > Math.floor(Date.now() / 1000), overpayCall.expires_at);
+
+  // Payment link refused on a cancelled/completed booking
+  const cancelledBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-MONEY-CANCELLED', ?, 'cancelled', '2026-11-06', '11:00', '19:00', 90, 90, 50, 40, 'deposit_paid')`).run(cancelledBookingId, customerId);
+  r = await write('POST', `/bookings/BM-MONEY-CANCELLED/payment-link`, moneyKey, { idempotencyKey: 'idem-h7-cancelledlink', reason: 'x' });
+  t('payment link on a cancelled booking -> 400', r.status === 400, r.status);
+
+  // Manual payment <= 0 -> 400
+  r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, { idempotencyKey: 'idem-h7-manual-neg', reason: 'x', amount_cents: 0, payment_method: 'cash' });
+  t('manual payment amount_cents <= 0 -> 400', r.status === 400, r.status);
+  r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, { idempotencyKey: 'idem-h7-manual-legacy', reason: 'x', amount: 50, payment_method: 'cash' });
+  body = await r.json();
+  t('legacy `amount` field on manual payment -> 400, clear message (H4)', r.status === 400 && /amount_cents/.test(body.error || ''), body);
+
   server.close();
   database.close();
   fs.rmSync(TMP_DIR, { recursive: true, force: true });

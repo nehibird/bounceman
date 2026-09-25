@@ -16,7 +16,7 @@ const express = require('express');
 const db = require('../db');
 db.initialize();
 
-const { createApiKey } = require('../lib/api-keys');
+const { createApiKey, revokeApiKey } = require('../lib/api-keys');
 const { requireOfficeKey, requireScope, auditAndIdempotency } = require('../middleware/office-auth');
 
 let pass = 0, fail = 0;
@@ -147,6 +147,57 @@ async function main() {
     body: JSON.stringify({ reason: 'customer requested' }),
   });
   t('same idempotency key, different path -> 409', r.status === 409, r.status);
+
+  // 10. H7: a revoked key must be rejected even though its row still exists
+  const { rawKey: toRevoke } = createApiKey(database, { name: 'revoke-me', scopes: ['bookings:read'] });
+  r = await fetch(`${base}/whoami`, { headers: { 'x-office-key': toRevoke } });
+  t('a freshly-created key works before revocation', r.status === 200, r.status);
+  const revoked = revokeApiKey(database, 'revoke-me');
+  t('revokeApiKey reports a change', revoked === true);
+  r = await fetch(`${base}/whoami`, { headers: { 'x-office-key': toRevoke } });
+  t('revoked key -> 401 (AUTH-2)', r.status === 401, r.status);
+
+  // 11. H7: prefix-only match must not authenticate — two keys sharing the same
+  // 12-char lookup prefix (bmo_ + 8 hex) but different tails must never cross-authenticate,
+  // and a THIRD, never-registered key with that same prefix must still 401 (AUTH-6:
+  // this only passes if the full sha256 hash is compared, not just the prefix).
+  const sharedPrefixHex = '1a2b3c4d';
+  const keyA = 'bmo_' + sharedPrefixHex + 'a'.repeat(56);
+  const keyB = 'bmo_' + sharedPrefixHex + 'b'.repeat(56);
+  const keyUnregistered = 'bmo_' + sharedPrefixHex + 'c'.repeat(56);
+  createApiKey(database, { name: 'prefix-collide-a', rawKey: keyA, scopes: ['bookings:read'] });
+  createApiKey(database, { name: 'prefix-collide-b', rawKey: keyB, scopes: ['bookings:read'] });
+
+  r = await fetch(`${base}/whoami`, { headers: { 'x-office-key': keyA } });
+  body = await r.json();
+  t('prefix-colliding key A authenticates as itself', r.status === 200 && body.name === 'prefix-collide-a', body);
+
+  r = await fetch(`${base}/whoami`, { headers: { 'x-office-key': keyB } });
+  body = await r.json();
+  t('prefix-colliding key B authenticates as itself, not as A', r.status === 200 && body.name === 'prefix-collide-b', body);
+
+  r = await fetch(`${base}/whoami`, { headers: { 'x-office-key': keyUnregistered } });
+  t('same prefix, unregistered tail -> 401 (hash compare, not prefix-only) (AUTH-6)', r.status === 401, r.status);
+
+  // 12. H3: a bare "*" scope must not silently grant refunds:create.
+  const { rawKey: wildcardKey } = createApiKey(database, { name: 'wildcard-key', scopes: ['*'] });
+  r = await fetch(`${base}/refunds`, {
+    method: 'POST',
+    headers: { 'x-office-key': wildcardKey, 'content-type': 'application/json', 'idempotency-key': 'idem-wildcard-1' },
+    body: JSON.stringify({ reason: 'test', amount_cents: 100 }),
+  });
+  t('wildcard "*" scope does NOT grant refunds:create', r.status === 403, r.status);
+
+  // 13. M7: a pre-auth per-IP limiter trips after enough FAILED auth attempts, and once
+  // tripped it blocks even a perfectly valid key (blocked by IP, before key lookup).
+  let got429 = false;
+  for (let i = 0; i < 30; i++) {
+    const rr = await fetch(`${base}/whoami`, { headers: { 'x-office-key': 'bmo_' + 'f'.repeat(64) } });
+    if (rr.status === 429) { got429 = true; break; }
+  }
+  t('enough failed auth attempts from one IP -> 429', got429);
+  const rBlocked = await fetch(`${base}/whoami`, { headers: { 'x-office-key': goodKey } });
+  t('once blocked, even a VALID key is rejected with 429', rBlocked.status === 429, rBlocked.status);
 
   server.close();
   database.close();

@@ -202,6 +202,13 @@ async function main() {
   body = await r.json();
   t('GET /customers/:id includes bookings', Array.isArray(body.bookings) && body.bookings.length === 2, body);
 
+  // M6: forbidden fields must be absent (not just null) from the customer response
+  const FORBIDDEN_CUSTOMER_FIELDS = ['attrib_gclid', 'attrib_fbclid', 'attrib_utm_source', 'attrib_landing_page', 'attrib_referrer', 'tax_exempt_cert', 'total_revenue', 'notes', 'source'];
+  t('GET /customers/:id omits forbidden PII/attribution fields', FORBIDDEN_CUSTOMER_FIELDS.every((f) => !(f in body)), Object.keys(body));
+  r = await get('/customers?q=Jane', fullKey);
+  body = await r.json();
+  t('GET /customers?q list also omits forbidden fields', body.customers.every((c) => FORBIDDEN_CUSTOMER_FIELDS.every((f) => !(f in c))), body.customers[0]);
+
   r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'customer moved', idempotencyKey: 'idem-cust-1', phone: '5559998888' });
   body = await r.json();
   t('PATCH /customers/:id -> 200', r.status === 200 && body.phone === '5559998888', body);
@@ -210,11 +217,132 @@ async function main() {
   body = await r.json();
   t('PATCH /customers/:id unknown field -> 400', r.status === 400 && /unknown field/.test(body.error || ''), body);
 
+  r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'bad email', idempotencyKey: 'idem-cust-email', email: 'not-an-email' });
+  t('PATCH /customers/:id invalid email -> 400 (L3)', r.status === 400, r.status);
+  r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'bad phone', idempotencyKey: 'idem-cust-phone', phone: '123' });
+  t('PATCH /customers/:id invalid phone -> 400 (L3)', r.status === 400, r.status);
+
+  // M6: GET /customers with no q is hard-capped at 25 even if a larger limit is requested
+  for (let i = 0; i < 30; i++) {
+    const cid = uuid();
+    database.prepare('INSERT INTO customers (id, first_name, last_name) VALUES (?, ?, ?)').run(cid, 'Bulk', 'Customer' + i);
+  }
+  r = await get('/customers?limit=500', fullKey);
+  body = await r.json();
+  t('GET /customers without q is capped at 25 regardless of requested limit', body.customers.length === 25, body.customers.length);
+
+  // --- M5: booking status transition table ---
+  // bookingBId is currently 'confirmed' with balance_due > 0 (unpaid deposit).
+  r = await write('PATCH', '/bookings/BM-TEST-B', fullKey, { reason: 'skip ahead', idempotencyKey: 'idem-m5-badjump', status: 'pending' });
+  body = await r.json();
+  t('confirmed -> pending is not an allowed transition -> 409', r.status === 409, body);
+
+  r = await write('PATCH', '/bookings/BM-TEST-B', fullKey, { reason: 'wrap up', idempotencyKey: 'idem-m5-complete', status: 'completed' });
+  body = await r.json();
+  t('confirmed -> completed is allowed', r.status === 200 && body.after.status === 'completed', body);
+
+  r = await write('PATCH', '/bookings/BM-TEST-B', fullKey, { reason: 'reopen?', idempotencyKey: 'idem-m5-terminal', status: 'cancelled' });
+  body = await r.json();
+  t('completed is terminal via the office API -> 409', r.status === 409, body);
+
+  // Fresh pending booking with NO deposit paid, to exercise the confirm-requires-deposit rule.
+  const pendingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status, deposit_paid)
+    VALUES (?, 'BM-TEST-PENDING', ?, 'pending', '2027-01-10', '11:00', '19:00', 200, 200, 50, 200, 'unpaid', 0)`)
+    .run(pendingId, customerId);
+
+  r = await write('PATCH', '/bookings/BM-TEST-PENDING', fullKey, { reason: 'confirm early', idempotencyKey: 'idem-m5-nodeposit', status: 'confirmed' });
+  body = await r.json();
+  t('pending -> confirmed with no deposit paid -> 409 without override', r.status === 409, body);
+
+  r = await write('PATCH', '/bookings/BM-TEST-PENDING', fullKey, { reason: 'confirm anyway', idempotencyKey: 'idem-m5-override', status: 'confirmed', override_unpaid: true });
+  body = await r.json();
+  t('pending -> confirmed with override_unpaid:true succeeds', r.status === 200 && body.after.status === 'confirmed', body);
+  const overrideNotes = database.prepare('SELECT internal_notes FROM bookings WHERE id = ?').get(pendingId).internal_notes;
+  t('override is noted on the booking', /override_unpaid/.test(overrideNotes || ''), overrideNotes);
+
   // 16. Audit — this key's own writes only
   r = await get('/audit?limit=50', fullKey);
   body = await r.json();
   t('GET /audit -> 200', r.status === 200, r.status);
   t('audit rows all belong to this key', body.audit.length > 0 && body.audit.every((row) => row.key_name === 'test-full'), body.audit.length);
+
+  // --- H5: booking moves (event_end_date, availability-across-range, time validation) ---
+  const equipmentId2 = uuid();
+  database.prepare(`INSERT INTO equipment (id, name, slug, category, price_daily, price_4hr, quantity, status)
+    VALUES (?, 'Test Slide', 'test-slide', 'water_slides', 300, 150, 1, 'available')`).run(equipmentId2);
+
+  // 17. Multi-day move shifts event_end_date by the same offset when not explicitly given
+  const multiDayId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-MULTI', ?, 'confirmed', '2026-11-01', '2026-11-03', '11:00', '19:00', 200, 200, 50, 150, 'unpaid')`)
+    .run(multiDayId, customerId);
+  database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
+    VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), multiDayId, equipmentId2);
+
+  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'move dates', idempotencyKey: 'idem-h5-shift', event_date: '2026-11-10' });
+  body = await r.json();
+  t('multi-day move -> 200', r.status === 200, r.status);
+  t('multi-day move shifts event_end_date by the same 2-day offset', body.after.event_end_date === '2026-11-12', body.after);
+  t('multi-day move flags reprice_needed', body.reprice_needed === true, body);
+  const multiNote = database.prepare('SELECT internal_notes FROM bookings WHERE id = ?').get(multiDayId).internal_notes;
+  t('multi-day move leaves an internal note', /moved dates/.test(multiNote || ''), multiNote);
+
+  // 18. end-before-start -> 400
+  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'bad range', idempotencyKey: 'idem-h5-badrange', event_end_date: '2026-11-01' });
+  body = await r.json();
+  t('event_end_date before event_date -> 400', r.status === 400, body);
+
+  // 19. bad time string -> 400
+  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'bad time', idempotencyKey: 'idem-h5-badtime', event_start_time: 'banana' });
+  body = await r.json();
+  t('malformed event_start_time -> 400', r.status === 400, body);
+
+  // 20. same-day end time <= start time -> 400
+  const singleDayId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-TIMES', ?, 'confirmed', '2026-11-25', '09:00', '13:00', 150, 150, 50, 100, 'unpaid')`)
+    .run(singleDayId, customerId);
+  database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
+    VALUES (?, ?, ?, 'Test Slide', 150, 150, '4hr')`).run(uuid(), singleDayId, equipmentId2);
+  r = await write('PATCH', '/bookings/BM-TEST-TIMES', fullKey, { reason: 'bad window', idempotencyKey: 'idem-h5-window', event_end_time: '08:00' });
+  body = await r.json();
+  t('event_end_time before event_start_time on the same day -> 400', r.status === 400, body);
+
+  // 21. time-only change onto an already-occupied window -> 409 (no event_date change at all)
+  const afternoonId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-PM', ?, 'confirmed', '2026-11-25', '15:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
+    .run(afternoonId, customerId);
+  database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
+    VALUES (?, ?, ?, 'Test Slide', 150, 150, '4hr')`).run(uuid(), afternoonId, equipmentId2);
+  r = await write('PATCH', '/bookings/BM-TEST-TIMES', fullKey, { reason: 'extend into the afternoon slot', idempotencyKey: 'idem-h5-timeconflict', event_end_time: '19:00' });
+  body = await r.json();
+  t('time-only change that overlaps another booking -> 409', r.status === 409, body);
+  t('409 body names an equipment conflict', Array.isArray(body.conflicts) && body.conflicts.some((c) => c.type === 'equipment_unavailable'), body);
+
+  // 22. moving a multi-day range so it newly overlaps another booking's equipment -> 409
+  const rangeAId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-RANGEA', ?, 'confirmed', '2026-12-01', '2026-12-02', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    .run(rangeAId, customerId);
+  database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
+    VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), rangeAId, equipmentId2);
+  const rangeBId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-RANGEB', ?, 'confirmed', '2026-12-05', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    .run(rangeBId, customerId);
+  database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
+    VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), rangeBId, equipmentId2);
+  r = await write('PATCH', '/bookings/BM-TEST-RANGEA', fullKey, { reason: 'extend the range', idempotencyKey: 'idem-h5-rangeconflict', event_end_date: '2026-12-05' });
+  body = await r.json();
+  t('extending a multi-day range onto another booking\'s date -> 409', r.status === 409, body);
 
   server.close();
   database.close();
