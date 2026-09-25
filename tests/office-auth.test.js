@@ -111,16 +111,25 @@ async function main() {
     return d.via === 'office-api' && d.actor === 'test-key' && d.reason === 'customer requested';
   })());
 
-  // 8. Same idempotency key + same route -> replay, does not re-run handler (echo would differ)
+  // 8. Same idempotency key + SAME body -> replay, does not re-run the handler
+  r = await fetch(`${base}/refunds`, {
+    method: 'POST',
+    headers: { 'x-office-key': goodKey, 'content-type': 'application/json', 'idempotency-key': 'idem-42' },
+    body: JSON.stringify({ reason: 'customer requested', amount_cents: 500 }),
+  });
+  body = await r.json();
+  t('replay (same body) returns the original stored response', body.echo === 500, JSON.stringify(body));
+  const countAfterReplay = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE idempotency_key = ?').get('idem-42').c;
+  t('replay does not write a second audit row', countAfterReplay === 1, countAfterReplay);
+
+  // 8b. M1: same idempotency key + a DIFFERENT body -> 422, never a replay of the old answer
   r = await fetch(`${base}/refunds`, {
     method: 'POST',
     headers: { 'x-office-key': goodKey, 'content-type': 'application/json', 'idempotency-key': 'idem-42' },
     body: JSON.stringify({ reason: 'customer requested', amount_cents: 999 }),
   });
   body = await r.json();
-  t('replay returns original stored response, not the new body', body.echo === 500, JSON.stringify(body));
-  const countAfterReplay = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE idempotency_key = ?').get('idem-42').c;
-  t('replay does not write a second audit row', countAfterReplay === 1, countAfterReplay);
+  t('reused Idempotency-Key with a different body -> 422, not a replay', r.status === 422 && body.echo !== 999, r.status);
 
   // 9. Same idempotency key, different path -> 409
   r = await fetch(`${base}/whoami`, {

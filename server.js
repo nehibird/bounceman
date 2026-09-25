@@ -85,8 +85,11 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting for authenticated server-to-server routes
-    return req.path.startsWith('/sarah') || req.path.startsWith('/webhooks');
+    // Skip rate limiting for authenticated server-to-server routes. The office API has
+    // its own per-key limiters (middleware/office-auth.js) plus a pre-auth per-IP
+    // limiter on failed attempts — the site-wide 100/15min-per-IP limit would otherwise
+    // throttle Sarah's own legitimate traffic (M7).
+    return req.path.startsWith('/sarah') || req.path.startsWith('/webhooks') || req.path.startsWith('/office');
   }
 });
 app.use('/api/', limiter);

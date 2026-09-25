@@ -217,7 +217,10 @@ router.post('/stripe', async (req, res) => {
         const newBalance = Math.max(0, booking.total - totalPaid);
         const depositPaid = totalPaid >= booking.deposit_amount ? 1 : 0;
         const paymentStatus = newBalance <= 0 ? 'paid' : (depositPaid ? 'deposit_paid' : 'partial');
-        const bookingStatus = depositPaid ? 'confirmed' : booking.status;
+        // M3: only PROMOTE pending -> confirmed. A later payment-link payment on an
+        // already-completed/cancelled/declined booking must never demote it back to
+        // confirmed, and an already-confirmed booking is left alone too.
+        const bookingStatus = (depositPaid && booking.status === 'pending') ? 'confirmed' : booking.status;
 
         db.prepare(
           "UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?, updated_at = datetime('now') WHERE id = ?"
@@ -289,20 +292,24 @@ router.post('/stripe', async (req, res) => {
           const priorRefund = parseFloat(payment.refund_amount) || 0;
           const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
 
-          db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?')
+          // H1: Stripe does not guarantee webhook delivery order. A stale/out-of-order
+          // event carrying an amount lower than what's already recorded (delta <= 0)
+          // must NOT rewind refund_amount OR touch bookings.total — check the delta
+          // BEFORE writing anything. 0.004 absorbs floating-point cents noise from
+          // repeated /100 divisions without masking any real (>= half a cent) refund.
+          if (delta <= 0.004) {
+            console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
+              delta.toFixed(2) + ') — refund_amount and booking total left unchanged');
+            break;
+          }
+
+          // MAX() is defense-in-depth on top of the delta check above: even if two
+          // events for the same payment are processed out of order, refund_amount can
+          // never move backwards.
+          db.prepare('UPDATE payments SET refund_amount = MAX(refund_amount, ?) WHERE id = ?')
             .run(cumulativeRefund, payment.id);
           console.log('[Stripe Webhook] charge.refunded: $' + cumulativeRefund.toFixed(2) +
             ' cumulative refund recorded (delta $' + delta.toFixed(2) + ')');
-
-          // A stale/duplicate event carrying an amount we've already booked (delta ~ 0,
-          // or negative — Stripe redelivering an older cumulative total) must NOT touch
-          // bookings.total again. 0.004 absorbs floating-point cents noise from repeated
-          // /100 divisions without masking any real (>= half a cent) refund.
-          if (delta <= 0.004) {
-            console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
-              delta.toFixed(2) + ') — booking total left unchanged');
-            break;
-          }
 
           // Write the refund back to the BOOKING as well. Recording it only against the
           // payment left bookings.total claiming revenue that had been given back, and
@@ -336,6 +343,27 @@ router.post('/stripe', async (req, res) => {
           }
         } else {
           console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
+        }
+        break;
+      }
+
+      // H1: a refund that Stripe itself later marks failed/canceled (e.g. the card no
+      // longer accepts refunds) must not keep counting against the office API key's
+      // daily cap. event.data.object here is the Refund itself, and
+      // metadata.office_refund_id is what routes/office.js stamped onto it at creation.
+      case 'charge.refund.updated': {
+        const refund = event.data.object;
+        const officeRefundId = refund.metadata && refund.metadata.office_refund_id;
+        if (officeRefundId && (refund.status === 'failed' || refund.status === 'canceled')) {
+          try {
+            const info = db.prepare(`UPDATE office_refunds SET status = 'failed', stripe_refund_id = ?, stripe_status = ?, updated_at = datetime('now')
+              WHERE id = ? AND status != 'failed'`).run(refund.id, refund.status, officeRefundId);
+            if (info.changes) {
+              console.log('[Stripe Webhook] charge.refund.updated: marked office refund', officeRefundId, 'failed (status ' + refund.status + ')');
+            }
+          } catch (e) {
+            console.error('[Stripe Webhook] failed to update office_refunds ledger:', e.message);
+          }
         }
         break;
       }

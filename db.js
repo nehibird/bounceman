@@ -1109,9 +1109,60 @@ function initialize() {
   // Migration: track the dollar amount (in cents) a money-moving office API write
   // touched — refunds, manual payments, payment links — so a key's daily refund cap can
   // be summed straight off the audit trail instead of a second ledger.
-  try { d.prepare('ALTER TABLE api_audit_log ADD COLUMN amount_cents INTEGER').run(); } catch { /* column already exists */ }
+  //
+  // I1: guarded by PRAGMA table_info, not a try/catch that would swallow every error
+  // (a real one — disk full, corrupt schema — not just "column already exists").
+  if (!columnExists(d, 'api_audit_log', 'amount_cents')) {
+    d.prepare('ALTER TABLE api_audit_log ADD COLUMN amount_cents INTEGER').run();
+  }
+
+  // Migration: canonical request hash (method + path + sorted-key JSON body), so a
+  // reused Idempotency-Key with a DIFFERENT body can be told apart from a genuine
+  // replay (M1) — middleware/office-auth.js returns 422 on mismatch instead of
+  // replaying a stale success.
+  if (!columnExists(d, 'api_audit_log', 'request_hash')) {
+    d.prepare('ALTER TABLE api_audit_log ADD COLUMN request_hash TEXT').run();
+  }
+
+  // --- Office API refund ledger (C1) ---
+  // Reserves a refund's amount against the key's daily cap and the payment's
+  // refundable balance BEFORE Stripe is ever called (see routes/office.js), so
+  // concurrent requests and client disconnects can't blow past a cap or leave a
+  // successful refund with no record. See docs/office-api.md for the full design.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS office_refunds (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT,
+      booking_id TEXT NOT NULL,
+      payment_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_refund_id TEXT,
+      stripe_status TEXT,
+      confirmed_by TEXT,
+      reason TEXT,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_office_refunds_key_idem ON office_refunds(key_id, idempotency_key);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_payment ON office_refunds(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_created ON office_refunds(created_at);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_status ON office_refunds(status);
+  `);
+
+  // L8: prune the Stripe webhook dedup table — it otherwise grows forever. 30 days is
+  // far beyond Stripe's own retry window, so nothing live is ever at risk.
+  try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch (e) { /* best-effort */ }
 
   console.log('[DB] Database initialized successfully');
+}
+
+function columnExists(d, table, column) {
+  return d.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
 
 module.exports = { getDb, initialize };

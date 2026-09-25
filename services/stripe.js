@@ -75,6 +75,8 @@ async function createCheckoutSession(opts) {
  * @param {string} [opts.customerEmail]
  * @param {string} [opts.description]
  * @param {object} [opts.metadata]       - merged into the session metadata alongside booking_id/booking_number
+ * @param {string} [opts.idempotencyKey] - M2: Stripe idempotency key, so a retried request can't create two sessions
+ * @param {number} [opts.expiresAt]      - M2: unix seconds; Checkout Sessions default to never expiring otherwise
  * @param {string} opts.successUrl
  * @param {string} opts.cancelUrl
  * @returns {Promise<Stripe.Checkout.Session>}
@@ -86,7 +88,7 @@ async function createPaymentLink(opts) {
     throw new Error('amountCents must be a positive integer');
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const params = {
     payment_method_types: ['card'],
     mode: 'payment',
     customer_email: opts.customerEmail,
@@ -110,7 +112,11 @@ async function createPaymentLink(opts) {
     },
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
-  });
+  };
+  if (opts.expiresAt) params.expires_at = opts.expiresAt;
+
+  const requestOptions = opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined;
+  const session = await stripe.checkout.sessions.create(params, requestOptions);
 
   return session;
 }
@@ -137,6 +143,28 @@ async function createRefund({ paymentIntentId, chargeId, amountCents, idempotenc
   else params.charge = chargeId;
 
   return stripe.refunds.create(params, { idempotencyKey });
+}
+
+/**
+ * Reconciliation lookup (C1/scripts/reconcile-office-refunds.js): find the Stripe refund
+ * matching a stuck-'pending' office_refunds row by its office_refund_id metadata, which
+ * routes/office.js sets on every refund it creates. Returns the matching Stripe refund
+ * object, or null if none is found (yet, or ever — e.g. the process crashed before the
+ * Stripe call was even made).
+ * @param {string} officeRefundId
+ * @param {object} payment - the payments row (needs stripe_payment_id or stripe_charge_id)
+ */
+async function findRefundByOfficeId(officeRefundId, payment) {
+  if (!payment) return null;
+  const stripe = getStripe();
+  const params = { limit: 20 };
+  if (payment.stripe_payment_id && payment.stripe_payment_id.startsWith('pi_')) params.payment_intent = payment.stripe_payment_id;
+  else if (payment.stripe_charge_id) params.charge = payment.stripe_charge_id;
+  else return null;
+
+  const list = await stripe.refunds.list(params);
+  const match = (list.data || []).find((r) => r.metadata && r.metadata.office_refund_id === officeRefundId);
+  return match || null;
 }
 
 /**
@@ -208,6 +236,7 @@ module.exports = {
   createCheckoutSession,
   createPaymentLink,
   createRefund,
+  findRefundByOfficeId,
   retrieveSession,
   constructWebhookEvent,
   getPayoutSummary,

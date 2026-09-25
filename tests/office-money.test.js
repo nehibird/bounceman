@@ -110,7 +110,7 @@ async function main() {
 
   // 1. Manual payment recording updates the balance and never touches Stripe/notify by default
   let r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, {
-    idempotencyKey: 'idem-pay-1', reason: 'cash collected at delivery', amount: 100, payment_method: 'cash',
+    idempotencyKey: 'idem-pay-1', reason: 'cash collected at delivery', amount_cents: 10000, payment_method: 'cash',
   });
   let body = await r.json();
   t('manual payment -> 201', r.status === 201, r.status);
@@ -236,7 +236,10 @@ async function main() {
   t('happy-path refund -> 201', r.status === 201, r.status);
   t('refund response does not touch bookkeeping directly', body.bookkeeping_via === 'stripe_webhook', body);
   const happyRefundCall = stripeCalls.refunds[stripeCalls.refunds.length - 1];
-  t('idempotency key was passed through to Stripe', happyRefundCall.opts.idempotencyKey.includes('idem-refund-happy'), happyRefundCall.opts);
+  const happyLedgerRow = database.prepare("SELECT * FROM office_refunds WHERE idempotency_key = 'idem-refund-happy'").get();
+  t('C1: a ledger row exists for the reservation, and finalized to succeeded', !!happyLedgerRow && happyLedgerRow.status === 'succeeded', happyLedgerRow);
+  t('C1: Stripe idempotency key is derived from the ledger row id, not the caller header', happyRefundCall.opts.idempotencyKey === `office-refund-${happyLedgerRow.id}`, happyRefundCall.opts);
+  t('C1: Stripe refund metadata carries office_refund_id', happyRefundCall.params.metadata.office_refund_id === happyLedgerRow.id, happyRefundCall.params.metadata);
   t('Stripe refund used the pi_ payment intent', happyRefundCall.params.payment_intent === 'pi_test_money_1', happyRefundCall.params);
 
   // 9. Replay with the SAME Idempotency-Key returns the stored response and does NOT call Stripe again
