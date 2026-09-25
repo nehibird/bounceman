@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
@@ -27,10 +28,28 @@ function getTwilio() {
   return require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 
-// API key auth middleware
+// Constant-time string compare that never throws on a length mismatch — timingSafeEqual
+// itself throws if the two buffers differ in length, which would otherwise leak length
+// information via a 500 vs 401, and the naive fix (return false immediately) leaks it
+// via timing instead. Comparing the shorter buffer against itself on a mismatch keeps a
+// failed attempt taking roughly as long as a real compare.
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a == null ? '' : a));
+  const bufB = Buffer.from(String(b == null ? '' : b));
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// API key auth middleware — fails CLOSED: an unset/empty SARAH_API_KEY must reject every
+// request rather than silently letting them all through (the old `key !== undefined`
+// check passed once the header itself happened to be undefined).
 router.use((req, res, next) => {
+  const expected = process.env.SARAH_API_KEY;
   const key = req.headers['x-sarah-key'];
-  if (key !== process.env.SARAH_API_KEY) {
+  if (!expected || !key || typeof key !== 'string' || !safeEqual(key, expected)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

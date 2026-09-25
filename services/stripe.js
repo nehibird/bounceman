@@ -12,6 +12,12 @@ function getStripe() {
   return _stripe;
 }
 
+// Test-only seam: inject a stub Stripe client (e.g. { refunds: { create: async () => ... } })
+// so tests never need a real STRIPE_SECRET_KEY or hit the network. Pass null to reset.
+function _setStripeForTests(fakeStripeClient) {
+  _stripe = fakeStripeClient;
+}
+
 /**
  * Create a Stripe Checkout Session for a booking deposit.
  * @param {object} opts
@@ -54,6 +60,86 @@ async function createCheckoutSession(opts) {
   });
 
   return session;
+}
+
+/**
+ * Create a Stripe Checkout Session for an arbitrary amount against a booking — the office
+ * API's payment-link endpoint (balance due by default, custom amount allowed). Kept
+ * separate from createCheckoutSession (hardcoded to the deposit flow) so that flow's
+ * behavior/callers are untouched. Uses the same booking_id/booking_number metadata keys
+ * so the existing checkout.session.completed webhook records the payment identically.
+ * @param {object} opts
+ * @param {string} opts.bookingId
+ * @param {string} opts.bookingNumber
+ * @param {number} opts.amountCents      - amount in cents (e.g. 4375 for $43.75)
+ * @param {string} [opts.customerEmail]
+ * @param {string} [opts.description]
+ * @param {object} [opts.metadata]       - merged into the session metadata alongside booking_id/booking_number
+ * @param {string} opts.successUrl
+ * @param {string} opts.cancelUrl
+ * @returns {Promise<Stripe.Checkout.Session>}
+ */
+async function createPaymentLink(opts) {
+  const stripe = getStripe();
+  const amountCents = Math.round(opts.amountCents);
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    throw new Error('amountCents must be a positive integer');
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    mode: 'payment',
+    customer_email: opts.customerEmail,
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Bounce Man Rental Payment',
+            description: opts.description || `Payment for booking ${opts.bookingNumber}`,
+          },
+          unit_amount: amountCents,
+        },
+        quantity: 1,
+      },
+    ],
+    metadata: {
+      ...(opts.metadata || {}),
+      booking_id: opts.bookingId,
+      booking_number: opts.bookingNumber,
+    },
+    success_url: opts.successUrl,
+    cancel_url: opts.cancelUrl,
+  });
+
+  return session;
+}
+
+/**
+ * Refund a payment intent, partial or full.
+ * @param {object} opts
+ * @param {string} opts.paymentIntentId
+ * @param {number} opts.amountCents      - amount to refund, in cents
+ * @param {string} opts.idempotencyKey
+ * @param {object} [opts.metadata]
+ * @returns {Promise<Stripe.Refund>}
+ */
+async function createRefund({ paymentIntentId, amountCents, idempotencyKey, metadata } = {}) {
+  if (!paymentIntentId) throw new Error('paymentIntentId is required');
+  const amount = Math.round(amountCents);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('amountCents must be a positive integer');
+  if (!idempotencyKey) throw new Error('idempotencyKey is required');
+
+  const stripe = getStripe();
+  return stripe.refunds.create(
+    {
+      payment_intent: paymentIntentId,
+      amount,
+      reason: 'requested_by_customer',
+      metadata: metadata || {},
+    },
+    { idempotencyKey },
+  );
 }
 
 /**
@@ -121,4 +207,12 @@ async function getPayoutSummary() {
   }
 }
 
-module.exports = { createCheckoutSession, retrieveSession, constructWebhookEvent, getPayoutSummary };
+module.exports = {
+  createCheckoutSession,
+  createPaymentLink,
+  createRefund,
+  retrieveSession,
+  constructWebhookEvent,
+  getPayoutSummary,
+  _setStripeForTests,
+};

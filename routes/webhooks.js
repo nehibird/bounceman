@@ -73,11 +73,40 @@ router.post('/stripe', async (req, res) => {
     return res.status(400).json({ error: 'Stripe webhook not configured' });
   }
 
+  let event;
   try {
     const sig = req.headers['stripe-signature'];
-    const event = stripeService.constructWebhookEvent(req.body, sig, webhookSecret);
-    const db = getDb();
+    event = stripeService.constructWebhookEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[Stripe Webhook Error] signature verification failed:', err.message);
+    return res.status(400).json({ error: err.message });
+  }
 
+  const db = getDb();
+
+  // Dedup: Stripe retries a webhook delivery until it gets a 2xx (and can occasionally
+  // redeliver an already-handled event for other reasons). INSERT OR IGNORE is atomic, so
+  // two concurrent deliveries of the same event can't both "win" — whichever loses this
+  // race sees changes === 0 and returns immediately without touching the switch below.
+  //
+  // The row is inserted BEFORE processing, not after, specifically to close that race. The
+  // tradeoff: if processing then throws, the event would be marked seen despite never having
+  // been handled, silently swallowing Stripe's automatic retry. So on any processing
+  // exception below we DELETE the seen row before responding with an error — that un-dedups
+  // the event so the retry Stripe sends next reaches the switch statement again.
+  let alreadySeen = false;
+  try {
+    const dedupInfo = db.prepare('INSERT OR IGNORE INTO stripe_events_seen (event_id) VALUES (?)').run(event.id);
+    alreadySeen = dedupInfo.changes === 0;
+  } catch (err) {
+    console.error('[Stripe Webhook] dedup insert failed (processing anyway):', err.message);
+  }
+  if (alreadySeen) {
+    console.log('[Stripe Webhook] duplicate event ignored:', event.id, event.type);
+    return res.json({ received: true, duplicate: true });
+  }
+
+  try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
@@ -246,14 +275,34 @@ router.post('/stripe', async (req, res) => {
 
       case 'charge.refunded': {
         const charge = event.data.object;
-        const refundAmount = charge.amount_refunded / 100;
+        // charge.amount_refunded is CUMULATIVE — the total refunded on this charge to
+        // date, not the incremental amount of this particular event. A 2nd partial
+        // refund (or a plain webhook retry re-delivering the SAME cumulative total)
+        // used to subtract that cumulative figure from bookings.total every time,
+        // double- (or triple-) reducing it. Only the DELTA since the last time we saw
+        // this payment may touch the booking.
+        const cumulativeRefund = Math.round((charge.amount_refunded / 100) * 100) / 100;
         const payment = db.prepare(
           'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
         ).get(charge.payment_intent || charge.id, charge.id);
         if (payment) {
+          const priorRefund = parseFloat(payment.refund_amount) || 0;
+          const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
+
           db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?')
-            .run(refundAmount, payment.id);
-          console.log('[Stripe Webhook] charge.refunded: $' + refundAmount.toFixed(2) + ' recorded');
+            .run(cumulativeRefund, payment.id);
+          console.log('[Stripe Webhook] charge.refunded: $' + cumulativeRefund.toFixed(2) +
+            ' cumulative refund recorded (delta $' + delta.toFixed(2) + ')');
+
+          // A stale/duplicate event carrying an amount we've already booked (delta ~ 0,
+          // or negative — Stripe redelivering an older cumulative total) must NOT touch
+          // bookings.total again. 0.004 absorbs floating-point cents noise from repeated
+          // /100 divisions without masking any real (>= half a cent) refund.
+          if (delta <= 0.004) {
+            console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
+              delta.toFixed(2) + ') — booking total left unchanged');
+            break;
+          }
 
           // Write the refund back to the BOOKING as well. Recording it only against the
           // payment left bookings.total claiming revenue that had been given back, and
@@ -269,17 +318,17 @@ router.post('/stripe', async (req, res) => {
               const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
                 FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
               // Never below what was actually kept, so the books cannot show a phantom debt.
-              const newTotal = Math.max(0, Math.round((bk.total - refundAmount) * 100) / 100);
+              const newTotal = Math.max(0, Math.round((bk.total - delta) * 100) / 100);
               const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
               db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
                 payment_status = CASE WHEN ? <= 0 THEN 'paid' ELSE payment_status END,
                 internal_notes = TRIM(COALESCE(internal_notes,'') ||
                   ' [refund] $' || ? || ' refunded ' || date('now') || '; total reduced to $' || ? || '.'),
                 updated_at = datetime('now') WHERE id = ?`)
-                .run(newTotal, newBalance, newBalance, refundAmount.toFixed(2), newTotal.toFixed(2), bk.id);
+                .run(newTotal, newBalance, newBalance, delta.toFixed(2), newTotal.toFixed(2), bk.id);
               console.log('[Stripe Webhook] booking ' + bk.booking_number +
                 ' total ' + bk.total.toFixed(2) + ' -> ' + newTotal.toFixed(2) +
-                ', balance -> ' + newBalance.toFixed(2));
+                ' (delta $' + delta.toFixed(2) + '), balance -> ' + newBalance.toFixed(2));
             }
           } catch (e) {
             // Never fail the webhook over bookkeeping — Stripe would retry the refund event.
@@ -295,6 +344,8 @@ router.post('/stripe', async (req, res) => {
     res.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook Error]', err.message);
+    try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
+    catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
     res.status(400).json({ error: err.message });
   }
 });
