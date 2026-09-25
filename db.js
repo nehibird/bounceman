@@ -1053,6 +1053,59 @@ function initialize() {
     for (const eqId of eqIds) pkgItemInsert.run(uuid(), pid, eqId);
   }
 
+  // --- Office API (feature/office-api) ---
+  // api_keys: server-to-server credentials for the office API. Only the sha256 hash of
+  // the raw key is ever stored (key_prefix is a short indexed slice used to narrow the
+  // lookup before a timingSafeEqual compare — see lib/api-keys.js). Refund limits are
+  // per-key and nullable (NULL = no cap), set via scripts/api-key.js.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      key_prefix TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      scopes TEXT NOT NULL DEFAULT '[]',
+      max_refund_cents INTEGER,
+      daily_refund_cap_cents INTEGER,
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      revoked_at TEXT
+    );
+
+    -- Every office API write is required to carry a reason and an Idempotency-Key
+    -- (see middleware/office-auth.js). response_json lets a retried request with the
+    -- same (key_id, idempotency_key) replay the original response instead of
+    -- re-executing the write.
+    CREATE TABLE IF NOT EXISTS api_audit_log (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      action TEXT,
+      reason TEXT,
+      idempotency_key TEXT,
+      request_json TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      status_code INTEGER,
+      response_json TEXT,
+      stripe_object_id TEXT,
+      ip TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_api_audit_key_idem ON api_audit_log(key_id, idempotency_key);
+
+    -- Dedup table for Stripe webhook event delivery/retries (office API refund flow).
+    CREATE TABLE IF NOT EXISTS stripe_events_seen (
+      event_id TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   console.log('[DB] Database initialized successfully');
 }
 
