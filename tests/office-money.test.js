@@ -29,6 +29,7 @@ const { recordManualPayment } = require('../lib/payments');
 
 const stripeService = require('../services/stripe');
 let forceNextRefundError = false;
+let forceNextRefundStatus = null; // L2: let a test make the NEXT refund come back 'failed'/'pending'
 // C1.4: configurable live-charge stub — liveRefundedByPI simulates a Dashboard refund
 // (or any refund made outside this app) that the webhook hasn't recorded yet.
 // forceLiveFetchError simulates the live lookup itself being unreachable.
@@ -43,7 +44,9 @@ const fakeStripe = {
         forceNextRefundError = false;
         throw new Error('simulated Stripe outage');
       }
-      return { id: `re_test_${stripeCalls.refunds.length}`, status: 'succeeded' };
+      const status = forceNextRefundStatus || 'succeeded';
+      forceNextRefundStatus = null;
+      return { id: `re_test_${stripeCalls.refunds.length}`, status };
     },
   },
   checkout: {
@@ -83,6 +86,11 @@ function t(name, ok, detail) {
   ok ? pass++ : fail++;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}` + (ok ? '' : `  ${detail !== undefined ? JSON.stringify(detail) : ''}`));
 }
+
+// L4: a DB write that throws after a successful Stripe call must become a clean JSON 500
+// (asyncHandler -> the router's error middleware), never an unhandled promise rejection.
+const unhandledRejections = [];
+process.on('unhandledRejection', (reason) => { unhandledRejections.push(reason); });
 
 async function main() {
   // --- Fixtures ---------------------------------------------------------
@@ -532,6 +540,110 @@ async function main() {
   forceLiveFetchError = false;
   t('(c) live lookup throws: falls back to the webhook-recorded $100, still rejects $150 on $100 remaining', r.status === 400 && body.refundable_cents === 10000, body);
   t('(c) response reports the live charge was NOT checked', body.live_charge_checked === false, body);
+
+  // --- L1: an explicit payment_id whose payments.status is NOT 'completed' -----------
+  const { rawKey: l1Key } = createApiKey(database, { name: 'test-l1', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000 });
+  const { bkId: l1BkId } = makeLivePayment('BM-L1', 'pi_l1');
+  const l1PendingPaymentId = uuid();
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, (SELECT customer_id FROM bookings WHERE id = ?), 75, 'charge', 'stripe', 'pi_l1_pending', 'pending', 0)`)
+    .run(l1PendingPaymentId, l1BkId, l1BkId);
+  const l1RefundsBefore = stripeCalls.refunds.length;
+  r = await write('POST', '/bookings/BM-L1/refunds', l1Key, {
+    idempotencyKey: 'idem-l1-pending', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000, payment_id: l1PendingPaymentId,
+  });
+  t('L1: explicit payment_id on a PENDING (not completed) payment -> 4xx', r.status >= 400 && r.status < 500, r.status);
+  t('L1: no Stripe refund call was made', stripeCalls.refunds.length === l1RefundsBefore, stripeCalls.refunds.length);
+
+  // --- L2: Stripe refund.status 'failed'/'pending' surfaced, and only 'failed' is
+  // excluded from the daily cap ('pending' still counts) -------------------------------
+  const { rawKey: l2aKey } = createApiKey(database, { name: 'test-l2a', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
+  makeLivePayment('BM-L2A', 'pi_l2a');
+  forceNextRefundStatus = 'failed';
+  r = await write('POST', '/bookings/BM-L2A/refunds', l2aKey, {
+    idempotencyKey: 'idem-l2a-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+  });
+  body = await r.json();
+  t('L2: a Stripe refund.status of "failed" is surfaced on the response', r.status === 201 && body.status === 'failed' && body.ledger_status === 'failed', body);
+  // A 'failed' finalize renames idempotency_key off to the side (frees it for retry —
+  // see finalizeRefundLedger), so match with LIKE rather than an exact key.
+  const l2aLedgerRow = database.prepare("SELECT status FROM office_refunds WHERE idempotency_key LIKE 'idem-l2a-1%'").get();
+  t('L2: the ledger row itself is finalized to failed', l2aLedgerRow && l2aLedgerRow.status === 'failed', l2aLedgerRow);
+  // A further $60 against the same $60 daily cap must succeed — it only fits if the
+  // $50 "failed" refund above was correctly excluded from today's total.
+  r = await write('POST', '/bookings/BM-L2A/refunds', l2aKey, {
+    idempotencyKey: 'idem-l2a-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 6000,
+  });
+  t('L2: a failed refund does NOT count toward the daily cap', r.status === 201, r.status);
+
+  const { rawKey: l2bKey } = createApiKey(database, { name: 'test-l2b', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
+  makeLivePayment('BM-L2B', 'pi_l2b');
+  forceNextRefundStatus = 'pending';
+  r = await write('POST', '/bookings/BM-L2B/refunds', l2bKey, {
+    idempotencyKey: 'idem-l2b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+  });
+  body = await r.json();
+  t('L2: a Stripe refund.status of "pending" is surfaced on the response too', r.status === 201 && body.status === 'pending', body);
+  // A further $20 against the same $60 cap (only $10 headroom left) must be rejected —
+  // it only fails if the $50 "pending" refund correctly DID count toward today's total.
+  r = await write('POST', '/bookings/BM-L2B/refunds', l2bKey, {
+    idempotencyKey: 'idem-l2b-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
+  });
+  t('L2: a pending (non-failed) refund DOES count toward the daily cap', r.status === 403, r.status);
+
+  // --- L8: the daily-cap sum ignores ledger rows from a PREVIOUS Central-time day -----
+  const { rawKey: l8Key, id: l8KeyId } = createApiKey(database, { name: 'test-l8', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
+  const { bkId: l8BkId, payId: l8PayId } = makeLivePayment('BM-L8', 'pi_l8');
+  const { todayCT, isoOffset } = require('../lib/helpers');
+  const yesterdayCT = isoOffset(todayCT(), -1);
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5000, 'succeeded', 'Nehemiah', 'yesterday refund', ?, ?)`)
+    .run(uuid(), l8KeyId, 'test-l8', 'idem-l8-yesterday', l8BkId, l8PayId, `${yesterdayCT} 18:00:00`, `${yesterdayCT} 18:00:00`);
+  // If that $50 "yesterday" row counted toward TODAY's $60 cap, a further $40 would
+  // push to $90 and be rejected; since it must be excluded, $40 alone fits easily.
+  r = await write('POST', '/bookings/BM-L8/refunds', l8Key, {
+    idempotencyKey: 'idem-l8-today', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 4000,
+  });
+  t('L8: a ledger row from a previous CT day is excluded from today\'s daily-cap sum', r.status === 201, r.status);
+
+  // --- L9: payment-link description is truncated to 200 chars and control-char-stripped
+  const { rawKey: l9Key } = createApiKey(database, { name: 'test-l9', scopes: ['payments:link'] });
+  makeLivePayment('BM-L9', 'pi_l9');
+  database.prepare("UPDATE bookings SET balance_due = 500 WHERE booking_number = 'BM-L9'").run();
+  const rawDescription = '\x01\x02control-then-' + 'x'.repeat(250);
+  r = await write('POST', '/bookings/BM-L9/payment-link', l9Key, {
+    idempotencyKey: 'idem-l9-desc', reason: 'x', amount_cents: 5000, description: rawDescription,
+  });
+  t('L9: payment-link with an oversized/control-char description -> 201', r.status === 201, r.status);
+  const l9StripeCall = stripeCalls.checkoutSessions[stripeCalls.checkoutSessions.length - 1];
+  const l9SentDescription = l9StripeCall.line_items[0].price_data.product_data.description;
+  t('L9: the description Stripe actually received is capped at 200 chars', l9SentDescription.length <= 200, l9SentDescription.length);
+  // eslint-disable-next-line no-control-regex
+  t('L9: control characters never reached the Stripe stub', !/[\x00-\x1F\x7F]/.test(l9SentDescription), JSON.stringify(l9SentDescription));
+
+  // --- L4: a DB write that throws AFTER a successful Stripe call -> clean JSON 500,
+  // never an unhandled promise rejection -----------------------------------------------
+  const { rawKey: l4Key } = createApiKey(database, { name: 'test-l4', scopes: ['payments:link'] });
+  makeLivePayment('BM-L4', 'pi_l4');
+  database.prepare("UPDATE bookings SET balance_due = 500 WHERE booking_number = 'BM-L4'").run();
+  const realPrepare = database.prepare.bind(database);
+  database.prepare = (sql) => {
+    if (sql.includes('UPDATE bookings SET internal_notes')) {
+      throw new Error('simulated DB failure after the Stripe call succeeded');
+    }
+    return realPrepare(sql);
+  };
+  const unhandledBefore = unhandledRejections.length;
+  r = await write('POST', '/bookings/BM-L4/payment-link', l4Key, {
+    idempotencyKey: 'idem-l4-throw', reason: 'x', amount_cents: 5000,
+  });
+  database.prepare = realPrepare;
+  body = await r.json().catch(() => null);
+  t('L4: a DB write throwing after Stripe succeeds -> 500', r.status === 500, r.status);
+  t('L4: the 500 body is JSON, not an HTML stack trace', body && typeof body === 'object', body);
+  // Give any stray microtask a tick to surface before checking.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  t('L4: no unhandled promise rejection was raised', unhandledRejections.length === unhandledBefore, unhandledRejections.slice(unhandledBefore));
 
   server.close();
   database.close();

@@ -134,6 +134,19 @@ async function main() {
   t('payment.refund_amount = 70 after retry', payment.refund_amount === 70, payment.refund_amount);
   t('booking.total = 30 after retry (delta of 20 from the prior 50)', booking.total === 30, booking.total);
 
+  // 6. L8: stripe_events_seen rows older than 30 days are pruned on boot (db.js's
+  // initialize(), called again here — idempotent by design); newer rows are kept.
+  const { v4: uuidL8 } = require('uuid');
+  const oldEventId = uuidL8();
+  const freshEventId = uuidL8();
+  database.prepare("INSERT INTO stripe_events_seen (event_id, created_at) VALUES (?, datetime('now', '-40 days'))").run(oldEventId);
+  database.prepare("INSERT INTO stripe_events_seen (event_id, created_at) VALUES (?, datetime('now', '-1 days'))").run(freshEventId);
+  db.initialize();
+  const oldRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(oldEventId);
+  const freshRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(freshEventId);
+  t('L8: a stripe_events_seen row older than 30 days is pruned', !oldRow, oldRow);
+  t('L8: a stripe_events_seen row within 30 days is kept', !!freshRow, freshRow);
+
   server.close();
   database.close();
   fs.rmSync(TMP_DIR, { recursive: true, force: true });

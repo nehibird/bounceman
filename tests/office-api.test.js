@@ -130,6 +130,17 @@ async function main() {
   body = await r.json();
   t('unknown field -> 400', r.status === 400 && /unknown field/.test(body.error || ''), body);
 
+  // 7b. L3: non-scalar values on a PATCH field -> 400, and never a raw SQLite error string
+  r = await write('PATCH', '/bookings/BM-TEST-A', fullKey, { reason: 'bad type', idempotencyKey: 'idem-l3-object', delivery_notes: { evil: true } });
+  body = await r.json();
+  t('L3: an object value for a string booking field -> 400', r.status === 400, r.status);
+  t('L3: no SQLite error text leaked in the body', !/SQLITE|sqlite3|too few parameter/i.test(JSON.stringify(body)), body);
+
+  r = await write('PATCH', '/bookings/BM-TEST-A', fullKey, { reason: 'bad type', idempotencyKey: 'idem-l3-array', assigned_crew: ['a', 'b'] });
+  body = await r.json();
+  t('L3: an array value for a string booking field -> 400', r.status === 400, r.status);
+  t('L3 (array): no SQLite error text leaked in the body', !/SQLITE|sqlite3|too few parameter/i.test(JSON.stringify(body)), body);
+
   // 8. dry_run: true previews without writing
   r = await write('PATCH', '/bookings/BM-TEST-A', fullKey, { reason: 'preview', idempotencyKey: 'idem-dryrun', dry_run: true, delivery_notes: 'ring the bell' });
   body = await r.json();
@@ -208,6 +219,23 @@ async function main() {
   r = await get('/customers?q=Jane', fullKey);
   body = await r.json();
   t('GET /customers?q list also omits forbidden fields', body.customers.every((c) => FORBIDDEN_CUSTOMER_FIELDS.every((f) => !(f in c))), body.customers[0]);
+
+  // L5: the read-audit trail redacts the `q` query VALUE — the stored path must show
+  // q=[redacted] and never the actual search term.
+  const l5AuditRow = database.prepare(
+    "SELECT path FROM api_audit_log WHERE key_id = ? AND action = 'office_api_read' AND path LIKE '%/customers%q=%' ORDER BY created_at DESC LIMIT 1"
+  ).get((database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-full') || {}).id);
+  t('L5: the stored read-audit path redacts q', !!l5AuditRow && l5AuditRow.path.includes('q=%5Bredacted%5D') && !l5AuditRow.path.toLowerCase().includes('jane'), l5AuditRow);
+
+  // L3: non-scalar values on a customer PATCH field -> 400
+  r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'bad type', idempotencyKey: 'idem-l3-cust-object', first_name: { evil: true } });
+  t('L3: an object value for a string customer field -> 400', r.status === 400, r.status);
+  r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'bad type', idempotencyKey: 'idem-l3-cust-array', address: ['123 Main'] });
+  t('L3: an array value for a string customer field -> 400', r.status === 400, r.status);
+
+  // L6: HEAD is treated like GET — no reason/Idempotency-Key required, no 400.
+  r = await fetch(`${base}/whoami`, { method: 'HEAD', headers: { 'x-office-key': fullKey } });
+  t('L6: HEAD /whoami with a valid key -> 200, not 400', r.status === 200, r.status);
 
   r = await write('PATCH', `/customers/${customerId}`, fullKey, { reason: 'customer moved', idempotencyKey: 'idem-cust-1', phone: '5559998888' });
   body = await r.json();
