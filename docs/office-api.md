@@ -268,9 +268,16 @@ returned — the refund endpoint takes the internal `id` (`payment_id`), never a
 - **Reads:** 120/min per key.
 - **Writes:** 30/min per key.
 - **Refunds specifically:** 10/hour per key, on top of the write limit above.
-- **Pre-auth, per IP:** 20 failed authentication attempts / 15 min, then `429`. Only
-  attempts that actually fail auth (missing/malformed/unknown/revoked key) count — a
-  legitimate key's ordinary 400s/403s from business-rule validation never do.
+- **Pre-auth, per IP:** 20 failed authentication attempts / 15 min, then `429` **on further
+  failing requests from that IP**. Only attempts that actually fail auth (missing/
+  malformed/unknown/revoked key) count — a legitimate key's ordinary 400s/403s from
+  business-rule validation never do. Critically, **a request presenting a valid, active
+  key always proceeds, regardless of that IP's failure count, and never itself counts
+  against the limit** — this is IP-scoped throttling of *bad* traffic only, never a way
+  to lock out a real caller. That matters because Sarah's own egress IP (or a proxy that
+  collapses many distinct clients to one `req.ip`) could otherwise share an IP with
+  unrelated bad traffic and be denied service for 15 minutes despite her key being
+  perfectly valid.
 - The site-wide `/api/` limiter (100 requests/15 min/IP, in `server.js`) **skips**
   `/api/office`, the same as `/api/sarah` and `/api/webhooks` — the office API has its
   own limiters above and must not be throttled by the public-facing one.

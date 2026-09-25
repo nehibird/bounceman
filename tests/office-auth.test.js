@@ -239,17 +239,25 @@ async function main() {
 
   siteServer.close();
 
-  // 14. M7: a pre-auth per-IP limiter trips after enough FAILED auth attempts, and once
-  // tripped it blocks even a perfectly valid key (blocked by IP, before key lookup).
-  // This deliberately blocks 127.0.0.1 for the rest of the process, so it runs last.
+  // 14. M7: a pre-auth per-IP limiter trips after enough FAILED auth attempts. A VALID
+  // key from that same IP must NOT be locked out by it — Sarah's own egress IP (or a
+  // proxy collapsing distinct clients to one req.ip) sharing an IP with unrelated bad
+  // traffic must never cost her 15 minutes of access. This deliberately racks up
+  // failures against 127.0.0.1 for the rest of the process, so it runs last.
   let got429 = false;
   for (let i = 0; i < 30; i++) {
     const rr = await fetch(`${base}/whoami`, { headers: { 'x-office-key': 'bmo_' + 'f'.repeat(64) } });
     if (rr.status === 429) { got429 = true; break; }
   }
   t('enough failed auth attempts from one IP -> 429', got429);
-  const rBlocked = await fetch(`${base}/whoami`, { headers: { 'x-office-key': goodKey } });
-  t('once blocked, even a VALID key is rejected with 429', rBlocked.status === 429, rBlocked.status);
+
+  const rValid = await fetch(`${base}/whoami`, { headers: { 'x-office-key': goodKey } });
+  t('a VALID key from a limited IP always proceeds (200), never locked out', rValid.status === 200, rValid.status);
+
+  // Failing requests from that IP keep getting 429 (not 401) — the limit is still in
+  // effect for bad traffic, and a good request doesn't reset or bypass it for others.
+  const rStillBad = await fetch(`${base}/whoami`, { headers: { 'x-office-key': 'bmo_' + 'e'.repeat(64) } });
+  t('a bad key from a still-limited IP gets 429, not 401', rStillBad.status === 429, rStillBad.status);
 
   server.close();
   database.close();

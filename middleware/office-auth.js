@@ -89,17 +89,28 @@ const authFailSweep = setInterval(() => {
 }, AUTH_FAIL_WINDOW_MS);
 authFailSweep.unref();
 
-// Fails closed: any missing header, unknown key, revoked key, or lookup error is a 401.
-function requireOfficeKey(req, res, next) {
-  const ip = req.ip;
+// A VALID, ACTIVE key always proceeds — regardless of the calling IP's failed-attempt
+// count — and never itself counts toward that count. Only requests that actually FAIL
+// auth are throttled by IP, and only failing requests are turned into 429s once an IP is
+// over the limit. This matters because Sarah's own egress IP (or a proxy that collapses
+// distinct clients to one req.ip) could otherwise be locked out for 15 minutes by
+// unrelated traffic sharing that IP, even though her own key is perfectly valid.
+function failAuth(ip, res, status, body) {
   if (isAuthRateLimited(ip)) {
     return res.status(429).json({ error: 'too many failed authentication attempts — try again later' });
   }
+  recordAuthFailure(ip);
+  return res.status(status).json(body);
+}
+
+// Fails closed: any missing header, unknown key, revoked key, or lookup error is a 401
+// (or a 429 in place of that 401 once the IP has failed enough times).
+function requireOfficeKey(req, res, next) {
+  const ip = req.ip;
 
   const rawKey = req.headers['x-office-key'];
   if (!rawKey || typeof rawKey !== 'string') {
-    recordAuthFailure(ip);
-    return res.status(401).json({ error: 'x-office-key header required' });
+    return failAuth(ip, res, 401, { error: 'x-office-key header required' });
   }
 
   let keyRow = null;
@@ -109,8 +120,7 @@ function requireOfficeKey(req, res, next) {
     console.error('[OFFICE-AUTH] key lookup failed:', e.message);
   }
   if (!keyRow) {
-    recordAuthFailure(ip);
-    return res.status(401).json({ error: 'invalid or revoked API key' });
+    return failAuth(ip, res, 401, { error: 'invalid or revoked API key' });
   }
 
   req.apiKey = keyRow;
