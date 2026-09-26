@@ -115,7 +115,9 @@ Idempotency semantics (mirrors Stripe's own):
   payment gets `409 {error: "unresolved_refund", ledger_id, retry_with_same_idempotency_key:
   true}` before any Stripe call is made, regardless of how much headroom is left under the
   caps. Retry the named `ledger_id`'s original `Idempotency-Key`, or wait for reconcile.
-  See §5.
+  See §5. **R4-L3: `dry_run` previews this identically** — a pending/needs_review row on
+  the payment makes the preview ITSELF return this same `409 unresolved_refund` body,
+  never a clean-looking preview the real call would then reject.
 
 `HEAD` is treated exactly like `GET` (read, not write-gated).
 
@@ -193,6 +195,11 @@ Every refund request:
    calls.** This applies to `dry_run` too. There is no fallback to a ledger/webhook-only
    view any more (round 2 had one; it failed OPEN and was the R2-H1 finding).
 3. **In one synchronous `db.transaction()`**, before any Stripe call:
+   - **R3-M3/R4-L3:** first checks for ANY OTHER `pending`/`needs_review` `office_refunds`
+     row on the same payment (any key) — if one exists, refuses immediately with the same
+     `409 unresolved_refund` described in §5, before computing anything else. `dry_run`
+     runs this exact same check (outside the transaction, since it never reserves) so a
+     preview can never say "yes" to a refund the real call would then reject.
    - Computes `refundable_cents = captured_cents - MAX(webhook-recorded refund_amount,
      the live Stripe amount from step 2, sum of SUCCEEDED office_refunds rows for this
      payment ACROSS ALL KEYS) - sum of PENDING/NEEDS_REVIEW office_refunds rows for this
@@ -265,7 +272,12 @@ Every refund request:
      is the one case a same-key retry does NOT eventually resolve on its own; it needs
      `scripts/reconcile-office-refunds.js` or a human. If found nothing and the row is
      still fresh, it proceeds to call `refunds.create` as normal, and Stripe's own 24-hour
-     idempotency window resolves it to the single real outcome. A **genuinely concurrent**
+     idempotency window resolves it to the single real outcome. **I1:** on this path, the
+     real backstop against a double refund is Stripe's own idempotency key (honored for
+     ~23h, the same window this resume check uses), not the `findRefundByOfficeId` list
+     lookup that runs first — the lookup just makes an *early* resume fast and correct;
+     even a lagged/empty list result at the exact wrong moment still falls through to
+     `refunds.create` with the same key, which Stripe itself dedupes. A **genuinely concurrent**
      duplicate request (same key, arriving while the original call to Stripe is still
      outstanding **in this process**) gets `409` instead of racing a second concurrent
      Stripe call.
@@ -531,4 +543,5 @@ The endpoint (`/api/webhooks/stripe`) must subscribe to at least:
 
 Every mutating endpoint supports `dry_run: true`, which previews the result (including
 the current caps/refundable balance for refunds) without writing anything or calling
-Stripe.
+Stripe. **R4-L3:** for refunds, `dry_run` also matches the real endpoint's `409
+unresolved_refund` refusal (§5) rather than previewing past it.

@@ -669,18 +669,40 @@ async function main() {
     r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === unresolvedId, body);
   t('(b2) R3-M3: zero Stripe calls were made', stripeCalls.refunds.length === b2RefundCallsBefore, stripeCalls.refunds.length);
 
-  // (b3) LEDGER-3: a dry_run preview (which never reaches reserveRefund, so never hits
-  // R3-M3's unresolved-refund guard) must still correctly subtract a PENDING reservation
-  // from ANOTHER key when computing refundable_cents. This is the one remaining call site
-  // where pendingOrReviewLedgerCents actually matters — reserveRefund's own call site can
-  // never observe a nonzero value there any more, since R3-M3 refuses before ever
-  // reaching computeRefundLimits whenever an unresolved row exists on the payment.
+  // (b2b) R4-L2 (N13): the SAME guard must also block on a NEEDS_REVIEW row, not just a
+  // 'pending' one — a resume that aged out (R3-M2) leaves the row 'needs_review', and a
+  // new key on that payment must be refused exactly the same way. The R3-M3 query itself
+  // (`status IN ('pending', 'needs_review')`) has no test that seeds ONLY needs_review —
+  // (b2) above only proves the 'pending' half.
+  const { id: fourthKeyId } = createApiKey(database, { name: 'test-money-live-fourth', scopes: ['refunds:create'] });
+  const { bkId: b2bId, payId: p2bId } = makeLivePayment('BM-LIVE-B2B', 'pi_live_b2b');
+  const needsReviewId = uuid();
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 3000, 'needs_review', 'Nehemiah', 'aged out from another key', datetime('now'), datetime('now'))`)
+    .run(needsReviewId, fourthKeyId, 'test-money-live-fourth', 'idem-live-b2b-other', b2bId, p2bId);
+  const b2bRefundCallsBefore = stripeCalls.refunds.length;
+  r = await write('POST', '/bookings/BM-LIVE-B2B/refunds', liveKey, {
+    idempotencyKey: 'idem-live-b2b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
+  });
+  body = await r.json();
+  t('(b2b) R4-L2 (N13): a new key is refused (unresolved_refund) by a NEEDS_REVIEW row on the same payment',
+    r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === needsReviewId, body);
+  t('(b2b) R4-L2 (N13): zero Stripe calls were made', stripeCalls.refunds.length === b2bRefundCallsBefore, stripeCalls.refunds.length);
+
+  // (b3) R4-L3: dry_run now previews the SAME unresolved-refund refusal the real call
+  // would give — a PENDING/needs_review row anywhere on the payment (any key) makes the
+  // preview itself return the identical 409 {error:'unresolved_refund', ledger_id,
+  // retry_with_same_idempotency_key:true}, rather than a clean-looking preview the real
+  // call would then reject. This reuses (b2)'s payment/pending row. Note: this also means
+  // computeRefundLimits's pendingOrReviewLedgerCents branch (formerly proven only by this
+  // dry_run call, per the LEDGER-3 mutant) can no longer be observed live from EITHER call
+  // site — both now refuse before ever reaching it whenever it would be nonzero.
   r = await write('POST', '/bookings/BM-LIVE-B2/refunds', liveKey, {
     idempotencyKey: 'idem-live-b2-dryrun', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 1000, dry_run: true,
   });
   body = await r.json();
-  t("(b3) LEDGER-3: dry_run correctly subtracts another key's pending $30 reservation from the $200 payment",
-    r.status === 200 && body.dry_run === true && body.refundable_cents === 17000, body);
+  t('(b3) R4-L3: dry_run also refuses (unresolved_refund) instead of previewing past the pending reservation',
+    r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === unresolvedId && body.retry_with_same_idempotency_key === true, body);
 
   // (c) R2-H1: the live lookup itself fails (Stripe unreachable) — FAILS CLOSED. No
   // fallback to the webhook/ledger view any more (that was the R2-H1 bug: it failed

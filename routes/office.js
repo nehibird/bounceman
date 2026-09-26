@@ -987,6 +987,27 @@ function computeRefundLimits(db, key, payment, liveRefundedCents) {
   return { maxRefundCents, dailyCapCents, alreadyTodayCents, refundableCents };
 }
 
+// R3-M3/R4-L3: while ANY reservation on this SAME PAYMENT — across every key — is still
+// pending/needs_review, a brand-new reservation must be refused outright, even if there'd
+// be numeric room under the caps/remainder. A new reservation on top of one whose Stripe
+// outcome is unknown can double-pay once the unresolved one turns out to have succeeded
+// (the caps/remainder math is deliberately conservative about counting an unresolved row,
+// but "conservative" only bounds how much MORE can go out — it doesn't make a second
+// attempt safe). Shared by reserveRefund AND dry_run (R4-L3) so a preview can never say
+// "yes" to a refund the real call would then reject with this exact 409.
+function findUnresolvedRefundForPayment(db, paymentId) {
+  return db.prepare(`
+    SELECT id FROM office_refunds WHERE payment_id = ? AND status IN ('pending', 'needs_review') LIMIT 1
+  `).get(paymentId);
+}
+
+function unresolvedRefundBody(unresolvedId) {
+  return {
+    error: 'unresolved_refund', ledger_id: unresolvedId, retry_with_same_idempotency_key: true,
+    message: 'A previous refund on this payment has an unknown outcome; retry that request with its original Idempotency-Key, or wait for reconcile.',
+  };
+}
+
 // C1: everything that decides whether a refund is ALLOWED, plus the ledger INSERT that
 // reserves it, happens inside one synchronous better-sqlite3 transaction — better-sqlite3
 // runs transactions fully synchronously, so no other request's reservation can interleave
@@ -995,25 +1016,11 @@ function computeRefundLimits(db, key, payment, liveRefundedCents) {
 // concurrency, not just when calls happen to be serialized.
 function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey, requestHash, reason, confirmedBy, liveRefundedCents }) {
   const attempt = db.transaction(() => {
-    // R3-M3: while ANY reservation on this SAME PAYMENT — across every key — is still
-    // pending/needs_review, refuse a brand-new reservation outright, even if there'd be
-    // numeric room under the caps/remainder. A new reservation on top of one whose Stripe
-    // outcome is unknown can double-pay once the unresolved one turns out to have
-    // succeeded (the caps/remainder math is deliberately conservative about counting an
-    // unresolved row, but "conservative" only bounds how much MORE can go out — it
-    // doesn't make a second attempt safe). The caller must retry the ORIGINAL
-    // Idempotency-Key (which resumes/dedupes against Stripe) or wait for reconcile.
-    const unresolved = db.prepare(`
-      SELECT id FROM office_refunds WHERE payment_id = ? AND status IN ('pending', 'needs_review') LIMIT 1
-    `).get(payment.id);
+    // The caller must retry the ORIGINAL Idempotency-Key (which resumes/dedupes against
+    // Stripe) or wait for reconcile — see findUnresolvedRefundForPayment above.
+    const unresolved = findUnresolvedRefundForPayment(db, payment.id);
     if (unresolved) {
-      return {
-        ok: false, status: 409,
-        body: {
-          error: 'unresolved_refund', ledger_id: unresolved.id, retry_with_same_idempotency_key: true,
-          message: 'A previous refund on this payment has an unknown outcome; retry that request with its original Idempotency-Key, or wait for reconcile.',
-        },
-      };
+      return { ok: false, status: 409, body: unresolvedRefundBody(unresolved.id) };
     }
 
     const limits = computeRefundLimits(db, key, payment, liveRefundedCents);
@@ -1424,6 +1431,13 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
   const liveChargeChecked = true;
 
   if (req.body.dry_run) {
+    // R4-L3: preview the SAME unresolved-refund refusal the real call would give (§ R3-M3)
+    // — otherwise a dry_run could return a clean "yes" for a request that then 409s for
+    // real, which is worse than no preview at all.
+    const unresolved = findUnresolvedRefundForPayment(db, payment.id);
+    if (unresolved) {
+      return res.status(409).json({ ...unresolvedRefundBody(unresolved.id), live_charge_checked: liveChargeChecked });
+    }
     const limits = computeRefundLimits(db, req.apiKey, payment, liveRefundedCents);
     return res.json({
       dry_run: true,
