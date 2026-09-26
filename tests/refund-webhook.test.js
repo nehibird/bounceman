@@ -239,45 +239,51 @@ async function main() {
   t('R2-L5: idempotent — refund_amount is NOT corrected a second time (stays 0, not negative)', revPayment.refund_amount === 0, revPayment.refund_amount);
   t('R2-L5: idempotent — booking.total is NOT increased a second time (stays 100)', revBooking.total === 100, revBooking.total);
 
-  // --- R3-L3: reversal out-of-order — the refund's OWN charge.refunded hasn't arrived
-  // yet when its charge.refund.updated (canceled) lands. payments.refund_amount must not
-  // be blindly decremented from a base that never included this refund in the first
-  // place (that would drive it wrong, and a later charge.refunded would then re-apply the
-  // delta on top of an already-wrong number).
+  // --- R3-L3: reversal out-of-order — a SECOND refund (B, $20) whose OWN charge.refunded
+  // hasn't arrived yet gets reversed while a FIRST refund (A, $30) is already webhooked
+  // and reflected in refund_amount. A naive subtraction of B's own amount from the
+  // CURRENT refund_amount ($30 - $20 = $10) is WRONG — B's $20 was never actually folded
+  // into that $30 in the first place, so subtracting it drives the figure below what A
+  // alone already accounts for. The live charge's true amount_refunded (A only, $30,
+  // since B never completed) is the only correct answer — and it must come out UNCHANGED
+  // (delta 0), not $10. This is the exact case a plain subtraction cannot get right,
+  // which is why L3-ABSOLUTE (reverting to subtraction) must be caught by this test and
+  // not just by a case that happens to floor at 0 either way.
   const ooCustomerId = uuid();
   database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'OutOfOrder', 'Test')").run(ooCustomerId);
   const ooBookingId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-OOO-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(ooBookingId, ooCustomerId);
+    VALUES (?, 'BM-OOO-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 70, 50, 0, 'paid')`).run(ooBookingId, ooCustomerId);
   const ooPaymentId = uuid();
-  // $100 charge, NO refund recorded yet (its own charge.refunded hasn't arrived) —
-  // refund_amount starts at 0.
+  // $100 charge. Refund A ($30) already webhooked: refund_amount=30, booking.total
+  // already reduced 100->70. Refund B ($20) is NOT reflected yet (its own charge.refunded
+  // hasn't arrived) — refund_amount stays exactly 30, not 50.
   database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
-    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_ooo_1', 'completed', 0)`).run(ooPaymentId, ooBookingId, ooCustomerId);
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_ooo_1', 'completed', 30)`).run(ooPaymentId, ooBookingId, ooCustomerId);
   const ooOfficeRefundId = uuid();
-  // Our ledger already marked this refund 'succeeded' (Stripe's create call returned
-  // before it actually got canceled) — this is the ambiguous window R3-L3 is about.
+  // Our ledger already marked refund B 'succeeded' (Stripe's create call returned before
+  // it actually got canceled) — this is the ambiguous window R3-L3 is about.
   database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, stripe_refund_id, stripe_status, created_at, updated_at)
-    VALUES (?, 'test-key-id', 'test-key', 'idem-ooo-1', ?, ?, 4000, 'succeeded', 'Nehemiah', 'x', 're_ooo_test', 'pending', datetime('now'), datetime('now'))`)
+    VALUES (?, 'test-key-id', 'test-key', 'idem-ooo-1', ?, ?, 2000, 'succeeded', 'Nehemiah', 'x', 're_ooo_test', 'pending', datetime('now'), datetime('now'))`)
     .run(ooOfficeRefundId, ooBookingId, ooPaymentId);
 
-  liveAmountRefundedCentsOverride = 0; // Stripe confirms: nothing was actually kept refunded
-  r = await post(chargeRefundUpdatedEvent('evt_ooo_1', { refundId: 're_ooo_test', status: 'canceled', amountCents: 4000, officeRefundId: ooOfficeRefundId, paymentIntent: 'pi_ooo_1' }));
+  liveAmountRefundedCentsOverride = 3000; // Stripe confirms: only A ($30) ever actually completed
+  r = await post(chargeRefundUpdatedEvent('evt_ooo_1', { refundId: 're_ooo_test', status: 'canceled', amountCents: 2000, officeRefundId: ooOfficeRefundId, paymentIntent: 'pi_ooo_1' }));
   t('R3-L3: out-of-order reversal -> 200', r.status === 200, r.status);
   let ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   let ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
-  t('R3-L3: refund_amount stays 0 (never blindly subtracted into negative)', ooPayment.refund_amount === 0, ooPayment.refund_amount);
-  t('R3-L3: booking.total untouched (still 100) since nothing was ever actually deducted', ooBooking.total === 100, ooBooking.total);
+  t('R3-L3: refund_amount stays 30 (the live truth), NOT naively subtracted to 10', ooPayment.refund_amount === 30, ooPayment.refund_amount);
+  t('R3-L3: booking.total untouched (still 70) since B was never actually deducted from it', ooBooking.total === 70, ooBooking.total);
 
-  // Now the (late) charge.refunded event for this SAME charge arrives, with
-  // amount_refunded=0 (the refund never actually completed) — must be a no-op.
-  r = await post(chargeRefundedEvent('evt_ooo_2', 0, 'pi_ooo_1'));
-  t('R3-L3: the late charge.refunded (0 cumulative) -> 200', r.status === 200, r.status);
+  // Now the (late) charge.refunded event for the SAME charge arrives, still cumulative
+  // $30 (B never actually completed) — must be a no-op (delta <= 0 vs the already-current 30).
+  r = await post(chargeRefundedEvent('evt_ooo_2', 3000, 'pi_ooo_1'));
+  t('R3-L3: the late charge.refunded (still $30 cumulative) -> 200', r.status === 200, r.status);
   ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
-  t('R3-L3: after the late charge.refunded, refund_amount still 0', ooPayment.refund_amount === 0, ooPayment.refund_amount);
-  t('R3-L3: after the late charge.refunded, booking.total still 100', ooBooking.total === 100, ooBooking.total);
+  t('R3-L3: after the late charge.refunded, refund_amount still 30', ooPayment.refund_amount === 30, ooPayment.refund_amount);
+  t('R3-L3: after the late charge.refunded, booking.total still 70', ooBooking.total === 70, ooBooking.total);
   liveAmountRefundedCentsOverride = null;
 
   server.close();
