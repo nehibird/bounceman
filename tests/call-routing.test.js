@@ -21,9 +21,19 @@ const db = getDb();
 const { activeBookingForPhone } = require('../lib/helpers');
 const { v4: uuid } = require('uuid');
 
+// Pre-existing TZ bug (also on main): activeBookingForPhone compares against SQLite's
+// `date('now', 'localtime')` — the process's LOCAL calendar date. Building the fixture
+// date via toISOString() instead reads the UTC calendar date, which silently differs from
+// the local one for roughly a third of the day in any zone behind UTC (e.g. the ~7 PM to
+// midnight CT window, where UTC has already rolled over to tomorrow). Building the string
+// from the Date object's own local year/month/day components keeps this fixture helper on
+// the same calendar as the code under test, in every zone.
 const day = (n) => {
   const d = new Date(); d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 function seed(name, phone, eventDate, status, endDate) {
