@@ -99,7 +99,7 @@ async function main() {
     if (!rows.length) { console.log('No API keys.'); return; }
     for (const r of rows) {
       let scopes;
-      try { scopes = JSON.parse(r.scopes || '[]').join(','); } catch (e) { scopes = r.scopes; }
+      try { scopes = JSON.parse(r.scopes || '[]').join(','); } catch { scopes = r.scopes; }
       console.log([
         `name=${r.name}`,
         r.active ? 'active' : 'REVOKED',

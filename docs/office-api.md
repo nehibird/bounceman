@@ -96,10 +96,20 @@ Idempotency semantics (mirrors Stripe's own):
   caller that reused a header must be told its retry doesn't match what it thinks it's
   confirming, not shown a stale answer.
 - **Same key, different method/path** → `409`.
-- A prior attempt that **failed** (4xx/5xx, e.g. a Stripe outage) does **not** lock the
-  key — retry with the exact same `Idempotency-Key` and it will be processed fresh. The
-  failed attempt is still kept in the audit trail (with its idempotency key renamed off
-  to the side), it's just no longer "the answer" for a retry.
+- A prior attempt that **definitively failed** (a 4xx business/validation rejection, or a
+  refund's DEFINITIVE Stripe error — see §5) does **not** lock the key — retry with the
+  exact same `Idempotency-Key` and it will be processed fresh. The failed attempt is still
+  kept in the audit trail (with its idempotency key renamed off to the side), it's just no
+  longer "the answer" for a retry.
+- **`POST /bookings/:n/refunds` responding `502`/`504` with `outcome: "unknown"` (R2-C1)
+  is a DIFFERENT case, and the rule is the opposite of a definitive failure:** Stripe may
+  or may not have actually processed the refund before the response was lost (a timeout, a
+  dropped connection, a 5xx). **ALWAYS retry with the exact SAME `Idempotency-Key` and the
+  exact same body. NEVER retry an `outcome: "unknown"` response with a NEW
+  `Idempotency-Key`** — a new key gets a new reservation on top of one that's still held,
+  and (before this fix) could have paid out the same refund twice. The retry reuses the
+  original reservation and re-issues the identical Stripe idempotency key, so Stripe's own
+  24-hour idempotency window resolves it to the single real outcome. See §5.
 
 `HEAD` is treated exactly like `GET` (read, not write-gated).
 
@@ -153,13 +163,23 @@ Every refund request:
 1. Validates the booking, `confirmed_by`, `amount_cents` (integer cents), and resolves a
    refundable Stripe payment (explicit `payment_id`, scoped to the booking and requiring
    `status = 'completed'`, or a fallback lookup scoped to the same booking).
-2. **In one synchronous `db.transaction()`**, before any Stripe call:
+2. **R2-H1 — fails closed:** looks up the LIVE `amount_refunded` on the charge from
+   Stripe itself (`services/stripe.js#getLiveRefundedCents`, 5s timeout, 0 retries). If
+   that lookup throws, times out, or returns anything that doesn't look trustworthy
+   (missing/unexpandable charge, a non-finite/negative/non-integer `amount_refunded`, or
+   an `amount`/`currency` mismatch against the payment row), the whole request is refused
+   with **`503 {error: "live_check_unavailable"}` — before any reservation and with ZERO
+   `refunds.create` calls.** This applies to `dry_run` too. There is no fallback to a
+   ledger/webhook-only view any more (round 2 had one; it failed OPEN and was the R2-H1
+   finding).
+3. **In one synchronous `db.transaction()`**, before any Stripe call:
    - Computes `refundable_cents = captured_cents - MAX(webhook-recorded refund_amount,
-     sum of this key's own pending+succeeded+needs_review office_refunds rows for this
-     payment)`. Using `MAX` (not adding the two) is deliberate: once Stripe's own
-     `charge.refunded` webhook lands and updates `payments.refund_amount` for a refund
-     this ledger already reserved, the two numbers describe the *same* money from two
-     vantage points — summing them would double-count it.
+     the live Stripe amount from step 2, sum of SUCCEEDED office_refunds rows for this
+     payment ACROSS ALL KEYS) - sum of PENDING/NEEDS_REVIEW office_refunds rows for this
+     payment across all keys`. The three CONFIRMED sources are combined with `MAX`, not
+     summed — they describe the same already-happened money from different vantage
+     points. PENDING/NEEDS_REVIEW rows are added unconditionally (conservative: an
+     unresolved reservation never grants extra headroom).
    - Checks that against the effective per-refund cap, the effective daily cap (summed
      from today's Central-time `office_refunds` rows for this key), and the refundable
      remainder.
@@ -168,17 +188,48 @@ Every refund request:
    Because better-sqlite3 transactions run fully synchronously, no other request's
    reservation can interleave mid-check — this holds under real concurrency, not just
    when calls happen to be serialized.
-3. Calls `stripe.refunds.create` with an **idempotency key derived from the ledger row's
+4. Calls `stripe.refunds.create` with an **idempotency key derived from the ledger row's
    id** (`office-refund-<ledgerId>`) and `metadata.office_refund_id` set to that same id
    — not from the caller's `Idempotency-Key` header. This guarantees exactly one Stripe
    call per reservation and is what lets the webhook handler and the reconcile script
    find this row again from Stripe's side.
-4. Finalizes the ledger row to `succeeded` or `failed` (a Stripe `failed`/`canceled`
-   refund status, or a thrown Stripe error, both finalize to `failed` and release the
-   reservation — L2). The audit row is written explicitly at step 2 (before Stripe is
-   ever called) and again at finalize; it also fires on the response's `close` event, not
-   only `finish`, so a client that disconnects mid-request still leaves a record even
-   though the Stripe call completes in the background.
+5. **R2-C1 — the Stripe response is classified before deciding what happens to the
+   reservation:**
+   - **DEFINITIVE failure** — Stripe rejected the request outright, with a real 4xx
+     `statusCode` AND one of `StripeInvalidRequestError`, `StripeCardError`,
+     `StripeAuthenticationError`, `StripePermissionError`, or `StripeRateLimitError`
+     (`lib/stripe-errors.js`). The ledger row finalizes `failed`, the reservation is
+     released (it no longer counts against the cap/remainder), and the idempotency key is
+     renamed off to the side so a retry with the same `Idempotency-Key` reserves fresh.
+     Responds `502`.
+   - **A real Stripe `refund.status` of `failed`/`canceled`** (not a thrown error — Stripe
+     answered, just negatively) is handled the same way (L2): `failed`, released, retry-fresh.
+   - **AMBIGUOUS outcome** — everything else: no `statusCode`, a 5xx, `StripeAPIError`,
+     `StripeConnectionError`, `StripeIdempotencyError`, a timeout, or an unrecognized
+     error. Stripe may have already processed the refund before the response was lost.
+     The ledger row **stays exactly as it is** (`pending`/`needs_review`, still counted),
+     is never renamed, and the error text is recorded for visibility. Responds `502`
+     (`504` for a timeout) with `{error, outcome: "unknown", ledger_id,
+     retry_with_same_idempotency_key: true}`.
+   - **A retry with the SAME `Idempotency-Key`** whose `office_refunds` row is still
+     `pending`/`needs_review` **reuses that exact row** — same ledger id, same derived
+     Stripe idempotency key — instead of a fresh reservation with fresh cap headroom.
+     Stripe's own 24-hour idempotency window then resolves it to the single real outcome
+     (at most one real refund). A **genuinely concurrent** duplicate request (same key,
+     arriving while the original call to Stripe is still outstanding **in this process**)
+     gets `409` instead of racing a second concurrent Stripe call. A row already
+     `succeeded` is answered by the generic idempotency replay in
+     `middleware/office-auth.js`, straight from the audit log, before this logic ever
+     runs (also covers R2-L2: a retry after a client disconnect replays the real outcome
+     instead of a stale 409/403). A **new** `Idempotency-Key` retried after an ambiguous
+     outcome is still capped by the still-counted reservation.
+   - The audit row (`api_audit_log`) is written explicitly at step 3 (before Stripe is
+     ever called) and again at finalize — for a resumed retry, the SAME audit row is
+     updated in place, never duplicated. It also fires on the response's `close` event,
+     not only `finish`, so a client that disconnects mid-request still leaves a record.
+     **An audit-write failure on any of these responses is a `500`, not just a
+     `console.error`** — a money-moving write is never allowed to ship a clean response
+     with no corresponding audit row.
 
 Bookkeeping (`payments.refund_amount`, `bookings.total`/`balance_due`) is **not** done by
 this endpoint — `routes/webhooks.js`'s `charge.refunded` handler is the single place that
@@ -187,32 +238,61 @@ what this endpoint already recorded.
 
 ### Reconciliation
 
-If the process is killed between reserving a refund and Stripe's response coming back,
-the row is left `pending` forever unless swept:
+If the process is killed between reserving a refund and Stripe's response coming back
+(or a caller never retries an ambiguous outcome), the row is left unresolved forever
+unless swept:
 
 ```bash
 node scripts/reconcile-office-refunds.js [--older-than-minutes 15]
 ```
 
-Looks up each stuck `pending` row's refund on Stripe by `metadata.office_refund_id` and
-finalizes it to `succeeded`/`failed`, or `needs_review` if Stripe's answer can't be
-determined. **`needs_review` still counts against the key's caps** until a human clears
-it — it can never be used to silently bypass them. Exits non-zero if any row ends
-`needs_review`, so a cron wrapper can alert. Run this every few minutes via cron/systemd
-timer; it's safe to run repeatedly.
+Sweeps `pending` and `needs_review` rows, plus `failed` rows whose stored error was never
+classified `definitive` (a legacy ambiguous failure from before R2-C1 shipped). Looks up
+each one's refund on Stripe by `metadata.office_refund_id` (paginated past the first 100 —
+R2-M2c) and finalizes it to `succeeded`/`failed`, or `needs_review` if Stripe's answer
+can't be determined — **never by calling `refunds.create`**. **`needs_review` still counts
+against the key's caps** until a human clears it — it can never be used to silently bypass
+them. Exits non-zero if any row ends `needs_review`, so a cron wrapper can alert. Run this
+every few minutes via cron/systemd timer; it's safe to run repeatedly. Not yet scheduled in
+production — see the deploy notes.
 
-## 6. Payment links (M2, M3)
+**Clearing a `needs_review` (or old, still-`pending`) row by hand** (R2-M2a) — the only
+other supported path, once Stripe's own answer has been confirmed manually:
+
+```bash
+node scripts/resolve-office-refund.js <ledger_id> succeeded --reason "confirmed on Stripe dashboard" --stripe-refund re_123 --actor Nehemiah
+node scripts/resolve-office-refund.js <ledger_id> failed --reason "confirmed never charged" --actor Nehemiah
+```
+
+Never calls `refunds.create`. `--reason` is required. Marking `succeeded` requires
+`--stripe-refund` and is verified against Stripe when `STRIPE_SECRET_KEY` is set (refund
+exists, `metadata.office_refund_id` matches, amount matches); without Stripe access, pass
+`--no-verify` explicitly. Writes an audit row in the same transaction as the status
+change. See `scripts/README.md`.
+
+## 6. Payment links (M2, M3, R2-M1)
 
 `POST /bookings/:n/payment-link`:
 - Defaults to the booking's `balance_due`; a custom `amount_cents` may not exceed it
   unless `allow_overpay: true` **and** a non-empty `overpay_reason` are given.
 - Hard-capped at $10,000 (`amount_cents <= 1000000`) regardless of balance due.
 - Refused on a `cancelled`, `declined`, or `completed` booking.
+- **R2-M1: reserves the `(key_id, Idempotency-Key)` pair synchronously, in a
+  `db.transaction()`, BEFORE any Stripe call** (`office_payment_link_reservations`,
+  unique on that pair) — a concurrent duplicate request gets `409` instead of racing a
+  second real Checkout Session with no audit row for the loser. If a reservation for the
+  same pair already exists (any status — a retry after an error, a crash, or a
+  genuinely-concurrent duplicate), it's reused exactly as-is.
 - Passed a Stripe idempotency key (`office-link-<keyId>-<idempotencyKey>`) and a 24-hour
-  `expires_at`, so a retried request can't create two Checkout sessions and a stale link
-  can't be paid months later.
+  `expires_at` **fixed at reservation time, never recomputed on retry** — a `now + 24h`
+  recomputed on each attempt drifted by however many seconds elapsed and made Stripe see
+  every retry as a brand-new request (an idempotency error) instead of dedupe-ing it. A
+  retried request now always sends byte-identical params, so Stripe's own idempotency key
+  is what actually protects against a duplicate Checkout Session.
 - `description` is control-character-stripped and capped at 200 characters (it's shown
   on the Stripe Checkout page and may go out by SMS).
+- An audit-write failure on the success response is a `500`, not just a `console.error`
+  (same rule as refunds — see §5).
 
 `checkout.session.completed` only **promotes** a `pending` booking to `confirmed`; it
 never demotes or re-promotes a `completed`/`cancelled`/`declined` booking, even if a

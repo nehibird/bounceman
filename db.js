@@ -1154,6 +1154,41 @@ function initialize() {
     CREATE INDEX IF NOT EXISTS idx_office_refunds_status ON office_refunds(status);
   `);
 
+  // R2-C1: set only when a refund is finalized 'failed' because of a DEFINITIVE Stripe
+  // error (lib/stripe-errors.js) — never for an ambiguous one, and never for a genuine
+  // Stripe refund.status of 'failed'/'canceled' (those have no `error` at all). Lets
+  // lib/refund-reconcile.js tell apart a row this app is already certain about from a
+  // 'failed' row created by the OLD (pre-fix) code, which finalized every thrown error as
+  // failed regardless of whether Stripe may have actually processed it — those legacy rows
+  // need the same Stripe-side re-check as a 'needs_review' row, exactly once.
+  if (!columnExists(d, 'office_refunds', 'error_classification')) {
+    d.prepare('ALTER TABLE office_refunds ADD COLUMN error_classification TEXT').run();
+  }
+
+  // R2-M1: reserves a payment-link (key_id, idempotency_key) pair synchronously, in the
+  // same style as office_refunds, BEFORE the Stripe Checkout Session call — a concurrent
+  // duplicate request hits the UNIQUE index below and gets 409/replay instead of both
+  // racing to create two Checkout Sessions with no audit row for the loser. expires_at is
+  // stored so a retry recomputes the exact same value rather than a fresh "now + 24h" that
+  // would make Stripe see a different idempotent request.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS office_payment_link_reservations (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT,
+      booking_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_id TEXT,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_office_link_res_key_idem ON office_payment_link_reservations(key_id, idempotency_key);
+  `);
+
   // L8: prune the Stripe webhook dedup table — it otherwise grows forever. 30 days is
   // far beyond Stripe's own retry window, so nothing live is ever at risk.
   try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch (e) { /* best-effort */ }

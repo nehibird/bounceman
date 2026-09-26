@@ -9,13 +9,32 @@ process); otherwise it generates one and prints it exactly once.
 
 ## reconcile-office-refunds.js
 
-Sweeps office refund-ledger rows (`office_refunds`) stuck in `pending` and finalizes them
-against Stripe's own record — see `docs/office-api.md` §5 for the full design. Run on a
-schedule (e.g. every few minutes via cron); exits non-zero if any row ends
-`needs_review`, so a cron wrapper can alert.
+Sweeps office refund-ledger rows (`office_refunds`) stuck `pending`/`needs_review`, plus
+`failed` rows whose error was never classified `definitive` (R2-C1 — a legacy ambiguous
+failure from before that fix shipped), and finalizes them against Stripe's own record —
+see `docs/office-api.md` §5 for the full design. **Never calls `stripe.refunds.create`** —
+only looks a refund up by `metadata.office_refund_id`. Run on a schedule (e.g. every few
+minutes via cron); exits non-zero if any row ends `needs_review`, so a cron wrapper can
+alert.
 
 ```bash
 node scripts/reconcile-office-refunds.js [--older-than-minutes 15]
+```
+
+## resolve-office-refund.js
+
+The audited, manual escape hatch for a `needs_review` (or old-enough `pending`)
+`office_refunds` row that `reconcile-office-refunds.js` couldn't settle on its own — see
+`docs/office-api.md` §5. Never calls `stripe.refunds.create`; it only RECORDS an outcome a
+human has already confirmed on Stripe's own dashboard/API. `--reason` is required; marking
+`succeeded` requires `--stripe-refund re_...` and is verified against Stripe whenever
+`STRIPE_SECRET_KEY` is set (refund exists, `metadata.office_refund_id` matches, amount
+matches) — without Stripe access, pass `--no-verify` explicitly. Writes an audit row
+(`api_audit_log` + `activity_log`) in the same transaction as the status change.
+
+```bash
+node scripts/resolve-office-refund.js <ledger_id> succeeded --reason "confirmed on Stripe dashboard by Nehemiah" --stripe-refund re_123 --actor Nehemiah
+node scripts/resolve-office-refund.js <ledger_id> failed --reason "confirmed never charged, cancelling the reservation" --actor Nehemiah
 ```
 
 ## cron-bank-sync.js

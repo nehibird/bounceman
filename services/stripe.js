@@ -3,11 +3,23 @@ const Stripe = require('stripe');
 
 let _stripe = null;
 
+// R2-H1: a short client-level timeout — stripe-node's own default is 80s, which is long
+// enough to hang a request, turn it into a client disconnect, and feed R2-C1's
+// ambiguous-outcome path far longer than necessary. maxNetworkRetries:1 is safe as the
+// CLIENT DEFAULT because every write this app makes (refunds.create, checkout.sessions.
+// create) is idempotency-keyed, so stripe-node's own automatic retry can never double-
+// execute it. getLiveRefundedCents below overrides this per-request to 0 retries plus its
+// own {timeout:5000} — a fail-closed safety read should fail fast exactly once, not add
+// latency to the very check that's supposed to keep a refund from going out blind.
+const STRIPE_CLIENT_TIMEOUT_MS = 5000;
+const STRIPE_CLIENT_MAX_NETWORK_RETRIES = 1;
+const LIVE_CHECK_TIMEOUT_MS = 5000;
+
 function getStripe() {
   if (!_stripe) {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error('STRIPE_SECRET_KEY not set in environment');
-    _stripe = Stripe(key);
+    _stripe = Stripe(key, { timeout: STRIPE_CLIENT_TIMEOUT_MS, maxNetworkRetries: STRIPE_CLIENT_MAX_NETWORK_RETRIES });
   }
   return _stripe;
 }
@@ -145,32 +157,67 @@ async function createRefund({ paymentIntentId, chargeId, amountCents, idempotenc
   return stripe.refunds.create(params, { idempotencyKey });
 }
 
+// R2-H1: validates a Stripe charge object well enough to trust its amount_refunded for
+// the refundable-remainder math. Throws (never coerces/defaults) on anything
+// unexpected — a malformed or partial answer must fail closed exactly like a network
+// error, never quietly become "checked, amount 0".
+function assertUsableCharge(charge, { expectedAmountCents } = {}) {
+  if (!charge || typeof charge !== 'object') throw new Error('live charge lookup returned no charge object');
+  const { amount_refunded: amountRefunded, amount, currency } = charge;
+  if (!Number.isFinite(amountRefunded) || !Number.isInteger(amountRefunded) || amountRefunded < 0) {
+    throw new Error(`live charge amount_refunded is not a finite non-negative integer: ${JSON.stringify(amountRefunded)}`);
+  }
+  if (currency && currency !== 'usd') {
+    throw new Error(`live charge currency mismatch: expected usd, got ${currency}`);
+  }
+  if (typeof expectedAmountCents === 'number' && Number.isFinite(amount)) {
+    if (Math.round(amount) !== Math.round(expectedAmountCents)) {
+      throw new Error(`live charge amount (${amount}) does not match the recorded payment (${expectedAmountCents})`);
+    }
+  }
+  return amountRefunded;
+}
+
 /**
- * C1.4: look up the LIVE amount already refunded on a charge, straight from Stripe —
- * catches a refund issued from the Stripe Dashboard (or anywhere else outside this app)
- * that the `charge.refunded` webhook hasn't recorded into `payments.refund_amount` yet.
- * Best-effort: routes/office.js falls back to the webhook/ledger-only view if this
- * throws (network error, deleted/invalid Stripe object, etc).
+ * C1.4/R2-H1: look up the LIVE amount already refunded on a charge, straight from
+ * Stripe — catches a refund issued from the Stripe Dashboard (or anywhere else outside
+ * this app) that the `charge.refunded` webhook hasn't recorded into
+ * `payments.refund_amount` yet.
+ *
+ * FAILS CLOSED: throws (never returns a fallback/default value) if the lookup errors,
+ * times out, or returns anything that doesn't look like a trustworthy charge — missing/
+ * unexpandable `latest_charge`, a non-finite/negative/non-integer `amount_refunded`, or
+ * (when the caller's own captured amount is known) an `amount` that doesn't match.
+ * routes/office.js treats any throw here as "unverified" and responds 503 BEFORE making
+ * any reservation or Stripe refund call — see docs/office-api.md.
  * @param {object} opts
  * @param {string} [opts.paymentIntentId]
  * @param {string} [opts.chargeId]
+ * @param {number} [opts.expectedAmountCents] - the payment row's own captured amount, in
+ *   cents, if known — cross-checked against the live charge's own `amount`.
  * @returns {Promise<number>} amount_refunded, in cents
  */
-async function getLiveRefundedCents({ paymentIntentId, chargeId } = {}) {
+async function getLiveRefundedCents({ paymentIntentId, chargeId, expectedAmountCents } = {}) {
   const stripe = getStripe();
+  // 0 retries + a tight per-request timeout: a fail-closed safety read should fail fast
+  // exactly once, not add stripe-node's automatic-retry latency to the safety check
+  // itself (paired with R2-C1 — the shorter this is, the less often a hung live check
+  // turns into a client disconnect on the OUTER request).
+  const requestOptions = { timeout: LIVE_CHECK_TIMEOUT_MS, maxNetworkRetries: 0 };
+
   if (paymentIntentId) {
-    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['latest_charge'] });
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['latest_charge'] }, requestOptions);
     const charge = pi && pi.latest_charge;
-    if (charge && typeof charge === 'object') return charge.amount_refunded || 0;
+    if (charge && typeof charge === 'object') return assertUsableCharge(charge, { expectedAmountCents });
     if (typeof charge === 'string') {
-      const ch = await stripe.charges.retrieve(charge);
-      return ch.amount_refunded || 0;
+      const ch = await stripe.charges.retrieve(charge, undefined, requestOptions);
+      return assertUsableCharge(ch, { expectedAmountCents });
     }
-    return 0;
+    throw new Error('live charge lookup: payment intent has no latest_charge (missing or unexpandable)');
   }
   if (chargeId) {
-    const ch = await stripe.charges.retrieve(chargeId);
-    return ch.amount_refunded || 0;
+    const ch = await stripe.charges.retrieve(chargeId, undefined, requestOptions);
+    return assertUsableCharge(ch, { expectedAmountCents });
   }
   throw new Error('paymentIntentId or chargeId is required');
 }
@@ -184,17 +231,43 @@ async function getLiveRefundedCents({ paymentIntentId, chargeId } = {}) {
  * @param {string} officeRefundId
  * @param {object} payment - the payments row (needs stripe_payment_id or stripe_charge_id)
  */
+// R2-M2c: an older refund can sit past the first page — this app has no idea how many
+// refunds exist on a charge, so it must keep paging (via `starting_after`) until either a
+// match is found or Stripe reports no more pages. Bounded at 20 pages (2,000 refunds on a
+// single charge) purely as a runaway-loop guard; no real charge will ever get close.
+const REFUND_LIST_PAGE_SIZE = 100;
+const REFUND_LIST_MAX_PAGES = 20;
+
 async function findRefundByOfficeId(officeRefundId, payment) {
   if (!payment) return null;
   const stripe = getStripe();
-  const params = { limit: 20 };
-  if (payment.stripe_payment_id && payment.stripe_payment_id.startsWith('pi_')) params.payment_intent = payment.stripe_payment_id;
-  else if (payment.stripe_charge_id) params.charge = payment.stripe_charge_id;
+  const baseParams = { limit: REFUND_LIST_PAGE_SIZE };
+  if (payment.stripe_payment_id && payment.stripe_payment_id.startsWith('pi_')) baseParams.payment_intent = payment.stripe_payment_id;
+  else if (payment.stripe_charge_id) baseParams.charge = payment.stripe_charge_id;
   else return null;
 
-  const list = await stripe.refunds.list(params);
-  const match = (list.data || []).find((r) => r.metadata && r.metadata.office_refund_id === officeRefundId);
-  return match || null;
+  let startingAfter;
+  for (let page = 0; page < REFUND_LIST_MAX_PAGES; page++) {
+    const params = startingAfter ? { ...baseParams, starting_after: startingAfter } : baseParams;
+    const list = await stripe.refunds.list(params);
+    const data = list.data || [];
+    const match = data.find((r) => r.metadata && r.metadata.office_refund_id === officeRefundId);
+    if (match) return match;
+    if (!list.has_more || !data.length) return null;
+    startingAfter = data[data.length - 1].id;
+  }
+  return null;
+}
+
+/**
+ * R2-M2a: retrieve a single Stripe refund by id — used only by
+ * scripts/resolve-office-refund.js to VERIFY an operator-supplied refund id before
+ * recording it (never to create/modify anything).
+ * @param {string} stripeRefundId
+ */
+async function retrieveRefund(stripeRefundId) {
+  const stripe = getStripe();
+  return stripe.refunds.retrieve(stripeRefundId);
 }
 
 /**
@@ -268,6 +341,7 @@ module.exports = {
   createRefund,
   getLiveRefundedCents,
   findRefundByOfficeId,
+  retrieveRefund,
   retrieveSession,
   constructWebhookEvent,
   getPayoutSummary,

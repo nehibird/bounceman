@@ -37,7 +37,7 @@ function redactQueryParam(originalUrl, paramName) {
       return `${pathPart}?${params.toString()}`;
     }
     return originalUrl;
-  } catch (e) {
+  } catch {
     return originalUrl;
   }
 }
@@ -124,7 +124,7 @@ function requireOfficeKey(req, res, next) {
   }
 
   req.apiKey = keyRow;
-  try { touchLastUsed(getDb(), keyRow.id); } catch (e) { /* non-fatal */ }
+  try { touchLastUsed(getDb(), keyRow.id); } catch { /* non-fatal */ }
   next();
 }
 
@@ -165,8 +165,15 @@ function readAudit(req, res) {
 // Route handlers may set res.locals.audit at any point before the response ends —
 // including immediately, at reservation time, before an awaited Stripe call — and
 // persist() reads whatever is current when it actually fires.
+//
+// R2-C1: when `resumingAuditId` is set (a same-key retry of a request whose previous
+// attempt ended in an ambiguous Stripe outcome — see auditAndIdempotency below), the row
+// is UPDATED in place rather than INSERTed — it's the same logical attempt still
+// resolving, not a new one, and the (key_id, idempotency_key) unique index still holds
+// the original row (it was deliberately never renamed off to the side the way a truly
+// failed attempt is).
 // ---------------------------------------------------------------------------
-function registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, requestJson }) {
+function registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, requestJson, resumingAuditId }) {
   const db = getDb();
   const keyId = req.apiKey.id;
   const path = req.originalUrl.split('?')[0];
@@ -176,43 +183,93 @@ function registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, req
   const origJson = res.json.bind(res);
   res.json = (body) => { responseBody = body; return origJson(body); };
 
-  function persist(statusCodeOverride) {
-    if (written) return;
-    written = true;
-    try {
-      const entity = res.locals.audit || {};
-      const statusCode = statusCodeOverride !== undefined ? statusCodeOverride : res.statusCode;
+  function writeAuditRow(targetId, statusCode, responseJson) {
+    const entity = res.locals.audit || {};
+    const params = [
+      entity.entity_type || null, entity.entity_id || null, entity.action || `office_api_${req.method.toLowerCase()}`,
+      reason,
+      requestJson, requestHash,
+      entity.before !== undefined ? JSON.stringify(entity.before) : null,
+      entity.after !== undefined ? JSON.stringify(entity.after) : null,
+      statusCode,
+      responseJson,
+      entity.stripe_object_id || null,
+      entity.amount_cents !== undefined ? entity.amount_cents : null,
+      req.ip,
+    ];
+    if (targetId) {
+      db.prepare(`UPDATE api_audit_log SET
+        entity_type = ?, entity_id = ?, action = ?, reason = ?,
+        request_json = ?, request_hash = ?, before_json = ?, after_json = ?,
+        status_code = ?, response_json = ?, stripe_object_id = ?, amount_cents = ?, ip = ?
+        WHERE id = ?`).run(...params, targetId);
+    } else {
       db.prepare(`INSERT INTO api_audit_log
         (id, key_id, key_name, method, path, entity_type, entity_id, action, reason, idempotency_key,
          request_json, request_hash, before_json, after_json, status_code, response_json, stripe_object_id, amount_cents, ip, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
         uuid(), keyId, req.apiKey.name, req.method, path,
-        entity.entity_type || null, entity.entity_id || null, entity.action || `office_api_${req.method.toLowerCase()}`,
-        reason, idempotencyKey,
-        requestJson, requestHash,
-        entity.before !== undefined ? JSON.stringify(entity.before) : null,
-        entity.after !== undefined ? JSON.stringify(entity.after) : null,
-        statusCode,
-        JSON.stringify(responseBody === undefined ? null : responseBody),
-        entity.stripe_object_id || null,
-        entity.amount_cents !== undefined ? entity.amount_cents : null,
-        req.ip,
+        ...params.slice(0, 4), idempotencyKey, ...params.slice(4),
       );
-      db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
-        VALUES (?, ?, ?, ?, ?, ?)`).run(
-        uuid(),
-        entity.action || `office_api_${req.method.toLowerCase()}`,
-        entity.entity_type || null, entity.entity_id || null,
-        JSON.stringify({ via: 'office-api', actor: req.apiKey.name, reason }),
-        req.ip,
-      );
+    }
+    db.prepare(`INSERT INTO activity_log (id, action, entity_type, entity_id, details, ip_address)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(
+      uuid(),
+      entity.action || `office_api_${req.method.toLowerCase()}`,
+      entity.entity_type || null, entity.entity_id || null,
+      JSON.stringify({ via: 'office-api', actor: req.apiKey.name, reason }),
+      req.ip,
+    );
+  }
+
+  function persist(statusCodeOverride, { rethrow = false } = {}) {
+    if (written) return;
+    written = true;
+    const statusCode = statusCodeOverride !== undefined ? statusCodeOverride : res.statusCode;
+    const responseJson = JSON.stringify(responseBody === undefined ? null : responseBody);
+    try {
+      writeAuditRow(resumingAuditId, statusCode, responseJson);
     } catch (e) {
+      // R2-M1: a UNIQUE(key_id, idempotency_key) collision on a fresh INSERT means a
+      // DIFFERENT request sharing this exact idempotency key already wrote ITS row first
+      // — a genuinely concurrent duplicate (e.g. routes/office.js's refundsInFlight/
+      // linkReservationsInFlight still let a losing request's audit fire before the
+      // winner's Stripe call finishes). There must be exactly ONE canonical row per
+      // (key_id, idempotency_key), and it must reflect the REAL outcome — so this falls
+      // back to overwriting that row, UNLESS it already recorded a success (a later
+      // failure must never clobber an already-recorded success).
+      if (!resumingAuditId && String(e.message || '').includes('UNIQUE constraint failed')) {
+        try {
+          const existingRow = db.prepare('SELECT id, status_code FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idempotencyKey);
+          const existingSucceeded = existingRow && existingRow.status_code >= 200 && existingRow.status_code < 300;
+          if (existingRow && !existingSucceeded) writeAuditRow(existingRow.id, statusCode, responseJson);
+          return;
+        } catch (e2) {
+          console.error('[OFFICE-AUTH] audit write fallback-update also failed:', e2.message);
+          if (rethrow) throw e2;
+          return;
+        }
+      }
       console.error('[OFFICE-AUTH] audit write failed:', e.message);
+      if (rethrow) throw e;
     }
   }
 
   res.on('finish', () => persist());
   res.on('close', () => { if (!res.writableEnded) persist(499); });
+
+  // R2-M1: money-moving routes (refund / payment-link / manual-payment) call this
+  // explicitly, BEFORE sending their final response, so an audit-write failure on a
+  // money write is a hard error (500) to the caller instead of a console.error next to a
+  // 2xx that has no corresponding audit row. `body` is stored as the exact response_json
+  // (the route sends the identical body itself right after, via res.json) — persist()
+  // never has to guess it from a not-yet-called res.json.
+  return {
+    persistBeforeResponse(statusCode, body) {
+      responseBody = body;
+      persist(statusCode, { rethrow: true });
+    },
+  };
 }
 
 // Mount AFTER requireOfficeKey. For every non-GET/HEAD request:
@@ -259,6 +316,7 @@ function auditAndIdempotency(req, res, next) {
     return res.status(500).json({ error: 'internal error' });
   }
 
+  let resumingAuditId;
   if (existing) {
     const priorSucceeded = existing.status_code >= 200 && existing.status_code < 300;
     if (priorSucceeded) {
@@ -271,28 +329,62 @@ function auditAndIdempotency(req, res, next) {
       res.status(existing.status_code || 200);
       try {
         return res.json(existing.response_json ? JSON.parse(existing.response_json) : {});
-      } catch (e) {
+      } catch {
         return res.json({ replayed: true });
       }
     }
-    // Prior attempt failed — keep it in the audit trail (a failed refund attempt is
-    // exactly the kind of thing an owner wants a record of), but rename its
-    // idempotency_key off to the side so the unique index frees up the real key for
-    // this retry. The renamed value can never collide with a real Idempotency-Key
-    // header (nothing else can set one containing ":failed:").
-    try {
-      db.prepare('UPDATE api_audit_log SET idempotency_key = ? WHERE id = ?')
-        .run(`${idempotencyKey}:failed:${existing.id}`, existing.id);
-    } catch (e) { console.error('[OFFICE-AUTH] failed to retire stale failed-attempt audit row:', e.message); }
+
+    // R2-C1: a prior attempt that ended in an AMBIGUOUS Stripe outcome (502/504,
+    // {outcome:"unknown"} — routes/office.js's refund handler) never took a lasting
+    // effect FOR SURE, but it also might already have moved money — unlike a genuinely
+    // failed attempt, this one must never be treated as "safe to retry fresh". Its
+    // idempotency_key is deliberately left alone (never renamed off to the side) so this
+    // retry finds the SAME still-pending office_refunds ledger row and reuses it — see
+    // the refund handler's own lookup. The audit row itself is updated in place once this
+    // retry resolves (registerWriteAudit's resumingAuditId), never replayed, never
+    // duplicated.
+    if (isAmbiguousRefundOutcome(existing)) {
+      if (existing.method !== req.method || existing.path !== path) {
+        return res.status(409).json({ error: 'Idempotency-Key was already used for a different request' });
+      }
+      if (existing.request_hash && existing.request_hash !== requestHash) {
+        return res.status(422).json({ error: 'Idempotency-Key was already used with a different request body' });
+      }
+      resumingAuditId = existing.id;
+    } else {
+      // Prior attempt genuinely failed — keep it in the audit trail (a failed refund
+      // attempt is exactly the kind of thing an owner wants a record of), but rename its
+      // idempotency_key off to the side so the unique index frees up the real key for
+      // this retry. The renamed value can never collide with a real Idempotency-Key
+      // header (nothing else can set one containing ":failed:").
+      try {
+        db.prepare('UPDATE api_audit_log SET idempotency_key = ? WHERE id = ?')
+          .run(`${idempotencyKey}:failed:${existing.id}`, existing.id);
+      } catch (e) { console.error('[OFFICE-AUTH] failed to retire stale failed-attempt audit row:', e.message); }
+    }
   }
 
   // Route handlers may set res.locals.audit = { entity_type, entity_id, action, before,
   // after, stripe_object_id, amount_cents } at any point before the response ends, to
   // enrich the audit row. Left unset, these all default to null.
   const requestJson = JSON.stringify(redact(req.body || {}));
-  registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, requestJson });
+  req.auditControl = registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, requestJson, resumingAuditId });
 
   next();
+}
+
+// R2-C1: the only responses that ever carry {outcome:"unknown"} are the refund route's
+// ambiguous-Stripe-error path — a narrow, unambiguous signal that this specific audit
+// row's underlying attempt is still unresolved, as opposed to a genuine 4xx/5xx business
+// failure that's safe to retire and retry fresh.
+function isAmbiguousRefundOutcome(existingRow) {
+  if (!existingRow || !existingRow.response_json) return false;
+  try {
+    const parsed = JSON.parse(existingRow.response_json);
+    return !!(parsed && parsed.outcome === 'unknown');
+  } catch {
+    return false;
+  }
 }
 
 function apiKeyGenerator(req) {
