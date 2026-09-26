@@ -194,6 +194,25 @@ async function main() {
     retrieveBehavior = null;
   }
 
+  // L2-AMOUNT: a MISSING charge.amount must fail closed even when the CALLER doesn't
+  // supply expectedAmountCents — routes/office.js's refund endpoint always does (so the
+  // amount-mismatch check happens to also catch a missing amount there via NaN !== a real
+  // number), but routes/webhooks.js's R3-L3 reversal correction calls
+  // getLiveRefundedCents WITHOUT expectedAmountCents, so the presence check in
+  // assertUsableCharge is the ONLY thing that would catch a missing amount in that path.
+  // Called directly (not through the HTTP refund endpoint) to isolate exactly that.
+  {
+    retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0, currency: 'usd' } });
+    let threw = null;
+    try {
+      await stripeService.getLiveRefundedCents({ paymentIntentId: 'pi_l2_amount_direct' });
+    } catch (e) {
+      threw = e;
+    }
+    t('L2-AMOUNT: getLiveRefundedCents throws on a missing amount even with NO expectedAmountCents to cross-check against', !!threw && /amount is not an integer/.test(threw.message), threw && threw.message);
+    retrieveBehavior = null;
+  }
+
   server.close();
   database.close();
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
