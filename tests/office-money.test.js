@@ -472,13 +472,20 @@ async function main() {
 
   // LINK-COMPLETED: a booking already marked 'completed' must refuse a payment link too
   // (only 'cancelled' had a dedicated test before this) — and make zero Stripe calls.
+  // balance_due is deliberately non-zero and amount_cents is deliberately WELL under it
+  // (unlike a 0-balance booking, where ANY positive amount_cents would 400 on the M2
+  // overpay guard regardless of the M3 completed-booking guard being tested here — that
+  // gap let the LINK-COMPLETED mutant survive: removing the 'completed' check still 400'd,
+  // just for the wrong reason, so a bare status-code assertion couldn't tell them apart).
   const completedLinkBookingId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-MONEY-LINKCOMPLETED', ?, 'completed', '2026-09-01', '11:00', '19:00', 90, 90, 50, 0, 'paid')`).run(completedLinkBookingId, customerId);
+    VALUES (?, 'BM-MONEY-LINKCOMPLETED', ?, 'completed', '2026-09-01', '11:00', '19:00', 90, 90, 50, 40, 'paid')`).run(completedLinkBookingId, customerId);
   const linkCallsBeforeCompleted = stripeCalls.checkoutSessions.length;
   r = await write('POST', '/bookings/BM-MONEY-LINKCOMPLETED/payment-link', moneyKey, { idempotencyKey: 'idem-link-completed', reason: 'x', amount_cents: 1000 });
-  t('LINK-COMPLETED: payment link on a completed booking -> 400', r.status === 400, r.status);
+  body = await r.json();
+  t('LINK-COMPLETED: payment link on a completed booking -> 400 naming the completed status',
+    r.status === 400 && /completed/.test(body.error || ''), body);
   t('LINK-COMPLETED: zero Stripe checkout-session calls were made', stripeCalls.checkoutSessions.length === linkCallsBeforeCompleted, stripeCalls.checkoutSessions.length);
 
   // Manual payment <= 0 -> 400
@@ -510,6 +517,52 @@ async function main() {
   const capsResult = JSON.parse(capsCheck);
   t('R2-L3: lowering OFFICE_REFUND_HARD_MAX_CENTS actually lowers the refund ceiling', capsResult.hardMaxRefund === 1000, capsResult);
   t('R2-L3: ...but does NOT change the independent manual-payment ceiling', capsResult.manualPaymentMax === MANUAL_PAYMENT_HARD_MAX_CENTS, capsResult);
+
+  // R2-L3 (end-to-end): the check above only proves lib/refund-caps.js's own exports are
+  // independent — it never actually calls routes/office.js's manual-payment endpoint, so
+  // it can't tell a properly-decoupled MAX_MANUAL_PAYMENT_CENTS apart from one that was
+  // re-coupled (routes/office.js's own `const MAX_MANUAL_PAYMENT_CENTS = HARD_MAX_REFUND_CENTS
+  // * 20` re-derivation happens to equal the real default too, at 1,000,000 — a decoupling
+  // regression there would be invisible to the check above). Boot a real subprocess with a
+  // LOWERED refund ceiling and hit the real HTTP endpoint with an amount between the two:
+  // above what a re-coupled ceiling (1000 * 20 = 20000 cents) would allow, but still well
+  // under the real, independent, default manual-payment ceiling (1,000,000 cents).
+  const e2eScript = `
+    process.env.OFFICE_REFUND_HARD_MAX_CENTS = '1000';
+    process.env.DB_PATH = ${JSON.stringify(path.join(TMP_DIR, 'l3-e2e.db'))};
+    const express = require(${JSON.stringify(require.resolve('express'))});
+    const { v4: uuid } = require(${JSON.stringify(require.resolve('uuid'))});
+    const db = require(${JSON.stringify(path.join(__dirname, '..', 'db.js'))});
+    db.initialize();
+    const database = db.getDb();
+    const { createApiKey } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'api-keys.js'))});
+    const officeRoutes = require(${JSON.stringify(path.join(__dirname, '..', 'routes', 'office.js'))});
+
+    const customerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, 'L3', 'E2E', 'l3e2e@example.com', '5551112222')").run(customerId);
+    const bookingId = uuid();
+    database.prepare("INSERT INTO bookings (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status) VALUES (?, 'BM-L3-E2E', ?, 'confirmed', '2026-11-01', '11:00', '19:00', 500, 500, 50, 500, 'unpaid')").run(bookingId, customerId);
+    const { rawKey } = createApiKey(database, { name: 'l3-e2e-key', scopes: ['payments:record'] });
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/office/v1', officeRoutes);
+    const server = app.listen(0, async () => {
+      const base = 'http://127.0.0.1:' + server.address().port + '/api/office/v1';
+      const r = await fetch(base + '/bookings/BM-L3-E2E/payments', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-office-key': rawKey, 'idempotency-key': 'idem-l3-e2e' },
+        body: JSON.stringify({ reason: 'x', amount_cents: 30000, payment_method: 'cash' }),
+      });
+      const body = await r.json().catch(() => null);
+      console.log(JSON.stringify({ status: r.status, body }));
+      server.close(() => { database.close(); process.exit(0); });
+    });
+  `;
+  const e2eStdout = execFileSync('node', ['-e', e2eScript], { encoding: 'utf8' }).trim().split('\n');
+  const e2eResult = JSON.parse(e2eStdout[e2eStdout.length - 1]);
+  t('R2-L3 (e2e): a $300 manual payment succeeds under a LOWERED refund ceiling — the manual-payment ceiling truly did not move with it',
+    e2eResult.status === 201, e2eResult);
 
   // lib/payments.recordManualPayment's OWN guard, called directly — the office API's
   // amount_cents validation (parseCents) already rejects <= 0 before this is ever
