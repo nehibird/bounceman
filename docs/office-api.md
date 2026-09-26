@@ -361,9 +361,13 @@ node scripts/resolve-office-refund.js <ledger_id> failed --reason "confirmed nev
 Never calls `refunds.create`. `--reason` and `--actor` are both required (no default
 actor). `--stripe-refund` must look like `re_...` even with `--no-verify`. Marking
 `succeeded` requires `--stripe-refund` and is verified against Stripe when
-`STRIPE_SECRET_KEY` is set (refund exists, `metadata.office_refund_id` matches, amount
-matches); without Stripe access, pass `--no-verify` explicitly. **R3-M1: marking `failed`
-now requires the SAME kind of confirmation** — with Stripe access, it calls
+`STRIPE_SECRET_KEY` is set: the retrieved refund's own status must be `succeeded` (a live
+`failed`/`canceled`/`pending`/`requires_action` refund is refused — R5-M1), plus
+`metadata.office_refund_id`, amount and currency (`usd`) must match; without Stripe
+access, pass `--no-verify` explicitly. A 404 ("no such refund") is refused too (R5-M2) —
+never treated as Stripe being unavailable. **`--no-verify` can never override any of
+those live answers**, only a genuinely failed/unreachable Stripe call. **R3-M1: marking
+`failed` now requires the SAME kind of confirmation** — with Stripe access, it calls
 `findRefundByOfficeId` and refuses (no change) if any non-`failed`/non-`canceled` refund
 already exists for the row, or if the lookup itself fails; without Stripe access,
 `--no-verify` is required. Only on confirmed-`failed` does it retire the ledger row's

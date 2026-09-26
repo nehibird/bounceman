@@ -30,10 +30,13 @@ human has already confirmed on Stripe's own dashboard/API. `--reason` and `--act
 both required. Marking `succeeded` requires `--stripe-refund re_...`; marking `failed`
 requires the SAME kind of Stripe confirmation (refuses if a non-failed/non-canceled refund
 already exists for the row, or if the lookup itself fails) — both are verified against
-Stripe whenever `STRIPE_SECRET_KEY` is set (for `succeeded`: refund exists,
-`metadata.office_refund_id` matches, amount matches), and both require `--no-verify`
-explicitly without Stripe access. `--stripe-refund`, when given, must look like `re_...`
-even with `--no-verify`. A confirmed `failed` also retires the row's idempotency key (same
+Stripe whenever `STRIPE_SECRET_KEY` is set (for `succeeded`: the retrieved refund's status
+must be `succeeded` — a live `failed`/`canceled`/`pending`/`requires_action` refund is
+refused, never overridable — plus `metadata.office_refund_id`, amount and currency `usd`
+must match; a 404 "no such refund" is refused too, not treated as Stripe being down), and
+both require `--no-verify` explicitly without Stripe access (which only excuses the Stripe
+call itself failing — network/timeout/5xx/429/bad key). `--stripe-refund`, when given,
+must look like `re_...` even with `--no-verify`. A confirmed `failed` also retires the row's
 convention as a definitive Stripe failure) so a same-key retry can reserve fresh. Writes an
 audit row (`api_audit_log` + `activity_log`, including what was checked against Stripe) in
 the same transaction as the status change.

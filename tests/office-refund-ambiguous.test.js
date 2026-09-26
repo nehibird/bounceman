@@ -724,11 +724,130 @@ async function main() {
     // --no-verify. -------------------------------------------------------------------------
     {
       const seeded = seedRow('idem-r4m1-mismatch');
-      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r4m1_mismatch', metadata: { office_refund_id: 'some-other-ledger-id' }, amount: 1000 }) } });
+      // R5-M1 note: status/currency set to the "good" values here so this stub actually
+      // isolates the METADATA check (verifyStripeRefund now checks status before
+      // metadata) rather than being refused earlier for an incidental reason.
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r4m1_mismatch', status: 'succeeded', currency: 'usd', metadata: { office_refund_id: 'some-other-ledger-id' }, amount: 1000 }) } });
       const codeMismatch = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r4m1_mismatch', '--no-verify']);
       t('R4-M1: --no-verify does NOT override a metadata mismatch on "succeeded"', codeMismatch === 1, codeMismatch);
       const rowMismatch = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
       t('R4-M1: the row is unchanged (still needs_review) after the mismatch refusal', rowMismatch.status === 'needs_review', rowMismatch);
+    }
+
+    // --- R5-M1: 'succeeded' requires the RETRIEVED refund's own Stripe status to be
+    // 'succeeded'. A live failed/canceled refund is a conflict (resolve the row as
+    // 'failed' instead); a live pending/requires_action refund is a conflict too ("not
+    // final yet, leave it to reconcile"). Neither is overridable by --no-verify — this is
+    // a live Stripe ANSWER, not an unavailable call. --------------------------------------
+    for (const st of ['failed', 'canceled', 'pending', 'requires_action']) {
+      for (const noVerify of [false, true]) {
+        const seeded = seedRow(`idem-r5m1-${st}-${noVerify}`);
+        stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r5m1', status: st, amount: 1000, currency: 'usd', metadata: { office_refund_id: seeded.id } }) } });
+        const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+        const argv = [seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r5m1'];
+        if (noVerify) argv.push('--no-verify');
+        const code = await callMain(argv);
+        t(`R5-M1: a live '${st}' refund refuses "succeeded"${noVerify ? ' even with --no-verify' : ''}`, code === 1, code);
+        const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+        t(`R5-M1: [${st}${noVerify ? '+nv' : ''}] row is unchanged (still needs_review)`, row.status === 'needs_review', row);
+        const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+        t(`R5-M1: [${st}${noVerify ? '+nv' : ''}] no "resolved" audit row was written`, auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
+      }
+    }
+
+    // --- R5-M1: the success path itself — a live 'succeeded' refund with matching
+    // metadata/amount/currency is still recorded normally, proving the new status/currency
+    // checks don't block a genuinely good verification. -----------------------------------
+    {
+      const seeded = seedRow('idem-r5m1-verified');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r5m1_ok', status: 'succeeded', amount: 1000, currency: 'usd', metadata: { office_refund_id: seeded.id } }) } });
+      const code = await callMain([seeded.id, 'succeeded', '--reason', 'confirmed on dashboard', '--actor', 'Nehemiah', '--stripe-refund', 're_r5m1_ok']);
+      t('R5-M1: a genuinely live succeeded refund (matching metadata/amount/currency) is recorded', code === undefined, code);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R5-M1: row is now succeeded with the verified stripe_refund_id/status', row.status === 'succeeded' && row.stripe_refund_id === 're_r5m1_ok' && row.stripe_status === 'succeeded', row);
+      const auditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(seeded.id);
+      const detail = auditRow && JSON.parse(auditRow.response_json);
+      t('R5-M1: audit row records verified_against_stripe:true', !!detail && detail.verified_against_stripe === true, detail);
+    }
+
+    // --- R5-M1 (optional hardening): a currency mismatch is also a conflict, even with
+    // --no-verify — a refund that happens to share this ledger row's id/metadata/amount in
+    // a different currency still can't be the one this row expects. -----------------------
+    {
+      const seeded = seedRow('idem-r5m1-currency');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r5m1_eur', status: 'succeeded', amount: 1000, currency: 'eur', metadata: { office_refund_id: seeded.id } }) } });
+      const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r5m1_eur', '--no-verify']);
+      t('R5-M1 (hardening): a currency mismatch refuses "succeeded" even with --no-verify', code === 1, code);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R5-M1 (hardening): row unchanged after the currency-mismatch refusal', row.status === 'needs_review', row);
+    }
+
+    // --- R5-L4 (M7 mutation survivor): an AMOUNT mismatch (metadata matches, amount
+    // differs) under --no-verify must still exit 1 with no change — the only prior
+    // --no-verify mismatch test used a metadata mismatch, so the amount-check branch was
+    // never actually exercised by a test (the code itself was already correct). ----------
+    {
+      const seeded = seedRow('idem-r5l4-amount');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r5l4_amt', status: 'succeeded', amount: 500, currency: 'usd', metadata: { office_refund_id: seeded.id } }) } });
+      const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r5l4_amt', '--no-verify']);
+      t('R5-L4: an AMOUNT mismatch refuses "succeeded" even with --no-verify', code === 1, code);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R5-L4: row unchanged after the amount-mismatch refusal', row.status === 'needs_review', row);
+    }
+
+    // --- R5-M2: retrieveRefund's own 404/resource_missing failure is a POSITIVE Stripe
+    // answer ("this refund id does not exist"), never overridable by --no-verify — unlike
+    // a genuinely unavailable call. ---------------------------------------------------------
+    {
+      function make404() { const e = new Error('No such refund: re_typo'); e.type = 'StripeInvalidRequestError'; e.code = 'resource_missing'; e.statusCode = 404; return e; }
+      for (const noVerify of [false, true]) {
+        const seeded = seedRow(`idem-r5m2-404-${noVerify}`);
+        stripeService._setStripeForTests({ refunds: { retrieve: async () => { throw make404(); } } });
+        const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+        const argv = [seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_typo'];
+        if (noVerify) argv.push('--no-verify');
+        const code = await callMain(argv);
+        t(`R5-M2: a 404 refuses "succeeded"${noVerify ? ' even with --no-verify' : ''}`, code === 1, code);
+        const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+        t(`R5-M2: [404${noVerify ? '+nv' : ''}] row unchanged`, row.status === 'needs_review', row);
+        const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+        t(`R5-M2: [404${noVerify ? '+nv' : ''}] no "resolved" audit row was written`, auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
+      }
+    }
+
+    // --- R5-M2: a genuinely UNAVAILABLE call (5xx) is still the one thing --no-verify may
+    // excuse — and it's honestly audited as a forced/unverified resolution, not silently
+    // recorded as a real verification. -----------------------------------------------------
+    {
+      const seeded = seedRow('idem-r5m2-5xx');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => { const e = new Error('Stripe internal server error'); e.type = 'StripeAPIError'; e.statusCode = 500; throw e; } } });
+      const codeNoNv = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_5xx']);
+      t('R5-M2: a 5xx refuses without --no-verify', codeNoNv === 1, codeNoNv);
+      const codeNv = await callMain([seeded.id, 'succeeded', '--reason', 'confirmed on dashboard', '--actor', 'Nehemiah', '--stripe-refund', 're_5xx', '--no-verify']);
+      t('R5-M2: a 5xx IS overridable by --no-verify (the call itself failed, not a Stripe answer)', codeNv === undefined, codeNv);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R5-M2: row recorded succeeded via the forced --no-verify path', row.status === 'succeeded' && row.stripe_refund_id === 're_5xx', row);
+      const auditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(seeded.id);
+      const detail = auditRow && JSON.parse(auditRow.response_json);
+      t('R5-M2: audit honestly records outcome verification_failed_forced, verified_against_stripe:false',
+        !!detail && detail.stripe_check && detail.stripe_check.outcome === 'verification_failed_forced' && detail.verified_against_stripe === false, detail);
+    }
+
+    // --- R5-M2: a bad API key (StripeAuthenticationError) is classified 'unavailable' (the
+    // call failed, not a Stripe answer) — overridable like any other unavailable call — but
+    // gets a distinct message so an operator doesn't mistake it for Stripe being down. -----
+    {
+      const seeded = seedRow('idem-r5m2-auth');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => { const e = new Error('Invalid API Key provided'); e.type = 'StripeAuthenticationError'; e.statusCode = 401; throw e; } } });
+      const errs = [];
+      const origErr = console.error;
+      console.error = (...a) => { errs.push(a.join(' ')); };
+      const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_auth']);
+      console.error = origErr;
+      t('R5-M2: a bad API key refuses without --no-verify', code === 1, code);
+      t('R5-M2: the auth failure gets a distinct message naming Stripe authentication', errs.some((e) => /[Ss]tripe authentication failed/.test(e)), errs);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R5-M2: row unchanged after the auth-failure refusal', row.status === 'needs_review', row);
     }
 
     // --- R4-L4: the payment row has no pi_/ch_ id at all -> outcome 'no_stripe_target',

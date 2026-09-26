@@ -240,22 +240,28 @@ docker compose exec -T web node scripts/resolve-office-refund.js <ledger_id> fai
 - `--reason` and `--actor` are both required (exits non-zero, no change, without either —
   R3-M1 removed the old `unknown-operator` default for `--actor`).
 - Marking `succeeded` requires `--stripe-refund re_...` and is verified against Stripe
-  automatically (refund exists, `metadata.office_refund_id` matches, amount matches) as
-  long as `STRIPE_SECRET_KEY` is set in that shell — it will be, inside the container.
-  **R3-M1: marking `failed` now requires the same kind of verification** — it refuses (no
-  change) if Stripe shows a non-failed/non-canceled refund already exists for the row, or
-  if the lookup itself fails; a confirmed-`failed` row also retires its idempotency key so
-  a same-key retry can reserve fresh. **R4-M1: `--no-verify` can NEVER force through a
-  POSITIVE Stripe finding** — a confirmed live refund (for `failed`) or a metadata/amount
-  mismatch (for `succeeded`) always refuses, with or without `--no-verify`; that flag only
-  excuses a genuinely UNAVAILABLE check (Stripe unreachable, timed out, or no
-  `STRIPE_SECRET_KEY`). If `failed` refuses because a refund already exists, run
-  `succeeded --stripe-refund <that re_ id>` instead — the tool prints this suggestion
-  itself. **R4-L4:** if the payment row has no Stripe `pi_`/`ch_` id at all, there is
-  nothing to check — this requires `--no-verify` and is recorded honestly as
+  automatically as long as `STRIPE_SECRET_KEY` is set in that shell — it will be, inside
+  the container. **`succeeded` needs the retrieved refund's own Stripe status to be
+  `succeeded`** (R5-M1) — a live `failed`/`canceled` refund is refused with a message to
+  resolve the row as `failed` instead; a live `pending`/`requires_action` refund is refused
+  as "not final yet, leave it to reconcile". It also requires `metadata.office_refund_id`
+  to match, the amount to match, and the currency to be `usd`. **A 404 ("no such refund",
+  e.g. a typo'd id) is likewise refused** (R5-M2) — Stripe positively saying the id doesn't
+  exist is a finding, not an outage. **R3-M1: marking `failed` now requires the same kind
+  of verification** — it refuses (no change) if Stripe shows a non-failed/non-canceled
+  refund already exists for the row, or if the lookup itself fails; a confirmed-`failed`
+  row also retires its idempotency key so a same-key retry can reserve fresh.
+  **`--no-verify` can NEVER override any live Stripe ANSWER** (R4-M1, extended by R5-M1/
+  R5-M2): a confirmed live refund (for `failed`), a non-`succeeded` status, a 404, or a
+  metadata/amount/currency mismatch (for `succeeded`) always refuses, with or without
+  `--no-verify`. That flag only excuses the Stripe CALL itself failing — unreachable,
+  timed out, a 5xx/429, or no/bad `STRIPE_SECRET_KEY`. If `failed` refuses because a refund
+  already exists, run `succeeded --stripe-refund <that re_ id>` instead — the tool prints
+  this suggestion itself. **R4-L4:** if the payment row has no Stripe `pi_`/`ch_` id at
+  all, there is nothing to check — this requires `--no-verify` and is recorded honestly as
   `no_stripe_target`, never as a completed "none found" check. `--stripe-refund`, when
   given, must look like `re_...` even with `--no-verify`. `--no-verify` is an escape hatch
-  for genuinely stuck cases (Stripe itself unreachable); avoid it unless you've checked the
+  for the Stripe call being genuinely unavailable; avoid it unless you've checked the
   dashboard yourself.
 - Only acts on `needs_review` rows, or `pending` rows older than `--older-than-minutes`
   (default 15) — refuses a fresh/still-in-progress row.

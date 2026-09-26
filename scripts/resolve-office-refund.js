@@ -17,10 +17,16 @@
 // --reason is REQUIRED (non-empty after trim) — without it, exits non-zero with NO change.
 //
 // Marking 'succeeded' REQUIRES --stripe-refund re_..., and is verified against Stripe
-// whenever STRIPE_SECRET_KEY is set: the refund must exist, its
-// metadata.office_refund_id must match this ledger row's id, and its amount must match.
-// Without Stripe access (no STRIPE_SECRET_KEY), an explicit --no-verify is required, so a
-// typo'd refund id can never be recorded as fact by accident.
+// whenever STRIPE_SECRET_KEY is set: the retrieved refund's own status must be
+// 'succeeded' (a live 'failed'/'canceled'/'pending'/'requires_action' refund is refused),
+// its metadata.office_refund_id must match this ledger row's id, its amount must match,
+// and its currency must be usd. Without Stripe access (no STRIPE_SECRET_KEY), an explicit
+// --no-verify is required, so a typo'd refund id can never be recorded as fact by accident.
+//
+// R5: any live Stripe ANSWER — a status other than 'succeeded', a 404 (the id doesn't
+// exist), or a metadata/amount/currency mismatch — can NEVER be overridden by --no-verify.
+// That flag only covers the Stripe CALL itself failing: network/timeout/5xx/429, a bad or
+// missing STRIPE_SECRET_KEY, or no Stripe pi_/ch_ id on the payment to even check.
 //
 // The status change and its audit rows (api_audit_log + activity_log) are written in the
 // SAME better-sqlite3 transaction — either both happen, or neither does.
@@ -65,20 +71,50 @@ function printUsage() {
 // 'conflict' (Stripe positively disagrees — never overridable), 'unavailable' (the Stripe
 // call itself failed — the only thing --no-verify may excuse), 'no_stripe_target' (R4-L4:
 // there was nothing to even ask Stripe about — NOT the same fact as a completed check).
+//
+// R5-M1: 'succeeded' requires the RETRIEVED refund's own status to be 'succeeded' — a
+// live refund that Stripe says is 'failed'/'canceled' means the money never went out
+// (resolve the row as 'failed' instead); 'pending'/'requires_action' (or anything else
+// non-succeeded) isn't final yet and belongs to reconcile's sweep, not this CLI. Both are
+// 'conflict' (a live Stripe status is a positive finding — never overridable by
+// --no-verify), never 'unavailable' (that's reserved for the CALL failing, not Stripe
+// answering). Optional hardening: also require currency 'usd', so a refund that happens
+// to share this ledger row's id/metadata/amount in a different currency can't slip through.
+//
+// R5-M2: the catch block below classifies retrieveRefund's own failure. A 404/
+// resource_missing ("No such refund") is Stripe POSITIVELY saying this id does not exist —
+// that's a conflict too, never overridable. A bad API key (StripeAuthenticationError) gets
+// its own message so it isn't mistaken for Stripe being unreachable. Everything else
+// (network, timeout, 5xx, 429) is the CALL failing — the only thing --no-verify may excuse.
 async function verifyStripeRefund(row, stripeRefundId) {
   let refund;
   try {
     refund = await stripeService.retrieveRefund(stripeRefundId);
   } catch (err) {
+    if (err && (err.statusCode === 404 || err.code === 'resource_missing')) {
+      return { outcome: 'conflict', error: `Stripe says this refund id does not exist: ${err.message}` };
+    }
+    if (err && err.type === 'StripeAuthenticationError') {
+      return { outcome: 'unavailable', error: `Stripe authentication failed (check STRIPE_SECRET_KEY): ${err.message}` };
+    }
     return { outcome: 'unavailable', error: err.message };
   }
   if (!refund) return { outcome: 'unavailable', error: `Stripe returned no refund for ${stripeRefundId}` };
+  if (refund.status !== 'succeeded') {
+    const message = (refund.status === 'failed' || refund.status === 'canceled')
+      ? `refund ${stripeRefundId} status is '${refund.status}' — resolve this row as 'failed' instead of 'succeeded'`
+      : `refund ${stripeRefundId} status is '${refund.status}', not final yet — leave it to reconcile`;
+    return { outcome: 'conflict', refund, error: message };
+  }
   const metaId = refund.metadata && refund.metadata.office_refund_id;
   if (metaId !== row.id) {
     return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} metadata.office_refund_id (${metaId || 'none'}) does not match ledger id ${row.id}` };
   }
   if (refund.amount !== row.amount_cents) {
     return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} amount (${refund.amount}) does not match ledger amount_cents (${row.amount_cents})` };
+  }
+  if (refund.currency !== 'usd') {
+    return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} currency (${refund.currency || 'missing'}) is not usd` };
   }
   return { outcome: 'verified', refund };
 }
