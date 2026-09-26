@@ -13,6 +13,12 @@ services:
     environment:
       - DB_PATH=/app/data/bounceman.db
       - NODE_ENV=production
+      # I4: belt-and-braces only — every "today" calendar computation in the code now
+      # resolves America/Chicago explicitly (via Intl's timeZone option) and no longer
+      # depends on this at all. Set anyway so any OTHER code path that still reads the
+      # container's local clock (e.g. SQLite's own date('now','localtime')) lines up with
+      # Central time instead of defaulting to UTC.
+      - TZ=America/Chicago
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

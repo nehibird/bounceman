@@ -18,23 +18,19 @@ function assert(label, cond, details) {
 const { initialize, getDb } = require('../db');
 initialize();
 const db = getDb();
-const { activeBookingForPhone } = require('../lib/helpers');
+const { activeBookingForPhone, todayCT, isoOffset } = require('../lib/helpers');
 const { v4: uuid } = require('uuid');
 
-// Pre-existing TZ bug (also on main): activeBookingForPhone compares against SQLite's
-// `date('now', 'localtime')` — the process's LOCAL calendar date. Building the fixture
-// date via toISOString() instead reads the UTC calendar date, which silently differs from
-// the local one for roughly a third of the day in any zone behind UTC (e.g. the ~7 PM to
-// midnight CT window, where UTC has already rolled over to tomorrow). Building the string
-// from the Date object's own local year/month/day components keeps this fixture helper on
-// the same calendar as the code under test, in every zone.
-const day = (n) => {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
+// I4 (fixed, round 7): activeBookingForPhone now computes its cutoff EXPLICITLY as an
+// America/Chicago calendar date (todayCT, then isoOffset for the grace-day arithmetic) —
+// no more SQLite `date('now','localtime')`, no more dependence on the process's own TZ.
+// This fixture helper is built from the SAME todayCT/isoOffset the code under test uses,
+// so "N days from today" always means N Chicago-calendar days regardless of what TZ this
+// test process happens to run under (previously it read the Date object's own LOCAL
+// year/month/day components, deliberately matching the OLD buggy behavior — now that the
+// code is fixed, that would silently diverge from Chicago in most zones and break the
+// documented "must pass under UTC/CT/Honolulu/Kolkata/Auckland/LA" requirement).
+const day = (n) => isoOffset(todayCT(), n);
 
 function seed(name, phone, eventDate, status, endDate) {
   const cid = uuid(), bid = uuid();
@@ -93,6 +89,34 @@ const b = activeBookingForPhone(db, '+15805550101', 1);
 assert('returns booking_number', b && typeof b.booking_number === 'string', JSON.stringify(b));
 assert('returns event_date', b && typeof b.event_date === 'string');
 assert('returns the customer name', b && /Future/.test(b.name || ''), b && b.name);
+
+console.log('\n=== I4: today() is computed EXPLICITLY in America/Chicago, not the process clock ===');
+// 2026-09-26T01:30Z = Sep 25, 8:30 PM CDT -> the Chicago calendar day is still the 25th.
+assert('todayCT: 2026-09-26T01:30Z (8:30 PM CDT the 25th) -> 2026-09-25',
+  todayCT(new Date('2026-09-26T01:30:00Z')) === '2026-09-25',
+  todayCT(new Date('2026-09-26T01:30:00Z')));
+// 2026-09-26T06:00Z = Sep 26, 1:00 AM CDT -> the Chicago calendar day has rolled to the 26th.
+assert('todayCT: 2026-09-26T06:00Z (1:00 AM CDT the 26th) -> 2026-09-26',
+  todayCT(new Date('2026-09-26T06:00:00Z')) === '2026-09-26',
+  todayCT(new Date('2026-09-26T06:00:00Z')));
+
+console.log('\n=== I4: grace-day behavior is unchanged across a DST boundary ===');
+// 2026-11-01 is when US DST ends (clocks fall back 2 AM -> 1 AM Central). A booking that
+// ended the day before, with a 1-day grace, must still forward on the 1st and stop on the
+// 2nd — the CALENDAR day count must not be distorted by that day having an extra real hour.
+seed('FallBack', '(580) 555-0401', '2026-10-31', 'completed');
+assert('fall-back DST: event ended Oct 31, grace 1, "now" Nov 1 -> still forward',
+  !!activeBookingForPhone(db, '+15805550401', 1, new Date('2026-11-01T18:00:00Z')));
+assert('fall-back DST: same booking, "now" Nov 2 -> back to Sarah',
+  activeBookingForPhone(db, '+15805550401', 1, new Date('2026-11-02T18:00:00Z')) === null);
+
+// 2026-03-08 is when US DST begins (clocks spring forward 2 AM -> 3 AM Central, that day
+// is an hour SHORT). Same check, the other direction.
+seed('SpringForward', '(580) 555-0402', '2026-03-07', 'completed');
+assert('spring-forward DST: event ended Mar 7, grace 1, "now" Mar 8 -> still forward',
+  !!activeBookingForPhone(db, '+15805550402', 1, new Date('2026-03-08T18:00:00Z')));
+assert('spring-forward DST: same booking, "now" Mar 9 -> back to Sarah',
+  activeBookingForPhone(db, '+15805550402', 1, new Date('2026-03-09T18:00:00Z')) === null);
 
 console.log('\n' + '='.repeat(50));
 console.log('passed ' + passed + ', failed ' + failed);

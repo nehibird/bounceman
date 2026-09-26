@@ -27,6 +27,7 @@ this file is the operational runbook.
 | `OFFICE_DEFAULT_MAX_REFUND_CENTS` / `OFFICE_DEFAULT_DAILY_REFUND_CAP_CENTS` | No | Per-refund/daily defaults when a key's own cap column is `NULL`. Default $100 / $250. |
 | `OFFICE_REFUND_HARD_MAX_CENTS` / `OFFICE_REFUND_HARD_DAILY_CAP_CENTS` | No | Hard ceilings — no key, however configured, can exceed these. Default $500 / $1,000. **Deploy-config, not a code constant** (R2-I1) — treat a change to these as a policy change, not a code change. |
 | `OFFICE_MANUAL_PAYMENT_HARD_MAX_CENTS` | No (new, R2-L3) | Manual (cash/check/etc) payment ceiling, independent of the refund ceilings above. Default $10,000. |
+| `TZ` | No (new, I4) | Set to `America/Chicago` in `docker-compose.yml`'s web service. **Belt-and-braces only** — every "today" calendar computation in the code (`lib/helpers.js`'s `todayCT`/`activeBookingForPhone`, `routes/office.js`, `services/notifications.js`, `routes/sarah.js`) resolves America/Chicago explicitly via `Intl`'s `timeZone` option and no longer depends on this var, or on the container's own clock, at all. Kept so any OTHER code path that still reads local time (e.g. SQLite's `date('now','localtime')`, used elsewhere — see "Known follow-ups") lines up with Central instead of defaulting to UTC. |
 
 No new *required* env vars this round — `OFFICE_MANUAL_PAYMENT_HARD_MAX_CENTS` is optional
 and defaults to today's effective value ($10,000).
@@ -481,15 +482,25 @@ New/changed log lines this round, in addition to the round-2 set
 Out of scope for round 6 (targeted mutation/gates/docs turn) — recorded so they aren't
 lost, not because they're urgent:
 
-- **I4 (round 5): `activeBookingForPhone` uses the container's clock, not Central time.**
-  `lib/helpers.js`'s SQLite `date('now', 'localtime')` call means "today" is the
-  **container's** local date. Neither `docker-compose.yml` nor the `Dockerfile` sets `TZ`,
-  so in production that's UTC, which flips at 7 PM CDT / 6 PM CST — a caller near that
-  boundary could be routed as "no active booking" when Oklahoma's own calendar still says
-  otherwise. Fix: set `TZ=America/Chicago` on the web service (or compute the comparison
-  in Central explicitly). Pre-existing; `tests/call-routing.test.js`'s TZ-fixture fix this
-  round correctly left the app's own `localtime` behavior alone and documented it rather
-  than papering over it.
+- **I4 (round 5): `activeBookingForPhone` uses the container's clock, not Central time —
+  FIXED, round 7.** `lib/helpers.js`'s SQLite `date('now', 'localtime', ?)` call meant
+  "today" was the **container's** local date; with no `TZ` set that was UTC, which flips at
+  7 PM CDT / 6 PM CST — a caller near that boundary could be routed as "no active booking"
+  when Oklahoma's own calendar still said otherwise. `activeBookingForPhone` now computes
+  the America/Chicago calendar cutoff EXPLICITLY in JS (`todayCT`, which uses `Intl`'s
+  `timeZone` option, then `isoOffset` for the grace-day arithmetic) and binds it into the
+  query as a plain `'YYYY-MM-DD'` string — correctness no longer depends on `process.env.TZ`
+  or the container's clock at all, verified by running `tests/call-routing.test.js` under
+  six different `TZ` values with identical pass counts. `docker-compose.yml`'s web service
+  now also sets `TZ=America/Chicago` belt-and-braces (see §2), though nothing in the
+  call-routing path depends on it anymore.
+  - **Follow-up (not fixed, out of the call-routing path):** `routes/admin.js` has several
+    `date('now','localtime')` comparisons (today's bookings/revenue counts on the admin
+    dashboard) with the same container-clock dependency — same class of bug, different
+    (non-call-routing) surface. `routes/booking.js:364` also has its own local
+    `const todayCT = new Date().toLocaleDateString('en-CA', {...})` — already correct
+    (computes Central explicitly, same technique as `lib/helpers.js`'s `todayCT`), just not
+    sharing the helper, so it's a duplication/drift risk rather than a correctness bug.
 - **`db.js`: the `expenses` table's column migrations run BEFORE its own `CREATE TABLE IF
   NOT EXISTS`.** `ALTER TABLE expenses ADD COLUMN reimbursable/reimbursed/reimbursed_date`
   (added for reimbursement tracking) sit above `CREATE TABLE IF NOT EXISTS expenses`
