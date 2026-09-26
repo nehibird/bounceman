@@ -64,10 +64,15 @@ Confirm recent deliveries return 2xx in the Stripe dashboard before and after cu
 - No action needed if `ss` already shows loopback-only and nginx already strips
   client-supplied XFF (per Dan) — this is a confirmation step, not a new change to make.
 
-## 5. Reconcile — schedule it (R2-M2d)
+## 5. Reconcile — schedule it (R2-M2d, R3-M2: now a REQUIRED money-safety control)
 
-Not yet scheduled in production. Add a cron entry (adjust the path/user to match the
-actual compose project directory):
+**Not yet scheduled in production, and R3-M2 makes this a hard prerequisite, not
+housekeeping: install this cron BEFORE any key is granted `refunds:create` for real.**
+Stripe forgets an idempotency key after ~24h; the app's own same-key resume now confirms
+via `findRefundByOfficeId` before ever retrying `refunds.create`, but a reservation that
+Stripe has no answer for AND that has aged past ~23h is refused (`needs_review`, `409
+refund_needs_reconcile`) rather than guessed at — reconcile (or a human via the resolve
+CLI) is the only thing that clears it.
 
 ```cron
 */10 * * * * cd /opt/bounceman && docker compose exec -T web node scripts/reconcile-office-refunds.js --older-than-minutes 15 >> /var/log/bounceman-reconcile.log 2>&1 || curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"⚠️ office-refund reconcile exited non-zero — check /var/log/bounceman-reconcile.log and office_refunds.status = '"'"'needs_review'"'"'"}' "$SLACK_ALERT_WEBHOOK_URL"
@@ -78,10 +83,17 @@ actual compose project directory):
   than necessary).
 - The script exits non-zero whenever any row ends the run `needs_review` — the `||
   <alert>` above is a minimal example; wire it to whatever this deploy's actual alerting
-  channel is (Slack webhook, PagerDuty, etc.) instead of the inline `curl` shown.
-- Sweeps `pending`, `needs_review`, and (new, R2-C1) legacy ambiguous-`failed` rows (an
-  error was recorded but never classified `definitive`) — never calls
-  `stripe.refunds.create`, only looks refunds up by `metadata.office_refund_id`.
+  channel is (Slack webhook, PagerDuty, etc.) instead of the inline `curl` shown. **Also
+  alert if the log file itself hasn't been updated in over an hour** — a non-firing cron
+  (crashed container, misconfigured schedule) exits zero times, never non-zero, so
+  exit-code alerting alone can't catch it.
+- Sweeps `pending`, `needs_review`, and (R2-C1) legacy ambiguous-`failed` rows (an error
+  was recorded but never classified `definitive`) — never calls `stripe.refunds.create`,
+  only looks refunds up by `metadata.office_refund_id`. **R3-L1:** finalizing a row
+  `failed` here also retires its idempotency key, so a same-key retry afterward starts
+  fresh instead of a permanent `409`. **R3-L4:** hitting `findRefundByOfficeId`'s page cap
+  is reported as a lookup failure (`needs_review` with the cap error recorded), not
+  silently treated as "not found".
 
 ## 6. Clearing a stuck `needs_review` row (R2-M2a)
 
@@ -99,12 +111,17 @@ docker compose exec -T web node scripts/resolve-office-refund.js <ledger_id> fai
   --reason "confirmed never charged" --actor "Dan"
 ```
 
-- `--reason` is required (exits non-zero, no change, without it).
+- `--reason` and `--actor` are both required (exits non-zero, no change, without either —
+  R3-M1 removed the old `unknown-operator` default for `--actor`).
 - Marking `succeeded` requires `--stripe-refund re_...` and is verified against Stripe
   automatically (refund exists, `metadata.office_refund_id` matches, amount matches) as
   long as `STRIPE_SECRET_KEY` is set in that shell — it will be, inside the container.
-  `--no-verify` is an escape hatch for genuinely stuck cases; avoid it unless you've
-  checked the dashboard yourself.
+  **R3-M1: marking `failed` now requires the same kind of verification** — it refuses (no
+  change) if Stripe shows a non-failed/non-canceled refund already exists for the row, or
+  if the lookup itself fails; a confirmed-`failed` row also retires its idempotency key so
+  a same-key retry can reserve fresh. `--stripe-refund`, when given, must look like
+  `re_...` even with `--no-verify`. `--no-verify` is an escape hatch for genuinely stuck
+  cases; avoid it unless you've checked the dashboard yourself.
 - Only acts on `needs_review` rows, or `pending` rows older than `--older-than-minutes`
   (default 15) — refuses a fresh/still-in-progress row.
 - Writes an audit row (`api_audit_log` + `activity_log`) naming the actor and reason, in
@@ -183,6 +200,17 @@ New/changed log lines this round, in addition to the round-2 set
   fires, just to confirm the correction matches reality.
 - `N row(s) need manual review` from the reconcile cron (§5) — should be rare; each one
   needs the resolve CLI (§6) to clear.
+- `[OFFICE API] Stripe refund error looked definitive, but a matching refund DOES exist at
+  Stripe — finalizing from it, never releasing the reservation` (R3-C1(b)) — this is the
+  hidden-retry gap actually firing and being caught correctly. Should be rare; if it spikes,
+  something is causing frequent connection resets between this box and Stripe.
+- `[OFFICE API] resume: reservation is older than the safe same-key resume window` (R3-M2)
+  — should never happen if the reconcile cron (§5) is running on schedule; if it does,
+  check why reconcile hasn't cleared this row in ~23h.
+- `unresolved_refund` 409 responses (R3-M3) — expected occasionally if a caller
+  (mis)retries with a new key while a previous attempt is still unresolved; a sustained
+  stream of them on one payment points at a caller that isn't following the
+  same-key-retry rule.
 
 ## Sarah / API contract changes to relay
 
@@ -196,3 +224,12 @@ Sarah's integration:
 3. `live_charge_checked` is now always `true` on any non-503 refund response.
 4. Payment-link requests are now reserved before Stripe is called — a genuinely
    concurrent duplicate gets `409` instead of a stray second Checkout Session.
+5. **(R3-M3) New:** a refund request with a NEW `Idempotency-Key` on a payment that
+   already has an unresolved refund now gets `409 {error:"unresolved_refund", ledger_id,
+   retry_with_same_idempotency_key:true}` — retry the NAMED `ledger_id`'s own key, or wait.
+   This can happen even when there's plenty of room left under the caps.
+6. **(R3-M2) New:** a same-key retry can get `409 {error:"refund_needs_reconcile",
+   ledger_id}` if the reservation is old enough that Stripe may have forgotten the
+   idempotency key and Stripe has no record of it either — wait for the reconcile cron or
+   ping ops to run `scripts/resolve-office-refund.js`. This should be rare (requires no
+   retry at all for ~23h) and points at a missed/late reconcile run if it happens often.

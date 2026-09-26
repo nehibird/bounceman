@@ -5,12 +5,22 @@ let _stripe = null;
 
 // R2-H1: a short client-level timeout — stripe-node's own default is 80s, which is long
 // enough to hang a request, turn it into a client disconnect, and feed R2-C1's
-// ambiguous-outcome path far longer than necessary. maxNetworkRetries:1 is safe as the
-// CLIENT DEFAULT because every write this app makes (refunds.create, checkout.sessions.
-// create) is idempotency-keyed, so stripe-node's own automatic retry can never double-
-// execute it. getLiveRefundedCents below overrides this per-request to 0 retries plus its
-// own {timeout:5000} — a fail-closed safety read should fail fast exactly once, not add
-// latency to the very check that's supposed to keep a refund from going out blind.
+// ambiguous-outcome path far longer than necessary.
+//
+// R3-C1: maxNetworkRetries:1 is NOT actually safe just because every write is
+// idempotency-keyed — stripe-node's automatic retry reuses the same Idempotency-Key, so
+// Stripe itself dedupes the underlying operation, but the RESPONSE that retry gets back
+// (a 429, or a 409 because the original attempt is still in flight) can be misread by
+// this app as a definitive rejection if it isn't handled carefully (see
+// lib/stripe-errors.js). createRefund below passes `maxNetworkRetries: 0` per request so
+// the app-level same-key retry (routes/office.js) is the ONLY retry for a refund — but
+// stripe-node STILL retries once after ECONNRESET/EPIPE regardless of this setting
+// (RequestSender._shouldRetry has a hardcoded connection-reset case), which is exactly
+// why lib/stripe-errors.js/routes/office.js also confirm via findRefundByOfficeId before
+// ever finalizing a "definitive" failure. getLiveRefundedCents below overrides the client
+// default to 0 retries plus its own {timeout:5000} — a fail-closed safety read should
+// fail fast exactly once, not add latency to the very check that's supposed to keep a
+// refund from going out blind.
 const STRIPE_CLIENT_TIMEOUT_MS = 5000;
 const STRIPE_CLIENT_MAX_NETWORK_RETRIES = 1;
 const LIVE_CHECK_TIMEOUT_MS = 5000;
@@ -154,7 +164,12 @@ async function createRefund({ paymentIntentId, chargeId, amountCents, idempotenc
   if (paymentIntentId) params.payment_intent = paymentIntentId;
   else params.charge = chargeId;
 
-  return stripe.refunds.create(params, { idempotencyKey });
+  // R3-C1(c): maxNetworkRetries:0 per request — the app-level same-key retry (routes/
+  // office.js, driven by the caller) is the only retry that should ever happen for a
+  // refund. This does NOT eliminate stripe-node's hidden ECONNRESET/EPIPE retry (see the
+  // comment above getStripe()); lib/stripe-errors.js + routes/office.js's
+  // findRefundByOfficeId confirmation is what actually closes that gap.
+  return stripe.refunds.create(params, { idempotencyKey, maxNetworkRetries: 0 });
 }
 
 // R2-H1: validates a Stripe charge object well enough to trust its amount_refunded for
@@ -167,13 +182,18 @@ function assertUsableCharge(charge, { expectedAmountCents } = {}) {
   if (!Number.isFinite(amountRefunded) || !Number.isInteger(amountRefunded) || amountRefunded < 0) {
     throw new Error(`live charge amount_refunded is not a finite non-negative integer: ${JSON.stringify(amountRefunded)}`);
   }
-  if (currency && currency !== 'usd') {
-    throw new Error(`live charge currency mismatch: expected usd, got ${currency}`);
+  // R3-L2: currency and amount must both be PRESENT, not just well-formed when present —
+  // a real Stripe charge always sends both, so a MISSING one is exactly as untrustworthy
+  // as a wrong one and must fail closed the same way (round 2 only rejected a wrong
+  // value; a missing one silently passed).
+  if (currency !== 'usd') {
+    throw new Error(`live charge currency mismatch: expected usd, got ${JSON.stringify(currency)}`);
   }
-  if (typeof expectedAmountCents === 'number' && Number.isFinite(amount)) {
-    if (Math.round(amount) !== Math.round(expectedAmountCents)) {
-      throw new Error(`live charge amount (${amount}) does not match the recorded payment (${expectedAmountCents})`);
-    }
+  if (!Number.isInteger(amount)) {
+    throw new Error(`live charge amount is not an integer: ${JSON.stringify(amount)}`);
+  }
+  if (typeof expectedAmountCents === 'number' && Math.round(amount) !== Math.round(expectedAmountCents)) {
+    throw new Error(`live charge amount (${amount}) does not match the recorded payment (${expectedAmountCents})`);
   }
   return amountRefunded;
 }
@@ -199,10 +219,15 @@ function assertUsableCharge(charge, { expectedAmountCents } = {}) {
  */
 async function getLiveRefundedCents({ paymentIntentId, chargeId, expectedAmountCents } = {}) {
   const stripe = getStripe();
-  // 0 retries + a tight per-request timeout: a fail-closed safety read should fail fast
-  // exactly once, not add stripe-node's automatic-retry latency to the safety check
-  // itself (paired with R2-C1 — the shorter this is, the less often a hung live check
-  // turns into a client disconnect on the OUTER request).
+  // R3-L5: maxNetworkRetries:0 + a tight per-request timeout — a fail-closed safety read
+  // should fail fast exactly once, not add stripe-node's automatic-retry latency to the
+  // safety check itself (paired with R2-C1 — the shorter this is, the less often a hung
+  // live check turns into a client disconnect on the OUTER request). This does NOT mean
+  // zero retries under every failure: stripe-node still retries once after a raw
+  // ECONNRESET/EPIPE regardless of this setting (a hardcoded case in RequestSender, not
+  // governed by maxNetworkRetries) — safe here either way, since the retry either
+  // succeeds (the check proceeds normally) or fails and this whole call still throws,
+  // which the caller treats as fail-closed exactly the same as any other failure.
   const requestOptions = { timeout: LIVE_CHECK_TIMEOUT_MS, maxNetworkRetries: 0 };
 
   if (paymentIntentId) {
@@ -256,7 +281,14 @@ async function findRefundByOfficeId(officeRefundId, payment) {
     if (!list.has_more || !data.length) return null;
     startingAfter = data[data.length - 1].id;
   }
-  return null;
+  // R3-L4: hitting the page cap is NOT the same fact as "confirmed not found" — silently
+  // returning null here made a runaway/unbounded charge look identical to a genuinely
+  // absent refund, so callers (routes/office.js, lib/refund-reconcile.js) would treat an
+  // inconclusive search as conclusive. Throw a distinguishable error instead so every
+  // caller's existing "lookup failed" handling (stay pending / exit non-zero) applies.
+  const msg = `findRefundByOfficeId: page cap reached (${REFUND_LIST_MAX_PAGES} pages, ${REFUND_LIST_MAX_PAGES * REFUND_LIST_PAGE_SIZE} refunds) for ${officeRefundId} without a match`;
+  console.error(`[STRIPE] ${msg}`);
+  throw new Error('page cap reached');
 }
 
 /**

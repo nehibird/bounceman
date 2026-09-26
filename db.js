@@ -1193,13 +1193,20 @@ function initialize() {
   // far beyond Stripe's own retry window, so nothing live is ever at risk.
   try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch { /* best-effort */ }
 
-  // R2-L4: a busy_timeout so a BEGIN IMMEDIATE transaction (reserveRefund,
+  // R2-L4/R3-L5: a busy_timeout so a BEGIN IMMEDIATE transaction (reserveRefund,
   // reservePaymentLink, the charge.refunded handler) blocks and retries internally for up
   // to 5s when another connection — today, only ever a script run against the same file;
   // in a hypothetical multi-process deployment, a second app instance — holds the write
-  // lock, instead of surfacing SQLITE_BUSY as an immediate 500. Set on every call (cheap,
-  // idempotent per-connection pragma) so it's never accidentally skipped if getDb() ever
-  // gains a code path that opens the connection without going through here first.
+  // lock, instead of surfacing SQLITE_BUSY as an immediate 500. 5000ms is also
+  // better-sqlite3's own built-in default for a connection opened without an explicit
+  // timeout, so this line's practical effect is making that value explicit and immune to
+  // a future upstream default change, not raising it from some lower value. Set on every
+  // call (cheap, idempotent per-connection pragma) so it's never accidentally skipped if
+  // getDb() ever gains a code path that opens the connection without going through here
+  // first. A write lock held longer than this (e.g. by a stalled script) makes other
+  // requests wait out the full 5s before failing, and the event loop stays blocked for
+  // that same window on the connection doing the waiting — tested at 7s/15s hold times:
+  // requests still resolve correctly after the timeout, just later.
   d.pragma('busy_timeout = 5000');
 
   console.log('[DB] Database initialized successfully');

@@ -995,6 +995,27 @@ function computeRefundLimits(db, key, payment, liveRefundedCents) {
 // concurrency, not just when calls happen to be serialized.
 function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey, requestHash, reason, confirmedBy, liveRefundedCents }) {
   const attempt = db.transaction(() => {
+    // R3-M3: while ANY reservation on this SAME PAYMENT — across every key — is still
+    // pending/needs_review, refuse a brand-new reservation outright, even if there'd be
+    // numeric room under the caps/remainder. A new reservation on top of one whose Stripe
+    // outcome is unknown can double-pay once the unresolved one turns out to have
+    // succeeded (the caps/remainder math is deliberately conservative about counting an
+    // unresolved row, but "conservative" only bounds how much MORE can go out — it
+    // doesn't make a second attempt safe). The caller must retry the ORIGINAL
+    // Idempotency-Key (which resumes/dedupes against Stripe) or wait for reconcile.
+    const unresolved = db.prepare(`
+      SELECT id FROM office_refunds WHERE payment_id = ? AND status IN ('pending', 'needs_review') LIMIT 1
+    `).get(payment.id);
+    if (unresolved) {
+      return {
+        ok: false, status: 409,
+        body: {
+          error: 'unresolved_refund', ledger_id: unresolved.id, retry_with_same_idempotency_key: true,
+          message: 'A previous refund on this payment has an unknown outcome; retry that request with its original Idempotency-Key, or wait for reconcile.',
+        },
+      };
+    }
+
     const limits = computeRefundLimits(db, key, payment, liveRefundedCents);
 
     // Data-integrity check first (can this payment even cover the amount), then
@@ -1044,6 +1065,14 @@ function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey,
   }
 }
 
+// R3-M2: Stripe forgets an idempotency key after ~24h — a same-key resume of a reservation
+// older than this is refused (marked needs_review, told to wait for reconcile/resolve)
+// rather than calling refunds.create again and risking a genuine SECOND refund if the
+// first attempt actually went through and Stripe no longer recognizes the key.
+// Comfortably under 24h so a client retrying right at the boundary never loses a race
+// against Stripe's own expiry.
+const RESUME_MAX_AGE_MS = 23 * 60 * 60 * 1000;
+
 // Finalizing to 'failed' also frees the reservation's idempotency_key (renamed off to
 // the side, same convention as middleware/office-auth.js's audit-log handling) so a
 // retry with the SAME Idempotency-Key can reserve fresh instead of hitting the
@@ -1085,6 +1114,59 @@ async function attemptStripeRefund(db, req, res, { ledgerId, booking, payment, a
   }
 }
 
+// Shared by every path that ends up with a REAL Stripe refund object to finalize from —
+// a fresh refunds.create() response, a resume that found one via findRefundByOfficeId, or
+// a "definitive-looking" error that findRefundByOfficeId then confirmed a refund DOES
+// exist for (R3-C1(b)). Always responds 201 (Stripe successfully returned/confirmed a
+// refund OBJECT; a later failure/cancellation is corrected by routes/webhooks.js's
+// charge.refund.updated handler, not here) and never renames/releases the reservation.
+function finalizeFromStripeRefund(db, req, res, { ledgerId, booking, payment, amountCents, liveChargeChecked }, refund) {
+  const failedLikeStatuses = new Set(['failed', 'canceled']);
+  const ledgerStatus = failedLikeStatuses.has(refund.status) ? 'failed' : 'succeeded';
+  finalizeRefundLedger(db, ledgerId, { status: ledgerStatus, stripeRefundId: refund.id, stripeStatus: refund.status });
+
+  res.locals.audit = {
+    entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_refund',
+    after: { ledger_id: ledgerId, refund_id: refund.id, payment_id: payment.id, amount_cents: amountCents, status: ledgerStatus, stripe_status: refund.status },
+    amount_cents: amountCents,
+    stripe_object_id: refund.id,
+  };
+
+  // Bookkeeping (payments.refund_amount, bookings.total/balance_due) is intentionally
+  // NOT done here — routes/webhooks.js's charge.refunded handler is the single place
+  // that reduces the booking's books, so a webhook retry or delay can never be
+  // double-counted against a write this endpoint already made.
+  return respondToMoneyWrite(req, res, 201, {
+    refund_id: refund.id,
+    booking_number: booking.booking_number,
+    payment_id: payment.id,
+    amount_cents: amountCents,
+    status: refund.status,
+    ledger_status: ledgerStatus,
+    bookkeeping_via: 'stripe_webhook',
+    live_charge_checked: liveChargeChecked,
+  });
+}
+
+// Shared by every path that ends up NOT being able to determine whether Stripe actually
+// processed a refund — keeps the ledger row exactly as it is (still counted, never
+// renamed) and responds with the {outcome:"unknown"} contract callers must retry with the
+// SAME Idempotency-Key against.
+function respondAmbiguous(db, req, res, { ledgerId, liveChargeChecked }, errorMessage, isTimeout) {
+  db.prepare("UPDATE office_refunds SET error = ?, updated_at = datetime('now') WHERE id = ? AND status IN ('pending', 'needs_review')")
+    .run(errorMessage, ledgerId);
+  res.locals.audit = { ...res.locals.audit, after: { ...(res.locals.audit && res.locals.audit.after), status: 'unknown', error: errorMessage } };
+  console.error('[OFFICE API] Stripe refund outcome UNKNOWN (ambiguous error, reservation kept):', errorMessage);
+  const status = isTimeout ? 504 : 502;
+  return respondToMoneyWrite(req, res, status, {
+    error: `Stripe error, outcome unknown: ${errorMessage}`,
+    outcome: 'unknown',
+    ledger_id: ledgerId,
+    retry_with_same_idempotency_key: true,
+    live_charge_checked: liveChargeChecked,
+  });
+}
+
 async function attemptStripeRefundInner(db, req, res, { ledgerId, booking, payment, amountCents, paymentIntentId, chargeId, confirmedBy, liveChargeChecked }) {
   // Written explicitly, before the Stripe call — never dependent on res 'finish' alone,
   // so a client disconnect mid-refund (see middleware/office-auth.js's registerWriteAudit,
@@ -1119,66 +1201,58 @@ async function attemptStripeRefundInner(db, req, res, { ledgerId, booking, payme
       },
     });
   } catch (err) {
-    // R2-C1: only a DEFINITIVE Stripe error (a real 4xx from one of the five error types
-    // that mean "Stripe never touched the charge") finalizes 'failed' and releases the
-    // reservation. Everything else — no statusCode, a 5xx, StripeAPIError,
-    // StripeConnectionError, StripeIdempotencyError, a timeout, or an unrecognized error —
-    // might mean Stripe actually processed the refund before the response was lost, so the
-    // reservation MUST stay counted and MUST NOT be retried with a new idempotency key.
+    // R2-C1/R3-C1: only a DEFINITIVE Stripe error (a real 4xx, excluding 409/429, from one
+    // of the four error types that mean "Stripe never touched the charge") is even a
+    // CANDIDATE for finalizing 'failed' and releasing the reservation. Everything else —
+    // no statusCode, a 5xx, StripeAPIError, StripeConnectionError, StripeIdempotencyError,
+    // a timeout, a 409/429, or an unrecognized error — might mean Stripe actually
+    // processed the refund before the response was lost, so the reservation MUST stay
+    // counted and MUST NOT be retried with a new idempotency key.
     if (isDefinitiveStripeError(err)) {
+      // R3-C1(b): stripe-node still retries once after ECONNRESET/EPIPE regardless of
+      // maxNetworkRetries (see services/stripe.js), and that hidden retry can land a
+      // genuinely-definitive-shaped 4xx (400/402/401/403) on an attempt whose ORIGINAL try
+      // may already have gone through at Stripe. Before finalizing 'failed' — which
+      // releases the reservation and lets a retry pay out again — confirm directly with
+      // Stripe by looking the refund up. Never trust the thrown error alone.
+      let lookup;
+      try {
+        lookup = { found: await stripeService.findRefundByOfficeId(ledgerId, payment) };
+      } catch (lookupErr) {
+        lookup = { failed: true, error: lookupErr };
+      }
+
+      if (lookup.failed) {
+        console.error('[OFFICE API] Stripe refund error looked definitive, but confirming via findRefundByOfficeId FAILED — keeping reservation pending (ambiguous):', err.message, '|', lookup.error.message);
+        return respondAmbiguous(db, req, res, { ledgerId, liveChargeChecked },
+          `${err.message} (could not confirm with Stripe: ${lookup.error.message})`, false);
+      }
+
+      if (lookup.found) {
+        console.warn('[OFFICE API] Stripe refund error looked definitive, but a matching refund DOES exist at Stripe — finalizing from it, never releasing the reservation:', err.message);
+        return finalizeFromStripeRefund(db, req, res, { ledgerId, booking, payment, amountCents, liveChargeChecked }, lookup.found);
+      }
+
+      // Confirmed: Stripe genuinely has no refund for this reservation — safe to release
+      // and let a retry reserve fresh.
       finalizeRefundLedger(db, ledgerId, { status: 'failed', error: err.message, errorClassification: 'definitive' });
       res.locals.audit = { ...res.locals.audit, after: { ...res.locals.audit.after, status: 'failed', error: err.message } };
-      console.error('[OFFICE API] Stripe refund failed (definitive):', err.message);
+      console.error('[OFFICE API] Stripe refund failed (definitive, confirmed no refund exists):', err.message);
       return respondToMoneyWrite(req, res, 502, { error: `Stripe error: ${err.message}`, live_charge_checked: liveChargeChecked });
     }
 
-    // Ambiguous: keep the row exactly as it is (still 'pending' or 'needs_review', still
-    // counted against the remainder/caps) and just record the error for visibility. Never
-    // renamed, never released — a same-key retry finds this row and reuses it (see the
-    // route below); a new-key retry is still capped by it.
-    db.prepare("UPDATE office_refunds SET error = ?, updated_at = datetime('now') WHERE id = ? AND status IN ('pending', 'needs_review')")
-      .run(err.message, ledgerId);
-    res.locals.audit = { ...res.locals.audit, after: { ...res.locals.audit.after, status: 'unknown', error: err.message } };
-    console.error('[OFFICE API] Stripe refund outcome UNKNOWN (ambiguous error, reservation kept):', err.message);
-    const status = isTimeoutError(err) ? 504 : 502;
-    return respondToMoneyWrite(req, res, status, {
-      error: `Stripe error, outcome unknown: ${err.message}`,
-      outcome: 'unknown',
-      ledger_id: ledgerId,
-      retry_with_same_idempotency_key: true,
-      live_charge_checked: liveChargeChecked,
-    });
+    // Ambiguous (incl. 409/429 — R3-C1(a)): keep the row exactly as it is (still 'pending'
+    // or 'needs_review', still counted against the remainder/caps) and just record the
+    // error for visibility. Never renamed, never released — a same-key retry finds this
+    // row and reuses it (see the route below); a new-key retry is refused outright (R3-M3).
+    return respondAmbiguous(db, req, res, { ledgerId, liveChargeChecked }, err.message, isTimeoutError(err));
   }
 
   // L2: Stripe's own 'failed'/'canceled' refund statuses must not count toward the cap —
   // they release the reservation just like a thrown Stripe error would. This is a REAL
   // Stripe answer (not a thrown error), so it's never ambiguous and never touches
   // error/error_classification.
-  const failedLikeStatuses = new Set(['failed', 'canceled']);
-  const ledgerStatus = failedLikeStatuses.has(refund.status) ? 'failed' : 'succeeded';
-  finalizeRefundLedger(db, ledgerId, { status: ledgerStatus, stripeRefundId: refund.id, stripeStatus: refund.status });
-
-  res.locals.audit = {
-    entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_refund',
-    after: { ledger_id: ledgerId, refund_id: refund.id, payment_id: payment.id, amount_cents: amountCents, status: ledgerStatus, stripe_status: refund.status },
-    amount_cents: amountCents,
-    stripe_object_id: refund.id,
-  };
-
-  // Bookkeeping (payments.refund_amount, bookings.total/balance_due) is intentionally
-  // NOT done here — routes/webhooks.js's charge.refunded handler is the single place
-  // that reduces the booking's books, so a webhook retry or delay can never be
-  // double-counted against a write this endpoint also made.
-  return respondToMoneyWrite(req, res, 201, {
-    refund_id: refund.id,
-    booking_number: booking.booking_number,
-    payment_id: payment.id,
-    amount_cents: amountCents,
-    status: refund.status,
-    ledger_status: ledgerStatus,
-    bookkeeping_via: 'stripe_webhook',
-    live_charge_checked: liveChargeChecked,
-  });
+  return finalizeFromStripeRefund(db, req, res, { ledgerId, booking, payment, amountCents, liveChargeChecked }, refund);
 }
 
 router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'), refundLimiter, asyncHandler(async (req, res) => {
@@ -1241,6 +1315,48 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
     if (!resumedPayment) return res.status(500).json({ error: 'internal error: reserved refund has no matching payment row' });
     const resumedPI = resumedPayment.stripe_payment_id && resumedPayment.stripe_payment_id.startsWith('pi_') ? resumedPayment.stripe_payment_id : null;
     const resumedCharge = !resumedPI && resumedPayment.stripe_charge_id && resumedPayment.stripe_charge_id.startsWith('ch_') ? resumedPayment.stripe_charge_id : null;
+
+    // R3-M2: before ever re-issuing refunds.create on a resume, check with Stripe
+    // directly. Stripe forgets an idempotency key after ~24h, so a same-key retry past
+    // that window would otherwise be treated as brand new and could pay out a SECOND real
+    // refund for an outcome that was actually ambiguous-but-succeeded the first time.
+    let resumeLookup;
+    try {
+      resumeLookup = { found: await stripeService.findRefundByOfficeId(resumable.id, resumedPayment) };
+    } catch (lookupErr) {
+      resumeLookup = { failed: true, error: lookupErr };
+    }
+
+    if (resumeLookup.failed) {
+      console.error('[OFFICE API] resume: findRefundByOfficeId lookup failed — staying pending (ambiguous), no refunds.create call:', resumeLookup.error.message);
+      return respondAmbiguous(db, req, res, { ledgerId: resumable.id, liveChargeChecked: false }, resumeLookup.error.message, false);
+    }
+
+    if (resumeLookup.found) {
+      return finalizeFromStripeRefund(db, req, res, {
+        ledgerId: resumable.id, booking, payment: resumedPayment, amountCents: resumable.amount_cents, liveChargeChecked: false,
+      }, resumeLookup.found);
+    }
+
+    // Nothing found at Stripe yet. If this reservation is old enough that Stripe may have
+    // already forgotten the idempotency key (~24h), calling refunds.create again risks a
+    // genuine SECOND refund instead of Stripe's own dedupe catching it — refuse and
+    // require reconcile/a human resolve instead of retrying blind.
+    const ageMs = Date.now() - new Date(`${resumable.created_at}Z`).getTime();
+    if (ageMs >= RESUME_MAX_AGE_MS) {
+      db.prepare("UPDATE office_refunds SET status = 'needs_review', updated_at = datetime('now') WHERE id = ? AND status IN ('pending', 'needs_review')").run(resumable.id);
+      console.warn('[OFFICE API] resume: reservation is older than the safe same-key resume window — marked needs_review instead of retrying Stripe:', resumable.id);
+      res.locals.audit = {
+        entity_type: 'booking', entity_id: booking.booking_number, action: 'office_api_refund',
+        after: { ledger_id: resumable.id, payment_id: resumedPayment.id, amount_cents: resumable.amount_cents, status: 'needs_review' },
+        amount_cents: resumable.amount_cents,
+      };
+      return respondToMoneyWrite(req, res, 409, {
+        error: 'refund_needs_reconcile', ledger_id: resumable.id,
+        message: 'this reservation is old enough that Stripe may have forgotten the idempotency key — it has been marked needs_review; wait for the reconcile job or use scripts/resolve-office-refund.js',
+      });
+    }
+
     return attemptStripeRefund(db, req, res, {
       ledgerId: resumable.id, booking, payment: resumedPayment, amountCents: resumable.amount_cents,
       paymentIntentId: resumedPI, chargeId: resumedCharge, confirmedBy: resumable.confirmed_by,

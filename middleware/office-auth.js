@@ -343,7 +343,7 @@ function auditAndIdempotency(req, res, next) {
     // the refund handler's own lookup. The audit row itself is updated in place once this
     // retry resolves (registerWriteAudit's resumingAuditId), never replayed, never
     // duplicated.
-    if (isAmbiguousRefundOutcome(existing)) {
+    if (isAmbiguousRefundOutcome(db, existing)) {
       if (existing.method !== req.method || existing.path !== path) {
         return res.status(409).json({ error: 'Idempotency-Key was already used for a different request' });
       }
@@ -377,14 +377,31 @@ function auditAndIdempotency(req, res, next) {
 // ambiguous-Stripe-error path — a narrow, unambiguous signal that this specific audit
 // row's underlying attempt is still unresolved, as opposed to a genuine 4xx/5xx business
 // failure that's safe to retire and retry fresh.
-function isAmbiguousRefundOutcome(existingRow) {
+//
+// R3-L1: that signal goes stale once lib/refund-reconcile.js (or the resolve CLI) has
+// since finalized the UNDERLYING office_refunds ledger row one way or the other — the
+// audit row itself is never touched by reconcile, so its stored response would say
+// "unknown" forever otherwise, permanently 422ing a different-body retry and (before the
+// office_refunds rename above) 409ing a same-key one. Check the ledger row the response
+// names (`ledger_id`) and only call this ambiguous while THAT row is still actually
+// pending/needs_review.
+function isAmbiguousRefundOutcome(db, existingRow) {
   if (!existingRow || !existingRow.response_json) return false;
+  let parsed;
   try {
-    const parsed = JSON.parse(existingRow.response_json);
-    return !!(parsed && parsed.outcome === 'unknown');
+    parsed = JSON.parse(existingRow.response_json);
   } catch {
     return false;
   }
+  if (!parsed || parsed.outcome !== 'unknown') return false;
+  if (!parsed.ledger_id) return true;
+  try {
+    const ledgerRow = db.prepare('SELECT status FROM office_refunds WHERE id = ?').get(parsed.ledger_id);
+    if (ledgerRow && ledgerRow.status !== 'pending' && ledgerRow.status !== 'needs_review') return false;
+  } catch {
+    // Can't check — fall through and keep treating it as still-ambiguous (conservative).
+  }
+  return true;
 }
 
 function apiKeyGenerator(req) {

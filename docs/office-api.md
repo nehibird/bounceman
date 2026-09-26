@@ -104,12 +104,18 @@ Idempotency semantics (mirrors Stripe's own):
 - **`POST /bookings/:n/refunds` responding `502`/`504` with `outcome: "unknown"` (R2-C1)
   is a DIFFERENT case, and the rule is the opposite of a definitive failure:** Stripe may
   or may not have actually processed the refund before the response was lost (a timeout, a
-  dropped connection, a 5xx). **ALWAYS retry with the exact SAME `Idempotency-Key` and the
-  exact same body. NEVER retry an `outcome: "unknown"` response with a NEW
-  `Idempotency-Key`** — a new key gets a new reservation on top of one that's still held,
-  and (before this fix) could have paid out the same refund twice. The retry reuses the
-  original reservation and re-issues the identical Stripe idempotency key, so Stripe's own
-  24-hour idempotency window resolves it to the single real outcome. See §5.
+  dropped connection, a 5xx, a 409, or a 429). **ALWAYS retry with the exact SAME
+  `Idempotency-Key` and the exact same body. NEVER retry an `outcome: "unknown"` response
+  with a NEW `Idempotency-Key`.** The retry reuses the original reservation and re-issues
+  the identical Stripe idempotency key, so Stripe's own 24-hour idempotency window
+  resolves it to the single real outcome.
+- **R3-M3: a new `Idempotency-Key` on a payment that already has an unresolved refund is
+  refused outright, not just capped.** While ANY `pending`/`needs_review` `office_refunds`
+  row exists for a payment — under any key — a fresh refund reservation on that same
+  payment gets `409 {error: "unresolved_refund", ledger_id, retry_with_same_idempotency_key:
+  true}` before any Stripe call is made, regardless of how much headroom is left under the
+  caps. Retry the named `ledger_id`'s original `Idempotency-Key`, or wait for reconcile.
+  See §5.
 
 `HEAD` is treated exactly like `GET` (read, not write-gated).
 
@@ -179,12 +185,13 @@ Every refund request:
 2. **R2-H1 — fails closed:** looks up the LIVE `amount_refunded` on the charge from
    Stripe itself (`services/stripe.js#getLiveRefundedCents`, 5s timeout, 0 retries). If
    that lookup throws, times out, or returns anything that doesn't look trustworthy
-   (missing/unexpandable charge, a non-finite/negative/non-integer `amount_refunded`, or
-   an `amount`/`currency` mismatch against the payment row), the whole request is refused
-   with **`503 {error: "live_check_unavailable"}` — before any reservation and with ZERO
-   `refunds.create` calls.** This applies to `dry_run` too. There is no fallback to a
-   ledger/webhook-only view any more (round 2 had one; it failed OPEN and was the R2-H1
-   finding).
+   (missing/unexpandable charge, a non-finite/negative/non-integer `amount_refunded`, a
+   **missing or wrong** `currency`, or a **missing or mismatched** `amount` against the
+   payment row — R3-L2: a missing value now fails closed exactly like a wrong one, not
+   just a wrong one), the whole request is refused with **`503 {error:
+   "live_check_unavailable"}` — before any reservation and with ZERO `refunds.create`
+   calls.** This applies to `dry_run` too. There is no fallback to a ledger/webhook-only
+   view any more (round 2 had one; it failed OPEN and was the R2-H1 finding).
 3. **In one synchronous `db.transaction()`**, before any Stripe call:
    - Computes `refundable_cents = captured_cents - MAX(webhook-recorded refund_amount,
      the live Stripe amount from step 2, sum of SUCCEEDED office_refunds rows for this
@@ -213,31 +220,55 @@ Every refund request:
    — not from the caller's `Idempotency-Key` header. This guarantees exactly one Stripe
    call per reservation and is what lets the webhook handler and the reconcile script
    find this row again from Stripe's side.
-5. **R2-C1 — the Stripe response is classified before deciding what happens to the
-   reservation:**
-   - **DEFINITIVE failure** — Stripe rejected the request outright, with a real 4xx
-     `statusCode` AND one of `StripeInvalidRequestError`, `StripeCardError`,
-     `StripeAuthenticationError`, `StripePermissionError`, or `StripeRateLimitError`
-     (`lib/stripe-errors.js`). The ledger row finalizes `failed`, the reservation is
-     released (it no longer counts against the cap/remainder), and the idempotency key is
-     renamed off to the side so a retry with the same `Idempotency-Key` reserves fresh.
-     Responds `502`.
-   - **A real Stripe `refund.status` of `failed`/`canceled`** (not a thrown error — Stripe
-     answered, just negatively) is handled the same way (L2): `failed`, released, retry-fresh.
-   - **AMBIGUOUS outcome** — everything else: no `statusCode`, a 5xx, `StripeAPIError`,
+5. **R2-C1/R3-C1 — the Stripe response is classified before deciding what happens to the
+   reservation. A 4xx alone is never trusted at face value — stripe-node's own hidden
+   retry (see the note on `maxNetworkRetries` below) can land a misleading one:**
+   - **AMBIGUOUS outcome** — no `statusCode`, a 5xx, a `409`, a `429`, `StripeAPIError`,
      `StripeConnectionError`, `StripeIdempotencyError`, a timeout, or an unrecognized
-     error. Stripe may have already processed the refund before the response was lost.
-     The ledger row **stays exactly as it is** (`pending`/`needs_review`, still counted),
-     is never renamed, and the error text is recorded for visibility. Responds `502`
-     (`504` for a timeout) with `{error, outcome: "unknown", ledger_id,
-     retry_with_same_idempotency_key: true}`.
+     error. **R3-C1: a 409 (any type, especially `code: 'idempotency_key_in_use'`) and a
+     429 are NEVER definitive**, no matter what type stripe-node attaches — Stripe's own
+     rate limiter runs before its idempotency layer, so a 429 can come back for a request
+     that already succeeded, and `idempotency_key_in_use`/`idempotency_error` 409s mean an
+     earlier attempt is still (or was) in flight. Stripe may have already processed the
+     refund before the response was lost. The ledger row **stays exactly as it is**
+     (`pending`/`needs_review`, still counted), is never renamed, and the error text is
+     recorded for visibility. Responds `502` (`504` for a timeout) with `{error, outcome:
+     "unknown", ledger_id, retry_with_same_idempotency_key: true}`.
+   - **A CANDIDATE definitive failure** — a real 4xx `statusCode` OTHER than 409/429, AND
+     one of `StripeInvalidRequestError`, `StripeCardError`, `StripeAuthenticationError`, or
+     `StripePermissionError` (`lib/stripe-errors.js`). **R3-C1(b): before finalizing
+     anything, the app calls `findRefundByOfficeId` to confirm directly with Stripe** —
+     stripe-node still retries once after `ECONNRESET`/`EPIPE` regardless of
+     `maxNetworkRetries` (a hardcoded case, not the configurable retry count), so this
+     "definitive-looking" error can land on a retry whose ORIGINAL attempt already
+     succeeded.
+     - If Stripe confirms **no matching refund exists**, the ledger row finalizes
+       `failed`, the reservation is released, and the idempotency key is renamed off to
+       the side so a retry with the same `Idempotency-Key` reserves fresh. Responds `502`.
+     - If Stripe **does** have a matching refund, the app finalizes from it directly (same
+       as a normal success) and responds `201` — the reservation is never released, and no
+       second Stripe call is made.
+     - If the confirmation lookup **itself fails** (times out, errors, or hits
+       `findRefundByOfficeId`'s page cap — R3-L4), the row is treated exactly like an
+       ambiguous outcome: stays pending, `502 {outcome: "unknown"}`.
+   - **A real Stripe `refund.status` of `failed`/`canceled`** (not a thrown error — Stripe
+     answered, just negatively) is a genuine, already-confirmed answer: `failed`,
+     released, retry-fresh (L2) — no confirmation lookup needed, Stripe already spoke.
    - **A retry with the SAME `Idempotency-Key`** whose `office_refunds` row is still
-     `pending`/`needs_review` **reuses that exact row** — same ledger id, same derived
-     Stripe idempotency key — instead of a fresh reservation with fresh cap headroom.
-     Stripe's own 24-hour idempotency window then resolves it to the single real outcome
-     (at most one real refund). A **genuinely concurrent** duplicate request (same key,
-     arriving while the original call to Stripe is still outstanding **in this process**)
-     gets `409` instead of racing a second concurrent Stripe call.
+     `pending`/`needs_review` **reuses that exact row** — same ledger id — rather than a
+     fresh reservation with fresh cap headroom. **R3-M2:** the resume path calls
+     `findRefundByOfficeId` FIRST, before ever calling `refunds.create` again — a refund
+     object never expires, so this resolves correctly even long after Stripe has forgotten
+     the *idempotency key* (~24h). Only if nothing is found AND the reservation is older
+     than ~23h does the app refuse to call Stripe again at all: it marks the row
+     `needs_review` and responds `409 {error: "refund_needs_reconcile", ledger_id}` — this
+     is the one case a same-key retry does NOT eventually resolve on its own; it needs
+     `scripts/reconcile-office-refunds.js` or a human. If found nothing and the row is
+     still fresh, it proceeds to call `refunds.create` as normal, and Stripe's own 24-hour
+     idempotency window resolves it to the single real outcome. A **genuinely concurrent**
+     duplicate request (same key, arriving while the original call to Stripe is still
+     outstanding **in this process**) gets `409` instead of racing a second concurrent
+     Stripe call.
    - **A row already `succeeded`** is *usually* answered by the generic idempotency replay
      in `middleware/office-auth.js`, straight from a `2xx` audit row, before this logic
      ever runs. **R2-L2 exception:** a client disconnect writes a `499` audit row (via
@@ -248,9 +279,18 @@ Every refund request:
      failure" and reprocesses — so this endpoint also checks the ledger itself for an
      already-`succeeded` row and replays `201` directly from it (no second Stripe call).
      The retry gets its own fresh audit row recording the `201`; the stale `499` row is
-     kept as history, not overwritten.
-   - A **new** `Idempotency-Key` retried after an ambiguous outcome is still capped by the
-     still-counted reservation.
+     kept as history, not overwritten. **R3-L1:** once reconcile (or the resolve CLI) has
+     since finalized the underlying ledger row, the middleware also stops treating a stale
+     `outcome: "unknown"` audit row as still-ambiguous — it checks the named `ledger_id`'s
+     CURRENT status, so a same-key retry (or a different-body one) after a
+     reconciled-`failed` row starts fresh instead of getting stuck on `409`/`422` forever.
+   - **R3-M3: a NEW `Idempotency-Key` while ANY reservation on the SAME PAYMENT (any key)
+     is still `pending`/`needs_review`** is refused outright — `409 {error:
+     "unresolved_refund", ledger_id, retry_with_same_idempotency_key: true}` — checked
+     inside the same reservation transaction, before any Stripe call. This is stricter
+     than the cap/remainder math: even with headroom to spare, a second reservation on top
+     of one whose outcome is unknown can double-pay if the unresolved one turns out to
+     have succeeded. Retry the named `ledger_id`'s own key, or wait for reconcile.
    - The audit row (`api_audit_log`) is written explicitly at step 3 (before Stripe is
      ever called) and again at finalize — for a resumed retry, the SAME audit row is
      updated in place, never duplicated. It also fires on the response's `close` event,
@@ -258,6 +298,13 @@ Every refund request:
      **An audit-write failure on any of these responses is a `500`, not just a
      `console.error`** — a money-moving write is never allowed to ship a clean response
      with no corresponding audit row.
+
+   **`maxNetworkRetries`:** the Stripe client's own default (`services/stripe.js`) is `1`
+   — safe in general because every write here is idempotency-keyed. `refunds.create`
+   specifically overrides this to `0` (R3-C1(c)) so the app-level same-key retry above is
+   the only *configurable* retry for a refund. stripe-node still retries once after a raw
+   `ECONNRESET`/`EPIPE` regardless of this setting (that path is hardcoded, not governed by
+   `maxNetworkRetries`) — which is exactly the hidden-retry gap R3-C1(a)/(b) close.
 
 Bookkeeping (`payments.refund_amount`, `bookings.total`/`balance_due`) is **not** done by
 this endpoint — `routes/webhooks.js`'s `charge.refunded` handler is the single place that
@@ -280,9 +327,16 @@ each one's refund on Stripe by `metadata.office_refund_id` (paginated past the f
 R2-M2c) and finalizes it to `succeeded`/`failed`, or `needs_review` if Stripe's answer
 can't be determined — **never by calling `refunds.create`**. **`needs_review` still counts
 against the key's caps** until a human clears it — it can never be used to silently bypass
-them. Exits non-zero if any row ends `needs_review`, so a cron wrapper can alert. Run this
-every few minutes via cron/systemd timer; it's safe to run repeatedly. Not yet scheduled in
-production — see the deploy notes.
+them. **R3-L1:** finalizing to `failed` here retires the ledger row's idempotency key the
+same way a definitive failure always has, so a same-key retry afterward reserves fresh
+instead of hitting a permanent `409`. **R3-L4:** if `findRefundByOfficeId` hits its page
+cap instead of getting a real answer, that's surfaced as a lookup failure (the row is left/
+set `needs_review` with the cap error recorded), not silently treated as "not found".
+Exits non-zero if any row ends `needs_review`, so a cron wrapper can alert. Run this every
+few minutes via cron/systemd timer; it's safe to run repeatedly. **R3-M2: this cron is a
+money-safety control, not just housekeeping** — install it before any key is granted
+`refunds:create` for real, and alert on a stale/non-firing log, not just a non-zero exit
+(see the deploy notes). Not yet scheduled in production.
 
 **Clearing a `needs_review` (or old, still-`pending`) row by hand** (R2-M2a) — the only
 other supported path, once Stripe's own answer has been confirmed manually:
@@ -292,11 +346,20 @@ node scripts/resolve-office-refund.js <ledger_id> succeeded --reason "confirmed 
 node scripts/resolve-office-refund.js <ledger_id> failed --reason "confirmed never charged" --actor Nehemiah
 ```
 
-Never calls `refunds.create`. `--reason` is required. Marking `succeeded` requires
-`--stripe-refund` and is verified against Stripe when `STRIPE_SECRET_KEY` is set (refund
-exists, `metadata.office_refund_id` matches, amount matches); without Stripe access, pass
-`--no-verify` explicitly. Writes an audit row in the same transaction as the status
-change. See `scripts/README.md`.
+Never calls `refunds.create`. `--reason` and `--actor` are both required (no default
+actor). `--stripe-refund` must look like `re_...` even with `--no-verify`. Marking
+`succeeded` requires `--stripe-refund` and is verified against Stripe when
+`STRIPE_SECRET_KEY` is set (refund exists, `metadata.office_refund_id` matches, amount
+matches); without Stripe access, pass `--no-verify` explicitly. **R3-M1: marking `failed`
+now requires the SAME kind of confirmation** — with Stripe access, it calls
+`findRefundByOfficeId` and refuses (no change) if any non-`failed`/non-`canceled` refund
+already exists for the row, or if the lookup itself fails; without Stripe access,
+`--no-verify` is required. Only on confirmed-`failed` does it retire the ledger row's
+idempotency key (same convention as a definitive failure) so the key can start fresh — the
+`UPDATE` also checks the row's status hasn't changed since this command started reading it
+(`AND status = ?`, checking `changes`), closing a TOCTOU window against a same-key resume
+or reconcile finishing concurrently. Writes an audit row (including what was checked
+against Stripe) in the same transaction as the status change. See `scripts/README.md`.
 
 ## 6. Payment links (M2, M3, R2-M1)
 
@@ -430,10 +493,15 @@ The endpoint (`/api/webhooks/stripe`) must subscribe to at least:
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe
   itself later fails/cancels a refund that had already looked like it succeeded. **R2-L5:**
   if that refund's amount had already been folded into `payments.refund_amount`/
-  `bookings.total` (a genuine reversal), this handler corrects both DOWN/UP by the
-  refund's own amount directly — it does not wait for a follow-up `charge.refunded` event
-  with a lower cumulative total, because that event's own `charge.refunded` handler would
-  reject a lower cumulative as stale/out-of-order (H1) and never apply it. Idempotent:
+  `bookings.total` (a genuine reversal), this handler corrects both DOWN/UP — it does not
+  wait for a follow-up `charge.refunded` event with a lower cumulative total, because that
+  event's own `charge.refunded` handler would reject a lower cumulative as stale/
+  out-of-order (H1) and never apply it. **R3-L3:** the correction re-reads the charge's
+  LIVE `amount_refunded` from Stripe and SETS `refund_amount` to that absolute figure
+  (falling back to a plain subtraction only if the live lookup itself fails) — a plain
+  subtraction alone breaks if THIS refund's own `charge.refunded` event hasn't arrived yet
+  (out-of-order delivery), since `refund_amount` never included it in the first place.
+  Runs inside one `BEGIN IMMEDIATE` transaction with the booking bookkeeping. Idempotent:
   gated on the ledger row's status actually transitioning to `failed`, so a repeated
   delivery for the same refund never double-corrects.
 

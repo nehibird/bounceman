@@ -26,11 +26,17 @@ node scripts/reconcile-office-refunds.js [--older-than-minutes 15]
 The audited, manual escape hatch for a `needs_review` (or old-enough `pending`)
 `office_refunds` row that `reconcile-office-refunds.js` couldn't settle on its own — see
 `docs/office-api.md` §5. Never calls `stripe.refunds.create`; it only RECORDS an outcome a
-human has already confirmed on Stripe's own dashboard/API. `--reason` is required; marking
-`succeeded` requires `--stripe-refund re_...` and is verified against Stripe whenever
-`STRIPE_SECRET_KEY` is set (refund exists, `metadata.office_refund_id` matches, amount
-matches) — without Stripe access, pass `--no-verify` explicitly. Writes an audit row
-(`api_audit_log` + `activity_log`) in the same transaction as the status change.
+human has already confirmed on Stripe's own dashboard/API. `--reason` and `--actor` are
+both required. Marking `succeeded` requires `--stripe-refund re_...`; marking `failed`
+requires the SAME kind of Stripe confirmation (refuses if a non-failed/non-canceled refund
+already exists for the row, or if the lookup itself fails) — both are verified against
+Stripe whenever `STRIPE_SECRET_KEY` is set (for `succeeded`: refund exists,
+`metadata.office_refund_id` matches, amount matches), and both require `--no-verify`
+explicitly without Stripe access. `--stripe-refund`, when given, must look like `re_...`
+even with `--no-verify`. A confirmed `failed` also retires the row's idempotency key (same
+convention as a definitive Stripe failure) so a same-key retry can reserve fresh. Writes an
+audit row (`api_audit_log` + `activity_log`, including what was checked against Stripe) in
+the same transaction as the status change.
 
 ```bash
 node scripts/resolve-office-refund.js <ledger_id> succeeded --reason "confirmed on Stripe dashboard by Nehemiah" --stripe-refund re_123 --actor Nehemiah

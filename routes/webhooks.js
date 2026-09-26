@@ -395,24 +395,64 @@ router.post('/stripe', async (req, res) => {
               // because it's gated on `info.changes` (only fires the one time this row
               // transitions into 'failed').
               if (officeRow && officeRow.status === 'succeeded' && officeRow.payment_id) {
+                // R3-L3: don't blindly SUBTRACT this refund's own amount from
+                // payments.refund_amount — if THIS refund's own charge.refunded event
+                // hasn't arrived yet (out-of-order delivery), refund_amount never
+                // included it in the first place, and subtracting would drive the books
+                // wrong (then a later charge.refunded would re-apply the delta on top of
+                // that wrong base). Ask Stripe directly for the charge's LIVE
+                // amount_refunded and SET refund_amount to that absolute figure instead —
+                // inside one IMMEDIATE transaction with the booking bookkeeping, so a
+                // concurrent/interleaved charge.refunded for the same charge can't race
+                // this correction. Falls back to the old subtract-by-this-refund's-amount
+                // behavior if the live lookup itself fails (best-effort; this is
+                // after-the-fact bookkeeping, not a new money-moving decision).
+                let liveRefundedCents = null;
+                try {
+                  liveRefundedCents = await stripeService.getLiveRefundedCents({
+                    paymentIntentId: typeof refund.payment_intent === 'string' ? refund.payment_intent : undefined,
+                    chargeId: typeof refund.charge === 'string' ? refund.charge : undefined,
+                  });
+                } catch (liveErr) {
+                  console.error('[Stripe Webhook] charge.refund.updated: live amount_refunded lookup failed, falling back to a plain subtraction:', liveErr.message);
+                }
+
                 const reversedDollars = Math.round((refund.amount / 100) * 100) / 100;
-                const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(officeRow.payment_id);
-                if (payment) {
-                  const newRefundAmount = Math.max(0, Math.round((parseFloat(payment.refund_amount || 0) - reversedDollars) * 100) / 100);
+                const reversalOutcome = db.transaction(() => {
+                  const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(officeRow.payment_id);
+                  if (!payment) return null;
+                  const priorRefundAmount = parseFloat(payment.refund_amount || 0);
+                  const newRefundAmount = liveRefundedCents !== null
+                    ? Math.round((liveRefundedCents / 100) * 100) / 100
+                    : Math.max(0, Math.round((priorRefundAmount - reversedDollars) * 100) / 100);
+                  const actualDelta = Math.round((priorRefundAmount - newRefundAmount) * 100) / 100;
                   db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?').run(newRefundAmount, payment.id);
-                  const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
-                  if (bk) {
-                    const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
-                      FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
-                    const newTotal = Math.round((bk.total + reversedDollars) * 100) / 100;
-                    const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
-                    db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
-                      internal_notes = TRIM(COALESCE(internal_notes,'') ||
-                        ' [refund reversed] $' || ? || ' refund failed/canceled ' || date('now') || '; total restored to $' || ? || '.'),
-                      updated_at = datetime('now') WHERE id = ?`)
-                      .run(newTotal, newBalance, reversedDollars.toFixed(2), newTotal.toFixed(2), bk.id);
-                    console.log('[Stripe Webhook] charge.refund.updated: reversed $' + reversedDollars.toFixed(2) +
-                      ' on payment ' + payment.id + ', booking ' + bk.booking_number + ' total restored to $' + newTotal.toFixed(2));
+
+                  let bookingResult = null;
+                  if (actualDelta !== 0) {
+                    const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
+                    if (bk) {
+                      const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
+                        FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
+                      const newTotal = Math.round((bk.total + actualDelta) * 100) / 100;
+                      const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
+                      db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
+                        internal_notes = TRIM(COALESCE(internal_notes,'') ||
+                          ' [refund reversed] $' || ? || ' refund failed/canceled ' || date('now') || '; total restored to $' || ? || '.'),
+                        updated_at = datetime('now') WHERE id = ?`)
+                        .run(newTotal, newBalance, Math.abs(actualDelta).toFixed(2), newTotal.toFixed(2), bk.id);
+                      bookingResult = { bookingNumber: bk.booking_number, oldTotal: bk.total, newTotal };
+                    }
+                  }
+                  return { paymentId: payment.id, newRefundAmount, actualDelta, booking: bookingResult };
+                }).immediate();
+
+                if (reversalOutcome) {
+                  console.log('[Stripe Webhook] charge.refund.updated: refund_amount set to $' + reversalOutcome.newRefundAmount.toFixed(2) +
+                    ' (delta $' + reversalOutcome.actualDelta.toFixed(2) + ') on payment ' + reversalOutcome.paymentId);
+                  if (reversalOutcome.booking) {
+                    console.log('[Stripe Webhook] charge.refund.updated: booking ' + reversalOutcome.booking.bookingNumber +
+                      ' total ' + reversalOutcome.booking.oldTotal.toFixed(2) + ' -> ' + reversalOutcome.booking.newTotal.toFixed(2));
                   }
                 }
               }
