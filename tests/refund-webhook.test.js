@@ -567,6 +567,59 @@ async function main() {
     liveAmountRefundedCentsOverride = null;
   }
 
+  // (c2) Hardening: the reclaim's WHERE clause (status='processing' AND created_at <=
+  // cutoff), not a preceding SELECT, is what gates it — a direct proof that only ONE of
+  // two identical reclaim attempts against the SAME stale row can ever succeed, exactly
+  // the compare-and-swap the fix relies on for real cross-process safety (two real OS
+  // processes can't both interleave a SELECT and an unconditional UPDATE the way a single
+  // process's synchronous dedup block never could in the first place).
+  {
+    const atomicEventId = 'evt_atomic_reclaim_1';
+    const oldCutoff = new Date(Date.now() - 6 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now', '-10 minutes'))").run(atomicEventId);
+    const reclaimSql = "UPDATE stripe_events_seen SET created_at = datetime('now') WHERE event_id = ? AND status = 'processing' AND created_at <= ?";
+    const first = database.prepare(reclaimSql).run(atomicEventId, oldCutoff);
+    const second = database.prepare(reclaimSql).run(atomicEventId, oldCutoff);
+    t('R5-L2 (atomic reclaim): the FIRST reclaim attempt against a stale row succeeds (changes=1)', first.changes === 1, first);
+    t('R5-L2 (atomic reclaim): the SECOND attempt against the SAME row fails (changes=0) — the first already moved created_at past the cutoff', second.changes === 0, second);
+  }
+
+  // (c3) Hardening at the HTTP layer: a stale processing row whose reclaimer is still mid-
+  // flight (a slow live lookup) must make a CONCURRENT duplicate delivery of the SAME event
+  // get 409, never a second successful process — exactly "a stale processing row + two
+  // reclaim attempts -> exactly one processes, the other gets 409".
+  {
+    const raceEventId = 'evt_stale_race_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now', '-10 minutes'))").run(raceEventId);
+    const raceCustomerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'StaleRace', 'Test')").run(raceCustomerId);
+    const raceBookingId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, 'BM-STALERACE-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(raceBookingId, raceCustomerId);
+    const racePaymentId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_stale_race_1', 'completed', 0)`).run(racePaymentId, raceBookingId, raceCustomerId);
+
+    liveAmountRefundedCentsOverride = 1500;
+    liveLookupDelayMs = 200;
+    const raceEventBody = chargeRefundedEvent(raceEventId, 1500, 'pi_stale_race_1', null);
+    const [raceFirst, raceSecond] = await Promise.all([
+      post(raceEventBody),
+      sleep(50).then(() => post(raceEventBody)),
+    ]);
+    liveLookupDelayMs = 0;
+    t('R5-L2 (atomic reclaim): the reclaiming delivery eventually succeeds -> 200', raceFirst.status === 200, raceFirst.status);
+    t('R5-L2 (atomic reclaim): a concurrent duplicate of the SAME stale event gets 409, never a second success', raceSecond.status === 409, raceSecond.status);
+    const raceSecondBody = await raceSecond.json();
+    t('R5-L2 (atomic reclaim): the 409 asks Stripe to retry, never reports duplicate:true', raceSecondBody.duplicate !== true, raceSecondBody);
+    const racePayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(racePaymentId);
+    t('R5-L2 (atomic reclaim): the event was applied exactly once (refund_amount = 15, not doubled)', racePayment.refund_amount === 15, racePayment.refund_amount);
+    const raceSeenRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(raceEventId);
+    t('R5-L2 (atomic reclaim): the row ends up done', raceSeenRow && raceSeenRow.status === 'done', raceSeenRow);
+    liveAmountRefundedCentsOverride = null;
+  }
+
   // (d) 30-day prune still works with the new status column — age is what matters, not
   // status; a 'done' and a 'processing' row are both pruned once old enough.
   {

@@ -114,13 +114,34 @@ router.post('/stripe', async (req, res) => {
       if (!existing || existing.status === 'done') {
         alreadyDone = true;
       } else {
+        // Hardening: the reclaim itself is the ONE atomic statement that decides it — the
+        // staleness check lives in the UPDATE's own WHERE clause, not in a separate SELECT
+        // branch beforehand. A plain "SELECT, then decide in JS, then UPDATE unconditionally"
+        // (the original shape) is a classic TOCTOU: across two real OS processes sharing this
+        // SQLite file (the same concern R2-L4's BEGIN IMMEDIATE guards elsewhere), both could
+        // read the same stale row before either UPDATE commits, and both would reclaim and
+        // both process the same event. Folding the condition into the UPDATE means SQLite's
+        // own single-writer serialization is what arbitrates — at most one UPDATE can ever
+        // match a given row's still-stale `created_at`, because the FIRST one to commit
+        // moves `created_at` to now(), which no longer satisfies `<= staleCutoff` for anyone
+        // still holding a stale read.
         const staleCutoff = new Date(Date.now() - PROCESSING_STALE_MS).toISOString().replace('T', ' ').slice(0, 19);
-        if (existing.created_at <= staleCutoff) {
+        const reclaim = db.prepare(
+          "UPDATE stripe_events_seen SET created_at = datetime('now') WHERE event_id = ? AND status = 'processing' AND created_at <= ?"
+        ).run(event.id, staleCutoff);
+        if (reclaim.changes === 1) {
           console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash):', event.id, event.type);
-          db.prepare("UPDATE stripe_events_seen SET status = 'processing', created_at = datetime('now') WHERE event_id = ?").run(event.id);
         } else {
-          console.log('[Stripe Webhook] event still processing elsewhere — asking Stripe to retry:', event.id, event.type);
-          return res.status(409).json({ error: 'event_processing', retry: true });
+          // The atomic reclaim didn't match — either the row genuinely isn't stale (a live
+          // concurrent delivery: 409, Stripe retries), or it raced to 'done' between our
+          // SELECT above and this UPDATE (a safe duplicate: 200). Re-read to tell them apart.
+          const recheck = db.prepare('SELECT status FROM stripe_events_seen WHERE event_id = ?').get(event.id);
+          if (recheck && recheck.status === 'done') {
+            alreadyDone = true;
+          } else {
+            console.log('[Stripe Webhook] event still processing elsewhere — asking Stripe to retry:', event.id, event.type);
+            return res.status(409).json({ error: 'event_processing', retry: true });
+          }
         }
       }
     }
