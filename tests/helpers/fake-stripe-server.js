@@ -227,6 +227,10 @@ async function createFakeStripe({ port = 0 } = {}) {
   function applyFault(req, res, mode) {
     switch (mode) {
       case '400': json(res, 400, errBody('invalid_request_error', 'Invalid request (fake)', { code: 'parameter_invalid_empty' })); return true;
+      // R7-M1: a genuine 4xx whose message/code ALSO looks like a network/timeout fault —
+      // proves the classifier's 4xx-always-wins check actually reaches production code
+      // over the real SDK, not just the unit-level classifyStripeLookupError tests.
+      case '400_timeout_message': json(res, 400, errBody('invalid_request_error', 'Request timed out (fake)', { code: 'ECONNRESET' })); return true;
       case '401': json(res, 401, errBody('invalid_request_error', 'Invalid API Key provided (fake)')); return true;
       case '403': json(res, 403, errBody('invalid_request_error', 'Permission denied (fake)')); return true;
       case '409': json(res, 409, errBody('idempotency_error', 'Idempotency error (fake)')); return true;

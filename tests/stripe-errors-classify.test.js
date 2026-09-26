@@ -106,6 +106,20 @@ t('an unrecognized 4xx (402) is a conflict', classifyStripeLookupError(err('Stri
   t('the generic conflict message names the status and type', /403/.test(r.message) && /StripePermissionError/.test(r.message) && /can't be forced with --no-verify/.test(r.message), r);
 }
 
+// --- R7-M1: a 4xx statusCode ALWAYS wins over a timeout-shaped message or a
+// network-looking err.code riding along with it — those heuristics only excuse a call
+// that never got a real Stripe answer, and a 4xx status IS a real answer. -------------
+t('a 400 whose message says "timed out" is STILL a conflict, not unavailable',
+  classifyStripeLookupError(Object.assign(new Error('Request timed out'), { type: 'StripeInvalidRequestError', statusCode: 400 })).outcome === 'conflict', null);
+t('a 403 that also carries a network err.code (ECONNRESET) is STILL a conflict',
+  classifyStripeLookupError(Object.assign(new Error('x'), { type: 'StripePermissionError', statusCode: 403, code: 'ECONNRESET' })).outcome === 'conflict', null);
+t('a 401 whose message says "timeout" still gets the key-specific conflict, not unavailable',
+  classifyStripeLookupError(Object.assign(new Error('timeout'), { type: 'StripeAuthenticationError', statusCode: 401 })).outcome === 'conflict', null);
+t('a plain ETIMEDOUT with NO statusCode is still unavailable (the fix only gates on a real 4xx statusCode)',
+  classifyStripeLookupError({ code: 'ETIMEDOUT' }).outcome === 'unavailable', null);
+t('a 5xx that also carries a timeout-shaped message is still unavailable (unaffected by the 4xx-only fix)',
+  classifyStripeLookupError(Object.assign(new Error('Request timed out'), { statusCode: 503 })).outcome === 'unavailable', null);
+
 // --- fail-closed: no statusCode AND no recognized network/timeout code -> conflict ----
 {
   const r = classifyStripeLookupError(new Error('something truly unexpected'));

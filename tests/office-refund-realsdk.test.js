@@ -483,7 +483,10 @@ async function main() {
       return { id, bookingId, paymentId };
     }
 
-    const NEVER_FORCEABLE = ['400', '403', '409', '401'];
+    // R7-M1: a 400 whose message/code ALSO looks like a network/timeout fault must still
+    // refuse — proves the fix (a 4xx statusCode always wins over the timeout heuristic)
+    // holds through the real SDK's actual error shape, not just the unit classifier.
+    const NEVER_FORCEABLE = ['400', '403', '409', '401', '400_timeout_message'];
     for (const mode of NEVER_FORCEABLE) {
       for (const noVerify of [false, true]) {
         const label = `${mode}${noVerify ? '+nv' : ''}`;
