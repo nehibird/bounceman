@@ -7,6 +7,11 @@ const vapiSvc = require('../services/vapi');
 const crypto = require('crypto');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c162c';
 
+// R6-L1: undici's default fetch timeout is ~300s — far longer than the 5-minute
+// stripe_events_seen stale-processing window, so a stalled Slack call could otherwise let
+// a "live" delivery get reclaimed by a redelivery while it's still genuinely working.
+const SLACK_FETCH_TIMEOUT_MS = 10000;
+
 // SECURITY: require SARAH_API_KEY (no insecure fallback) — used to auth internal /api/sarah/* calls
 const SARAH_API_KEY = process.env.SARAH_API_KEY;
 if (!SARAH_API_KEY) throw new Error('[SECURITY] SARAH_API_KEY environment variable is required');
@@ -65,6 +70,21 @@ function guardVapi(req, res) {
   return true;
 }
 
+// R6-L1: cheap ownership check before firing a non-money side effect (Slack/email) that
+// runs after this handler's own synchronous work is done — if a slow enough stall let
+// ANOTHER delivery attempt reclaim this event_id in the meantime (see the dedup/reclaim
+// logic below), this attempt no longer owns the row and should skip a duplicate
+// notification rather than fire it anyway. Only ever gates a notification — never a money
+// write, which stays exactly as before.
+function stillOwnsEventAttempt(db, eventId, attemptId) {
+  try {
+    const row = db.prepare('SELECT 1 FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').get(eventId, attemptId);
+    return !!row;
+  } catch {
+    return true; // fail open — never let the check itself swallow a real notification
+  }
+}
+
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
   const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
@@ -83,6 +103,14 @@ router.post('/stripe', async (req, res) => {
   }
 
   const db = getDb();
+
+  // R6-L1: a per-DELIVERY-ATTEMPT token — set on the INSERT below and again on a reclaim
+  // UPDATE — so this attempt's later 'done' UPDATE / error-DELETE can be scoped to ONLY the
+  // row it actually still owns (see stillOwnsEventAttempt and the end of this handler). A
+  // redelivery that reclaims a stale row gets its OWN fresh attempt_id, so a since-reclaimed
+  // earlier attempt that's still (slowly) running can never mark or delete the reclaimer's
+  // row out from under it.
+  const myAttemptId = crypto.randomUUID();
 
   // Dedup: Stripe retries a webhook delivery until it gets a 2xx (and can occasionally
   // redeliver an already-handled event for other reasons). INSERT OR IGNORE is atomic, so
@@ -105,13 +133,31 @@ router.post('/stripe', async (req, res) => {
   // UPDATE or the DELETE below) — PROCESSING_STALE_MS reclaims it rather than 409ing
   // forever, exactly like resolve-office-refund.js's --older-than-minutes eligibility
   // check (a JS-computed cutoff string, compared lexically against the stored datetime).
+  //
+  // R6-I2: a 'processing' row whose created_at is in the FUTURE (a container clock that
+  // was briefly ahead) is stale in the OTHER direction — it would otherwise sit unreclaimed
+  // past the normal 5-minute window for however far ahead the clock had drifted, 409ing
+  // every redelivery in between for no reason (Stripe just keeps retrying, so nothing is
+  // lost, but it's needless delay). FUTURE_SKEW_TOLERANCE_MS gives a 1-minute grace window
+  // for ordinary clock jitter before treating a future created_at as skew rather than a
+  // genuinely fresh, still-live row.
   const PROCESSING_STALE_MS = 5 * 60 * 1000;
+  const FUTURE_SKEW_TOLERANCE_MS = 60 * 1000;
   let alreadyDone = false;
   try {
-    const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status) VALUES (?, 'processing')").run(event.id);
+    const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status, attempt_id) VALUES (?, 'processing', ?)").run(event.id, myAttemptId);
     if (dedupInfo.changes === 0) {
       const existing = db.prepare('SELECT status, created_at FROM stripe_events_seen WHERE event_id = ?').get(event.id);
-      if (!existing || existing.status === 'done') {
+      if (!existing) {
+        // R6-L2: the INSERT OR IGNORE found a conflicting row (changes===0), but this
+        // follow-up SELECT finds NOTHING — the row vanished in between, which can only
+        // happen across processes (another process's own first delivery just failed and
+        // DELETEd it). Silently treating this as a safe 200 duplicate would ACK an event
+        // that was never actually processed and that Stripe would otherwise have retried.
+        // 409 instead, so Stripe redelivers and either this or another attempt picks it up.
+        console.log('[Stripe Webhook] dedup row vanished between INSERT and SELECT — asking Stripe to retry:', event.id, event.type);
+        return res.status(409).json({ error: 'event_processing', retry: true });
+      } else if (existing.status === 'done') {
         alreadyDone = true;
       } else {
         // Hardening: the reclaim itself is the ONE atomic statement that decides it — the
@@ -123,14 +169,16 @@ router.post('/stripe', async (req, res) => {
         // both process the same event. Folding the condition into the UPDATE means SQLite's
         // own single-writer serialization is what arbitrates — at most one UPDATE can ever
         // match a given row's still-stale `created_at`, because the FIRST one to commit
-        // moves `created_at` to now(), which no longer satisfies `<= staleCutoff` for anyone
+        // moves `created_at` to now(), which no longer satisfies the WHERE clause for anyone
         // still holding a stale read.
         const staleCutoff = new Date(Date.now() - PROCESSING_STALE_MS).toISOString().replace('T', ' ').slice(0, 19);
+        const futureSkewCutoff = new Date(Date.now() + FUTURE_SKEW_TOLERANCE_MS).toISOString().replace('T', ' ').slice(0, 19);
         const reclaim = db.prepare(
-          "UPDATE stripe_events_seen SET created_at = datetime('now') WHERE event_id = ? AND status = 'processing' AND created_at <= ?"
-        ).run(event.id, staleCutoff);
+          `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`
+        ).run(myAttemptId, event.id, staleCutoff, futureSkewCutoff);
         if (reclaim.changes === 1) {
-          console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash):', event.id, event.type);
+          console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash or clock skew):', event.id, event.type);
         } else {
           // The atomic reclaim didn't match — either the row genuinely isn't stale (a live
           // concurrent delivery: 409, Stripe retries), or it raced to 'done' between our
@@ -189,6 +237,13 @@ router.post('/stripe', async (req, res) => {
           // Update Slack card if one exists
           setTimeout(async () => {
             try {
+              // R6-L1: cheap ownership check — skip if this attempt was reclaimed while
+              // this callback sat queued (never gates the money write above, only this
+              // notification).
+              if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+                console.log('[Stripe Webhook] Walk-up Slack notify skipped — attempt no longer owns the row:', event.id);
+                return;
+              }
               const slackToken = process.env.SLACK_BOT_TOKEN;
               if (slackToken && updatedReg.slack_card_ts && updatedReg.slack_card_channel) {
                 const wristbandLabel = start === end ? '#' + start : '#' + start + '–#' + end;
@@ -211,7 +266,8 @@ router.post('/stripe', async (req, res) => {
                 await fetch('https://slack.com/api/chat.update', {
                   method: 'POST',
                   headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ channel: updatedReg.slack_card_channel, ts: updatedReg.slack_card_ts, blocks, text: updatedReg.parent_name + ' — paid & ready' })
+                  body: JSON.stringify({ channel: updatedReg.slack_card_channel, ts: updatedReg.slack_card_ts, blocks, text: updatedReg.parent_name + ' — paid & ready' }),
+                  signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
                 });
               }
               // Also post a new notification to #events if no card to update
@@ -221,7 +277,8 @@ router.post('/stripe', async (req, res) => {
                 await fetch('https://slack.com/api/chat.postMessage', {
                   method: 'POST',
                   headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ channel: eventsChannel, text: '✅ ' + updatedReg.parent_name + ' paid $' + amountPaid.toFixed(2) + ' — wristbands ' + wristbandLabel })
+                  body: JSON.stringify({ channel: eventsChannel, text: '✅ ' + updatedReg.parent_name + ' paid $' + amountPaid.toFixed(2) + ' — wristbands ' + wristbandLabel }),
+                  signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
                 });
               }
             } catch (e) { console.error('[Stripe Webhook] Walk-up Slack notify failed:', e.message); }
@@ -293,6 +350,13 @@ router.post('/stripe', async (req, res) => {
         // Send confirmation email (webhook is reliable path; page redirect may never fire)
         setTimeout(async () => {
           try {
+            // R6-L1: cheap ownership check right before this deferred non-money side
+            // effect fires — if this attempt was reclaimed while queued, skip rather than
+            // risk a duplicate email/Slack post racing the reclaiming attempt's own.
+            if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+              console.log('[STRIPE WEBHOOK] Confirmation email skipped — attempt no longer owns the row:', event.id);
+              return;
+            }
             const refreshedBooking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
             if (!refreshedBooking.confirmation_email_sent) {
               const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(refreshedBooking.customer_id);
@@ -316,6 +380,10 @@ router.post('/stripe', async (req, res) => {
         // Update Slack live card if one exists for this booking
         setTimeout(async () => {
           try {
+            if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+              console.log('[STRIPE WEBHOOK] Slack card update skipped — attempt no longer owns the row:', event.id);
+              return;
+            }
             const { updateBookingSlackCard } = require('../services/notifications');
             await updateBookingSlackCard(bookingId);
           } catch (e) { console.error('[STRIPE WEBHOOK] Slack card update failed:', e.message); }
@@ -372,8 +440,13 @@ router.post('/stripe', async (req, res) => {
           });
         } catch (liveErr) {
           console.error('[Stripe Webhook] charge.refunded: live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will redeliver:', liveErr.message);
-          try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
-          catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
+          // R6-L1: scoped to OUR OWN attempt_id — if this row was already reclaimed by a
+          // redelivery (this attempt lost ownership), deleting it unconditionally would
+          // erase the reclaimer's still-in-flight row instead of just this attempt's own.
+          try {
+            const del = db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(event.id, myAttemptId);
+            if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id);
+          } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
           return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
         }
 
@@ -561,16 +634,24 @@ router.post('/stripe', async (req, res) => {
 
     // R5-L2: only reached once every case above has actually finished — flips this event's
     // row to 'done' so a future duplicate delivery gets the fast 200 path instead of 409.
-    try { db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ?").run(event.id); }
-    catch (doneErr) { console.error('[Stripe Webhook] failed to mark event done (harmless — worst case a later duplicate gets 409 and Stripe retries):', doneErr.message); }
+    // R6-L1: scoped to OUR OWN attempt_id — if a redelivery already reclaimed this row
+    // (this attempt lost ownership, e.g. it stalled past the stale window), changes===0
+    // here and we must NOT stamp 'done' over whatever the reclaiming attempt is doing.
+    try {
+      const doneInfo = db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?").run(event.id, myAttemptId);
+      if (doneInfo.changes === 0) console.log('[Stripe Webhook] done-marking skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
+    } catch (doneErr) { console.error('[Stripe Webhook] failed to mark event done (harmless — worst case a later duplicate gets 409 and Stripe retries):', doneErr.message); }
     res.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook Error]', err.message);
     // R5-L2: applies to every event type, not just charge.refunded's own 503 path above —
     // deleting the row (rather than merely marking it 'failed') means a retry's INSERT OR
     // IGNORE succeeds fresh, identical to the pre-R5-L2 un-dedup behavior.
-    try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
-    catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
+    // R6-L1: scoped to OUR OWN attempt_id, same reasoning as the 'done' UPDATE above.
+    try {
+      const del = db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(event.id, myAttemptId);
+      if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
+    } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
     res.status(400).json({ error: err.message });
   }
 });
@@ -2123,5 +2204,11 @@ router.post('/slack/command', async (req, res) => {
     await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':x: Couldn’t send to ' + who + ': ' + e.message });
   }
 });
+
+// R6-L1 (following R6-I3's precedent): test-only access to stillOwnsEventAttempt, gated to
+// NODE_ENV==='test' — not reachable over HTTP either way (router._test isn't a route).
+if (process.env.NODE_ENV === 'test') {
+  router._test = { stillOwnsEventAttempt };
+}
 
 module.exports = router;

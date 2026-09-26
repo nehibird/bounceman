@@ -4,6 +4,11 @@ const { fmtTime12 } = require('../lib/helpers');
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const BOOKINGS_CHANNEL = process.env.SLACK_NEW_BOOKING_CHANNEL || 'C0AQF8ZAEBE'; // #bookings (not #phonecalls)
 const DELIVERY_CHANNEL = process.env.SLACK_DELIVERY_CHANNEL || 'C0BGDQNJ5SM'; // #deliveries — delivery reminders/cards go here
+// R6-L1: undici's default fetch timeout is ~300s — several of these are reachable from the
+// Stripe webhook's non-money side effects (checkout.session.completed's card refresh/
+// notify), where a stall that long could outlast the 5-minute stripe_events_seen
+// stale-processing window and race a redelivery's reclaim.
+const SLACK_FETCH_TIMEOUT_MS = 10000;
 
 function fmtDate(d) {
   try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
@@ -44,7 +49,8 @@ async function postToSlack(channel, blocks, text, thread_ts) {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ channel, text: text || 'Bounce Man notification' }, blocks ? { blocks } : {}, thread_ts ? { thread_ts } : {}))
+      body: JSON.stringify(Object.assign({ channel, text: text || 'Bounce Man notification' }, blocks ? { blocks } : {}, thread_ts ? { thread_ts } : {})),
+      signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
     });
     const data = await resp.json();
     if (!data.ok) console.error('[SLACK] Post failed:', data.error);
@@ -307,7 +313,8 @@ async function refreshDeliveryCard(bookingId) {
     const resp = await fetch('https://slack.com/api/chat.update', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel: booking.slack_reminder_channel, ts: booking.slack_reminder_ts, blocks, text: 'Delivery for ' + customer.first_name + ' - ' + booking.booking_number })
+      body: JSON.stringify({ channel: booking.slack_reminder_channel, ts: booking.slack_reminder_ts, blocks, text: 'Delivery for ' + customer.first_name + ' - ' + booking.booking_number }),
+      signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
     });
     const data = await resp.json();
     if (!data.ok) { console.error('[SLACK] Delivery card refresh failed:', data.error); return false; }
@@ -707,7 +714,8 @@ async function updateBookingSlackCard(bookingId) {
         ts: booking.slack_message_ts,
         blocks,
         text: statusLine
-      })
+      }),
+      signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
     });
     const data = await resp.json();
     if (!data.ok) console.error('[SLACK] Card update failed:', data.error);

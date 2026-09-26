@@ -60,6 +60,34 @@ and defaults to today's effective value ($10,000).
     duplicate:true` — only a `done` row is treated as a safe-to-ignore duplicate. A
     `processing` row is reclaimed (treated as fresh, not permanently stuck) if it's older
     than 5 minutes, covering a crash mid-handler that never reached the done/delete step.
+  - **R6-I2: clock skew.** A `processing` row whose `created_at` is more than 1 minute in
+    the FUTURE (a container clock that was briefly ahead) is treated the SAME as a stale
+    row and reclaimed, inside the same atomic CAS — otherwise it would sit un-reclaimable
+    past the normal 5-minute window for however far ahead the clock had drifted, 409ing
+    every redelivery in the meantime for no reason. Nothing is lost either way (Stripe just
+    keeps retrying), but this avoids the needless delay. Log line: `reclaiming a stale
+    processing row (likely an earlier crash or clock skew)`.
+  - **R6-L1: each delivery attempt now gets its own `attempt_id`** (a random UUID, stored
+    on `stripe_events_seen`), set on the initial `INSERT` and again on a reclaim `UPDATE`.
+    The eventual `done` UPDATE and the error/503 DELETE are both scoped `AND attempt_id =
+    ?` — if a redelivery has already reclaimed the row (this attempt lost ownership,
+    typically because it stalled long enough to cross the 5-minute window), those
+    statements now affect ZERO rows instead of clobbering the reclaiming attempt's own row.
+    New log lines: `done-marking skipped — this attempt no longer owns the row (reclaimed)`
+    and `un-dedup skipped — this attempt no longer owns the row (reclaimed)` — both
+    harmless/expected on their own; only worth investigating if they correlate with actual
+    duplicate customer-facing notifications (see §11). Slack posts reachable from this
+    webhook's non-money side effects (`checkout.session.completed`'s card refresh/
+    confirmation email/new-booking notify) now also carry a 10s `AbortSignal.timeout` and
+    a cheap ownership re-check right before firing, and the SMTP transport
+    (`services/email.js`) carries `connectionTimeout`/`greetingTimeout`/`socketTimeout` of
+    ~30s — all four close the same gap from different angles (see round-6 review R6-L1).
+  - **R6-L2:** if the dedup `INSERT OR IGNORE` conflicts (`changes===0`) but the
+    follow-up `SELECT` finds no row at all — only possible across processes, when another
+    process's own first delivery just failed and deleted it in that same instant — this now
+    returns `409` (let Stripe retry) instead of a silent `200 duplicate:true` that would ACK
+    an event nothing ever actually processed. Log line: `dedup row vanished between INSERT
+    and SELECT — asking Stripe to retry`.
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe itself
   later fails/cancels a refund, **and (R3-L3) also corrects `payments.refund_amount` by
   fetching the charge's CURRENT live `amount_refunded` and SETTING it to that absolute
@@ -412,10 +440,28 @@ New/changed log lines this round, in addition to the round-2 set
   handled; the `409` tells Stripe to retry on its own schedule. Expected occasionally under
   Stripe's own retry behavior; a sustained stream for the same event id points at a handler
   that's hanging (check the live-lookup call for that charge).
-- `[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash)` (R5-L2) —
-  a `processing` row sat for more than 5 minutes with no `done`/delete, almost always
-  because the process was killed or crashed mid-handler. Worth a look at the app's own
-  crash/restart logs around that time; the event itself is reprocessed correctly either way.
+- `[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash or clock
+  skew)` (R5-L2, wording updated R6-I2) — a `processing` row sat for more than 5 minutes
+  with no `done`/delete (or its `created_at` was more than 1 minute in the future), almost
+  always because the process was killed or crashed mid-handler, or a container clock was
+  briefly skewed. Worth a look at the app's own crash/restart logs (and NTP/clock health)
+  around that time; the event itself is reprocessed correctly either way.
+- `[Stripe Webhook] dedup row vanished between INSERT and SELECT — asking Stripe to retry`
+  (R6-L2) — only possible across processes (another process's own first delivery failed and
+  deleted the row in that same instant); the `409` lets Stripe redeliver. Should be
+  extremely rare; if it's frequent, something is deleting `stripe_events_seen` rows outside
+  the normal done/reclaim/error lifecycle.
+- `[Stripe Webhook] done-marking skipped — this attempt no longer owns the row (reclaimed)`
+  / `un-dedup skipped — this attempt no longer owns the row (reclaimed)` (R6-L1) — this
+  delivery attempt finished (or failed) AFTER a redelivery had already reclaimed the same
+  event id (it stalled long enough to cross the 5-minute stale window). Harmless by itself —
+  the reclaiming attempt owns the row and will mark it done/failed correctly on its own —
+  but worth checking why the original attempt was so slow (a stuck Slack/SMTP call is the
+  most likely cause; both now carry explicit timeouts, so this should be rare after this
+  round). Also watch for `[STRIPE WEBHOOK] Confirmation email skipped` / `Slack card update
+  skipped` / `Walk-up Slack notify skipped — attempt no longer owns the row` — these mean a
+  non-money notification was correctly suppressed rather than fired twice; never money-
+  affecting.
 - `N row(s) need manual review` from the reconcile cron (§5) — should be rare; each one
   needs the resolve CLI (§6) to clear.
 - `[OFFICE API] Stripe refund error looked definitive, but a matching refund DOES exist at

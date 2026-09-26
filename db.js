@@ -1118,6 +1118,18 @@ function initialize() {
     d.prepare("ALTER TABLE stripe_events_seen ADD COLUMN status TEXT NOT NULL DEFAULT 'done'").run();
   }
 
+  // R6-L1: a per-DELIVERY-ATTEMPT token, set on the initial INSERT and again on every
+  // reclaim UPDATE, so a redelivery that reclaims a stale 'processing' row and a still-
+  // running earlier attempt on that SAME row can each be told apart — the earlier
+  // attempt's own 'done' UPDATE and error/503 DELETE are scoped `AND attempt_id = ?`, so
+  // finishing (or failing) after losing ownership can never touch the reclaimer's row.
+  // Existing rows get NULL, which matches no attempt_id a live request could ever compare
+  // against — harmless, since a pre-existing row is never 'processing' by the time this
+  // migration runs (see the 'status' migration above).
+  if (!columnExists(d, 'stripe_events_seen', 'attempt_id')) {
+    d.prepare('ALTER TABLE stripe_events_seen ADD COLUMN attempt_id TEXT').run();
+  }
+
   // Migration: track the dollar amount (in cents) a money-moving office API write
   // touched — refunds, manual payments, payment links — so a key's daily refund cap can
   // be summed straight off the audit trail instead of a second ledger.

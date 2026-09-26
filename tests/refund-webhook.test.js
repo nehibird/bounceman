@@ -12,6 +12,10 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFileSync } = require('child_process');
+// R6-L1: routes/webhooks.js only attaches its test-only `_test.stillOwnsEventAttempt`
+// export under NODE_ENV==='test' (same precedent as routes/office.js's R6-I3 gate).
+process.env.NODE_ENV = 'test';
 const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-refund-webhook-'));
 process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 process.env.STRIPE_EVENT_WEBHOOK_SECRET = 'whsec_test_dummy';
@@ -633,6 +637,249 @@ async function main() {
     const procOldRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(procOldId);
     t('R5-L2: 30-day prune still removes an old row regardless of status (done)', !doneOldRow, doneOldRow);
     t('R5-L2: 30-day prune still removes an old row regardless of status (processing)', !procOldRow, procOldRow);
+  }
+
+  // (e) R6-L1: attempt_id ownership scoping — a stale row reclaimed by attempt B while
+  // attempt A is still (slowly) mid-handler. A's late 'done' UPDATE and error DELETE must
+  // NOT touch B's row (both scoped `AND attempt_id = ?`); B's own 'done' UPDATE succeeds.
+  // Uses the EXACT production SQL strings (copy-pasted from routes/webhooks.js) so a
+  // regression in the scoping itself — not just the general idea — fails this test.
+  {
+    const ownershipEventId = 'evt_ownership_1';
+    const attemptA = 'attempt-A-slow-original';
+    const attemptB = 'attempt-B-reclaimer';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', ?, datetime('now', '-10 minutes'))").run(ownershipEventId, attemptA);
+
+    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
+    const reclaim = database.prepare(reclaimSql).run(attemptB, ownershipEventId, staleCutoff, futureSkewCutoff);
+    t('R6-L1: attempt B successfully reclaims the stale row', reclaim.changes === 1, reclaim);
+    let row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
+    t('R6-L1: the row now carries B\'s attempt_id', row.attempt_id === attemptB, row);
+
+    // A, unaware it was reclaimed, finally finishes (or fails) — both must be no-ops.
+    const doneSql = "UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?";
+    const deleteSql = 'DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?';
+    const aDone = database.prepare(doneSql).run(ownershipEventId, attemptA);
+    t('R6-L1: A\'s late done-UPDATE touches ZERO rows (no longer owns it)', aDone.changes === 0, aDone);
+    row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
+    t('R6-L1: the row is UNCHANGED by A\'s done-UPDATE (still processing, still B\'s attempt_id)', row.status === 'processing' && row.attempt_id === attemptB, row);
+    const aDelete = database.prepare(deleteSql).run(ownershipEventId, attemptA);
+    t('R6-L1: A\'s late error-DELETE touches ZERO rows (no longer owns it)', aDelete.changes === 0, aDelete);
+    row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
+    t('R6-L1: the row STILL EXISTS after A\'s delete attempt (B\'s row survives)', !!row, row);
+
+    // B finishes normally.
+    const bDone = database.prepare(doneSql).run(ownershipEventId, attemptB);
+    t('R6-L1: B\'s own done-UPDATE succeeds (B still owns the row)', bDone.changes === 1, bDone);
+    row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
+    t('R6-L1: the row ends up done, owned by B', row.status === 'done' && row.attempt_id === attemptB, row);
+  }
+
+  // (f) R6-L1: stillOwnsEventAttempt — the exact gate a queued notification checks before
+  // firing. True while this attempt's own attempt_id still matches the row; false once a
+  // redelivery has reclaimed it (the "notification skip" mechanism itself).
+  {
+    const { stillOwnsEventAttempt } = webhookRoutes._test;
+    const ownEventId = 'evt_ownership_check_1';
+    const myAttempt = 'attempt-mine';
+    const otherAttempt = 'attempt-reclaimed-by-someone-else';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', ?, datetime('now'))").run(ownEventId, myAttempt);
+    t('R6-L1: stillOwnsEventAttempt is true while this attempt still owns the row', stillOwnsEventAttempt(database, ownEventId, myAttempt) === true, null);
+    database.prepare('UPDATE stripe_events_seen SET attempt_id = ? WHERE event_id = ?').run(otherAttempt, ownEventId);
+    t('R6-L1: stillOwnsEventAttempt is false once reclaimed by a different attempt_id — this is what gates the notification skip', stillOwnsEventAttempt(database, ownEventId, myAttempt) === false, null);
+    t('R6-L1: stillOwnsEventAttempt is false for an event this attempt never owned at all', stillOwnsEventAttempt(database, 'evt_never_existed_at_all', myAttempt) === false, null);
+  }
+
+  // (g) R6-L1: static/unit check — the Slack fetch calls reachable from this webhook's
+  // non-money side effects carry an AbortSignal, and the nodemailer transport carries
+  // explicit timeouts. No real network: global.fetch and nodemailer.createTransport are
+  // stubbed.
+  {
+    const capturedFetchCalls = [];
+    const realFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      capturedFetchCalls.push({ url, opts });
+      return { ok: true, json: async () => ({ ok: true, ts: '123.456' }) };
+    };
+    const notifications = require('../services/notifications');
+    await notifications.notifyNewBooking(
+      { id: 'fake-booking-timeout-check', booking_number: 'BM-TIMEOUT-TEST', total: 100 },
+      { first_name: 'Timeout', last_name: 'Test' },
+      []
+    );
+    global.fetch = realFetch;
+    t('R6-L1: notifyNewBooking\'s Slack post carries an AbortSignal (10s timeout)',
+      capturedFetchCalls.length > 0 && capturedFetchCalls[0].opts && capturedFetchCalls[0].opts.signal instanceof AbortSignal,
+      capturedFetchCalls);
+
+    const nodemailerModule = require('nodemailer');
+    const realCreateTransport = nodemailerModule.createTransport;
+    let capturedTransportOpts = null;
+    nodemailerModule.createTransport = (opts) => {
+      capturedTransportOpts = opts;
+      return { sendMail: async () => ({ messageId: 'fake' }) };
+    };
+    const emailService = require('../services/email');
+    await emailService.sendTestEmail('r6l1-timeout-check@example.com');
+    nodemailerModule.createTransport = realCreateTransport;
+    t('R6-L1: the nodemailer transport carries connectionTimeout/greetingTimeout/socketTimeout ~30s',
+      !!capturedTransportOpts && capturedTransportOpts.connectionTimeout === 30000 &&
+      capturedTransportOpts.greetingTimeout === 30000 && capturedTransportOpts.socketTimeout === 30000,
+      capturedTransportOpts);
+  }
+
+  // (h) R6-L2: the INSERT OR IGNORE conflicts (changes=0) but the row VANISHES before the
+  // follow-up SELECT can read it — only possible across processes (another process's own
+  // first delivery just failed and DELETEd it); simulated here by hooking db.prepare to
+  // delete the row between the two statements. Must be 409 (let Stripe retry), never a
+  // silent 200 duplicate:true that ACKs an event nothing ever actually processed.
+  {
+    const vanishEventId = 'evt_vanish_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now'))").run(vanishEventId);
+    const realPrepare = database.prepare.bind(database);
+    let hookFired = false;
+    database.prepare = (sql) => {
+      const stmt = realPrepare(sql);
+      if (!hookFired && sql === 'SELECT status, created_at FROM stripe_events_seen WHERE event_id = ?') {
+        hookFired = true;
+        return {
+          get: (...args) => {
+            realPrepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(args[0]);
+            return stmt.get(...args);
+          },
+        };
+      }
+      return stmt;
+    };
+    const r = await post(chargeRefundedEvent(vanishEventId, 1000, 'pi_vanish_1', null));
+    database.prepare = realPrepare;
+    const body = await r.json();
+    t('R6-L2: a dedup row vanishing between INSERT and SELECT -> 409, never 200 duplicate:true', r.status === 409 && body.duplicate !== true, { status: r.status, body });
+    const rowAfter = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(vanishEventId);
+    t('R6-L2: no row was left behind falsely claiming this event was processed', !rowAfter, rowAfter);
+  }
+
+  // (i) R6-L3 mutant #1 (survived: CAS without `status = 'processing'`): a DONE row with an
+  // OLD created_at must NOT be reclaimed/reprocessed — a redelivery gets 200 duplicate via
+  // the normal 'done' short-circuit (never even reaching the CAS), AND the CAS statement
+  // run alone against that same row (bypassing the short-circuit) must return changes=0.
+  // Confirmed by temporarily dropping `status = 'processing'` from the production query and
+  // re-running this suite: the CAS assertion below FAILED (changes became 1), then reverted.
+  {
+    const doneOldEventId = 'evt_done_old_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'done', 'attempt-old-done', datetime('now', '-10 minutes'))").run(doneOldEventId);
+
+    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
+    const result = database.prepare(reclaimSql).run('attempt-should-never-win', doneOldEventId, staleCutoff, futureSkewCutoff);
+    t('R6-L3: the CAS ALONE against a DONE row (even with an old created_at) returns changes=0', result.changes === 0, result);
+
+    const doneOldCustomerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'DoneOld', 'Test')").run(doneOldCustomerId);
+    const doneOldBookingId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, 'BM-DONEOLD-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(doneOldBookingId, doneOldCustomerId);
+    const doneOldPaymentId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_done_old_1', 'completed', 0)`).run(doneOldPaymentId, doneOldBookingId, doneOldCustomerId);
+    const r = await post(chargeRefundedEvent(doneOldEventId, 9999, 'pi_done_old_1', null));
+    const body = await r.json();
+    t('R6-L3: a redelivery of a DONE (old) row -> 200 duplicate:true, never reprocessed', r.status === 200 && body.duplicate === true, body);
+    const doneOldPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(doneOldPaymentId);
+    t('R6-L3: the payment was never touched by the redelivery (refund_amount stays 0)', doneOldPayment.refund_amount === 0, doneOldPayment);
+  }
+
+  // (j) R6-I2: clock skew — a 'processing' row whose created_at is more than 1 minute in
+  // the FUTURE (a container clock briefly ahead) is treated as stale and reclaimed, inside
+  // the same atomic CAS WHERE clause (not a separate check).
+  {
+    const skewedEventId = 'evt_clock_skew_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', 'attempt-skewed-original', datetime('now', '+10 minutes'))").run(skewedEventId);
+    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
+    const reclaim = database.prepare(reclaimSql).run('attempt-skew-reclaimer', skewedEventId, staleCutoff, futureSkewCutoff);
+    t('R6-I2: a row 10 minutes in the FUTURE is reclaimed (clock skew treated as stale)', reclaim.changes === 1, reclaim);
+
+    // Within the 1-minute tolerance: NOT reclaimed (ordinary clock jitter, not skew).
+    const jitterEventId = 'evt_clock_jitter_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', 'attempt-jitter-original', datetime('now', '+30 seconds'))").run(jitterEventId);
+    const jitterReclaim = database.prepare(reclaimSql).run('attempt-should-not-reclaim-jitter', jitterEventId, staleCutoff, futureSkewCutoff);
+    t('R6-I2: a row only 30s ahead (within tolerance) is NOT reclaimed', jitterReclaim.changes === 0, jitterReclaim);
+
+    // HTTP-level: a genuinely skewed row gets processed (200, not 409), not stuck forever.
+    const skewedHttpEventId = 'evt_clock_skew_http_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now', '+10 minutes'))").run(skewedHttpEventId);
+    const skewCustomerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'Skew', 'Test')").run(skewCustomerId);
+    const skewBookingId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, 'BM-CLOCKSKEW-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(skewBookingId, skewCustomerId);
+    const skewPaymentId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_clock_skew_1', 'completed', 0)`).run(skewPaymentId, skewBookingId, skewCustomerId);
+    liveAmountRefundedCentsOverride = 2500;
+    const skewR = await post(chargeRefundedEvent(skewedHttpEventId, 2500, 'pi_clock_skew_1', null));
+    const skewBody = await skewR.json();
+    t('R6-I2: an HTTP redelivery of a future-skewed processing row is reclaimed and processed (200, not 409)', skewR.status === 200 && skewBody.duplicate !== true, { status: skewR.status, body: skewBody });
+    const skewPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(skewPaymentId);
+    t('R6-I2: the skewed-clock event was actually applied (refund_amount = 25)', skewPayment.refund_amount === 25, skewPayment.refund_amount);
+    liveAmountRefundedCentsOverride = null;
+  }
+
+  // (k) R6-L3 mutant #2 (survived: migration `DEFAULT 'done'` -> `'processing'`): create an
+  // OLD-schema stripe_events_seen (no status/attempt_id columns) with one pre-existing row
+  // in a throwaway DB, run initialize() in a FRESH child process (a fresh require cache —
+  // this process's db.js module is already initialized against the main TMP_DIR db), and
+  // assert the row comes out status='done' with the attempt_id column present (NULL), and
+  // that a redelivery of that same event id is recognized as an already-done duplicate.
+  // Confirmed by temporarily changing the migration's `DEFAULT 'done'` to
+  // `DEFAULT 'processing'` and re-running this suite: the assertions below FAILED
+  // (migratedStatus became 'processing', redeliveryWouldBeDuplicate became false), then
+  // reverted.
+  {
+    const MIGRATION_TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-refund-webhook-migration-'));
+    const migrationDbPath = path.join(MIGRATION_TMP_DIR, 'old-schema.db');
+    const Database = require('better-sqlite3');
+    const oldSchemaDb = new Database(migrationDbPath);
+    oldSchemaDb.exec("CREATE TABLE stripe_events_seen (event_id TEXT PRIMARY KEY, created_at TEXT DEFAULT (datetime('now')))");
+    oldSchemaDb.prepare("INSERT INTO stripe_events_seen (event_id, created_at) VALUES ('evt_pre_migration_1', datetime('now', '-1 hour'))").run();
+    oldSchemaDb.close();
+
+    const probeScript = `
+      process.env.NODE_ENV = 'test';
+      process.env.DB_PATH = ${JSON.stringify(migrationDbPath)};
+      const { getDb, initialize } = require(${JSON.stringify(path.join(__dirname, '..', 'db.js'))});
+      initialize();
+      const db = getDb();
+      const row = db.prepare('SELECT status, attempt_id FROM stripe_events_seen WHERE event_id = ?').get('evt_pre_migration_1');
+      const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status, attempt_id) VALUES (?, 'processing', ?)").run('evt_pre_migration_1', 'child-redelivery-attempt');
+      const existing = db.prepare('SELECT status FROM stripe_events_seen WHERE event_id = ?').get('evt_pre_migration_1');
+      console.log(JSON.stringify({
+        migratedStatus: row.status,
+        migratedAttemptIdColumnPresent: Object.prototype.hasOwnProperty.call(row, 'attempt_id'),
+        migratedAttemptIdValue: row.attempt_id,
+        dedupInsertChanges: dedupInfo.changes,
+        redeliveryWouldBeDuplicate: existing.status === 'done',
+      }));
+    `;
+    const out = execFileSync('node', ['-e', probeScript], { encoding: 'utf8' });
+    // db.js's own initialize() logs several lines of its own (e.g. default-admin-user
+    // creation) — our JSON is always the LAST line printed.
+    const lastLine = out.trim().split('\n').pop();
+    const parsed = JSON.parse(lastLine);
+    t('R6-L3 (migration): a pre-existing row (created before the status column existed) migrates to status=\'done\'', parsed.migratedStatus === 'done', parsed);
+    t('R6-L3 (migration): the attempt_id column exists on the migrated row (NULL for a pre-existing row)', parsed.migratedAttemptIdColumnPresent === true && parsed.migratedAttemptIdValue === null, parsed);
+    t('R6-L3 (migration): a redelivery of that same event id is recognized as an already-done duplicate', parsed.dedupInsertChanges === 0 && parsed.redeliveryWouldBeDuplicate === true, parsed);
+    fs.rmSync(MIGRATION_TMP_DIR, { recursive: true, force: true });
   }
 
   server.close();
