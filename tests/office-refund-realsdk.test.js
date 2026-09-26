@@ -220,6 +220,32 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------------
+  // R3-C1(c): refunds.create must pass maxNetworkRetries:0 — a plain 500 with NOTHING
+  // processed (no reset involved, so none of stripe-node's HARDCODED retry-regardless-of-
+  // setting behavior applies here) is the cleanest way to observe this specific request
+  // option: with the client's own default (1) instead, stripe-node retries a 500
+  // automatically, and the retry lands on the fake server's now-empty fault queue (which
+  // "tells the truth" and processes it) — silently turning one real ambiguous-outcome
+  // attempt into a normal-looking success. maxNetworkRetries:0 means exactly one HTTP
+  // attempt reaches the fake server no matter what.
+  // ---------------------------------------------------------------------------------
+  {
+    const { bookingNumber, rawKey } = setupFixture();
+    const idem = 'idem-solo-500-retries';
+    fake.pushRefundFault('500_no_process');
+    const refundsBefore = fake.getRealRefundCount();
+    const callsBefore = fake.getLog().filter((e) => e.method === 'POST' && e.path === '/v1/refunds').length;
+
+    const r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    const callsAfter = fake.getLog().filter((e) => e.method === 'POST' && e.path === '/v1/refunds').length;
+    t('[C1-RETRIES] exactly ONE HTTP attempt reached the fake server (maxNetworkRetries:0 on refunds.create)', callsAfter === callsBefore + 1, { before: callsBefore, after: callsAfter });
+    t('[C1-RETRIES] the single 500 surfaces as ambiguous (outcome:"unknown"), not a silently-retried success', r.status === 502 && r.body.outcome === 'unknown', r);
+    t('[C1-RETRIES] nothing was ever processed', fake.getRealRefundCount() === refundsBefore, fake.getRealRefundCount());
+  }
+
+  // ---------------------------------------------------------------------------------
   // A genuine 400 with NO earlier processing at all -> findRefundByOfficeId confirms
   // nothing exists -> failed + released, exactly as a definitive error always did.
   // ---------------------------------------------------------------------------------
