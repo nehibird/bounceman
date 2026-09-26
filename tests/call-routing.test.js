@@ -100,6 +100,21 @@ assert('todayCT: 2026-09-26T06:00Z (1:00 AM CDT the 26th) -> 2026-09-26',
   todayCT(new Date('2026-09-26T06:00:00Z')) === '2026-09-26',
   todayCT(new Date('2026-09-26T06:00:00Z')));
 
+console.log('\n=== I4: activeBookingForPhone itself uses Chicago, not UTC or the real clock ===');
+// 2026-09-26T01:30Z is UTC Sep 26, but Chicago calendar Sep 25 (8:30 PM CDT). A booking
+// that ended EXACTLY on the Chicago date, grace 0, must still forward when "now" is this
+// instant — proving activeBookingForPhone (not just todayCT in isolation) reads the
+// Chicago day. A mutant reverting to SQLite's date('now','localtime') would use the
+// REAL wall clock instead of this injected instant — since the real clock is nowhere near
+// October/November 2026 (these bookings are seeded far in the future relative to whenever
+// this suite actually runs), that mutant would see event_date >= (real today - grace) as
+// true regardless, so the "back to Sarah" assertion below is what actually catches it.
+seed('UtcMismatch', '(580) 555-0501', '2026-09-25', 'completed');
+assert('UTC/Chicago date mismatch: event ended Sep 25 (Chicago), grace 0, "now" 2026-09-26T01:30Z (still Sep 25 in Chicago) -> forward',
+  !!activeBookingForPhone(db, '+15805550501', 0, new Date('2026-09-26T01:30:00Z')));
+assert('UTC/Chicago date mismatch: same booking, "now" 2026-09-26T06:00Z (Chicago has rolled to Sep 26) -> back to Sarah',
+  activeBookingForPhone(db, '+15805550501', 0, new Date('2026-09-26T06:00:00Z')) === null);
+
 console.log('\n=== I4: grace-day behavior is unchanged across a DST boundary ===');
 // 2026-11-01 is when US DST ends (clocks fall back 2 AM -> 1 AM Central). A booking that
 // ended the day before, with a 1-day grace, must still forward on the 1st and stop on the

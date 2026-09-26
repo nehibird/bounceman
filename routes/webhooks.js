@@ -85,6 +85,40 @@ function stillOwnsEventAttempt(db, eventId, attemptId) {
   }
 }
 
+const PROCESSING_STALE_MS_DEFAULT = 5 * 60 * 1000;
+const FUTURE_SKEW_TOLERANCE_MS_DEFAULT = 60 * 1000;
+
+// R6-L1/R6-L3: the three statements below are extracted to module scope (rather than
+// inlined in the handler) SPECIFICALLY so a test can exercise the EXACT production
+// statement — via the NODE_ENV=test-gated router._test at the bottom of this file — instead
+// of a hand-copied duplicate of the SQL that could silently drift from the real thing and
+// stop proving anything (a round-7 mutation pass found exactly this gap in an earlier draft
+// of this suite's own tests).
+
+// The atomic reclaim CAS: only a 'processing' row that's stale (too old) or clock-skewed
+// (created_at too far in the future) is reclaimed, and ONLY via this one UPDATE's WHERE
+// clause — see the handler below for the full TOCTOU reasoning.
+function reclaimStaleEvent(db, eventId, attemptId, { staleMs = PROCESSING_STALE_MS_DEFAULT, futureSkewMs = FUTURE_SKEW_TOLERANCE_MS_DEFAULT } = {}) {
+  const staleCutoff = new Date(Date.now() - staleMs).toISOString().replace('T', ' ').slice(0, 19);
+  const futureSkewCutoff = new Date(Date.now() + futureSkewMs).toISOString().replace('T', ' ').slice(0, 19);
+  return db.prepare(
+    `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+     WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`
+  ).run(attemptId, eventId, staleCutoff, futureSkewCutoff);
+}
+
+// Marks this attempt's own row done — a no-op (changes:0) if a redelivery already
+// reclaimed it (attempt_id no longer matches).
+function markEventDone(db, eventId, attemptId) {
+  return db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?").run(eventId, attemptId);
+}
+
+// Un-dedups this attempt's own row (processing failed / needs a fresh retry) — a no-op
+// (changes:0) if a redelivery already reclaimed it, same reasoning as markEventDone.
+function deleteEventAttempt(db, eventId, attemptId) {
+  return db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(eventId, attemptId);
+}
+
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
   const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
@@ -141,8 +175,6 @@ router.post('/stripe', async (req, res) => {
   // lost, but it's needless delay). FUTURE_SKEW_TOLERANCE_MS gives a 1-minute grace window
   // for ordinary clock jitter before treating a future created_at as skew rather than a
   // genuinely fresh, still-live row.
-  const PROCESSING_STALE_MS = 5 * 60 * 1000;
-  const FUTURE_SKEW_TOLERANCE_MS = 60 * 1000;
   let alreadyDone = false;
   try {
     const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status, attempt_id) VALUES (?, 'processing', ?)").run(event.id, myAttemptId);
@@ -171,12 +203,7 @@ router.post('/stripe', async (req, res) => {
         // match a given row's still-stale `created_at`, because the FIRST one to commit
         // moves `created_at` to now(), which no longer satisfies the WHERE clause for anyone
         // still holding a stale read.
-        const staleCutoff = new Date(Date.now() - PROCESSING_STALE_MS).toISOString().replace('T', ' ').slice(0, 19);
-        const futureSkewCutoff = new Date(Date.now() + FUTURE_SKEW_TOLERANCE_MS).toISOString().replace('T', ' ').slice(0, 19);
-        const reclaim = db.prepare(
-          `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
-           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`
-        ).run(myAttemptId, event.id, staleCutoff, futureSkewCutoff);
+        const reclaim = reclaimStaleEvent(db, event.id, myAttemptId);
         if (reclaim.changes === 1) {
           console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash or clock skew):', event.id, event.type);
         } else {
@@ -444,7 +471,7 @@ router.post('/stripe', async (req, res) => {
           // redelivery (this attempt lost ownership), deleting it unconditionally would
           // erase the reclaimer's still-in-flight row instead of just this attempt's own.
           try {
-            const del = db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(event.id, myAttemptId);
+            const del = deleteEventAttempt(db, event.id, myAttemptId);
             if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id);
           } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
           return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
@@ -638,7 +665,7 @@ router.post('/stripe', async (req, res) => {
     // (this attempt lost ownership, e.g. it stalled past the stale window), changes===0
     // here and we must NOT stamp 'done' over whatever the reclaiming attempt is doing.
     try {
-      const doneInfo = db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?").run(event.id, myAttemptId);
+      const doneInfo = markEventDone(db, event.id, myAttemptId);
       if (doneInfo.changes === 0) console.log('[Stripe Webhook] done-marking skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
     } catch (doneErr) { console.error('[Stripe Webhook] failed to mark event done (harmless — worst case a later duplicate gets 409 and Stripe retries):', doneErr.message); }
     res.json({ received: true });
@@ -649,7 +676,7 @@ router.post('/stripe', async (req, res) => {
     // IGNORE succeeds fresh, identical to the pre-R5-L2 un-dedup behavior.
     // R6-L1: scoped to OUR OWN attempt_id, same reasoning as the 'done' UPDATE above.
     try {
-      const del = db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(event.id, myAttemptId);
+      const del = deleteEventAttempt(db, event.id, myAttemptId);
       if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
     } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
     res.status(400).json({ error: err.message });
@@ -2205,10 +2232,12 @@ router.post('/slack/command', async (req, res) => {
   }
 });
 
-// R6-L1 (following R6-I3's precedent): test-only access to stillOwnsEventAttempt, gated to
-// NODE_ENV==='test' — not reachable over HTTP either way (router._test isn't a route).
+// R6-L1/R6-L3 (following R6-I3's precedent): test-only access to the dedup/reclaim
+// statements themselves, gated to NODE_ENV==='test' — not reachable over HTTP either way
+// (router._test isn't a route). Exists so mutation/regression tests exercise the ACTUAL
+// production statements rather than a hand-copied duplicate.
 if (process.env.NODE_ENV === 'test') {
-  router._test = { stillOwnsEventAttempt };
+  router._test = { stillOwnsEventAttempt, reclaimStaleEvent, markEventDone, deleteEventAttempt };
 }
 
 module.exports = router;

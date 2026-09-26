@@ -642,37 +642,35 @@ async function main() {
   // (e) R6-L1: attempt_id ownership scoping — a stale row reclaimed by attempt B while
   // attempt A is still (slowly) mid-handler. A's late 'done' UPDATE and error DELETE must
   // NOT touch B's row (both scoped `AND attempt_id = ?`); B's own 'done' UPDATE succeeds.
-  // Uses the EXACT production SQL strings (copy-pasted from routes/webhooks.js) so a
-  // regression in the scoping itself — not just the general idea — fails this test.
+  // Calls the REAL production functions (webhookRoutes._test.reclaimStaleEvent/
+  // markEventDone/deleteEventAttempt) — not a hand-copied SQL duplicate — so a regression
+  // in the actual scoping fails this test, not just a divergent copy of it (round-7
+  // mutation pass: an earlier draft of this suite used its own copy of the CAS and missed
+  // exactly this kind of regression).
   {
+    const { reclaimStaleEvent, markEventDone, deleteEventAttempt } = webhookRoutes._test;
     const ownershipEventId = 'evt_ownership_1';
     const attemptA = 'attempt-A-slow-original';
     const attemptB = 'attempt-B-reclaimer';
     database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', ?, datetime('now', '-10 minutes'))").run(ownershipEventId, attemptA);
 
-    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
-           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
-    const reclaim = database.prepare(reclaimSql).run(attemptB, ownershipEventId, staleCutoff, futureSkewCutoff);
+    const reclaim = reclaimStaleEvent(database, ownershipEventId, attemptB);
     t('R6-L1: attempt B successfully reclaims the stale row', reclaim.changes === 1, reclaim);
     let row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
     t('R6-L1: the row now carries B\'s attempt_id', row.attempt_id === attemptB, row);
 
     // A, unaware it was reclaimed, finally finishes (or fails) — both must be no-ops.
-    const doneSql = "UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?";
-    const deleteSql = 'DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?';
-    const aDone = database.prepare(doneSql).run(ownershipEventId, attemptA);
+    const aDone = markEventDone(database, ownershipEventId, attemptA);
     t('R6-L1: A\'s late done-UPDATE touches ZERO rows (no longer owns it)', aDone.changes === 0, aDone);
     row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
     t('R6-L1: the row is UNCHANGED by A\'s done-UPDATE (still processing, still B\'s attempt_id)', row.status === 'processing' && row.attempt_id === attemptB, row);
-    const aDelete = database.prepare(deleteSql).run(ownershipEventId, attemptA);
+    const aDelete = deleteEventAttempt(database, ownershipEventId, attemptA);
     t('R6-L1: A\'s late error-DELETE touches ZERO rows (no longer owns it)', aDelete.changes === 0, aDelete);
     row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
     t('R6-L1: the row STILL EXISTS after A\'s delete attempt (B\'s row survives)', !!row, row);
 
     // B finishes normally.
-    const bDone = database.prepare(doneSql).run(ownershipEventId, attemptB);
+    const bDone = markEventDone(database, ownershipEventId, attemptB);
     t('R6-L1: B\'s own done-UPDATE succeeds (B still owns the row)', bDone.changes === 1, bDone);
     row = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(ownershipEventId);
     t('R6-L1: the row ends up done, owned by B', row.status === 'done' && row.attempt_id === attemptB, row);
@@ -691,6 +689,23 @@ async function main() {
     database.prepare('UPDATE stripe_events_seen SET attempt_id = ? WHERE event_id = ?').run(otherAttempt, ownEventId);
     t('R6-L1: stillOwnsEventAttempt is false once reclaimed by a different attempt_id — this is what gates the notification skip', stillOwnsEventAttempt(database, ownEventId, myAttempt) === false, null);
     t('R6-L1: stillOwnsEventAttempt is false for an event this attempt never owned at all', stillOwnsEventAttempt(database, 'evt_never_existed_at_all', myAttempt) === false, null);
+  }
+
+  // (f2) R6-I3 (following routes/office.js's own precedent): router._test must be ABSENT
+  // under NODE_ENV==='production' — spawned as a real child process (a fresh `require`
+  // cache), since this process already has routes/webhooks.js cached with _test attached.
+  {
+    const probeScript = `
+      process.env.NODE_ENV = 'production';
+      process.env.DB_PATH = ${JSON.stringify(path.join(TMP_DIR, 'prod-probe-webhooks.db'))};
+      process.env.STRIPE_EVENT_WEBHOOK_SECRET = 'whsec_test_dummy';
+      process.env.SARAH_API_KEY = 'test-sarah-key';
+      const routes = require(${JSON.stringify(path.join(__dirname, '..', 'routes', 'webhooks.js'))});
+      console.log(JSON.stringify({ hasTest: typeof routes._test !== 'undefined' }));
+    `;
+    const out = execFileSync('node', ['-e', probeScript], { encoding: 'utf8' });
+    const parsed = JSON.parse(out.trim());
+    t('R6-I3: under NODE_ENV=production, routes/webhooks.js\'s router._test is absent', parsed.hasTest === false, parsed);
   }
 
   // (g) R6-L1: static/unit check — the Slack fetch calls reachable from this webhook's
@@ -766,17 +781,16 @@ async function main() {
   // OLD created_at must NOT be reclaimed/reprocessed — a redelivery gets 200 duplicate via
   // the normal 'done' short-circuit (never even reaching the CAS), AND the CAS statement
   // run alone against that same row (bypassing the short-circuit) must return changes=0.
-  // Confirmed by temporarily dropping `status = 'processing'` from the production query and
-  // re-running this suite: the CAS assertion below FAILED (changes became 1), then reverted.
+  // Calls the REAL webhookRoutes._test.reclaimStaleEvent (not a hand-copied SQL string) —
+  // confirmed by temporarily dropping `status = 'processing'` from the PRODUCTION query
+  // (routes/webhooks.js) and re-running this suite: the CAS assertion below FAILED
+  // (changes became 1), then reverted.
   {
+    const { reclaimStaleEvent } = webhookRoutes._test;
     const doneOldEventId = 'evt_done_old_1';
     database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'done', 'attempt-old-done', datetime('now', '-10 minutes'))").run(doneOldEventId);
 
-    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
-           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
-    const result = database.prepare(reclaimSql).run('attempt-should-never-win', doneOldEventId, staleCutoff, futureSkewCutoff);
+    const result = reclaimStaleEvent(database, doneOldEventId, 'attempt-should-never-win');
     t('R6-L3: the CAS ALONE against a DONE row (even with an old created_at) returns changes=0', result.changes === 0, result);
 
     const doneOldCustomerId = uuid();
@@ -799,19 +813,16 @@ async function main() {
   // the FUTURE (a container clock briefly ahead) is treated as stale and reclaimed, inside
   // the same atomic CAS WHERE clause (not a separate check).
   {
+    const { reclaimStaleEvent } = webhookRoutes._test;
     const skewedEventId = 'evt_clock_skew_1';
     database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', 'attempt-skewed-original', datetime('now', '+10 minutes'))").run(skewedEventId);
-    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const futureSkewCutoff = new Date(Date.now() + 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-    const reclaimSql = `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
-           WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`;
-    const reclaim = database.prepare(reclaimSql).run('attempt-skew-reclaimer', skewedEventId, staleCutoff, futureSkewCutoff);
+    const reclaim = reclaimStaleEvent(database, skewedEventId, 'attempt-skew-reclaimer');
     t('R6-I2: a row 10 minutes in the FUTURE is reclaimed (clock skew treated as stale)', reclaim.changes === 1, reclaim);
 
     // Within the 1-minute tolerance: NOT reclaimed (ordinary clock jitter, not skew).
     const jitterEventId = 'evt_clock_jitter_1';
     database.prepare("INSERT INTO stripe_events_seen (event_id, status, attempt_id, created_at) VALUES (?, 'processing', 'attempt-jitter-original', datetime('now', '+30 seconds'))").run(jitterEventId);
-    const jitterReclaim = database.prepare(reclaimSql).run('attempt-should-not-reclaim-jitter', jitterEventId, staleCutoff, futureSkewCutoff);
+    const jitterReclaim = reclaimStaleEvent(database, jitterEventId, 'attempt-should-not-reclaim-jitter');
     t('R6-I2: a row only 30s ahead (within tolerance) is NOT reclaimed', jitterReclaim.changes === 0, jitterReclaim);
 
     // HTTP-level: a genuinely skewed row gets processed (200, not 409), not stuck forever.

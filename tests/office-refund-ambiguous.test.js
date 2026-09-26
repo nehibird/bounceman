@@ -805,6 +805,27 @@ async function main() {
       t('R5-M1: audit row records verified_against_stripe:true', !!detail && detail.verified_against_stripe === true, detail);
     }
 
+    // --- R6-I1: a live 'failed' refund that ALSO belongs to a different ledger row (a
+    // metadata mismatch) must name BOTH facts in its message, not just "resolve this row
+    // as failed" — the metadata note is computed BEFORE the status branch and appended to
+    // whichever status message fires, so an operator isn't misled into thinking a
+    // definitely-unrelated refund belongs to their row. ------------------------------------
+    {
+      const seeded = seedRow('idem-r6i1-status-and-meta');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r6i1', status: 'failed', amount: 1000, currency: 'usd', metadata: { office_refund_id: 'some-completely-different-ledger-row' } }) } });
+      const errs = [];
+      const origErr = console.error;
+      console.error = (...a) => { errs.push(a.join(' ')); };
+      const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r6i1']);
+      console.error = origErr;
+      t('R6-I1: a failed refund with a metadata mismatch still refuses "succeeded"', code === 1, code);
+      t('R6-I1: the message names the status fact ("resolve this row as \'failed\'")', errs.some((e) => /resolve this row as 'failed'/.test(e)), errs);
+      t('R6-I1: the SAME message ALSO names the metadata mismatch fact (not just the status)',
+        errs.some((e) => /also:.*metadata\.office_refund_id.*some-completely-different-ledger-row.*different ledger row entirely/.test(e)), errs);
+      const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R6-I1: row unchanged (still needs_review)', row.status === 'needs_review', row);
+    }
+
     // --- R5-M1 (optional hardening): a currency mismatch is also a conflict, even with
     // --no-verify — a refund that happens to share this ledger row's id/metadata/amount in
     // a different currency still can't be the one this row expects. -----------------------
