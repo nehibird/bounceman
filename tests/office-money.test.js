@@ -36,13 +36,26 @@ let forceNextRefundStatus = null; // L2: let a test make the NEXT refund come ba
 let forceLiveFetchError = false;
 const liveRefundedByPI = {}; // pi_xxx -> cents already refunded, per Stripe's own record
 const stripeCalls = { refunds: [], checkoutSessions: [] };
+// A DEFINITIVE Stripe error (real 4xx statusCode + a recognized type — see
+// lib/stripe-errors.js) — this test file's "Stripe error -> 502, retry succeeds" case (#11
+// below) exercises the DEFINITIVE path specifically (release + rename + fresh retry).
+// The AMBIGUOUS path (no rename, same-ledger-row resume) has its own dedicated coverage in
+// tests/office-refund-ambiguous.test.js, with a stub that actually processes the refund
+// before throwing.
+class FakeDefinitiveStripeError extends Error {
+  constructor(message) {
+    super(message);
+    this.type = 'StripeInvalidRequestError';
+    this.statusCode = 400;
+  }
+}
 const fakeStripe = {
   refunds: {
     create: async (params, opts) => {
       stripeCalls.refunds.push({ params, opts });
       if (forceNextRefundError) {
         forceNextRefundError = false;
-        throw new Error('simulated Stripe outage');
+        throw new FakeDefinitiveStripeError('simulated Stripe outage');
       }
       const status = forceNextRefundStatus || 'succeeded';
       forceNextRefundStatus = null;
@@ -528,18 +541,31 @@ async function main() {
   });
   t('(b) exactly the remaining $50 succeeds', r.status === 201, r.status);
 
-  // (c) The live lookup itself fails (Stripe unreachable) — must fall back to the
-  // webhook/ledger view and STILL correctly enforce it, with live_charge_checked:false.
-  const { payId: cPayId } = makeLivePayment('BM-LIVE-C', 'pi_live_c');
+  // (c) R2-H1: the live lookup itself fails (Stripe unreachable) — FAILS CLOSED. No
+  // fallback to the webhook/ledger view any more (that was the R2-H1 bug: it failed
+  // open). 503, no reservation, zero Stripe refund calls.
+  const { bkId: cBkId, payId: cPayId } = makeLivePayment('BM-LIVE-C', 'pi_live_c');
   database.prepare('UPDATE payments SET refund_amount = 100 WHERE id = ?').run(cPayId); // simulates the webhook having already recorded a $100 refund
   forceLiveFetchError = true;
+  const cRefundsBefore = stripeCalls.refunds.length;
+  const cLedgerRowsBefore = database.prepare('SELECT COUNT(*) c FROM office_refunds WHERE booking_id = ?').get(cBkId).c;
   r = await write('POST', '/bookings/BM-LIVE-C/refunds', liveKey, {
     idempotencyKey: 'idem-live-c', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 15000,
   });
   body = await r.json();
   forceLiveFetchError = false;
-  t('(c) live lookup throws: falls back to the webhook-recorded $100, still rejects $150 on $100 remaining', r.status === 400 && body.refundable_cents === 10000, body);
-  t('(c) response reports the live charge was NOT checked', body.live_charge_checked === false, body);
+  t('(c) R2-H1: live lookup throws -> 503 live_check_unavailable, fails closed', r.status === 503 && body.error === 'live_check_unavailable', body);
+  t('(c) R2-H1: no office_refunds reservation was made', database.prepare('SELECT COUNT(*) c FROM office_refunds WHERE booking_id = ?').get(cBkId).c === cLedgerRowsBefore, cBkId);
+  t('(c) R2-H1: zero Stripe refund calls were made', stripeCalls.refunds.length === cRefundsBefore, stripeCalls.refunds.length);
+
+  // (c2) R2-H1: the same failure on a dry_run also fails closed at 503 (no preview info
+  // leaked from a check we couldn't verify).
+  forceLiveFetchError = true;
+  r = await write('POST', '/bookings/BM-LIVE-C/refunds', liveKey, {
+    idempotencyKey: 'idem-live-c-dryrun', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 1000, dry_run: true,
+  });
+  forceLiveFetchError = false;
+  t('(c2) R2-H1: dry_run also fails closed at 503 when the live check is unavailable', r.status === 503, r.status);
 
   // --- L1: an explicit payment_id whose payments.status is NOT 'completed' -----------
   const { rawKey: l1Key } = createApiKey(database, { name: 'test-l1', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000 });

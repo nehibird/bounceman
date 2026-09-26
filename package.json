@@ -9,8 +9,8 @@
     "lint": "eslint routes/*.js lib/*.js middleware/*.js scripts/*.js server.js db.js --fix",
     "lint:check": "eslint routes/*.js lib/*.js middleware/*.js scripts/*.js server.js db.js",
     "test": "playwright test",
-    "test:office": "node tests/office-auth.test.js && node tests/refund-webhook.test.js && node tests/sarah-auth.test.js && node tests/office-api.test.js && node tests/office-money.test.js && node tests/office-refund-ledger.test.js",
-    "test:all": "node tests/pricing-availability.test.js && node tests/addon-pricing.test.js && node tests/call-routing.test.js && node tests/regression-pre-pr.test.js && node tests/sunday-rules.test.js && node tests/phone-format.test.js && node tests/sarah-noreply.test.js && node tests/office-auth.test.js && node tests/refund-webhook.test.js && node tests/sarah-auth.test.js && node tests/office-api.test.js && node tests/office-money.test.js && node tests/office-refund-ledger.test.js && playwright test",
+    "test:office": "node tests/office-auth.test.js && node tests/refund-webhook.test.js && node tests/sarah-auth.test.js && node tests/office-api.test.js && node tests/office-money.test.js && node tests/office-refund-ledger.test.js && node tests/office-refund-ambiguous.test.js && node tests/office-live-check.test.js && node tests/office-link-reservation.test.js",
+    "test:all": "node tests/pricing-availability.test.js && node tests/addon-pricing.test.js && node tests/call-routing.test.js && node tests/regression-pre-pr.test.js && node tests/sunday-rules.test.js && node tests/phone-format.test.js && node tests/sarah-noreply.test.js && node tests/office-auth.test.js && node tests/refund-webhook.test.js && node tests/sarah-auth.test.js && node tests/office-api.test.js && node tests/office-money.test.js && node tests/office-refund-ledger.test.js && node tests/office-refund-ambiguous.test.js && node tests/office-live-check.test.js && node tests/office-link-reservation.test.js && playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed"
   },
