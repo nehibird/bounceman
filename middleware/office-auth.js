@@ -7,6 +7,13 @@ const { findApiKeyByRawKey, touchLastUsed, keyHasScope } = require('../lib/api-k
 
 const SENSITIVE_FIELD_RE = /(key|token|secret|password)/i;
 
+// M06 (round-4 mutation testing): counts every time registerWriteAudit's persist() falls
+// back to the UNIQUE-collision recovery path (see persist() below) — this should be
+// exactly zero for a normal same-key resume (resumingAuditId routes it straight to an
+// UPDATE, no INSERT is ever attempted) and exactly one for a genuinely concurrent
+// duplicate request. Test-only accessors at the bottom of this file.
+let auditIdempotencyCollisionFallbackCount = 0;
+
 // Redacts any field whose NAME looks like a credential before it's persisted into
 // api_audit_log.request_json — the office API never needs to keep e.g. x-office-key
 // or a Stripe secret in cold storage just because a caller echoed it in the body.
@@ -239,6 +246,14 @@ function registerWriteAudit(req, res, { reason, idempotencyKey, requestHash, req
       // back to overwriting that row, UNLESS it already recorded a success (a later
       // failure must never clobber an already-recorded success).
       if (!resumingAuditId && String(e.message || '').includes('UNIQUE constraint failed')) {
+        // M06 (round-4 mutation testing): this fallback is a race-only safety net — for a
+        // NORMAL same-key resume, resumingAuditId is set and writeAuditRow() above takes
+        // the UPDATE path directly, so this branch is never reached at all. Logging and
+        // counting every time it DOES fire makes that distinction directly observable
+        // (and testable) instead of relying on the two paths happening to converge on the
+        // same final DB state.
+        auditIdempotencyCollisionFallbackCount += 1;
+        console.warn('[OFFICE-AUTH] audit idempotency collision fallback', { keyId, idempotencyKey });
         try {
           const existingRow = db.prepare('SELECT id, status_code FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idempotencyKey);
           const existingSucceeded = existingRow && existingRow.status_code >= 200 && existingRow.status_code < 300;
@@ -443,6 +458,14 @@ function rateLimitByMethod(req, res, next) {
   return (req.method === 'GET' || req.method === 'HEAD' ? readLimiter : writeLimiter)(req, res, next);
 }
 
+// Test-only: M06's fallback-firing counter. Never read/reset outside tests/.
+function _getAuditIdempotencyCollisionFallbackCount() {
+  return auditIdempotencyCollisionFallbackCount;
+}
+function _resetAuditIdempotencyCollisionFallbackCount() {
+  auditIdempotencyCollisionFallbackCount = 0;
+}
+
 module.exports = {
   requireOfficeKey,
   requireScope,
@@ -453,4 +476,6 @@ module.exports = {
   refundLimiter,
   computeRequestHash,
   redactQueryParam,
+  _getAuditIdempotencyCollisionFallbackCount,
+  _resetAuditIdempotencyCollisionFallbackCount,
 };

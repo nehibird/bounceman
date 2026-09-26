@@ -43,6 +43,7 @@ const database = db.getDb();
 const { createApiKey } = require('../lib/api-keys');
 const stripeService = require('../services/stripe');
 const { reconcilePendingRefunds } = require('../lib/refund-reconcile');
+const { _getAuditIdempotencyCollisionFallbackCount, _resetAuditIdempotencyCollisionFallbackCount } = require('../middleware/office-auth');
 
 // --- Realistic Stripe refunds.create stub: honours idempotency keys, PROCESSES the
 // refund (records it) before optionally throwing. ------------------------------------
@@ -171,6 +172,7 @@ async function main() {
     createDelayMs = 150;
     nextCreateOutcome = null; // this concurrent pair should just succeed once resolved
     const idemConc = `idem-${mode}-conc`;
+    _resetAuditIdempotencyCollisionFallbackCount();
     const concResults = await Promise.all([
       write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, { idempotencyKey: idemConc, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100 }).then((rr) => rr.status),
       new Promise((resolve) => setTimeout(resolve, 30)).then(() =>
@@ -179,6 +181,12 @@ async function main() {
     createDelayMs = 0;
     t(`[${mode}] a genuinely concurrent duplicate: exactly one 409, and the winner still gets 201`,
       concResults.filter((s) => s === 409).length === 1 && concResults.filter((s) => s === 201).length === 1, concResults);
+    // M06 sanity check (the OTHER direction): a genuinely concurrent duplicate SHOULD
+    // exercise the collision fallback exactly once (the loser's 409 audit row already
+    // occupies the idempotency key by the time the winner's 201 tries to persist) — this
+    // is the fallback's actual, intended job, not a bug to eliminate.
+    t(`[${mode}] the genuine collision correctly used the fallback exactly once`,
+      _getAuditIdempotencyCollisionFallbackCount() === 1, _getAuditIdempotencyCollisionFallbackCount());
 
     // 1. First attempt -> ambiguous outcome, ledger stays pending and counted. The
     //    realistic stub already RECORDS the refund before throwing (exactly like real
@@ -227,11 +235,19 @@ async function main() {
     //    (exactly like real Stripe's 24h idempotency dedupe) — no NEW real refund.
     const processedBeforeRetry = processedByIdemKey.size;
     const callsBeforeRetry = stripeRefundCalls.length;
+    // M06: a normal same-key resume must go straight through the UPDATE path
+    // (resumingAuditId correctly identifies and reuses the original audit row) — the
+    // collision-fallback branch must NEVER fire here. If resumingAuditId were ignored
+    // (M06's mutation), this resume would attempt a fresh INSERT that collides with the
+    // still-present original row, firing the fallback exactly where it must not.
+    _resetAuditIdempotencyCollisionFallbackCount();
     r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
       idempotencyKey: idemA, reason: 'ambiguous test', confirmed_by: 'Nehemiah', amount_cents: 5000,
     });
     body = await r.json();
     t(`[${mode}] same-key retry -> 201`, r.status === 201 && !!body.refund_id, body);
+    t(`[${mode}] the resume took the DIRECT update path — ZERO collision fallbacks fired`,
+      _getAuditIdempotencyCollisionFallbackCount() === 0, _getAuditIdempotencyCollisionFallbackCount());
     t(`[${mode}] same-key retry made another Stripe call (not a cached HTTP replay)`, stripeRefundCalls.length === callsBeforeRetry + 1, stripeRefundCalls.length);
     t(`[${mode}] the retry did NOT create a second real refund (Stripe-side dedupe on the reused idempotency key)`,
       processedByIdemKey.size === processedBeforeRetry, { before: processedBeforeRetry, after: processedByIdemKey.size });
