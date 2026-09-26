@@ -524,13 +524,16 @@ async function main() {
     database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
       .run(nrId, keyId, 'cli-key', 'idem-cli-noreason', bookingId, paymentId, oldTimestamp, oldTimestamp);
-    res = runCli([nrId, 'failed']);
-    t('CLI: refuses without --reason', res.code !== 0, res);
+    // --actor supplied so this isolates the --reason check specifically (both are
+    // required now — a test missing BOTH can't tell which check actually fired, which is
+    // exactly how RESOLVE-REASON survived round 4's mutation pass with --actor omitted).
+    res = runCli([nrId, 'failed', '--actor', 'Nehemiah']);
+    t('CLI: refuses without --reason', res.code !== 0 && /--reason is required/.test(res.stderr || ''), res);
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nrId);
     t('CLI: no change without --reason', row.status === 'needs_review', row);
 
-    res = runCli([nrId, 'failed', '--reason', '   ']);
-    t('CLI: refuses a whitespace-only --reason', res.code !== 0, res);
+    res = runCli([nrId, 'failed', '--reason', '   ', '--actor', 'Nehemiah']);
+    t('CLI: refuses a whitespace-only --reason', res.code !== 0 && /--reason is required/.test(res.stderr || ''), res);
 
     // 'succeeded' without --stripe-refund -> refused.
     res = runCli([nrId, 'succeeded', '--reason', 'confirmed on dashboard']);
@@ -574,7 +577,7 @@ async function main() {
       VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
       .run(nr3Id, keyId, 'cli-key', 'idem-cli-noactor', bookingId, paymentId, oldTimestamp, oldTimestamp);
     res = runCli([nr3Id, 'failed', '--reason', 'confirmed never charged', '--no-verify']);
-    t('CLI: refuses without --actor', res.code !== 0, res);
+    t('CLI: refuses without --actor', res.code !== 0 && /--actor is required/.test(res.stderr || ''), res);
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nr3Id);
     t('CLI: no change without --actor', row.status === 'needs_review', row);
 
