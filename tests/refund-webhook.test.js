@@ -329,6 +329,39 @@ async function main() {
   t('R4-L1: still 30/70 after a second stale redelivery under a different event id', ooPayment.refund_amount === 30 && ooBooking.total === 70, { refund_amount: ooPayment.refund_amount, total: ooBooking.total });
   liveAmountRefundedCentsOverride = null;
 
+  // --- R5 mutation gap (L1-INCLUDE-CANCELED): a refund with status 'canceled' IN THE
+  // PAYLOAD ITSELF (not merely one our own ledger has since learned is failed/canceled —
+  // e.g. a refund attempted directly from the Stripe Dashboard, never created via our API,
+  // so there's no office_refunds row to cross-check against at all) must still be excluded
+  // from the cumulative sum by the payload's OWN status field. Every other R4-L1 test above
+  // happens to have a matching ledger row that ALSO excludes the refund, which left this
+  // specific filter (`r.status === 'canceled'`) without a test that could isolate it. -----
+  const cpCustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'CancelPayload', 'Test')").run(cpCustomerId);
+  const cpBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-CANCELPAYLOAD-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 70, 50, 0, 'paid')`).run(cpBookingId, cpCustomerId);
+  const cpPaymentId = uuid();
+  // $100 charge, refund A ($30) already reflected (refund_amount=30, total already 70).
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_cancelpayload_1', 'completed', 30)`).run(cpPaymentId, cpBookingId, cpCustomerId);
+
+  // A later charge.refunded (e.g. Stripe now shows a second refund attempt on this charge)
+  // lists A (succeeded) AND an entirely EXTERNAL refund attempt C ($20, made directly on
+  // the Stripe Dashboard, canceled immediately) — C has NO office_refunds row at all, so
+  // the ledger cross-check can never be what excludes it; only the payload's own
+  // `status === 'canceled'` filter can.
+  r = await post(chargeRefundedEvent('evt_cancelpayload_1', 3000, 'pi_cancelpayload_1', [
+    { id: 're_cancelpayload_a', amount: 3000, status: 'succeeded' },
+    { id: 're_cancelpayload_c', amount: 2000, status: 'canceled' },
+  ]));
+  t('L1-INCLUDE-CANCELED: charge.refunded with a payload-canceled external refund -> 200', r.status === 200, r.status);
+  const cpPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(cpPaymentId);
+  const cpBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(cpBookingId);
+  t('L1-INCLUDE-CANCELED VERDICT: refund_amount stays 30 (the canceled $20 attempt is excluded by the PAYLOAD status alone)', cpPayment.refund_amount === 30, cpPayment.refund_amount);
+  t('L1-INCLUDE-CANCELED VERDICT: booking.total stays 70 (never reduced for a refund the payload itself says was canceled)', cpBooking.total === 70, cpBooking.total);
+
   // --- R4-L1 GAP: the REALISTIC MODERN Stripe payload shape — charge.refunds is NOT
   // guaranteed present at all (stripe-node's own CHANGELOG documents Charge.refunds as
   // "not guaranteed to be returned by the Stripe API"). This is the COMMON case, not an
