@@ -44,30 +44,61 @@ and defaults to today's effective value ($10,000).
 
 Confirm recent deliveries return 2xx in the Stripe dashboard before and after cutover.
 
-## 4. Proxy / network exposure (R2-M4)
+## 4. Proxy / network exposure (R2-M4, R3-I1)
 
-- **Dan has already bound the prod port to loopback today** (`127.0.0.1:3202`) — this
-  deploy just needs to **confirm** that binding is still in place and matches what the
-  repo's `docker-compose.yml` now declares (`127.0.0.1:3202:3200`, was `3202:3200` on all
-  interfaces):
+**Do not assume any of this is already done — Dan's own checklist (audited during round 3)
+still listed `0.0.0.0:3202` as an open gap despite an earlier note claiming it was bound to
+loopback. Every item below is a MANDATORY verification step at THIS deploy, not a
+confirmation of prior work.**
+
+- **Port binding — verify with the command, not by asking:**
   ```bash
   ss -ltnp | grep 3202
-  # expect: LISTEN 0 ... 127.0.0.1:3202 ...   (NOT 0.0.0.0:3202 or :::3202)
+  # MUST show: LISTEN 0 ... 127.0.0.1:3202 ...   (NOT 0.0.0.0:3202 or :::3202)
   ```
-- Confirm nginx overwrites `X-Forwarded-For` before proxying to this container (it must
-  never pass through a client-supplied XFF value unmodified).
-- **`server.js`'s `trust proxy` setting is deliberately left at `1`, not `'loopback'`** —
-  see the comment at that line. Docker's bridge networking means a connection arriving via
-  the published port has a peer address of the docker bridge gateway, not `127.0.0.1`, so
-  `'loopback'` would silently stop trusting `X-Forwarded-For` at all. Do not "fix" this
-  without re-reading that comment first.
-- No action needed if `ss` already shows loopback-only and nginx already strips
-  client-supplied XFF (per Dan) — this is a confirmation step, not a new change to make.
+  Matches the repo's `docker-compose.yml` (`127.0.0.1:3202:3200`, loopback only).
+- **Confirm from OUTSIDE the box that the port is unreachable directly** (bypassing nginx
+  entirely would mean anyone on the internet can hit the app without going through
+  Cloudflare or nginx's IP restoration):
+  ```bash
+  curl -m 5 http://<vps-public-ip>:3202/
+  # MUST fail (connection refused/timeout) — if this returns anything, STOP, the port is
+  # exposed and this deploy cannot proceed until it's fixed.
+  ```
+- **Verify nginx actually restores the real visitor IP along the full path** (Cloudflare →
+  nginx → this app) — this is the one Marcus's round-3 review flagged as the thing that
+  actually matters (not whether nginx "overwrites" XFF in the abstract): check the
+  `bounceman.conf` (or wherever this app's server block lives) has BOTH:
+  ```nginx
+  set_real_ip_from <Cloudflare IP ranges>;   # https://www.cloudflare.com/ips/
+  real_ip_header CF-Connecting-IP;
+  ```
+  Without both directives, `req.ip` inside the app resolves to a **Cloudflare edge IP**,
+  not the visitor's — which means the per-IP failed-auth limiter
+  (`middleware/office-auth.js`) keys on shared Cloudflare edges instead of real clients.
+  (Sarah's own valid key is never blocked either way — only failed-auth attempts count
+  against the limiter — but this still matters for anyone else's traffic hitting bad
+  actors sharing an edge IP with Sarah's egress path.)
+- **`server.js`'s `trust proxy` setting stays at `1` — never change it, in either
+  direction:**
+  - **Never `'loopback'`** — Docker's bridge networking means a connection arriving via
+    the published port has a peer address of the docker bridge gateway, not `127.0.0.1`,
+    so `'loopback'` would silently stop trusting `X-Forwarded-For` at all.
+  - **Never `2`** — with exactly one nginx hop between Cloudflare and this app, `trust
+    proxy: 2` would trust a SECOND hop of `X-Forwarded-For` that doesn't exist here, which
+    is spoofable by anyone sending a request directly to nginx with a crafted XFF header
+    (bypassing the real-IP restoration above entirely). `1` is correct for exactly one
+    trusted proxy hop (nginx) and must not be "fixed" to 2 even if IP attribution looks
+    wrong after this deploy — re-check the `set_real_ip_from`/`real_ip_header` config
+    above first.
+- This is a confirmation-and-verification step at every deploy, not a one-time setup task
+  — re-run all three checks above even if a prior deploy already passed them.
 
-## 5. Reconcile — schedule it (R2-M2d, R3-M2: now a REQUIRED money-safety control)
+## 5. Reconcile — schedule it (R2-M2d, R3-M2: MANDATORY money-safety control)
 
-**Not yet scheduled in production, and R3-M2 makes this a hard prerequisite, not
-housekeeping: install this cron BEFORE any key is granted `refunds:create` for real.**
+**Not yet scheduled in production. This is a hard prerequisite, not housekeeping:
+INSTALL AND CONFIRM THIS CRON IS RUNNING BEFORE any key is granted `refunds:create` for
+real — do not provision Sarah's key (§7) until this section is done and verified.**
 Stripe forgets an idempotency key after ~24h; the app's own same-key resume now confirms
 via `findRefundByOfficeId` before ever retrying `refunds.create`, but a reservation that
 Stripe has no answer for AND that has aged past ~23h is refused (`needs_review`, `409
@@ -130,6 +161,10 @@ docker compose exec -T web node scripts/resolve-office-refund.js <ledger_id> fai
   outstanding count before/after a deploy or an incident.
 
 ## 7. Sarah's key
+
+**Do not run this section until §5's reconcile cron is installed and confirmed running.**
+Granting `refunds:create` before reconcile is scheduled means an ambiguous refund past the
+~23h resume window has nothing to clear it — see R3-M2.
 
 ```bash
 <secret-source> | docker compose exec -T web node scripts/api-key.js create sarah-office-2026-10 \

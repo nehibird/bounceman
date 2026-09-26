@@ -669,6 +669,19 @@ async function main() {
     r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === unresolvedId, body);
   t('(b2) R3-M3: zero Stripe calls were made', stripeCalls.refunds.length === b2RefundCallsBefore, stripeCalls.refunds.length);
 
+  // (b3) LEDGER-3: a dry_run preview (which never reaches reserveRefund, so never hits
+  // R3-M3's unresolved-refund guard) must still correctly subtract a PENDING reservation
+  // from ANOTHER key when computing refundable_cents. This is the one remaining call site
+  // where pendingOrReviewLedgerCents actually matters — reserveRefund's own call site can
+  // never observe a nonzero value there any more, since R3-M3 refuses before ever
+  // reaching computeRefundLimits whenever an unresolved row exists on the payment.
+  r = await write('POST', '/bookings/BM-LIVE-B2/refunds', liveKey, {
+    idempotencyKey: 'idem-live-b2-dryrun', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 1000, dry_run: true,
+  });
+  body = await r.json();
+  t("(b3) LEDGER-3: dry_run correctly subtracts another key's pending $30 reservation from the $200 payment",
+    r.status === 200 && body.dry_run === true && body.refundable_cents === 17000, body);
+
   // (c) R2-H1: the live lookup itself fails (Stripe unreachable) — FAILS CLOSED. No
   // fallback to the webhook/ledger view any more (that was the R2-H1 bug: it failed
   // open). 503, no reservation, zero Stripe refund calls.
@@ -822,6 +835,23 @@ async function main() {
   });
   body = await r.json();
   t('DAILY-NR: a needs_review row (on another payment) counts toward the daily cap', r.status === 403 && body.already_refunded_today_cents === 5000, body);
+
+  // --- DAILY-PENDING: a 'pending' (not needs_review) row counts toward the daily cap too.
+  // Also seeded on a DIFFERENT payment (same R3-M3 reasoning as DAILY-NR above) — this is
+  // the one place a 'pending' row's cap contribution is still observable at all, since
+  // R3-M3 refuses any new reservation outright on the SAME payment before ever reaching
+  // the cap math.
+  const { rawKey: pendKey, id: pendKeyId } = createApiKey(database, { name: 'test-daily-pending', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
+  const { bkId: pendStuckBkId, payId: pendStuckPayId } = makeLivePayment('BM-DAILY-PEND-STUCK', 'pi_daily_pend_stuck');
+  makeLivePayment('BM-DAILY-PEND', 'pi_daily_pend');
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'in-flight elsewhere', datetime('now'), datetime('now'))`)
+    .run(uuid(), pendKeyId, 'test-daily-pending', 'idem-pend-stuck', pendStuckBkId, pendStuckPayId);
+  r = await write('POST', '/bookings/BM-DAILY-PEND/refunds', pendKey, {
+    idempotencyKey: 'idem-daily-pend-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
+  });
+  body = await r.json();
+  t('DAILY-PENDING: a pending row (on another payment) counts toward the daily cap', r.status === 403 && body.already_refunded_today_cents === 5000, body);
 
   // --- R2-L1: scripts/api-key.js refuses caps above the hard ceiling (exit non-zero,
   // nothing stored), and `list` prints the EFFECTIVE cap alongside the stored one. Run as
