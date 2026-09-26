@@ -83,17 +83,73 @@ confirmation of prior work.**
 - **Verify nginx actually restores the real visitor IP along the full path** (Cloudflare →
   nginx → this app) — this is the one Marcus's round-3 review flagged as the thing that
   actually matters (not whether nginx "overwrites" XFF in the abstract): check the
-  `bounceman.conf` (or wherever this app's server block lives) has BOTH:
+  `bounceman.conf` (or wherever this app's server block lives) has **BOTH Cloudflare IP
+  lists** as `set_real_ip_from` lines (not just v4 — Cloudflare edges connect over IPv6
+  too, and a missing v6 list means a v6-originated request's `req.ip` still resolves to the
+  Cloudflare edge, silently only half-fixing this) **and** `real_ip_header`. The ranges
+  below are recorded from this review's own reference material, not fetched live at deploy
+  time — **before using them, diff against the live lists at
+  <https://www.cloudflare.com/ips-v4> and <https://www.cloudflare.com/ips-v6>; trust
+  Cloudflare's current published ranges over this document if they ever disagree:**
   ```nginx
-  set_real_ip_from <Cloudflare IP ranges>;   # https://www.cloudflare.com/ips/
+  # https://www.cloudflare.com/ips-v4  (fetch fresh — do not hand-copy a stale list)
+  set_real_ip_from 173.245.48.0/20;
+  set_real_ip_from 103.21.244.0/22;
+  set_real_ip_from 103.22.200.0/22;
+  set_real_ip_from 103.31.4.0/22;
+  set_real_ip_from 141.101.64.0/18;
+  set_real_ip_from 108.162.192.0/18;
+  set_real_ip_from 190.93.240.0/20;
+  set_real_ip_from 188.114.96.0/20;
+  set_real_ip_from 197.234.240.0/22;
+  set_real_ip_from 198.41.128.0/17;
+  set_real_ip_from 162.158.0.0/15;
+  set_real_ip_from 104.16.0.0/13;
+  set_real_ip_from 104.24.0.0/14;
+  set_real_ip_from 172.64.0.0/13;
+  set_real_ip_from 131.0.72.0/22;
+  # https://www.cloudflare.com/ips-v6
+  set_real_ip_from 2400:cb00::/32;
+  set_real_ip_from 2606:4700::/32;
+  set_real_ip_from 2803:f800::/32;
+  set_real_ip_from 2405:b500::/32;
+  set_real_ip_from 2405:8100::/32;
+  set_real_ip_from 2a06:98c0::/29;
+  set_real_ip_from 2c0f:f248::/32;
   real_ip_header CF-Connecting-IP;
   ```
-  Without both directives, `req.ip` inside the app resolves to a **Cloudflare edge IP**,
-  not the visitor's — which means the per-IP failed-auth limiter
+  **Refresh these periodically** — Cloudflare adds/retires ranges occasionally (rare, but it
+  happens): re-fetch both lists at least monthly, or immediately if Cloudflare announces a
+  range change, diff against what's in `bounceman.conf`, update, then `nginx -t && nginx -s
+  reload` (never a full restart — this must not drop in-flight connections). A stale list
+  isn't a hard failure (Cloudflare's OLD ranges don't just vanish overnight), but a truly
+  NEW Cloudflare edge range would fall through unmatched and `req.ip` would resolve to that
+  edge instead of the visitor.
+  Without both directives — for BOTH address families — `req.ip` inside the app resolves to
+  a **Cloudflare edge IP**, not the visitor's — which means the per-IP failed-auth limiter
   (`middleware/office-auth.js`) keys on shared Cloudflare edges instead of real clients.
   (Sarah's own valid key is never blocked either way — only failed-auth attempts count
   against the limiter — but this still matters for anyone else's traffic hitting bad
   actors sharing an edge IP with Sarah's egress path.)
+- **Confirm the app's own server block actually forwards a real `X-Forwarded-For` header to
+  Node** — `set_real_ip_from`/`real_ip_header` only fix what NGINX itself believes
+  `$remote_addr` is; `trust proxy 1` in `server.js` reads `X-Forwarded-For` from the request
+  nginx sends to the app, which nginx only populates correctly if the server block (or a
+  shared `proxy.conf`/snippet it includes) has:
+  ```nginx
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  # ($remote_addr alone is also acceptable for a single-hop proxy, but
+  # $proxy_add_x_forwarded_for is the standard/safer choice — it appends rather than
+  # clobbers, so it degrades gracefully if a hop is ever added later.)
+  ```
+  Grep for it directly rather than assuming a shared snippet has it:
+  ```bash
+  grep -RIn 'proxy_set_header X-Forwarded-For' /etc/nginx/sites-enabled/ /etc/nginx/snippets/ 2>/dev/null
+  ```
+  Missing this line means `req.ip` inside the app falls back to nginx's own address (or
+  whatever the bridge network's peer address is) no matter how correct
+  `set_real_ip_from`/`real_ip_header` are — the two checks above fix `$remote_addr` INSIDE
+  nginx; this one is what actually gets that corrected value to Node.
 - **`server.js`'s `trust proxy` setting stays at `1` — never change it, in either
   direction:**
   - **Never `'loopback'`** — Docker's bridge networking means a connection arriving via
@@ -120,19 +176,43 @@ Stripe has no answer for AND that has aged past ~23h is refused (`needs_review`,
 refund_needs_reconcile`) rather than guessed at — reconcile (or a human via the resolve
 CLI) is the only thing that clears it.
 
-```cron
-*/10 * * * * cd /opt/bounceman && docker compose exec -T web node scripts/reconcile-office-refunds.js --older-than-minutes 15 >> /var/log/bounceman-reconcile.log 2>&1 || curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"⚠️ office-refund reconcile exited non-zero — check /var/log/bounceman-reconcile.log and office_refunds.status = '"'"'needs_review'"'"'"}' "$SLACK_ALERT_WEBHOOK_URL"
+**R4-L5: the crontab below is complete and concrete, not a fill-in-the-blank sketch** — a
+bare `$SLACK_ALERT_WEBHOOK_URL` reference in a crontab silently expands to empty (cron's
+own environment is minimal; it does NOT source `.bashrc`/`.profile`/the shell's login env),
+so the earlier draft's alert would have failed with no error the first time it fired. The
+webhook URL is sourced from a dedicated, root-only env file instead:
+
+`/opt/bounceman/.env.reconcile-alert` (create this file — `chown root:root`, `chmod 600`):
+```
+SLACK_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/REPLACE/WITH/REAL_WEBHOOK
 ```
 
-- Runs every 10 minutes (5–10 min is the target cadence; anything tighter is wasted Stripe
-  API calls, anything looser leaves an ambiguous refund uncounted-toward-caps for longer
-  than necessary).
-- The script exits non-zero whenever any row ends the run `needs_review` — the `||
-  <alert>` above is a minimal example; wire it to whatever this deploy's actual alerting
-  channel is (Slack webhook, PagerDuty, etc.) instead of the inline `curl` shown. **Also
-  alert if the log file itself hasn't been updated in over an hour** — a non-firing cron
-  (crashed container, misconfigured schedule) exits zero times, never non-zero, so
-  exit-code alerting alone can't catch it.
+`/etc/cron.d/bounceman-reconcile` (system crontab — needs the `root` user field that a
+per-user `crontab -e` file does NOT; also `chown root:root`, `chmod 600`):
+```cron
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Reconcile every 10 minutes (5–10 min is the target cadence; anything tighter is wasted
+# Stripe API calls, anything looser leaves an ambiguous refund uncounted-toward-caps for
+# longer than necessary). Exits non-zero whenever any row ends the run needs_review.
+*/10 * * * * root cd /opt/bounceman && . /opt/bounceman/.env.reconcile-alert && docker compose exec -T web node scripts/reconcile-office-refunds.js --older-than-minutes 15 >> /var/log/bounceman-reconcile.log 2>&1 || (. /opt/bounceman/.env.reconcile-alert && curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"⚠️ office-refund reconcile exited non-zero — check /var/log/bounceman-reconcile.log and office_refunds.status = '"'"'needs_review'"'"'"}' "$SLACK_ALERT_WEBHOOK_URL")
+
+# Staleness check every 15 minutes — a crashed container or a cron that stopped firing
+# entirely exits zero times, never non-zero, so the exit-code alert above can never catch
+# it on its own. This is the concrete "alert if stale" check the earlier draft only
+# described in prose.
+*/15 * * * * root . /opt/bounceman/.env.reconcile-alert && find /var/log/bounceman-reconcile.log -mmin +60 | grep -q . && curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"🚨 bounceman-reconcile.log has not been updated in over 60 minutes — the reconcile cron may not be firing at all"}' "$SLACK_ALERT_WEBHOOK_URL"
+```
+
+- Confirm the schedule is actually loaded: `crontab -l` won't show `/etc/cron.d/*` files —
+  check with `cat /etc/cron.d/bounceman-reconcile` and `systemctl status cron` (or `crond`),
+  and watch `/var/log/bounceman-reconcile.log` actually grow over the next 10–20 minutes
+  after deploy.
+- Swap the `curl`/Slack webhook shape above for whatever this deploy's actual alerting
+  channel is (PagerDuty, `mail`, a local notify script with an absolute path, etc.) if it
+  isn't Slack — the pattern (source the secret from a root-only file, never a bare env var
+  reference) is what matters, not the specific webhook.
 - Sweeps `pending`, `needs_review`, and (R2-C1) legacy ambiguous-`failed` rows (an error
   was recorded but never classified `definitive`) — never calls `stripe.refunds.create`,
   only looks refunds up by `metadata.office_refund_id`. **R3-L1:** finalizing a row
@@ -165,9 +245,18 @@ docker compose exec -T web node scripts/resolve-office-refund.js <ledger_id> fai
   **R3-M1: marking `failed` now requires the same kind of verification** — it refuses (no
   change) if Stripe shows a non-failed/non-canceled refund already exists for the row, or
   if the lookup itself fails; a confirmed-`failed` row also retires its idempotency key so
-  a same-key retry can reserve fresh. `--stripe-refund`, when given, must look like
-  `re_...` even with `--no-verify`. `--no-verify` is an escape hatch for genuinely stuck
-  cases; avoid it unless you've checked the dashboard yourself.
+  a same-key retry can reserve fresh. **R4-M1: `--no-verify` can NEVER force through a
+  POSITIVE Stripe finding** — a confirmed live refund (for `failed`) or a metadata/amount
+  mismatch (for `succeeded`) always refuses, with or without `--no-verify`; that flag only
+  excuses a genuinely UNAVAILABLE check (Stripe unreachable, timed out, or no
+  `STRIPE_SECRET_KEY`). If `failed` refuses because a refund already exists, run
+  `succeeded --stripe-refund <that re_ id>` instead — the tool prints this suggestion
+  itself. **R4-L4:** if the payment row has no Stripe `pi_`/`ch_` id at all, there is
+  nothing to check — this requires `--no-verify` and is recorded honestly as
+  `no_stripe_target`, never as a completed "none found" check. `--stripe-refund`, when
+  given, must look like `re_...` even with `--no-verify`. `--no-verify` is an escape hatch
+  for genuinely stuck cases (Stripe itself unreachable); avoid it unless you've checked the
+  dashboard yourself.
 - Only acts on `needs_review` rows, or `pending` rows older than `--older-than-minutes`
   (default 15) — refuses a fresh/still-in-progress row.
 - Writes an audit row (`api_audit_log` + `activity_log`) naming the actor and reason, in
@@ -216,8 +305,14 @@ review `api_audit_log`/`office_refunds` for the old key's `key_name`.
    Stripe money moves. **New this round:** if Stripe itself is unreachable, `dry_run`
    should now return `503 {error:"live_check_unavailable"}` rather than a fabricated
    preview — that's R2-H1's fail-closed behavior working as intended, not a bug.
-4. `node scripts/reconcile-office-refunds.js --older-than-minutes 15` run manually once,
-   confirm it reports "No pending office refunds..." (nothing stuck from before deploy).
+4. **R4-L5:** run manually once via the SAME path the cron uses — a bare `node
+   scripts/reconcile-office-refunds.js` runs outside the container, against whatever `DB_PATH`
+   the shell's own environment happens to have (the wrong database, or none at all), not the
+   app's real one:
+   ```bash
+   cd /opt/bounceman && docker compose exec -T web node scripts/reconcile-office-refunds.js --older-than-minutes 15
+   ```
+   Confirm it reports "No pending office refunds..." (nothing stuck from before deploy).
 5. Confirm the cron entry from §5 is actually installed and firing
    (`grep reconcile /etc/cron.d/* 2>/dev/null` or the container's crontab, depending on
    where it's scheduled) — this has never been scheduled in production before.
