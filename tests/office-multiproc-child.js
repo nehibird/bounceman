@@ -31,8 +31,10 @@ stripeService._setStripeForTests({
       return { id: 're_race_' + process.env.CHILD_INDEX, status: 'succeeded' };
     },
   },
-  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_race_${id}`, amount_refunded: 0 } }) },
-  charges: { retrieve: async (id) => ({ id, amount_refunded: 0 }) },
+  // R3-L2: assertUsableCharge now requires a real integer amount/currency — every
+  // fixture in this race suite is a flat $1,000 payment (see makeRefundFixture).
+  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_race_${id}`, amount: 100000, amount_refunded: 0, currency: 'usd' } }) },
+  charges: { retrieve: async (id) => ({ id, amount: 100000, amount_refunded: 0, currency: 'usd' }) },
 });
 
 const office = require(path.join(REPO, 'routes/office'));

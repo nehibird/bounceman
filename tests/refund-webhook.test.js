@@ -28,11 +28,26 @@ db.initialize();
 const database = db.getDb();
 
 const stripeService = require('../services/stripe');
+// R3-L3: charge.refund.updated's reversal correction now looks up the LIVE
+// amount_refunded on the charge before deciding how to correct the books — controllable
+// per-test via liveAmountRefundedCentsOverride (only reached when the event carries a
+// `payment_intent`/`charge` field; the existing R2-L5 fixtures don't, so they keep
+// exercising the old best-effort-subtraction fallback unchanged).
+let liveAmountRefundedCentsOverride = null;
 stripeService._setStripeForTests({
   webhooks: {
     // Stub out real signature verification entirely — the webhook ROUTE is under test
     // here, not Stripe's HMAC scheme, and this needs no network call or real secret.
     constructEvent: (rawBody) => JSON.parse(rawBody.toString('utf8')),
+  },
+  paymentIntents: {
+    retrieve: async (id) => ({
+      id,
+      latest_charge: { id: `ch_for_${id}`, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' },
+    }),
+  },
+  charges: {
+    retrieve: async (id) => ({ id, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' }),
   },
 });
 
@@ -61,19 +76,19 @@ async function main() {
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  function chargeRefundedEvent(id, amountRefundedCents) {
+  function chargeRefundedEvent(id, amountRefundedCents, paymentIntent = 'pi_test_1') {
     return JSON.stringify({
       id,
       type: 'charge.refunded',
-      data: { object: { id: 'ch_test_1', payment_intent: 'pi_test_1', amount_refunded: amountRefundedCents } },
+      data: { object: { id: 'ch_test_1', payment_intent: paymentIntent, amount_refunded: amountRefundedCents } },
     });
   }
 
-  function chargeRefundUpdatedEvent(id, { refundId, status, amountCents, officeRefundId }) {
+  function chargeRefundUpdatedEvent(id, { refundId, status, amountCents, officeRefundId, paymentIntent }) {
     return JSON.stringify({
       id,
       type: 'charge.refund.updated',
-      data: { object: { id: refundId, status, amount: amountCents, metadata: { office_refund_id: officeRefundId } } },
+      data: { object: { id: refundId, status, amount: amountCents, payment_intent: paymentIntent || null, metadata: { office_refund_id: officeRefundId } } },
     });
   }
 
@@ -223,6 +238,47 @@ async function main() {
   revBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(revBookingId);
   t('R2-L5: idempotent — refund_amount is NOT corrected a second time (stays 0, not negative)', revPayment.refund_amount === 0, revPayment.refund_amount);
   t('R2-L5: idempotent — booking.total is NOT increased a second time (stays 100)', revBooking.total === 100, revBooking.total);
+
+  // --- R3-L3: reversal out-of-order — the refund's OWN charge.refunded hasn't arrived
+  // yet when its charge.refund.updated (canceled) lands. payments.refund_amount must not
+  // be blindly decremented from a base that never included this refund in the first
+  // place (that would drive it wrong, and a later charge.refunded would then re-apply the
+  // delta on top of an already-wrong number).
+  const ooCustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'OutOfOrder', 'Test')").run(ooCustomerId);
+  const ooBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-OOO-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(ooBookingId, ooCustomerId);
+  const ooPaymentId = uuid();
+  // $100 charge, NO refund recorded yet (its own charge.refunded hasn't arrived) —
+  // refund_amount starts at 0.
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_ooo_1', 'completed', 0)`).run(ooPaymentId, ooBookingId, ooCustomerId);
+  const ooOfficeRefundId = uuid();
+  // Our ledger already marked this refund 'succeeded' (Stripe's create call returned
+  // before it actually got canceled) — this is the ambiguous window R3-L3 is about.
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, stripe_refund_id, stripe_status, created_at, updated_at)
+    VALUES (?, 'test-key-id', 'test-key', 'idem-ooo-1', ?, ?, 4000, 'succeeded', 'Nehemiah', 'x', 're_ooo_test', 'pending', datetime('now'), datetime('now'))`)
+    .run(ooOfficeRefundId, ooBookingId, ooPaymentId);
+
+  liveAmountRefundedCentsOverride = 0; // Stripe confirms: nothing was actually kept refunded
+  r = await post(chargeRefundUpdatedEvent('evt_ooo_1', { refundId: 're_ooo_test', status: 'canceled', amountCents: 4000, officeRefundId: ooOfficeRefundId, paymentIntent: 'pi_ooo_1' }));
+  t('R3-L3: out-of-order reversal -> 200', r.status === 200, r.status);
+  let ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
+  let ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
+  t('R3-L3: refund_amount stays 0 (never blindly subtracted into negative)', ooPayment.refund_amount === 0, ooPayment.refund_amount);
+  t('R3-L3: booking.total untouched (still 100) since nothing was ever actually deducted', ooBooking.total === 100, ooBooking.total);
+
+  // Now the (late) charge.refunded event for this SAME charge arrives, with
+  // amount_refunded=0 (the refund never actually completed) — must be a no-op.
+  r = await post(chargeRefundedEvent('evt_ooo_2', 0, 'pi_ooo_1'));
+  t('R3-L3: the late charge.refunded (0 cumulative) -> 200', r.status === 200, r.status);
+  ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
+  ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
+  t('R3-L3: after the late charge.refunded, refund_amount still 0', ooPayment.refund_amount === 0, ooPayment.refund_amount);
+  t('R3-L3: after the late charge.refunded, booking.total still 100', ooBooking.total === 100, ooBooking.total);
+  liveAmountRefundedCentsOverride = null;
 
   server.close();
   database.close();

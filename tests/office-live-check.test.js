@@ -33,11 +33,14 @@ const fakeStripe = {
   refunds: { create: async (params, opts) => { stripeRefundCalls.push({ params, opts }); return { id: `re_live_${stripeRefundCalls.length}`, status: 'succeeded' }; } },
   paymentIntents: {
     retrieve: async (id, params, opts) => {
-      if (!retrieveBehavior) return { id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0 } };
+      // Every booking in this file is a flat $200 payment (see makeBookingAndPayment) —
+      // R3-L2 requires a real integer `amount`/`currency`, so the default (no override)
+      // response must match that captured amount exactly.
+      if (!retrieveBehavior) return { id, latest_charge: { id: `ch_for_${id}`, amount: 20000, amount_refunded: 0, currency: 'usd' } };
       return retrieveBehavior(id, opts);
     },
   },
-  charges: { retrieve: async (id) => ({ id, amount_refunded: 0 }) },
+  charges: { retrieve: async (id) => ({ id, amount: 20000, amount_refunded: 0, currency: 'usd' }) },
 };
 stripeService._setStripeForTests(fakeStripe);
 
@@ -105,6 +108,16 @@ async function main() {
     {
       name: 'amount_refunded as a string',
       setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: '0' } }); },
+    },
+    // R3-L2/M17-M19: a MISSING amount or currency must fail closed exactly like a wrong
+    // one — round 2 only rejected a wrong value and let a missing one silently pass.
+    {
+      name: 'amount missing',
+      setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0, currency: 'usd' } }); },
+    },
+    {
+      name: 'currency missing',
+      setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0, amount: 20000 } }); },
     },
   ];
 

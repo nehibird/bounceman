@@ -30,6 +30,10 @@ const { createApiKey } = require('../lib/api-keys');
 const stripeService = require('../services/stripe');
 let refundDelayMs = 150;
 const stripeCalls = { refunds: [] };
+function liveChargeAmountCentsFor(id) {
+  const row = database.prepare('SELECT amount FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?').get(id, id);
+  return row ? Math.round((row.amount || 0) * 100) : 20000;
+}
 const fakeStripe = {
   refunds: {
     create: (params, opts) => new Promise((resolve) => {
@@ -41,9 +45,13 @@ const fakeStripe = {
   },
   // C1.4: the refunds route also does a live amount_refunded check before reserving.
   // No test in this file needs a non-zero figure — a stable 0 keeps every concurrency/
-  // disconnect assertion's math exactly as it was before that check existed.
-  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_fake_for_${id}`, amount_refunded: 0 } }) },
-  charges: { retrieve: async (id) => ({ id, amount_refunded: 0 }) },
+  // disconnect assertion's math exactly as it was before that check existed. R3-L2:
+  // assertUsableCharge now requires a real integer `amount` matching the payment's own
+  // captured amount, so this looks it up dynamically rather than a fixed guess.
+  paymentIntents: {
+    retrieve: async (id) => ({ id, latest_charge: { id: `ch_fake_for_${id}`, amount: liveChargeAmountCentsFor(id), amount_refunded: 0, currency: 'usd' } }),
+  },
+  charges: { retrieve: async (id) => ({ id, amount: liveChargeAmountCentsFor(id), amount_refunded: 0, currency: 'usd' }) },
 };
 stripeService._setStripeForTests(fakeStripe);
 

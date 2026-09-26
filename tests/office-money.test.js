@@ -36,6 +36,14 @@ let forceNextRefundStatus = null; // L2: let a test make the NEXT refund come ba
 let forceLiveFetchError = false;
 const liveRefundedByPI = {}; // pi_xxx -> cents already refunded, per Stripe's own record
 const stripeCalls = { refunds: [], checkoutSessions: [] };
+// R3-L2: assertUsableCharge now requires a real integer `amount` (and cross-checks it
+// against the payment's own captured amount when given) — look the payment's actual
+// amount up by its stripe id so every scenario in this file's live-check stub reports a
+// value that matches, regardless of which booking/payment is being exercised.
+function liveChargeAmountCentsFor(id) {
+  const row = database.prepare('SELECT amount FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?').get(id, id);
+  return row ? Math.round((row.amount || 0) * 100) : 20000;
+}
 // A DEFINITIVE Stripe error (real 4xx statusCode + a recognized type — see
 // lib/stripe-errors.js) — this test file's "Stripe error -> 502, retry succeeds" case (#11
 // below) exercises the DEFINITIVE path specifically (release + rename + fresh retry).
@@ -61,6 +69,11 @@ const fakeStripe = {
       forceNextRefundStatus = null;
       return { id: `re_test_${stripeCalls.refunds.length}`, status };
     },
+    // R3-C1(b): a DEFINITIVE-looking error now triggers a findRefundByOfficeId lookup
+    // before finalizing 'failed' — this suite's definitive-error scenario has no real
+    // refund to find, so an empty list confirms "genuinely never happened" and preserves
+    // this file's pre-existing release-and-fresh-retry behavior.
+    list: async () => ({ data: [], has_more: false }),
   },
   checkout: {
     sessions: {
@@ -73,13 +86,13 @@ const fakeStripe = {
   paymentIntents: {
     retrieve: async (id) => {
       if (forceLiveFetchError) throw new Error('simulated Stripe outage (live charge lookup)');
-      return { id, latest_charge: { id: `ch_fake_for_${id}`, amount_refunded: liveRefundedByPI[id] || 0 } };
+      return { id, latest_charge: { id: `ch_fake_for_${id}`, amount: liveChargeAmountCentsFor(id), amount_refunded: liveRefundedByPI[id] || 0, currency: 'usd' } };
     },
   },
   charges: {
     retrieve: async (id) => {
       if (forceLiveFetchError) throw new Error('simulated Stripe outage (live charge lookup)');
-      return { id, amount_refunded: 0 };
+      return { id, amount: liveChargeAmountCentsFor(id), amount_refunded: 0, currency: 'usd' };
     },
   },
   balance: { retrieve: async () => ({ pending: [{ amount: 1000 }], available: [{ amount: 2000 }] }) },
@@ -608,33 +621,53 @@ async function main() {
   t('(a) Dashboard $100 refunded, not yet webhooked: office $150 -> 400 using the live figure', r.status === 400 && body.refundable_cents === 10000, body);
   t('(a) response reports the live charge WAS checked', body.live_charge_checked === true, body);
 
-  // (b) Same Dashboard $100, PLUS a pending office reservation of $50 on the same
-  // payment FROM A DIFFERENT KEY — a further $100 must be rejected, but exactly $50
-  // succeeds. REMAIN-ALLKEYS: the remainder sum is scoped by payment_id only, never by
-  // key_id (a payment can only be refunded once no matter which key initiates it), so
-  // this MUST use a genuinely different key's id — inserting it under the SAME key that's
-  // about to call the endpoint would never distinguish "scoped to this payment" from "scoped
-  // to this key", and would pass even if a future change accidentally scoped the sum by key.
+  // (b) A $200 payment with an already-SUCCEEDED office refund of $50 FROM A DIFFERENT
+  // KEY — a further $160 must be rejected, but exactly $150 succeeds. REMAIN-ALLKEYS: the
+  // remainder sum is scoped by payment_id only, never by key_id (a payment can only be
+  // refunded once no matter which key initiates it), so this MUST use a genuinely
+  // different key's id — inserting it under the SAME key that's about to call the
+  // endpoint would never distinguish "scoped to this payment" from "scoped to this key",
+  // and would pass even if a future change accidentally scoped the sum by key.
+  // (Seeded 'succeeded', not 'pending' — R3-M3 now refuses a new-key reservation outright
+  // while ANY 'pending'/'needs_review' row exists on the payment, regardless of numeric
+  // room; that cross-key case is proven separately right after this one.)
   const { id: otherLiveKeyId } = createApiKey(database, {
     name: 'test-money-live-other', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000,
   });
   const { bkId: bId, payId: pId } = makeLivePayment('BM-LIVE-B', 'pi_live_b');
-  liveRefundedByPI['pi_live_b'] = 10000;
-  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'other in-flight refund', datetime('now'), datetime('now'))`)
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, stripe_refund_id, stripe_status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5000, 'succeeded', 'Nehemiah', 'other completed refund', 're_other_key_test', 'succeeded', datetime('now'), datetime('now'))`)
     .run(uuid(), otherLiveKeyId, 'test-money-live-other', 'idem-live-b-other', bId, pId);
-  t('REMAIN-ALLKEYS: the in-flight reservation really was inserted under a DIFFERENT key', otherLiveKeyId !== database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-money-live').id, otherLiveKeyId);
+  t('REMAIN-ALLKEYS: the other refund really was inserted under a DIFFERENT key', otherLiveKeyId !== database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-money-live').id, otherLiveKeyId);
 
   r = await write('POST', '/bookings/BM-LIVE-B/refunds', liveKey, {
-    idempotencyKey: 'idem-live-b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 10000,
+    idempotencyKey: 'idem-live-b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 16000,
   });
   body = await r.json();
-  t('(b) Dashboard $100 + pending office $50: a further $100 -> 400 (only $50 left)', r.status === 400 && body.refundable_cents === 5000, body);
+  t('(b) $200 payment, succeeded office $50 (another key): a further $160 -> 400 (only $150 left)', r.status === 400 && body.refundable_cents === 15000, body);
 
   r = await write('POST', '/bookings/BM-LIVE-B/refunds', liveKey, {
-    idempotencyKey: 'idem-live-b-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    idempotencyKey: 'idem-live-b-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 15000,
   });
-  t('(b) exactly the remaining $50 succeeds', r.status === 201, r.status);
+  t('(b) exactly the remaining $150 succeeds', r.status === 201, r.status);
+
+  // (b2) R3-M3: a PENDING (unresolved) reservation from a DIFFERENT key on the SAME
+  // payment refuses a new-key attempt outright — 409 unresolved_refund, never reaching
+  // the remainder/cap math, and zero Stripe calls.
+  const { id: thirdKeyId } = createApiKey(database, { name: 'test-money-live-third', scopes: ['refunds:create'] });
+  const { bkId: b2Id, payId: p2Id } = makeLivePayment('BM-LIVE-B2', 'pi_live_b2');
+  const unresolvedId = uuid();
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 3000, 'pending', 'Nehemiah', 'in-flight from another key', datetime('now'), datetime('now'))`)
+    .run(unresolvedId, thirdKeyId, 'test-money-live-third', 'idem-live-b2-other', b2Id, p2Id);
+  const b2RefundCallsBefore = stripeCalls.refunds.length;
+  r = await write('POST', '/bookings/BM-LIVE-B2/refunds', liveKey, {
+    idempotencyKey: 'idem-live-b2-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
+  });
+  body = await r.json();
+  t('(b2) R3-M3: a new key is refused (unresolved_refund) by another key\'s still-pending reservation on the same payment',
+    r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === unresolvedId, body);
+  t('(b2) R3-M3: zero Stripe calls were made', stripeCalls.refunds.length === b2RefundCallsBefore, stripeCalls.refunds.length);
 
   // (c) R2-H1: the live lookup itself fails (Stripe unreachable) — FAILS CLOSED. No
   // fallback to the webhook/ledger view any more (that was the R2-H1 bug: it failed
@@ -772,17 +805,23 @@ async function main() {
 
   // --- DAILY-NR: 'needs_review' rows count toward the daily cap, not just pending/succeeded
   const { rawKey: nrKey, id: nrKeyId } = createApiKey(database, { name: 'test-daily-nr', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
-  const { bkId: nrBkId, payId: nrPayId } = makeLivePayment('BM-DAILY-NR', 'pi_daily_nr');
+  // R3-M3: the needs_review row is seeded on a DIFFERENT payment than the one being
+  // refunded below — a new-key reservation is now refused outright while ANY unresolved
+  // row exists on the SAME payment (R3-M3), which would otherwise mask this test's actual
+  // point (the daily cap, which sums a KEY's rows across every payment). Seeding it
+  // elsewhere keeps this test proving what it says it proves.
+  const { bkId: nrStuckBkId, payId: nrStuckPayId } = makeLivePayment('BM-DAILY-NR-STUCK', 'pi_daily_nr_stuck');
+  makeLivePayment('BM-DAILY-NR', 'pi_daily_nr');
   database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 5000, 'needs_review', 'Nehemiah', 'stuck review', datetime('now'), datetime('now'))`)
-    .run(uuid(), nrKeyId, 'test-daily-nr', 'idem-nr-stuck', nrBkId, nrPayId);
+    .run(uuid(), nrKeyId, 'test-daily-nr', 'idem-nr-stuck', nrStuckBkId, nrStuckPayId);
   // A further $20 against the $60 cap (only $10 headroom left) must be rejected — it only
   // fails if the $50 needs_review row correctly counts toward today's total.
   r = await write('POST', '/bookings/BM-DAILY-NR/refunds', nrKey, {
     idempotencyKey: 'idem-daily-nr-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
   });
   body = await r.json();
-  t('DAILY-NR: a needs_review row counts toward the daily cap', r.status === 403 && body.already_refunded_today_cents === 5000, body);
+  t('DAILY-NR: a needs_review row (on another payment) counts toward the daily cap', r.status === 403 && body.already_refunded_today_cents === 5000, body);
 
   // --- R2-L1: scripts/api-key.js refuses caps above the hard ceiling (exit non-zero,
   // nothing stored), and `list` prints the EFFECTIVE cap alongside the stored one. Run as

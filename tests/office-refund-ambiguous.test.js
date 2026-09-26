@@ -49,6 +49,10 @@ const { reconcilePendingRefunds } = require('../lib/refund-reconcile');
 const processedByIdemKey = new Map(); // stripe idempotency key -> the refund Stripe "stored"
 const stripeRefundCalls = [];
 let nextCreateOutcome = null; // set right before a call whose FIRST attempt should be ambiguous
+function liveChargeAmountCentsFor(id) {
+  const row = database.prepare('SELECT amount FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?').get(id, id);
+  return row ? Math.round((row.amount || 0) * 100) : 20000;
+}
 
 function makeAmbiguousError(mode) {
   if (mode === 'timeout') {
@@ -101,8 +105,10 @@ const fakeStripe = {
     }),
     list: async () => ({ data: [], has_more: false }),
   },
-  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_ambig_${id}`, amount_refunded: 0 } }) },
-  charges: { retrieve: async (id) => ({ id, amount_refunded: 0 }) },
+  // R3-L2: assertUsableCharge now requires a real integer `amount` matching the payment's
+  // own captured amount — look it up dynamically rather than a fixed guess.
+  paymentIntents: { retrieve: async (id) => ({ id, latest_charge: { id: `ch_ambig_${id}`, amount: liveChargeAmountCentsFor(id), amount_refunded: 0, currency: 'usd' } }) },
+  charges: { retrieve: async (id) => ({ id, amount: liveChargeAmountCentsFor(id), amount_refunded: 0, currency: 'usd' }) },
 };
 stripeService._setStripeForTests(fakeStripe);
 
@@ -152,10 +158,27 @@ async function main() {
 
   for (const { mode, expectedStatus } of modes) {
     const { bookingNumber, paymentId } = makeBookingAndPayment(`BM-AMBIG-${mode.toUpperCase()}`, 200, `pi_ambig_${mode}`);
-    const { rawKey } = createApiKey(database, {
+    const { rawKey, id: keyId } = createApiKey(database, {
       name: `ambig-${mode}-key`, scopes: ['refunds:create'], maxRefundCents: 10000, dailyRefundCapCents: 6000,
     });
     const idemA = `idem-${mode}-a`;
+
+    // 0. A genuinely concurrent duplicate (same NEW key, arriving twice) BEFORE any
+    //    reservation exists on this payment — proves refundsInFlight/UNIQUE-index
+    //    protection independent of R3-M3's unresolved-refund guard below (which would
+    //    otherwise refuse BOTH attempts once an unrelated reservation is pending on the
+    //    same payment, masking this check entirely). Never a second concurrent Stripe call.
+    createDelayMs = 150;
+    nextCreateOutcome = null; // this concurrent pair should just succeed once resolved
+    const idemConc = `idem-${mode}-conc`;
+    const concResults = await Promise.all([
+      write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, { idempotencyKey: idemConc, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100 }).then((rr) => rr.status),
+      new Promise((resolve) => setTimeout(resolve, 30)).then(() =>
+        write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, { idempotencyKey: idemConc, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100 }).then((rr) => rr.status)),
+    ]);
+    createDelayMs = 0;
+    t(`[${mode}] a genuinely concurrent duplicate: exactly one 409, and the winner still gets 201`,
+      concResults.filter((s) => s === 409).length === 1 && concResults.filter((s) => s === 201).length === 1, concResults);
 
     // 1. First attempt -> ambiguous outcome, ledger stays pending and counted. The
     //    realistic stub already RECORDS the refund before throwing (exactly like real
@@ -179,29 +202,19 @@ async function main() {
     t(`[${mode}] ledger row's error text was recorded`, !!ledgerRow.error, ledgerRow.error);
     t(`[${mode}] ledger row's idempotency_key was NEVER renamed`, ledgerRow.idempotency_key === idemA, ledgerRow.idempotency_key);
 
-    // 2. A NEW Idempotency-Key while the ambiguous reservation is still held -> capped
-    //    ($5000 already reserved + $2000 new > $6000 daily cap).
+    // 2. R3-M3: a NEW Idempotency-Key while ANY pending/needs_review reservation exists on
+    //    this SAME PAYMENT is refused outright — even though there'd be numeric room under
+    //    the daily cap ($5000 + $2000 <= $6000) — because a new reservation on top of one
+    //    whose outcome is unknown can double-pay if the unresolved one turns out to have
+    //    succeeded. The caller must retry the ORIGINAL key instead.
     r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
       idempotencyKey: `idem-${mode}-newkey`, reason: 'new key after ambiguous', confirmed_by: 'Nehemiah', amount_cents: 2000,
     });
     body = await r.json();
-    t(`[${mode}] a NEW-key retry is rejected by the still-held reservation's cap`, r.status === 403 && body.already_refunded_today_cents === 5000, body);
+    t(`[${mode}] a NEW-key retry is refused (unresolved_refund) while the ambiguous reservation is unresolved`,
+      r.status === 409 && body.error === 'unresolved_refund' && body.ledger_id === ledgerId && body.retry_with_same_idempotency_key === true, body);
 
-    // 3. A genuinely concurrent duplicate (same key, still in flight in THIS process)
-    //    gets 409 — never a second concurrent Stripe call.
-    createDelayMs = 150;
-    nextCreateOutcome = null; // this concurrent pair should just succeed once resolved
-    const idemConc = `idem-${mode}-conc`;
-    const concResults = await Promise.all([
-      write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, { idempotencyKey: idemConc, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100 }).then((rr) => rr.status),
-      new Promise((resolve) => setTimeout(resolve, 30)).then(() =>
-        write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, { idempotencyKey: idemConc, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100 }).then((rr) => rr.status)),
-    ]);
-    createDelayMs = 0;
-    t(`[${mode}] a genuinely concurrent duplicate: exactly one 409, and the winner still gets 201`,
-      concResults.filter((s) => s === 409).length === 1 && concResults.filter((s) => s === 201).length === 1, concResults);
-
-    // 4. SAME-key retry of the original ambiguous attempt -> resumes the SAME ledger
+    // 3. SAME-key retry of the original ambiguous attempt -> resumes the SAME ledger
     //    row and reuses the SAME derived Stripe idempotency key. The stub's map already
     //    has an entry for that key from step 1, so this call returns the CACHED result
     //    (exactly like real Stripe's 24h idempotency dedupe) — no NEW real refund.
@@ -220,7 +233,12 @@ async function main() {
     t(`[${mode}] the SAME ledger row id is now succeeded`, resolvedRow && resolvedRow.status === 'succeeded' && resolvedRow.id === ledgerId, resolvedRow);
     t(`[${mode}] Stripe idempotency key used was derived from the SAME ledger id both times`, stripeRefundCalls[callsBeforeRetry].idemKey === `office-refund-${ledgerId}`, stripeRefundCalls[callsBeforeRetry]);
 
-    // 5. Payment's remainder now enforces the succeeded refund — a further attempt that
+    // M05/M06: the resume updated the SAME audit row in place — exactly one audit row
+    // exists for this idempotency key, not a duplicate insert.
+    const auditRowsForIdemA = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA).c;
+    t(`[${mode}] exactly one audit row exists for the resumed idempotency key (updated in place, not duplicated)`, auditRowsForIdemA === 1, auditRowsForIdemA);
+
+    // 4. Payment's remainder now enforces the succeeded refund — a further attempt that
     //    would exceed what's left is rejected on the remainder, not just the daily cap.
     const paymentRow = database.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
     t(`[${mode}] payment row itself is untouched by this endpoint (webhook-only bookkeeping)`, paymentRow.refund_amount === 0, paymentRow);
@@ -256,6 +274,84 @@ async function main() {
     });
     body = await r.json();
     t('[definitive] retry with the same key reserves FRESH (new ledger row) and succeeds', r.status === 201 && !!body.refund_id, body);
+  }
+
+  // --- M08: a same-key resume of a 'needs_review' row (not just 'pending') works -------
+  {
+    const { bookingId, bookingNumber, paymentId } = makeBookingAndPayment('BM-AMBIG-NR-RESUME', 200, 'pi_ambig_nr_resume');
+    const { rawKey, id: keyId } = createApiKey(database, { name: 'ambig-nr-resume-key', scopes: ['refunds:create'], maxRefundCents: 10000, dailyRefundCapCents: 6000 });
+    const idem = 'idem-nr-resume-a';
+    const nrId = uuid();
+    // Seeded directly as 'needs_review' (as a previous reconcile run might leave it),
+    // rather than reached via a first ambiguous HTTP attempt.
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 5000, 'needs_review', 'Nehemiah', 'x', datetime('now'), datetime('now'))`)
+      .run(nrId, keyId, 'ambig-nr-resume-key', idem, bookingId, paymentId);
+
+    const callsBefore = stripeRefundCalls.length;
+    const r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    const body = await r.json();
+    t('M08: a same-key resume of a needs_review row succeeds (not refused as unresumable)', r.status === 201 && !!body.refund_id, body);
+    t('M08: the resume made exactly one Stripe call', stripeRefundCalls.length === callsBefore + 1, stripeRefundCalls.length);
+    const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nrId);
+    t('M08: the SAME ledger row (nrId) is now succeeded', row && row.status === 'succeeded' && row.id === nrId, row);
+  }
+
+  // --- M07: an audit-write failure on a money write (refund) is a 500, never a silent
+  // 2xx with no corresponding audit row (R2-M1's promise, untested until now) -----------
+  {
+    const { bookingNumber } = makeBookingAndPayment('BM-AMBIG-AUDITFAIL', 200, 'pi_ambig_auditfail');
+    const { rawKey } = createApiKey(database, { name: 'ambig-auditfail-key', scopes: ['refunds:create'], maxRefundCents: 10000, dailyRefundCapCents: 6000 });
+    nextCreateOutcome = null;
+    const realPrepare = database.prepare.bind(database);
+    database.prepare = (sql) => {
+      if (sql.includes('INSERT INTO api_audit_log')) throw new Error('simulated audit insert failure');
+      return realPrepare(sql);
+    };
+    const r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: 'idem-auditfail-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    database.prepare = realPrepare;
+    t('M07: an audit-write failure on a money write (refund) returns 500', r.status === 500, r.status);
+  }
+
+  // --- R3-L1: reconcile finalizing 'failed' retires the idempotency key so a same-key
+  // retry starts fresh, and the audit middleware stops treating the stale ambiguous audit
+  // row as live once the underlying ledger row is final -------------------------------
+  {
+    const { bookingNumber } = makeBookingAndPayment('BM-AMBIG-L1', 200, 'pi_ambig_l1');
+    const { rawKey } = createApiKey(database, { name: 'ambig-l1-key', scopes: ['refunds:create'], maxRefundCents: 10000, dailyRefundCapCents: 6000 });
+    const idem = 'idem-l1-a';
+
+    // First attempt -> ambiguous (kept pending, outcome:"unknown").
+    nextCreateOutcome = 'connection';
+    let r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    let body = await r.json();
+    t('[L1] first attempt -> ambiguous (502, outcome unknown)', r.status === 502 && body.outcome === 'unknown', body);
+    const ledgerId = body.ledger_id;
+    database.prepare("UPDATE office_refunds SET created_at = datetime('now', '-30 minutes') WHERE id = ?").run(ledgerId);
+
+    // Reconcile confirms Stripe shows this refund attempt as canceled -> finalizes
+    // 'failed' and (R3-L1) retires the ledger row's idempotency key.
+    const canceledStub = { findRefundByOfficeId: async () => ({ id: 're_l1_confirmed_canceled', status: 'canceled', metadata: {} }) };
+    await reconcilePendingRefunds(database, { olderThanMinutes: 15, stripeService: canceledStub });
+    const ledgerRow = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId);
+    t('[L1] reconcile finalized the row failed', ledgerRow && ledgerRow.status === 'failed', ledgerRow);
+    t('[L1] reconcile retired the ledger row\'s idempotency_key', ledgerRow.idempotency_key !== idem, ledgerRow.idempotency_key);
+
+    // A same-key retry with a DIFFERENT body must be processed FRESH (422 would mean the
+    // middleware still thinks the stale audit row is a live ambiguous attempt).
+    r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 4000,
+    });
+    body = await r.json();
+    t('[L1] a same-key, DIFFERENT-body retry after a reconciled-failed row starts fresh (not 422)', r.status === 201 && !!body.refund_id, body);
+    const freshRow = database.prepare("SELECT * FROM office_refunds WHERE idempotency_key = ?").get(idem);
+    t('[L1] the fresh retry created a NEW ledger row under the (freed) original idempotency key', freshRow && freshRow.id !== ledgerId && freshRow.status === 'succeeded', freshRow);
   }
 
   // --- R2-C1/R2-M2: reconcile sweeps 'needs_review' and legacy ambiguous-'failed' rows --
@@ -334,6 +430,46 @@ async function main() {
     t('R2-M2c: the second call used starting_after from the last item of page 1', listCalls[1].starting_after === 're_page1_99', listCalls[1]);
   }
 
+  // --- R3-L4: findRefundByOfficeId hitting the page cap throws a DISTINGUISHABLE error
+  // instead of silently returning null (which used to look identical to "confirmed not
+  // found") — and reconcile surfaces that as needs_review with the error recorded, not a
+  // silent not-found. ------------------------------------------------------------------
+  {
+    let listCallCount = 0;
+    const neverMatchesStub = {
+      refunds: {
+        list: async () => {
+          listCallCount += 1;
+          return { data: [{ id: `re_cap_${listCallCount}`, status: 'succeeded', metadata: { office_refund_id: 'never-this-one' } }], has_more: true };
+        },
+      },
+    };
+    stripeService._setStripeForTests(neverMatchesStub);
+    let caughtErr = null;
+    try {
+      await stripeService.findRefundByOfficeId('ledger-past-the-cap', { stripe_payment_id: 'pi_cap_test' });
+    } catch (e) {
+      caughtErr = e;
+    }
+    t('R3-L4: findRefundByOfficeId THROWS on hitting the page cap (never a silent null)', !!caughtErr && /page cap reached/.test(caughtErr.message), caughtErr && caughtErr.message);
+    t('R3-L4: it actually paged the full 20 times before giving up', listCallCount === 20, listCallCount);
+
+    const { bookingId: capBookingId, paymentId: capPaymentId } = makeBookingAndPayment('BM-L4-CAP', 100, 'pi_cap_recon');
+    const { id: capKeyId } = createApiKey(database, { name: 'l4-cap-key', scopes: ['refunds:create'] });
+    const capRowId = uuid();
+    const oldTs = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1000, 'pending', 'Nehemiah', 'x', ?, ?)`)
+      .run(capRowId, capKeyId, 'l4-cap-key', 'idem-l4-cap', capBookingId, capPaymentId, oldTs, oldTs);
+    const capResults = await reconcilePendingRefunds(database, { olderThanMinutes: 15, stripeService: stripeService });
+    stripeService._setStripeForTests(fakeStripe);
+    const capResult = capResults.find((r2) => r2.id === capRowId);
+    t('R3-L4: reconcile reports the page-cap hit as needs_review with the error recorded (not a silent not-found)',
+      !!capResult && capResult.result === 'needs_review' && /page cap reached/.test(capResult.reason || ''), capResult);
+    const capRow = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(capRowId);
+    t('R3-L4: the row itself records the page-cap error', capRow.status === 'needs_review' && /page cap reached/.test(capRow.error || ''), capRow);
+  }
+
   server.close();
 
   // --- R2-M2a: scripts/resolve-office-refund.js CLI, run as a real child process -------
@@ -390,9 +526,11 @@ async function main() {
     t('CLI: still no change after the two refusals above', row.status === 'needs_review', row);
 
     // 'failed' resolution succeeds with a reason, and writes an audit row in the same
-    // transaction as the status change.
+    // transaction as the status change. R3-M1: 'failed' now ALSO needs Stripe
+    // verification (or --no-verify) — this suite has no STRIPE_SECRET_KEY, so --no-verify
+    // is required here (see the dedicated in-process Stripe-check tests below).
     const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
-    res = runCli([nrId, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
+    res = runCli([nrId, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah', '--no-verify']);
     t('CLI: resolves a needs_review row to failed with a reason', res.code === 0, res);
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nrId);
     t('CLI: ledger row updated to failed', row.status === 'failed', row);
@@ -412,6 +550,82 @@ async function main() {
     t('CLI: --no-verify allows recording succeeded without Stripe access', res.code === 0, res);
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nr2Id);
     t('CLI: succeeded row recorded the given stripe_refund_id', row.status === 'succeeded' && row.stripe_refund_id === 're_manual_2', row);
+
+    // R3-M1: --actor is required — missing it refuses outright, no change.
+    const nr3Id = uuid();
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
+      .run(nr3Id, keyId, 'cli-key', 'idem-cli-noactor', bookingId, paymentId, oldTimestamp, oldTimestamp);
+    res = runCli([nr3Id, 'failed', '--reason', 'confirmed never charged', '--no-verify']);
+    t('CLI: refuses without --actor', res.code !== 0, res);
+    row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nr3Id);
+    t('CLI: no change without --actor', row.status === 'needs_review', row);
+
+    // R3-M1: --stripe-refund must look like re_... EVEN with --no-verify.
+    res = runCli([nr3Id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 'not-a-refund-id', '--no-verify']);
+    t('CLI: refuses a malformed --stripe-refund even with --no-verify', res.code !== 0, res);
+  }
+
+  // --- R3-M1: 'failed' requires the SAME kind of Stripe confirmation as R3-C1(b) — tested
+  // in-process (main() called directly, stubbing findRefundByOfficeId) since a real
+  // subprocess has no way to reach a fake Stripe server without real network access. ----
+  {
+    const resolveCli = require('../scripts/resolve-office-refund');
+    const savedExitCode = process.exitCode;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fake_for_resolve_cli';
+
+    async function callMain(argv) {
+      process.exitCode = undefined;
+      await resolveCli.main(argv);
+      const code = process.exitCode;
+      process.exitCode = undefined;
+      return code;
+    }
+
+    function seedRow(idemKey) {
+      const { bookingId, paymentId } = makeBookingAndPayment(`BM-CLI-STRIPECHECK-${idemKey}`, 100, `pi_cli_sc_${idemKey}`);
+      const { id: keyId } = createApiKey(database, { name: `cli-sc-${idemKey}`, scopes: ['refunds:create'] });
+      const id = uuid();
+      const oldTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+      database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
+        .run(id, keyId, `cli-sc-${idemKey}`, idemKey, bookingId, paymentId, oldTimestamp, oldTimestamp);
+      return id;
+    }
+
+    // A refund actually exists (succeeded) -> refused, no change, no second refund
+    // possible afterwards (the row stays needs_review, still eligible for the SAME
+    // resolution to be retried correctly later once reconcile/a human catches up).
+    let id = seedRow('idem-sc-exists');
+    stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [{ id: 're_sc_exists', status: 'succeeded', metadata: { office_refund_id: id } }], has_more: false }) } });
+    let code = await callMain([id, 'failed', '--reason', 'trying to mark failed anyway', '--actor', 'Nehemiah']);
+    t('CLI Stripe-check: a refund that actually exists refuses "failed"', code === 1, code);
+    let row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
+    t('CLI Stripe-check: no change was made (still needs_review)', row.status === 'needs_review', row);
+
+    // None exists -> failed, key renamed, audit row records the lookup outcome.
+    id = seedRow('idem-sc-none');
+    const originalIdemKey = 'idem-sc-none';
+    stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [], has_more: false }) } });
+    code = await callMain([id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
+    t('CLI Stripe-check: none found -> failed succeeds', code === undefined, code);
+    row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
+    t('CLI Stripe-check: row finalized failed', row.status === 'failed', row);
+    t('CLI Stripe-check: idempotency_key retired (R3-M1, same convention as finalizeRefundLedger)', row.idempotency_key !== originalIdemKey, row.idempotency_key);
+    const scActivityRow = database.prepare("SELECT * FROM activity_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(id);
+    const scDetail = scActivityRow && JSON.parse(scActivityRow.details);
+    t('CLI Stripe-check: the audit trail records the lookup outcome (stripe_check)', !!scDetail && scDetail.stripe_check && scDetail.stripe_check.outcome === 'none_found', scDetail);
+
+    // Lookup itself fails -> refused, no change.
+    id = seedRow('idem-sc-error');
+    stripeService._setStripeForTests({ refunds: { list: async () => { throw new Error('simulated Stripe outage'); } } });
+    code = await callMain([id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
+    t('CLI Stripe-check: a lookup failure refuses "failed"', code === 1, code);
+    row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
+    t('CLI Stripe-check: no change was made after a lookup failure', row.status === 'needs_review', row);
+
+    delete process.env.STRIPE_SECRET_KEY;
+    process.exitCode = savedExitCode;
   }
 
   database.close();
