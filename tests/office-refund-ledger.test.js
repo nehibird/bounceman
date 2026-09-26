@@ -230,6 +230,44 @@ async function main() {
   const freshRow = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(freshId);
   t('reconcile: fresh row status unchanged', freshRow.status === 'pending', freshRow);
 
+  // --- LEDGER-3 (round-5 ruling, accepted as equivalent): a DIRECT unit test of
+  // computeRefundLimits, exported test-only via router._test, proving the
+  // pendingOrReviewLedgerCents term actually reduces refundableCents. This term is
+  // provably unreachable from any of the three real call sites today (reserveRefund and
+  // dry_run both refuse first via findUnresolvedRefundForPayment whenever such a row
+  // exists — see routes/office.js), so it's otherwise dead in every live test. This test
+  // exists so that if that blanket refusal is ever relaxed, the term protecting against a
+  // double refund is already covered. ---------------------------------------------------
+  {
+    const { computeRefundLimits } = officeRoutes._test;
+    const { paymentId: ledger3PaymentId } = makeBookingAndPayment(100);
+    const payment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ledger3PaymentId);
+    const { id: ledger3KeyId } = createApiKey(database, { name: 'ledger3-key', scopes: ['refunds:create'] });
+    const key = database.prepare('SELECT * FROM api_keys WHERE id = ?').get(ledger3KeyId);
+
+    const baseline = computeRefundLimits(database, key, payment, null);
+    t('LEDGER-3: with no pending/needs_review rows, refundableCents is the full captured amount',
+      baseline.refundableCents === Math.round(payment.amount * 100), baseline);
+
+    const pendingId = uuid();
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 2000, 'pending', 'Nehemiah', 'x', datetime('now'), datetime('now'))`)
+      .run(pendingId, ledger3KeyId, 'ledger3-key', 'idem-ledger3-pending', payment.booking_id, ledger3PaymentId);
+
+    const withPending = computeRefundLimits(database, key, payment, null);
+    t('LEDGER-3: a seeded PENDING row reduces refundableCents by its amount_cents',
+      withPending.refundableCents === baseline.refundableCents - 2000, { baseline, withPending });
+
+    const reviewId = uuid();
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1500, 'needs_review', 'Nehemiah', 'x', datetime('now'), datetime('now'))`)
+      .run(reviewId, ledger3KeyId, 'ledger3-key', 'idem-ledger3-review', payment.booking_id, ledger3PaymentId);
+
+    const withBoth = computeRefundLimits(database, key, payment, null);
+    t('LEDGER-3: a seeded NEEDS_REVIEW row further reduces refundableCents by its amount_cents',
+      withBoth.refundableCents === baseline.refundableCents - 2000 - 1500, { baseline, withBoth });
+  }
+
   server.close();
   database.close();
   fs.rmSync(TMP_DIR, { recursive: true, force: true });

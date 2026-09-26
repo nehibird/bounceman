@@ -1557,4 +1557,11 @@ router.use((err, req, res, next) => {
   res.status(500).json({ error: 'internal error' });
 });
 
+// LEDGER-3 (round-5 ruling): not used by any route — computeRefundLimits is otherwise
+// unreachable from outside this module. Exported so a direct unit test can seed a
+// pending/needs_review row and prove the term still reduces refundableCents, in case a
+// future relaxation of R3-M3's blanket unresolved-refund refusal ever makes this the only
+// thing preventing a double refund.
+router._test = { computeRefundLimits };
+
 module.exports = router;
