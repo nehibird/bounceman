@@ -76,11 +76,16 @@ async function main() {
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  function chargeRefundedEvent(id, amountRefundedCents, paymentIntent = 'pi_test_1') {
+  // R4-L1: refundsData models the REAL Stripe payload shape (charge.refunds.data) the
+  // handler now reads from — defaults to a single synthetic refund matching the cumulative
+  // total (so every EXISTING call site below behaves exactly as before) unless a test
+  // passes its own list to model a specific/stale set of underlying refunds.
+  function chargeRefundedEvent(id, amountRefundedCents, paymentIntent = 'pi_test_1', refundsData) {
+    const data = refundsData || [{ id: `re_synth_${id}`, amount: amountRefundedCents, status: 'succeeded' }];
     return JSON.stringify({
       id,
       type: 'charge.refunded',
-      data: { object: { id: 'ch_test_1', payment_intent: paymentIntent, amount_refunded: amountRefundedCents } },
+      data: { object: { id: 'ch_test_1', payment_intent: paymentIntent, amount_refunded: amountRefundedCents, refunds: { object: 'list', data, has_more: false } } },
     });
   }
 
@@ -276,14 +281,37 @@ async function main() {
   t('R3-L3: refund_amount stays 30 (the live truth), NOT naively subtracted to 10', ooPayment.refund_amount === 30, ooPayment.refund_amount);
   t('R3-L3: booking.total untouched (still 70) since B was never actually deducted from it', ooBooking.total === 70, ooBooking.total);
 
-  // Now the (late) charge.refunded event for the SAME charge arrives, still cumulative
-  // $30 (B never actually completed) — must be a no-op (delta <= 0 vs the already-current 30).
-  r = await post(chargeRefundedEvent('evt_ooo_2', 3000, 'pi_ooo_1'));
-  t('R3-L3: the late charge.refunded (still $30 cumulative) -> 200', r.status === 200, r.status);
+  // R4-L1: the late/retried delivery of B's ORIGINAL charge.refunded event carries the
+  // REALISTIC STALE payload Stripe actually generates — a webhook body is frozen at
+  // generation time and never rewritten after a later cancellation. Cumulative
+  // amount_refunded is still $50 (A $30 + B $20), and refunds.data lists B with the status
+  // it had AT SEND TIME (succeeded — before it was later canceled), not 'canceled'. A
+  // handler that trusts amount_refunded (or refunds.data status) at face value would
+  // re-inflate refund_amount to 50 and re-reduce booking.total to 50 for a refund that
+  // never actually happened. The fix must instead notice — from OUR OWN ledger, which
+  // already recorded re_ooo_test as 'failed' via the charge.refund.updated just above —
+  // that B doesn't count, and treat this as a no-op (delta 0 against the already-current 30).
+  r = await post(chargeRefundedEvent('evt_ooo_2', 5000, 'pi_ooo_1', [
+    { id: 're_ooo_a_test', amount: 3000, status: 'succeeded' },
+    { id: 're_ooo_test', amount: 2000, status: 'succeeded' }, // B's stale, pre-cancellation status
+  ]));
+  t('R4-L1: the late/retried STALE charge.refunded ($50 cumulative, uncorrected) -> 200', r.status === 200, r.status);
   ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
-  t('R3-L3: after the late charge.refunded, refund_amount still 30', ooPayment.refund_amount === 30, ooPayment.refund_amount);
-  t('R3-L3: after the late charge.refunded, booking.total still 70', ooBooking.total === 70, ooBooking.total);
+  t('R4-L1 VERDICT: refund_amount stays 30 (B excluded via the ledger, not re-inflated by the stale $50 payload)', ooPayment.refund_amount === 30, ooPayment.refund_amount);
+  t('R4-L1 VERDICT: booking.total stays 70 (never re-reduced for a refund that never went out)', ooBooking.total === 70, ooBooking.total);
+
+  // Claude's variant: a DIFFERENT event id carrying the exact same stale payload (another
+  // redelivery/reorder) must be equally harmless — the fix is keyed on payload content and
+  // ledger state, never on the event id.
+  r = await post(chargeRefundedEvent('evt_ooo_3', 5000, 'pi_ooo_1', [
+    { id: 're_ooo_a_test', amount: 3000, status: 'succeeded' },
+    { id: 're_ooo_test', amount: 2000, status: 'succeeded' },
+  ]));
+  t('R4-L1: a second, different-event-id redelivery of the same stale payload -> 200', r.status === 200, r.status);
+  ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
+  ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
+  t('R4-L1: still 30/70 after a second stale redelivery under a different event id', ooPayment.refund_amount === 30 && ooBooking.total === 70, { refund_amount: ooPayment.refund_amount, total: ooBooking.total });
   liveAmountRefundedCentsOverride = null;
 
   server.close();

@@ -284,7 +284,25 @@ router.post('/stripe', async (req, res) => {
         // used to subtract that cumulative figure from bookings.total every time,
         // double- (or triple-) reducing it. Only the DELTA since the last time we saw
         // this payment may touch the booking.
-        const cumulativeRefund = Math.round((charge.amount_refunded / 100) * 100) / 100;
+        //
+        // R4-L1: a webhook event's JSON body is FROZEN at generation time and never
+        // rewritten later — a late/retried delivery of an OLDER charge.refunded can still
+        // carry a since-canceled refund in its `amount_refunded` total, even after our own
+        // charge.refund.updated handler has already corrected the books for that
+        // cancellation. Trusting the frozen `amount_refunded` at face value would then
+        // re-inflate refund_amount/re-reduce the booking total for money that never went
+        // out. Instead, recompute the cumulative figure from the payload's OWN
+        // `refunds.data` list — excluding anything failed/canceled — cross-checked
+        // against what OUR ledger has since learned about each refund id (a
+        // charge.refund.updated we've already processed is more current than a stale
+        // payload's own status field for that one refund). No network call needed, and a
+        // refund we know is canceled can never inflate the total. This only works when the
+        // payload carries the FULL refund list (Stripe's default is untruncated for any
+        // charge with a normal number of refunds); if it's missing or paginated
+        // (`has_more`), fall back to the plain frozen cumulative — a rare edge case, not
+        // the scenario this fix targets, and no worse than the prior behavior.
+        const refundsList = charge.refunds && Array.isArray(charge.refunds.data) ? charge.refunds.data : null;
+        const refundsListComplete = !!refundsList && !charge.refunds.has_more;
 
         // R2-L4: the READ (prior refund_amount) THEN WRITE (new refund_amount, and the
         // booking bookkeeping derived from it) is wrapped in one BEGIN IMMEDIATE
@@ -292,12 +310,28 @@ router.post('/stripe', async (req, res) => {
         // for the SAME charge must never interleave between this read and this write
         // (WEBHOOK-1 in the review; see tests/office-multiproc.test.js). `break` can't
         // cross this function boundary, so the outcome is returned and logged/broken-out-
-        // of afterward instead.
+        // of afterward instead. R4-L1's cross-check against office_refunds also needs to
+        // run inside this same transaction, against the same consistent view of the
+        // ledger the write itself uses.
         const outcome = db.transaction(() => {
           const payment = db.prepare(
             'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
           ).get(charge.payment_intent || charge.id, charge.id);
           if (!payment) return { result: 'no_payment' };
+
+          let cumulativeRefundCents;
+          if (refundsListComplete) {
+            cumulativeRefundCents = 0;
+            for (const r of refundsList) {
+              if (r.status === 'failed' || r.status === 'canceled') continue;
+              const knownRow = db.prepare('SELECT status FROM office_refunds WHERE stripe_refund_id = ?').get(r.id);
+              if (knownRow && knownRow.status === 'failed') continue; // R4-L1: our ledger already knows this one didn't go out
+              cumulativeRefundCents += r.amount;
+            }
+          } else {
+            cumulativeRefundCents = charge.amount_refunded;
+          }
+          const cumulativeRefund = Math.round((cumulativeRefundCents / 100) * 100) / 100;
 
           const priorRefund = parseFloat(payment.refund_amount) || 0;
           const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
