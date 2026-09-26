@@ -428,6 +428,38 @@ New/changed log lines this round, in addition to the round-2 set
   stream of them on one payment points at a caller that isn't following the
   same-key-retry rule.
 
+## Known follow-ups (flagged, not fixed this round)
+
+Out of scope for round 6 (targeted mutation/gates/docs turn) — recorded so they aren't
+lost, not because they're urgent:
+
+- **I4 (round 5): `activeBookingForPhone` uses the container's clock, not Central time.**
+  `lib/helpers.js`'s SQLite `date('now', 'localtime')` call means "today" is the
+  **container's** local date. Neither `docker-compose.yml` nor the `Dockerfile` sets `TZ`,
+  so in production that's UTC, which flips at 7 PM CDT / 6 PM CST — a caller near that
+  boundary could be routed as "no active booking" when Oklahoma's own calendar still says
+  otherwise. Fix: set `TZ=America/Chicago` on the web service (or compute the comparison
+  in Central explicitly). Pre-existing; `tests/call-routing.test.js`'s TZ-fixture fix this
+  round correctly left the app's own `localtime` behavior alone and documented it rather
+  than papering over it.
+- **`db.js`: the `expenses` table's column migrations run BEFORE its own `CREATE TABLE IF
+  NOT EXISTS`.** `ALTER TABLE expenses ADD COLUMN reimbursable/reimbursed/reimbursed_date`
+  (added for reimbursement tracking) sit above `CREATE TABLE IF NOT EXISTS expenses`
+  further down `initialize()`, and are wrapped in a bare `try {} catch {}` that swallows
+  ANY error — including "no such table: expenses" on a truly fresh database (a brand-new
+  deploy, or any test that only calls `initialize()` once). On that first call the ALTERs
+  silently no-op and the table is created without those three columns; a SECOND
+  `initialize()` call (e.g. a process restart) self-heals it, since the table now exists
+  and the ALTERs succeed. Nothing in this review's delta touches this path, and it isn't
+  guarded by `columnExists()` the way every migration added in rounds 2-6 is. Fix:
+  reorder the `CREATE TABLE` above the `ALTER TABLE` calls, or guard them with
+  `columnExists()` like the rest of this file.
+- **Nehemiah's refund caps are still unconfirmed.** Per Marcus's round-5 verdict, no Dan
+  handoff, no merge, no production deploy until the per-refund max and daily cap values are
+  explicitly confirmed. Related and also unconfirmed: who operationally owns clearing
+  `needs_review` rows day-to-day (the resolve CLI in §6 is the mechanism; a person still
+  needs to be assigned to run it).
+
 ## Sarah / API contract changes to relay
 
 See `docs/office-api.md` §3/§5/§6 for full detail; the short version for whoever owns
