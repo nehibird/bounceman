@@ -1191,7 +1191,16 @@ function initialize() {
 
   // L8: prune the Stripe webhook dedup table — it otherwise grows forever. 30 days is
   // far beyond Stripe's own retry window, so nothing live is ever at risk.
-  try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch (e) { /* best-effort */ }
+  try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch { /* best-effort */ }
+
+  // R2-L4: a busy_timeout so a BEGIN IMMEDIATE transaction (reserveRefund,
+  // reservePaymentLink, the charge.refunded handler) blocks and retries internally for up
+  // to 5s when another connection — today, only ever a script run against the same file;
+  // in a hypothetical multi-process deployment, a second app instance — holds the write
+  // lock, instead of surfacing SQLITE_BUSY as an immediate 500. Set on every call (cheap,
+  // idempotent per-connection pragma) so it's never accidentally skipped if getDb() ever
+  // gains a code path that opens the connection without going through here first.
+  d.pragma('busy_timeout = 5000');
 
   console.log('[DB] Database initialized successfully');
 }

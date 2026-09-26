@@ -285,10 +285,20 @@ router.post('/stripe', async (req, res) => {
         // double- (or triple-) reducing it. Only the DELTA since the last time we saw
         // this payment may touch the booking.
         const cumulativeRefund = Math.round((charge.amount_refunded / 100) * 100) / 100;
-        const payment = db.prepare(
-          'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
-        ).get(charge.payment_intent || charge.id, charge.id);
-        if (payment) {
+
+        // R2-L4: the READ (prior refund_amount) THEN WRITE (new refund_amount, and the
+        // booking bookkeeping derived from it) is wrapped in one BEGIN IMMEDIATE
+        // transaction — a second process handling an out-of-order or concurrent delivery
+        // for the SAME charge must never interleave between this read and this write
+        // (WEBHOOK-1 in the review; see tests/office-multiproc.test.js). `break` can't
+        // cross this function boundary, so the outcome is returned and logged/broken-out-
+        // of afterward instead.
+        const outcome = db.transaction(() => {
+          const payment = db.prepare(
+            'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
+          ).get(charge.payment_intent || charge.id, charge.id);
+          if (!payment) return { result: 'no_payment' };
+
           const priorRefund = parseFloat(payment.refund_amount) || 0;
           const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
 
@@ -297,19 +307,13 @@ router.post('/stripe', async (req, res) => {
           // must NOT rewind refund_amount OR touch bookings.total — check the delta
           // BEFORE writing anything. 0.004 absorbs floating-point cents noise from
           // repeated /100 divisions without masking any real (>= half a cent) refund.
-          if (delta <= 0.004) {
-            console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
-              delta.toFixed(2) + ') — refund_amount and booking total left unchanged');
-            break;
-          }
+          if (delta <= 0.004) return { result: 'stale', delta };
 
           // MAX() is defense-in-depth on top of the delta check above: even if two
           // events for the same payment are processed out of order, refund_amount can
           // never move backwards.
           db.prepare('UPDATE payments SET refund_amount = MAX(refund_amount, ?) WHERE id = ?')
             .run(cumulativeRefund, payment.id);
-          console.log('[Stripe Webhook] charge.refunded: $' + cumulativeRefund.toFixed(2) +
-            ' cumulative refund recorded (delta $' + delta.toFixed(2) + ')');
 
           // Write the refund back to the BOOKING as well. Recording it only against the
           // payment left bookings.total claiming revenue that had been given back, and
@@ -318,7 +322,11 @@ router.post('/stripe', async (req, res) => {
           //
           // A refund here is a price concession: it REDUCES the sale. It must not raise
           // balance_due, or the "pay your remaining balance" SMS below fires at a customer
-          // who has just been given money back.
+          // who has just been given money back. Its own errors are swallowed (never fail
+          // the webhook over bookkeeping — Stripe would just retry the refund event) —
+          // caught HERE, inside the transaction function, so a bookkeeping failure never
+          // rolls back the refund_amount write above.
+          let booking = null;
           try {
             const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
             if (bk) {
@@ -333,16 +341,29 @@ router.post('/stripe', async (req, res) => {
                   ' [refund] $' || ? || ' refunded ' || date('now') || '; total reduced to $' || ? || '.'),
                 updated_at = datetime('now') WHERE id = ?`)
                 .run(newTotal, newBalance, newBalance, delta.toFixed(2), newTotal.toFixed(2), bk.id);
-              console.log('[Stripe Webhook] booking ' + bk.booking_number +
-                ' total ' + bk.total.toFixed(2) + ' -> ' + newTotal.toFixed(2) +
-                ' (delta $' + delta.toFixed(2) + '), balance -> ' + newBalance.toFixed(2));
+              booking = { bookingNumber: bk.booking_number, oldTotal: bk.total, newTotal, newBalance };
             }
           } catch (e) {
-            // Never fail the webhook over bookkeeping — Stripe would retry the refund event.
-            console.error('[Stripe Webhook] refund write-back failed:', e.message);
+            booking = { error: e.message };
           }
-        } else {
+          return { result: 'recorded', delta, cumulativeRefund, booking };
+        }).immediate();
+
+        if (outcome.result === 'no_payment') {
           console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
+        } else if (outcome.result === 'stale') {
+          console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
+            outcome.delta.toFixed(2) + ') — refund_amount and booking total left unchanged');
+        } else {
+          console.log('[Stripe Webhook] charge.refunded: $' + outcome.cumulativeRefund.toFixed(2) +
+            ' cumulative refund recorded (delta $' + outcome.delta.toFixed(2) + ')');
+          if (outcome.booking && outcome.booking.error) {
+            console.error('[Stripe Webhook] refund write-back failed:', outcome.booking.error);
+          } else if (outcome.booking) {
+            console.log('[Stripe Webhook] booking ' + outcome.booking.bookingNumber +
+              ' total ' + outcome.booking.oldTotal.toFixed(2) + ' -> ' + outcome.booking.newTotal.toFixed(2) +
+              ' (delta $' + outcome.delta.toFixed(2) + '), balance -> ' + outcome.booking.newBalance.toFixed(2));
+          }
         }
         break;
       }
@@ -356,10 +377,45 @@ router.post('/stripe', async (req, res) => {
         const officeRefundId = refund.metadata && refund.metadata.office_refund_id;
         if (officeRefundId && (refund.status === 'failed' || refund.status === 'canceled')) {
           try {
+            const officeRow = db.prepare('SELECT * FROM office_refunds WHERE id = ?').get(officeRefundId);
             const info = db.prepare(`UPDATE office_refunds SET status = 'failed', stripe_refund_id = ?, stripe_status = ?, updated_at = datetime('now')
               WHERE id = ? AND status != 'failed'`).run(refund.id, refund.status, officeRefundId);
             if (info.changes) {
               console.log('[Stripe Webhook] charge.refund.updated: marked office refund', officeRefundId, 'failed (status ' + refund.status + ')');
+
+              // R2-L5: a REVERSAL. If this refund's amount had already been folded into
+              // payments.refund_amount/bookings.total (the ledger row was 'succeeded'
+              // before this event landed), that money was never actually given back after
+              // all — the office_refunds status flip above just made it official on our
+              // side. The charge.refunded handler's MAX() guard exists specifically to
+              // reject a LOWER cumulative figure as stale/out-of-order, so it would
+              // swallow Stripe's own legitimate downward correction if we just waited for
+              // a follow-up charge.refunded event; instead, apply the correction directly
+              // here using THIS REFUND'S OWN amount (not a cumulative total) — idempotent
+              // because it's gated on `info.changes` (only fires the one time this row
+              // transitions into 'failed').
+              if (officeRow && officeRow.status === 'succeeded' && officeRow.payment_id) {
+                const reversedDollars = Math.round((refund.amount / 100) * 100) / 100;
+                const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(officeRow.payment_id);
+                if (payment) {
+                  const newRefundAmount = Math.max(0, Math.round((parseFloat(payment.refund_amount || 0) - reversedDollars) * 100) / 100);
+                  db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?').run(newRefundAmount, payment.id);
+                  const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
+                  if (bk) {
+                    const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
+                      FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
+                    const newTotal = Math.round((bk.total + reversedDollars) * 100) / 100;
+                    const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
+                    db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
+                      internal_notes = TRIM(COALESCE(internal_notes,'') ||
+                        ' [refund reversed] $' || ? || ' refund failed/canceled ' || date('now') || '; total restored to $' || ? || '.'),
+                      updated_at = datetime('now') WHERE id = ?`)
+                      .run(newTotal, newBalance, reversedDollars.toFixed(2), newTotal.toFixed(2), bk.id);
+                    console.log('[Stripe Webhook] charge.refund.updated: reversed $' + reversedDollars.toFixed(2) +
+                      ' on payment ' + payment.id + ', booking ' + bk.booking_number + ' total restored to $' + newTotal.toFixed(2));
+                  }
+                }
+              }
             }
           } catch (e) {
             console.error('[Stripe Webhook] failed to update office_refunds ledger:', e.message);

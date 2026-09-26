@@ -152,6 +152,19 @@ env-overridable (invalid values fall back to the built-in default, never to unli
 The **effective** cap is `min(key's own cap or the default, the hard ceiling)` —
 computed at request time (`lib/refund-caps.js`), so lowering the hard ceiling later
 automatically clamps every key, even ones with a stale higher value stored.
+`scripts/api-key.js create`/`limits` (R2-L1) refuse a `--max-refund-cents`/
+`--daily-cap-cents` value above the current hard ceiling outright (exit non-zero, nothing
+stored) — a value is only ever clamped silently if the ceiling is *lowered later*, never
+because the CLI itself accepted something over the line. `list` prints both the stored
+value and the effective one (e.g. `max_refund_cents=999999 (effective $500.00,
+clamped)`), so a stale over-ceiling value is visible instead of looking more generous
+than it actually is.
+
+**R2-I1:** these hard ceilings are themselves deploy-config (env-overridable), not
+immutable code constants — see `lib/refund-caps.js`. Manual (offline cash/check/etc)
+payments have their **own**, independent ceiling (`OFFICE_MANUAL_PAYMENT_HARD_MAX_CENTS`,
+default `1000000` = $10,000, R2-L3) — lowering the refund ceiling never silently lowers
+the manual-payment one.
 
 `confirmed_by` is required on every refund and must name an actual human — it is
 rejected if empty or equal (case-insensitively) to the calling key's own name.
@@ -186,8 +199,15 @@ Every refund request:
    - Inserts a `pending` row into `office_refunds`, unique on `(key_id, idempotency_key)`.
 
    Because better-sqlite3 transactions run fully synchronously, no other request's
-   reservation can interleave mid-check — this holds under real concurrency, not just
-   when calls happen to be serialized.
+   reservation can interleave mid-check within one process — this holds under real
+   concurrency, not just when calls happen to be serialized. **R2-L4:** the transaction
+   uses `BEGIN IMMEDIATE` (`.immediate()`), not the default deferred `BEGIN` — a deferred
+   transaction only takes its write lock at the first write, so two SEPARATE PROCESSES
+   sharing this SQLite file (not today's deployment, but a documented gap) could both pass
+   the read under a read lock before either upgrades, racing on `SQLITE_BUSY` instead of
+   cleanly serializing. A `busy_timeout` (`db.js`, 5s) means a blocked writer retries
+   internally instead of surfacing `SQLITE_BUSY` as a `500`. `tests/office-multiproc.test.js`
+   proves this holds across real separate Node processes, not just within one.
 4. Calls `stripe.refunds.create` with an **idempotency key derived from the ledger row's
    id** (`office-refund-<ledgerId>`) and `metadata.office_refund_id` set to that same id
    — not from the caller's `Idempotency-Key` header. This guarantees exactly one Stripe
@@ -217,12 +237,20 @@ Every refund request:
      Stripe's own 24-hour idempotency window then resolves it to the single real outcome
      (at most one real refund). A **genuinely concurrent** duplicate request (same key,
      arriving while the original call to Stripe is still outstanding **in this process**)
-     gets `409` instead of racing a second concurrent Stripe call. A row already
-     `succeeded` is answered by the generic idempotency replay in
-     `middleware/office-auth.js`, straight from the audit log, before this logic ever
-     runs (also covers R2-L2: a retry after a client disconnect replays the real outcome
-     instead of a stale 409/403). A **new** `Idempotency-Key` retried after an ambiguous
-     outcome is still capped by the still-counted reservation.
+     gets `409` instead of racing a second concurrent Stripe call.
+   - **A row already `succeeded`** is *usually* answered by the generic idempotency replay
+     in `middleware/office-auth.js`, straight from a `2xx` audit row, before this logic
+     ever runs. **R2-L2 exception:** a client disconnect writes a `499` audit row (via
+     `res`'s `close` event, which fires before the Stripe call — and the real `201` — even
+     exists), and that row is never updated in place once the refund actually finalizes
+     (the *ledger*, not the audit log, is authoritative). A same-key retry then finds a
+     non-`2xx`, non-ambiguous audit row, which the generic logic retires as a "genuine
+     failure" and reprocesses — so this endpoint also checks the ledger itself for an
+     already-`succeeded` row and replays `201` directly from it (no second Stripe call).
+     The retry gets its own fresh audit row recording the `201`; the stale `499` row is
+     kept as history, not overwritten.
+   - A **new** `Idempotency-Key` retried after an ambiguous outcome is still capped by the
+     still-counted reservation.
    - The audit row (`api_audit_log`) is written explicitly at step 3 (before Stripe is
      ever called) and again at finalize — for a resumed retry, the SAME audit row is
      updated in place, never duplicated. It also fires on the response's `close` event,
@@ -312,6 +340,11 @@ payment link is paid against it later (M3).
 - The availability/conflict check runs whenever **any** of the four date/time fields
   changes, across **every day** in the (possibly multi-day) new range — not just the
   first day. A conflict returns `409` with the specific equipment/date at fault.
+- **R2-L6:** the GLOBAL blocked-dates check (`blocked_dates` rows with `equipment_id IS
+  NULL`) also covers **every day** in that range, independent of the equipment check
+  above — extending `event_end_date` onto a blocked day (with `event_date` itself
+  untouched), or a multi-day move that merely passes through one, is caught the same as
+  moving the start date directly onto it.
 - This endpoint **never silently re-prices**. A date-affecting move returns
   `reprice_needed: true` and leaves an internal note; it does not recompute Sunday rules,
   extra-day rates, or the delivery fee.
@@ -361,6 +394,15 @@ returned — the refund endpoint takes the internal `id` (`payment_id`), never a
 - The site-wide `/api/` limiter (100 requests/15 min/IP, in `server.js`) **skips**
   `/api/office`, the same as `/api/sarah` and `/api/webhooks` — the office API has its
   own limiters above and must not be throttled by the public-facing one.
+- **R2-M4:** `docker-compose.yml` publishes this service as `127.0.0.1:3202:3200` —
+  loopback only. Port 3202 must never be reachable from outside the host; nginx (also on
+  the host) is the only intended path in, and it is nginx's job to overwrite any inbound
+  `X-Forwarded-For` before proxying here. `server.js`'s `app.set('trust proxy', 1)` is
+  deliberately left as `1`, not `'loopback'` — Docker's bridge networking means a
+  connection that arrives via that published port has a peer address of the docker bridge
+  gateway, not `127.0.0.1`, so `'loopback'` would never actually match and would silently
+  stop trusting `X-Forwarded-For` at all (breaking IP-based rate limiting far worse than
+  the spoofing risk it would claim to fix). See the comment in `server.js`.
 
 ## 10. Environment variables
 
@@ -372,6 +414,7 @@ returned — the refund endpoint takes the internal `id` (`payment_id`), never a
 | `DB_PATH` | Yes | SQLite file path. |
 | `OFFICE_DEFAULT_MAX_REFUND_CENTS` / `OFFICE_DEFAULT_DAILY_REFUND_CAP_CENTS` | No | See §5. |
 | `OFFICE_REFUND_HARD_MAX_CENTS` / `OFFICE_REFUND_HARD_DAILY_CAP_CENTS` | No | See §5. |
+| `OFFICE_MANUAL_PAYMENT_HARD_MAX_CENTS` | No | Manual (offline) payment ceiling, independent of the refund ceilings above (R2-L3). Default `1000000` ($10,000). |
 | `SARAH_API_KEY` | Yes (for `/api/sarah`) | **Not** used by the office API. |
 
 The office API needs **no dedicated env var of its own** — its credentials live in the
@@ -385,7 +428,14 @@ The endpoint (`/api/webhooks/stripe`) must subscribe to at least:
   reduced. Idempotent and monotonic against out-of-order delivery (H1): a stale/
   out-of-order event can never rewind `refund_amount` or over-reduce a booking's total.
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe
-  itself later fails/cancels a refund that had already looked like it succeeded.
+  itself later fails/cancels a refund that had already looked like it succeeded. **R2-L5:**
+  if that refund's amount had already been folded into `payments.refund_amount`/
+  `bookings.total` (a genuine reversal), this handler corrects both DOWN/UP by the
+  refund's own amount directly — it does not wait for a follow-up `charge.refunded` event
+  with a lower cumulative total, because that event's own `charge.refunded` handler would
+  reject a lower cumulative as stale/out-of-order (H1) and never apply it. Idempotent:
+  gated on the ledger row's status actually transitioning to `failed`, so a repeated
+  delivery for the same refund never double-corrects.
 
 ## 11. Endpoints
 

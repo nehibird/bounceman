@@ -16,6 +16,27 @@
 
 const { getDb, initialize } = require('../db');
 const { createApiKey, listApiKeys, revokeApiKey, setKeyLimits, setKeyScopes } = require('../lib/api-keys');
+const {
+  HARD_MAX_REFUND_CENTS, HARD_DAILY_REFUND_CAP_CENTS, effectiveMaxRefundCents, effectiveDailyRefundCapCents,
+} = require('../lib/refund-caps');
+
+function dollars(cents) {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+// R2-L1: refuse a cap above the hard ceiling outright — rather than silently storing it
+// (it would be clamped at request time anyway, by lib/refund-caps.js, but a human running
+// this CLI typing --max-refund-cents 60000 almost certainly believes they just granted
+// $600, not $500). Returns an error string, or null if both values are acceptable.
+function capsExceedCeiling({ maxRefundCents, dailyRefundCapCents }) {
+  if (typeof maxRefundCents === 'number' && maxRefundCents > HARD_MAX_REFUND_CENTS) {
+    return `--max-refund-cents ${maxRefundCents} exceeds the hard ceiling of ${HARD_MAX_REFUND_CENTS} (${dollars(HARD_MAX_REFUND_CENTS)}) — nothing was stored.`;
+  }
+  if (typeof dailyRefundCapCents === 'number' && dailyRefundCapCents > HARD_DAILY_REFUND_CAP_CENTS) {
+    return `--daily-cap-cents ${dailyRefundCapCents} exceeds the hard ceiling of ${HARD_DAILY_REFUND_CAP_CENTS} (${dollars(HARD_DAILY_REFUND_CAP_CENTS)}) — nothing was stored.`;
+  }
+  return null;
+}
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -77,13 +98,17 @@ async function main() {
   if (cmd === 'create') {
     const name = args._[0];
     if (!name) { printUsage(); process.exitCode = 1; return; }
+    const maxRefundCents = parseCentsFlag(args['max-refund-cents']);
+    const dailyRefundCapCents = parseCentsFlag(args['daily-cap-cents']);
+    const ceilingError = capsExceedCeiling({ maxRefundCents, dailyRefundCapCents });
+    if (ceilingError) { console.error(ceilingError); process.exitCode = 1; return; }
     const rawKey = await readStdinIfPiped();
     const result = createApiKey(db, {
       name,
       rawKey,
       scopes: parseScopesFlag(args.scopes),
-      maxRefundCents: parseCentsFlag(args['max-refund-cents']),
-      dailyRefundCapCents: parseCentsFlag(args['daily-cap-cents']),
+      maxRefundCents,
+      dailyRefundCapCents,
     });
     if (result.rawKey) {
       console.log('Key created — this is the ONLY time the raw key is shown. Store it now:');
@@ -100,13 +125,19 @@ async function main() {
     for (const r of rows) {
       let scopes;
       try { scopes = JSON.parse(r.scopes || '[]').join(','); } catch { scopes = r.scopes; }
+      // R2-L1: the STORED value (what's in the row) alongside the EFFECTIVE one (what
+      // enforcement actually uses, per lib/refund-caps.js) — a stored value above the
+      // ceiling, or NULL (meaning "use the default"), otherwise reads as more/less
+      // generous than what the key can actually do.
+      const effMax = effectiveMaxRefundCents(r.max_refund_cents);
+      const effDaily = effectiveDailyRefundCapCents(r.daily_refund_cap_cents);
       console.log([
         `name=${r.name}`,
         r.active ? 'active' : 'REVOKED',
         `prefix=${r.key_prefix}`,
         `scopes=${scopes || '(none)'}`,
-        `max_refund_cents=${r.max_refund_cents === null ? 'none' : r.max_refund_cents}`,
-        `daily_refund_cap_cents=${r.daily_refund_cap_cents === null ? 'none' : r.daily_refund_cap_cents}`,
+        `max_refund_cents=${r.max_refund_cents === null ? 'none' : r.max_refund_cents} (effective ${dollars(effMax)}${r.max_refund_cents === null ? ', default' : (r.max_refund_cents > effMax ? ', clamped' : '')})`,
+        `daily_refund_cap_cents=${r.daily_refund_cap_cents === null ? 'none' : r.daily_refund_cap_cents} (effective ${dollars(effDaily)}${r.daily_refund_cap_cents === null ? ', default' : (r.daily_refund_cap_cents > effDaily ? ', clamped' : '')})`,
         `created=${r.created_at}`,
         `last_used=${r.last_used_at || 'never'}`,
       ].join('  '));
@@ -133,6 +164,8 @@ async function main() {
       process.exitCode = 1;
       return;
     }
+    const ceilingError = capsExceedCeiling(patch);
+    if (ceilingError) { console.error(ceilingError); process.exitCode = 1; return; }
     const changed = setKeyLimits(db, name, patch);
     console.log(changed ? `Updated limits for "${name}".` : `No key named "${name}" found.`);
     return;

@@ -11,7 +11,7 @@ const {
 } = require('../lib/helpers');
 const { recordManualPayment } = require('../lib/payments');
 const { parseCents, isValidEmail, isValidPhone, isValidTimeString, sanitizeDescription } = require('../lib/validation');
-const { effectiveMaxRefundCents, effectiveDailyRefundCapCents, HARD_MAX_REFUND_CENTS } = require('../lib/refund-caps');
+const { effectiveMaxRefundCents, effectiveDailyRefundCapCents, HARD_MAX_REFUND_CENTS, MANUAL_PAYMENT_HARD_MAX_CENTS } = require('../lib/refund-caps');
 const { isDefinitiveStripeError, isTimeoutError } = require('../lib/stripe-errors');
 const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
@@ -352,6 +352,20 @@ router.patch('/bookings/:booking_number', requireScope('bookings:write'), (req, 
     // H5: check EVERY day in the (possibly multi-day) new range, not just the new start
     // date — a time-only change or an end-date move must be conflict-checked too.
     const dateList = enumerateDates(newStart, newEnd);
+
+    // R2-L6: the GLOBAL blocked-dates check (equipment_id IS NULL) must also cover EVERY
+    // day in that range — validateBookingDate above only ever checked the new START date,
+    // and only when event_date itself changed, so extending event_end_date onto a blocked
+    // day (or a multi-day move that merely passes THROUGH one) was never caught.
+    if (dateList.length) {
+      const placeholders = dateList.map(() => '?').join(',');
+      const blockedDays = db.prepare(`
+        SELECT date, reason FROM blocked_dates WHERE equipment_id IS NULL AND date IN (${placeholders})
+      `).all(...dateList);
+      for (const b of blockedDays) {
+        conflicts.push({ type: 'calendar_rule', message: b.reason || 'that date is blocked', date: b.date });
+      }
+    }
     const worstBookedByEquipment = new Map();
     for (const day of dateList) {
       let winStart = after.event_start_time;
@@ -636,7 +650,11 @@ router.get('/bookings/:booking_number/payments', requireScope('payments:read'), 
 });
 
 const MANUAL_PAYMENT_METHODS = new Set(['cash', 'check', 'cashapp', 'venmo', 'zelle', 'card_offline']);
-const MAX_MANUAL_PAYMENT_CENTS = HARD_MAX_REFUND_CENTS * 20; // $10,000 sanity ceiling — a bigger figure belongs in accounting, not a phone-collected cash/check record
+// R2-L3: its own ceiling, independent of the refund ceiling — lowering
+// OFFICE_REFUND_HARD_MAX_CENTS (e.g. to tighten refund policy) must never silently also
+// lower this unrelated manual-payment sanity limit. A bigger figure belongs in
+// accounting, not a phone-collected cash/check record.
+const MAX_MANUAL_PAYMENT_CENTS = MANUAL_PAYMENT_HARD_MAX_CENTS;
 
 // Records money that already changed hands OFFLINE (cash in an envelope, a Venmo
 // transfer, etc) — this endpoint never touches Stripe or a card. notify defaults to
@@ -735,7 +753,15 @@ function reservePaymentLink(db, { key, booking, idempotencyKey, requestHash, amo
   });
 
   try {
-    return attempt();
+    // R2-L4: BEGIN IMMEDIATE, not the default deferred BEGIN — this is a check-then-
+    // insert against a table a second Node PROCESS could also be writing (e.g. a second
+    // app instance behind a future load balancer). A deferred transaction only acquires
+    // its write lock at the first write, so two processes could both pass the SELECT
+    // read under a read lock before either upgrades to a write lock, then both bounce off
+    // SQLITE_BUSY at nearly the same moment rather than cleanly serializing. `.immediate()`
+    // takes the write lock up front, so the second transaction blocks (then proceeds
+    // safely, seeing the first's committed row) instead of racing.
+    return attempt.immediate();
   } catch (err) {
     if (String(err.message || '').includes('UNIQUE constraint failed')) {
       return { ok: false, status: 409, body: { error: 'a payment-link reservation already exists for this idempotency key' } };
@@ -1000,7 +1026,16 @@ function reserveRefund(db, { key, booking, payment, amountCents, idempotencyKey,
   });
 
   try {
-    return attempt();
+    // R2-L4: BEGIN IMMEDIATE (not the default deferred BEGIN) — this is the
+    // check-the-remainder-then-insert transaction a second Node PROCESS sharing this
+    // SQLite file could also be running (multi-process is not today's deployment, but the
+    // review flagged the deferred-BEGIN gap explicitly — see
+    // tests/office-multiproc.test.js). A deferred transaction only takes its write lock at
+    // the first write, so two processes' reads could both proceed under a read lock before
+    // either upgrades, racing on SQLITE_BUSY instead of cleanly serializing. `.immediate()`
+    // takes the write lock immediately, so a concurrent transaction from another process
+    // blocks (then safely sees the first's committed reservation) instead of racing it.
+    return attempt.immediate();
   } catch (err) {
     if (String(err.message || '').includes('UNIQUE constraint failed')) {
       return { ok: false, status: 409, body: { error: 'a refund reservation already exists for this idempotency key' } };
@@ -1154,15 +1189,26 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
   // R2-C1: a retry with the SAME Idempotency-Key whose ledger row is still 'pending' or
   // 'needs_review' — from a prior AMBIGUOUS Stripe outcome, or a process crash between
   // reserving and finalizing — reuses that exact reservation and re-issues the SAME
-  // Stripe idempotency key, rather than a fresh reservation with fresh cap headroom. A
-  // row already 'succeeded' never reaches here — middleware/office-auth.js's generic
-  // idempotency replay answers it first, straight from the audit log (also covers R2-L2:
-  // a retry after a client disconnect replays the real outcome instead of a stale
-  // 409/403). A request whose row is genuinely still in-flight in THIS process (not yet
-  // reserved) falls through to the normal reserveRefund path below, whose UNIQUE-
-  // constraint catch returns 409.
+  // Stripe idempotency key, rather than a fresh reservation with fresh cap headroom.
+  //
+  // R2-L2: a row already 'succeeded' USUALLY never reaches here — middleware/office-
+  // auth.js's generic idempotency replay answers it first, straight from a 2xx audit row.
+  // The one case that doesn't: a client disconnect writes a 499 audit row (via
+  // registerWriteAudit's 'close' handler, which fires before the Stripe call — and
+  // therefore the real 201 — even exists), and that row is never updated in place once
+  // the refund actually finalizes (the ledger, not the audit log, is authoritative here).
+  // A same-key retry then finds a non-2xx, non-ambiguous audit row, which middleware
+  // retires as a "genuine failure" and processes fresh — so this endpoint has to check
+  // the LEDGER for an already-'succeeded' row itself and replay 201 from it directly
+  // (no second Stripe call), rather than letting reserveRefund's UNIQUE-constraint catch
+  // turn it into a confusing 409. The retry's OWN audit row (fresh, since the old 499 one
+  // was already retired) correctly records 201; the old 499 row is kept as history.
+  //
+  // A request whose row is genuinely still in-flight in THIS process (not yet reserved at
+  // all) falls through to the normal reserveRefund path below, whose UNIQUE-constraint
+  // catch returns 409.
   const resumable = db.prepare(`
-    SELECT * FROM office_refunds WHERE key_id = ? AND idempotency_key = ? AND status IN ('pending', 'needs_review')
+    SELECT * FROM office_refunds WHERE key_id = ? AND idempotency_key = ? AND status IN ('pending', 'needs_review', 'succeeded')
   `).get(req.apiKey.id, req.idempotencyKey);
 
   if (resumable) {
@@ -1175,6 +1221,22 @@ router.post('/bookings/:booking_number/refunds', requireScope('refunds:create'),
     if (resumable.request_hash && req.requestHash && resumable.request_hash !== req.requestHash) {
       return res.status(422).json({ error: 'Idempotency-Key was already used with a different request body' });
     }
+
+    if (resumable.status === 'succeeded') {
+      // R2-L2: replay straight from the ledger — the authoritative record — never a
+      // second Stripe call.
+      return respondToMoneyWrite(req, res, 201, {
+        refund_id: resumable.stripe_refund_id,
+        booking_number: booking.booking_number,
+        payment_id: resumable.payment_id,
+        amount_cents: resumable.amount_cents,
+        status: resumable.stripe_status,
+        ledger_status: resumable.status,
+        bookkeeping_via: 'stripe_webhook',
+        live_charge_checked: false,
+      });
+    }
+
     const resumedPayment = db.prepare('SELECT * FROM payments WHERE id = ?').get(resumable.payment_id);
     if (!resumedPayment) return res.status(500).json({ error: 'internal error: reserved refund has no matching payment row' });
     const resumedPI = resumedPayment.stripe_payment_id && resumedPayment.stripe_payment_id.startsWith('pi_') ? resumedPayment.stripe_payment_id : null;
