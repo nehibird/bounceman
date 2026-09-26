@@ -1206,7 +1206,8 @@ function initialize() {
   // first. A write lock held longer than this (e.g. by a stalled script) makes other
   // requests wait out the full 5s before failing, and the event loop stays blocked for
   // that same window on the connection doing the waiting — tested at 7s/15s hold times:
-  // requests still resolve correctly after the timeout, just later.
+  // I4: requests wait, then either succeed or return a JSON 500 (a 15s hold produced a
+  // JSON 500 in testing) — not "still resolve correctly", which overstated it.
   d.pragma('busy_timeout = 5000');
 
   console.log('[DB] Database initialized successfully');
