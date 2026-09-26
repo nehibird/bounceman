@@ -202,8 +202,40 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # entirely exits zero times, never non-zero, so the exit-code alert above can never catch
 # it on its own. This is the concrete "alert if stale" check the earlier draft only
 # described in prose.
-*/15 * * * * root . /opt/bounceman/.env.reconcile-alert && find /var/log/bounceman-reconcile.log -mmin +60 | grep -q . && curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"🚨 bounceman-reconcile.log has not been updated in over 60 minutes — the reconcile cron may not be firing at all"}' "$SLACK_ALERT_WEBHOOK_URL"
+#
+# R5-L5: `find LOG -mmin +60 | grep -q .` prints NOTHING when LOG doesn't exist at all —
+# so a cron that never fired even once (exactly the failure this check exists to catch)
+# never alerts. `[ ! -e LOG ]` short-circuits the OR so a missing log alerts too.
+*/15 * * * * root . /opt/bounceman/.env.reconcile-alert && { [ ! -e /var/log/bounceman-reconcile.log ] || find /var/log/bounceman-reconcile.log -mmin +60 | grep -q .; } && curl -fsS -X POST -H 'Content-type: application/json' --data '{"text":"🚨 bounceman-reconcile.log has not been updated in over 60 minutes (or does not exist) — the reconcile cron may not be firing at all"}' "$SLACK_ALERT_WEBHOOK_URL"
 ```
+
+- **The file above must end with a trailing newline** — `/etc/cron.d` files (and any
+  run-parts-style crontab) silently ignore a last line with no newline after it, so an
+  editor that strips trailing newlines on save can quietly disable the staleness check (or
+  the reconcile job itself, if it's the last line) with no error anywhere.
+- **This staleness alert repeats every 15 minutes for as long as the log stays stale** —
+  it's not a one-shot; expect (and don't be alarmed by) a repeat page every cycle until the
+  underlying cron/container issue is fixed.
+- **Logrotate** the reconcile log so it doesn't grow unbounded — `/etc/logrotate.d/bounceman-reconcile`:
+  ```
+  /var/log/bounceman-reconcile.log {
+    weekly
+    rotate 12
+    compress
+    missingok
+    notifempty
+    copytruncate
+  }
+  ```
+  `copytruncate` matters here: the reconcile cron line above opens the log with a plain
+  shell redirect (`>>`) each run rather than holding it open, but using `copytruncate`
+  (truncate-in-place) rather than the default rename+recreate means no window where the
+  log briefly doesn't exist and a staleness check happens to run right then.
+- **Optional (I3):** the cron line's `curl -d '...'` puts the Slack webhook URL on the
+  command line for the moment it runs, which other users on the box could see via `ps`.
+  Acceptable on this single-tenant VPS; if you want to avoid it anyway, write the payload
+  to a small `-K` config file instead: `curl -fsS -K /opt/bounceman/reconcile-alert.curlrc`
+  with the URL and `--data`/`-H` lines inside that file (root-only, `chmod 600`).
 
 - Confirm the schedule is actually loaded: `crontab -l` won't show `/etc/cron.d/*` files —
   check with `cat /etc/cron.d/bounceman-reconcile` and `systemctl status cron` (or `crond`),
