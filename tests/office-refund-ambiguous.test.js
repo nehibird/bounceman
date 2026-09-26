@@ -514,8 +514,11 @@ async function main() {
       VALUES (?, ?, ?, ?, ?, ?, 1000, 'pending', 'Nehemiah', 'x', datetime('now'), datetime('now'))`)
       .run(freshId, keyId, 'cli-key', 'idem-cli-fresh', bookingId, paymentId);
 
-    let res = runCli([freshId, 'failed', '--reason', 'trying anyway']);
-    t('CLI: refuses a fresh pending row (not old enough)', res.code !== 0, res);
+    // --actor supplied so this isolates the eligibility check specifically (--actor is
+    // checked FIRST in the script, so a test omitting it can't tell eligibility from a
+    // missing-actor refusal — exactly how the eligibility mutant survived round 4).
+    let res = runCli([freshId, 'failed', '--reason', 'trying anyway', '--actor', 'Nehemiah']);
+    t('CLI: refuses a fresh pending row (not old enough)', res.code !== 0 && /not eligible/.test(res.stderr || ''), res);
     let row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(freshId);
     t('CLI: no change was made to the fresh row', row.status === 'pending', row);
 
@@ -535,13 +538,14 @@ async function main() {
     res = runCli([nrId, 'failed', '--reason', '   ', '--actor', 'Nehemiah']);
     t('CLI: refuses a whitespace-only --reason', res.code !== 0 && /--reason is required/.test(res.stderr || ''), res);
 
-    // 'succeeded' without --stripe-refund -> refused.
-    res = runCli([nrId, 'succeeded', '--reason', 'confirmed on dashboard']);
-    t('CLI: refuses succeeded without --stripe-refund', res.code !== 0, res);
+    // 'succeeded' without --stripe-refund -> refused. (--actor supplied throughout so
+    // each of these isolates the SPECIFIC check under test — see the --reason fix above.)
+    res = runCli([nrId, 'succeeded', '--reason', 'confirmed on dashboard', '--actor', 'Nehemiah']);
+    t('CLI: refuses succeeded without --stripe-refund', res.code !== 0 && /--stripe-refund/.test(res.stderr || ''), res);
 
     // No STRIPE_SECRET_KEY, no --no-verify -> refused.
-    res = runCli([nrId, 'succeeded', '--reason', 'confirmed on dashboard', '--stripe-refund', 're_manual_1']);
-    t('CLI: refuses to record succeeded without Stripe access and no --no-verify', res.code !== 0, res);
+    res = runCli([nrId, 'succeeded', '--reason', 'confirmed on dashboard', '--stripe-refund', 're_manual_1', '--actor', 'Nehemiah']);
+    t('CLI: refuses to record succeeded without Stripe access and no --no-verify', res.code !== 0 && /cannot be verified against Stripe/.test(res.stderr || ''), res);
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(nrId);
     t('CLI: still no change after the two refusals above', row.status === 'needs_review', row);
 
