@@ -87,21 +87,47 @@ router.post('/stripe', async (req, res) => {
   // Dedup: Stripe retries a webhook delivery until it gets a 2xx (and can occasionally
   // redeliver an already-handled event for other reasons). INSERT OR IGNORE is atomic, so
   // two concurrent deliveries of the same event can't both "win" — whichever loses this
-  // race sees changes === 0 and returns immediately without touching the switch below.
+  // race sees changes === 0 and falls into the status check below instead of the switch.
   //
   // The row is inserted BEFORE processing, not after, specifically to close that race. The
   // tradeoff: if processing then throws, the event would be marked seen despite never having
   // been handled, silently swallowing Stripe's automatic retry. So on any processing
   // exception below we DELETE the seen row before responding with an error — that un-dedups
   // the event so the retry Stripe sends next reaches the switch statement again.
-  let alreadySeen = false;
+  //
+  // R5-L2: a 'processing' -> 'done' lifecycle closes a narrower race than the one above —
+  // a SECOND delivery of the SAME event arriving while the FIRST is still working (e.g.
+  // waiting on charge.refunded's live Stripe lookup, up to several seconds) must NOT get
+  // an early 200 duplicate:true, or Stripe has no reason to ever redeliver an event this
+  // app hasn't actually finished. Only a 'done' row is a safe-to-ignore duplicate; a
+  // 'processing' row gets 409 so Stripe retries on its own schedule. A 'processing' row
+  // can also be ORPHANED if this process crashes/is killed mid-handler (never reaching the
+  // UPDATE or the DELETE below) — PROCESSING_STALE_MS reclaims it rather than 409ing
+  // forever, exactly like resolve-office-refund.js's --older-than-minutes eligibility
+  // check (a JS-computed cutoff string, compared lexically against the stored datetime).
+  const PROCESSING_STALE_MS = 5 * 60 * 1000;
+  let alreadyDone = false;
   try {
-    const dedupInfo = db.prepare('INSERT OR IGNORE INTO stripe_events_seen (event_id) VALUES (?)').run(event.id);
-    alreadySeen = dedupInfo.changes === 0;
+    const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status) VALUES (?, 'processing')").run(event.id);
+    if (dedupInfo.changes === 0) {
+      const existing = db.prepare('SELECT status, created_at FROM stripe_events_seen WHERE event_id = ?').get(event.id);
+      if (!existing || existing.status === 'done') {
+        alreadyDone = true;
+      } else {
+        const staleCutoff = new Date(Date.now() - PROCESSING_STALE_MS).toISOString().replace('T', ' ').slice(0, 19);
+        if (existing.created_at <= staleCutoff) {
+          console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash):', event.id, event.type);
+          db.prepare("UPDATE stripe_events_seen SET status = 'processing', created_at = datetime('now') WHERE event_id = ?").run(event.id);
+        } else {
+          console.log('[Stripe Webhook] event still processing elsewhere — asking Stripe to retry:', event.id, event.type);
+          return res.status(409).json({ error: 'event_processing', retry: true });
+        }
+      }
+    }
   } catch (err) {
     console.error('[Stripe Webhook] dedup insert failed (processing anyway):', err.message);
   }
-  if (alreadySeen) {
+  if (alreadyDone) {
     console.log('[Stripe Webhook] duplicate event ignored:', event.id, event.type);
     return res.json({ received: true, duplicate: true });
   }
@@ -285,51 +311,49 @@ router.post('/stripe', async (req, res) => {
         // double- (or triple-) reducing it. Only the DELTA since the last time we saw
         // this payment may touch the booking.
         //
-        // R4-L1: a webhook event's JSON body is FROZEN at generation time and never
-        // rewritten later — a late/retried delivery of an OLDER charge.refunded can still
-        // carry a since-canceled refund in its `amount_refunded` total, even after our own
-        // charge.refund.updated handler has already corrected the books for that
-        // cancellation. Trusting the frozen `amount_refunded` at face value would then
-        // re-inflate refund_amount/re-reduce the booking total for money that never went
-        // out. When the payload carries a FULL `refunds.data` list, recompute the
-        // cumulative figure from THAT — excluding anything failed/canceled — cross-checked
-        // against what OUR ledger has since learned about each refund id (a
-        // charge.refund.updated we've already processed is more current than a stale
-        // payload's own status field for that one refund). No network call needed, and a
-        // refund we know is canceled can never inflate the total.
-        //
-        // R4-L1 GAP (found in re-review): `Charge.refunds` is NOT guaranteed to be present
-        // on a Charge object — stripe-node's own CHANGELOG (10.6.0, 2022-08-26) documents
-        // fixing `Charge.refunds`'s TYPE to reflect that it was "actually optional and not
-        // guaranteed to be returned by the Stripe API" (issue #1518); the bundled 14.25.0
-        // types (pinned to API version 2023-10-16) still type it as nullable
-        // (`ApiList<Refund> | null`), never guaranteed non-null/complete. In production this
-        // branch — not the full-list branch above — is the COMMON case for a webhook
-        // payload, not a rare edge case. Falling back to the frozen `amount_refunded` here
-        // would silently reproduce the exact R4-L1 bug this fix exists to close. Instead,
-        // fetch the CURRENT live `amount_refunded` from Stripe directly (the same
-        // authoritative, fails-closed-on-malformed-data helper the R3-L3 reversal already
-        // uses) — it reflects Stripe's truth right now, so a canceled refund can never
-        // inflate it, without needing the ledger cross-check at all. If that live fetch
-        // itself fails or is unusable, this must NOT fall back to the frozen payload total —
-        // it refuses outright (503, un-dedups the event) so Stripe's automatic redelivery
-        // (retried for up to 3 days) gets a fresh chance once Stripe is reachable again.
-        const refundsList = charge.refunds && Array.isArray(charge.refunds.data) ? charge.refunds.data : null;
-        const refundsListComplete = !!refundsList && !charge.refunds.has_more;
+        // R5-L3: a cheap, PLAIN (non-transactional) payment match BEFORE ever calling
+        // Stripe. An event for a charge this app has no payment for used to still trigger
+        // the live lookup below, so a Stripe outage turned an entirely ignorable event
+        // into a 503 that Stripe would then retry for up to 3 days. There is nothing here
+        // for a live lookup to even confirm, so skip it and return 200 outright.
+        const paymentExists = db.prepare(
+          'SELECT 1 FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
+        ).get(charge.payment_intent || charge.id, charge.id);
+        if (!paymentExists) {
+          console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
+          break;
+        }
 
-        let liveRefundedCentsFallback = null;
-        if (!refundsListComplete) {
-          try {
-            liveRefundedCentsFallback = await stripeService.getLiveRefundedCents({
-              paymentIntentId: typeof charge.payment_intent === 'string' ? charge.payment_intent : undefined,
-              chargeId: charge.id,
-            });
-          } catch (liveErr) {
-            console.error('[Stripe Webhook] charge.refunded: refunds list incomplete/absent on the payload AND the live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will redeliver:', liveErr.message);
-            try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
-            catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
-            return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
-          }
+        // R5-L1: ALWAYS use Stripe's LIVE amount_refunded — the frozen payload total is
+        // never trusted, whether or not it happens to carry a `refunds.data` list.
+        //
+        // R4-L1 originally tried to make the frozen list trustworthy by cross-checking
+        // each entry's status against our own ledger (a `charge.refund.updated` we'd
+        // already processed being more current than the list's own frozen status field).
+        // That still had two gaps: `Charge.refunds` isn't even guaranteed present on a
+        // Charge object (stripe-node's own CHANGELOG documents this — issue #1518), making
+        // the live-lookup branch the COMMON case in production, not a rare fallback; and a
+        // refund made directly from the Stripe Dashboard (never created via this app's
+        // API) has no office_refunds row to cross-check against at all — a list entry
+        // frozen as `pending` that Stripe later canceled would inflate the total with
+        // nothing here able to catch it (R5-L1: Claude's probe showed exactly this,
+        // re-inflating the books from 30/70 to 80/20). The live figure is Stripe's own
+        // current truth and can never be stale by definition, so R5-L1 drops the list-sum
+        // path entirely rather than trying to patch it further. If the live fetch itself
+        // fails or is unusable, this must NOT fall back to the frozen payload total — it
+        // refuses outright (503, un-dedups the event) so Stripe's automatic redelivery
+        // (retried for up to 3 days) gets a fresh chance once Stripe is reachable again.
+        let liveRefundedCents;
+        try {
+          liveRefundedCents = await stripeService.getLiveRefundedCents({
+            paymentIntentId: typeof charge.payment_intent === 'string' ? charge.payment_intent : undefined,
+            chargeId: charge.id,
+          });
+        } catch (liveErr) {
+          console.error('[Stripe Webhook] charge.refunded: live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will redeliver:', liveErr.message);
+          try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
+          catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
+          return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
         }
 
         // R2-L4: the READ (prior refund_amount) THEN WRITE (new refund_amount, and the
@@ -338,31 +362,16 @@ router.post('/stripe', async (req, res) => {
         // for the SAME charge must never interleave between this read and this write
         // (WEBHOOK-1 in the review; see tests/office-multiproc.test.js). `break` can't
         // cross this function boundary, so the outcome is returned and logged/broken-out-
-        // of afterward instead. R4-L1's cross-check against office_refunds also needs to
-        // run inside this same transaction, against the same consistent view of the
-        // ledger the write itself uses.
+        // of afterward instead. The payment is re-fetched here (rather than reusing the
+        // plain SELECT above) under the transaction's own consistent view, in the
+        // vanishingly unlikely case it stopped existing between the two reads.
         const outcome = db.transaction(() => {
           const payment = db.prepare(
             'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
           ).get(charge.payment_intent || charge.id, charge.id);
           if (!payment) return { result: 'no_payment' };
 
-          let cumulativeRefundCents;
-          if (refundsListComplete) {
-            cumulativeRefundCents = 0;
-            for (const r of refundsList) {
-              if (r.status === 'failed' || r.status === 'canceled') continue;
-              const knownRow = db.prepare('SELECT status FROM office_refunds WHERE stripe_refund_id = ?').get(r.id);
-              if (knownRow && knownRow.status === 'failed') continue; // R4-L1: our ledger already knows this one didn't go out
-              cumulativeRefundCents += r.amount;
-            }
-          } else {
-            // R4-L1 GAP: the live-fetched figure, never the frozen payload total — see the
-            // comment above. A live-fetch failure already returned 503 before reaching here.
-            cumulativeRefundCents = liveRefundedCentsFallback;
-          }
-          const cumulativeRefund = Math.round((cumulativeRefundCents / 100) * 100) / 100;
-
+          const cumulativeRefund = Math.round((liveRefundedCents / 100) * 100) / 100;
           const priorRefund = parseFloat(payment.refund_amount) || 0;
           const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
 
@@ -529,9 +538,16 @@ router.post('/stripe', async (req, res) => {
       }
     }
 
+    // R5-L2: only reached once every case above has actually finished — flips this event's
+    // row to 'done' so a future duplicate delivery gets the fast 200 path instead of 409.
+    try { db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ?").run(event.id); }
+    catch (doneErr) { console.error('[Stripe Webhook] failed to mark event done (harmless — worst case a later duplicate gets 409 and Stripe retries):', doneErr.message); }
     res.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook Error]', err.message);
+    // R5-L2: applies to every event type, not just charge.refunded's own 503 path above —
+    // deleting the row (rather than merely marking it 'failed') means a retry's INSERT OR
+    // IGNORE succeeds fresh, identical to the pre-R5-L2 un-dedup behavior.
     try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
     catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
     res.status(400).json({ error: err.message });

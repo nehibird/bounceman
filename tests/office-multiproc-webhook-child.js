@@ -19,8 +19,22 @@ const db = require(path.join(REPO, 'db'));
 db.initialize();
 
 const stripeService = require(path.join(REPO, 'services/stripe'));
+// R5-L1: routes/webhooks.js's charge.refunded now ALWAYS calls the live amount_refunded
+// lookup (the refunds.data list below is sent but ignored) — this stub answers it with the
+// SAME cumulative both sibling children report, so the race still exercises the intended
+// BEGIN IMMEDIATE read-then-write span rather than failing closed with a 503 for lack of a
+// paymentIntents/charges stub.
+const liveAmountRefundedCents = parseInt(process.env.CHARGE_AMOUNT_REFUNDED_CENTS, 10);
 stripeService._setStripeForTests({
   webhooks: { constructEvent: (rawBody) => JSON.parse(rawBody.toString('utf8')) },
+  paymentIntents: {
+    retrieve: async (id) => ({
+      id, latest_charge: { id: process.env.RACE_CHARGE_ID, amount: 10000, amount_refunded: liveAmountRefundedCents, currency: 'usd' },
+    }),
+  },
+  charges: {
+    retrieve: async (id) => ({ id, amount: 10000, amount_refunded: liveAmountRefundedCents, currency: 'usd' }),
+  },
 });
 
 const webhookRoutes = require(path.join(REPO, 'routes/webhooks'));
@@ -42,12 +56,9 @@ async function main() {
     if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
 
     const amountRefundedCents = parseInt(process.env.CHARGE_AMOUNT_REFUNDED_CENTS, 10);
-    // R4-L1 GAP: routes/webhooks.js's charge.refunded now needs a COMPLETE refunds.data
-    // list to avoid its live-amount_refunded-lookup fallback (this child's minimal Stripe
-    // stub has no paymentIntents/charges.retrieve at all — that fallback would otherwise
-    // fail closed with 503, which is correct production behavior but not what this test is
-    // exercising). Both sibling children report the SAME cumulative, so a single synthetic
-    // refund entry matching it is consistent and deterministic across the whole race.
+    // R5-L1: the refunds.data list here is sent purely for payload realism — the handler
+    // ignores it entirely and always uses the live lookup stubbed above (which reports the
+    // SAME cumulative both sibling children expect), so the race is deterministic.
     const event = JSON.stringify({
       id: `evt_race_${process.env.CHILD_INDEX}_${Date.now()}_${Math.random()}`,
       type: 'charge.refunded',

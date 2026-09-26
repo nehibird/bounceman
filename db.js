@@ -1106,6 +1106,18 @@ function initialize() {
     );
   `);
 
+  // R5-L2: a 'processing' -> 'done' lifecycle for the row above. Previously a row's mere
+  // EXISTENCE meant "seen" — inserted before work, deleted on failure — which made a
+  // same-event-id duplicate that arrived while the FIRST delivery was still working (e.g.
+  // waiting on the live Stripe lookup, up to several seconds) get an early 200
+  // duplicate:true. Stripe then has no reason to ever redeliver an event this app hasn't
+  // actually finished. Existing rows default to 'done' — every row that existed before
+  // this column did was, by the old model, already fully processed (an incomplete one
+  // would have been deleted, never left behind).
+  if (!columnExists(d, 'stripe_events_seen', 'status')) {
+    d.prepare("ALTER TABLE stripe_events_seen ADD COLUMN status TEXT NOT NULL DEFAULT 'done'").run();
+  }
+
   // Migration: track the dollar amount (in cents) a money-moving office API write
   // touched — refunds, manual payments, payment links — so a key's daily refund cap can
   // be summed straight off the audit trail instead of a second ledger.

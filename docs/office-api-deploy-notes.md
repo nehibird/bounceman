@@ -36,19 +36,30 @@ and defaults to today's effective value ($10,000).
 `https://bouncemanrentals.com/api/webhooks/stripe` must subscribe to:
 - `checkout.session.completed` — records payments (deposits and office payment-links).
 - `charge.refunded` — the only place `payments.refund_amount`/`bookings.total` are reduced.
-  **R4-L1:** a webhook body is frozen at generation time — a late/retried delivery can
-  still carry a since-canceled refund in its cumulative `amount_refunded`. The handler
-  recomputes the cumulative figure itself rather than trusting that field at face value:
-  - If the payload carries a COMPLETE `charge.refunds.data` list (not paginated), it sums
-    the non-failed/non-canceled entries, cross-checked against what our own
-    `office_refunds` ledger has since learned about each refund id.
-  - Otherwise (the common case in production — `Charge.refunds` is **not guaranteed
-    present** on a Charge object; see the R4-L1-gap commit for the stripe-node evidence),
-    it fetches the LIVE `amount_refunded` from Stripe directly instead.
-  - **If that live fetch itself fails, the webhook responds `503` and does NOT mark the
-    event processed** — Stripe redelivers automatically (retries for up to 3 days). This
-    is expected, not an outage to page on by itself; only alert if it persists across
-    multiple redeliveries (see §11).
+  **R5-L1: ALWAYS fetches the LIVE `amount_refunded` from Stripe** — the payload's own
+  cumulative `amount_refunded` field, and any `charge.refunds.data` list it might carry
+  (complete or paginated), are never consulted at all. A webhook body is frozen at
+  generation time — a late/retried delivery can carry a since-canceled refund in its
+  cumulative total, and a refund made directly from the Stripe Dashboard (never created via
+  this API) has no `office_refunds` row for any ledger-side cross-check to catch either. An
+  earlier version (R4-L1) tried to make a complete list trustworthy via such a cross-check;
+  it still missed the Dashboard-refund case, which is why the list path was dropped
+  entirely rather than patched further — the live figure is Stripe's own current truth and
+  cannot be stale by definition.
+  - **R5-L3: a cheap, non-transactional `SELECT 1 FROM payments` match runs FIRST.** An
+    event for a charge this app has no payment for returns `200` immediately, without ever
+    calling Stripe — so an unrelated/irrelevant event can't turn a Stripe outage into an
+    avoidable `503`.
+  - **If the live fetch itself fails (once a matching payment exists), the webhook responds
+    `503` and does NOT mark the event processed** — Stripe redelivers automatically
+    (retries for up to 3 days). This is expected, not an outage to page on by itself; only
+    alert if it persists across multiple redeliveries (see §11).
+  - **R5-L2: `stripe_events_seen` dedup is now `processing` → `done`.** A second delivery
+    of the same event id arriving while the first is still being handled (e.g. mid-live-
+    lookup) gets `409` (asking Stripe to retry) rather than a premature `200
+    duplicate:true` — only a `done` row is treated as a safe-to-ignore duplicate. A
+    `processing` row is reclaimed (treated as fresh, not permanently stuck) if it's older
+    than 5 minutes, covering a crash mid-handler that never reached the done/delete step.
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe itself
   later fails/cancels a refund, **and (R3-L3) also corrects `payments.refund_amount` by
   fetching the charge's CURRENT live `amount_refunded` and SETTING it to that absolute
@@ -383,12 +394,26 @@ New/changed log lines this round, in addition to the round-2 set
   "reversed $X.XX", which the code has never logged) — R2-L5/R3-L3's reversal-correction
   path firing. Rare; worth a manual look at the booking each time it fires, just to confirm
   the correction matches reality.
-- `[Stripe Webhook] charge.refunded: refunds list incomplete/absent on the payload AND the
-  live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will
-  redeliver` (R4-L1) — the webhook responded `503` for this delivery; Stripe will retry
-  automatically. A single occurrence is not alarming. **Alert if this repeats for the same
-  charge across multiple redeliveries** (check the raw Stripe event log for that charge) —
-  that means the live Stripe API call itself is failing repeatedly, not just once.
+- `[Stripe Webhook] charge.refunded: live amount_refunded lookup failed — refusing to trust
+  the frozen total, Stripe will redeliver` (R5-L1; every `charge.refunded` delivery hits
+  this live lookup now, not just payloads missing a `refunds.data` list) — the webhook
+  responded `503` for this delivery; Stripe will retry automatically. A single occurrence
+  is not alarming. **Alert if this repeats for the same charge across multiple
+  redeliveries** (check the raw Stripe event log for that charge) — that means the live
+  Stripe API call itself is failing repeatedly, not just once.
+- `[Stripe Webhook] charge.refunded: no matching payment found for ...` (R5-L3) — now the
+  FIRST thing checked, before Stripe is ever called; harmless, expected for any charge this
+  app didn't create the payment for (e.g. a different Stripe integration on the same
+  account). Not worth alerting on by itself.
+- `[Stripe Webhook] event still processing elsewhere — asking Stripe to retry` (R5-L2) — a
+  duplicate delivery arrived while an earlier one for the same event id was still being
+  handled; the `409` tells Stripe to retry on its own schedule. Expected occasionally under
+  Stripe's own retry behavior; a sustained stream for the same event id points at a handler
+  that's hanging (check the live-lookup call for that charge).
+- `[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash)` (R5-L2) —
+  a `processing` row sat for more than 5 minutes with no `done`/delete, almost always
+  because the process was killed or crashed mid-handler. Worth a look at the app's own
+  crash/restart logs around that time; the event itself is reprocessed correctly either way.
 - `N row(s) need manual review` from the reconcile cron (§5) — should be rare; each one
   needs the resolve CLI (§6) to clear.
 - `[OFFICE API] Stripe refund error looked definitive, but a matching refund DOES exist at

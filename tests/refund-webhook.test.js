@@ -38,6 +38,14 @@ let liveAmountRefundedCentsOverride = null;
 // independent of liveAmountRefundedCentsOverride, to exercise charge.refunded's
 // live-fetch-failed path (must refuse 503 + un-dedup, never fall back to the frozen total).
 let forceLiveLookupError = false;
+// R5-L2: an artificial delay on the live lookup, so a test can fire a SECOND delivery of
+// the same event id while the FIRST is still "processing" (awaiting Stripe) — the same
+// technique tests/office-refund-ledger.test.js already uses for its own concurrency races.
+let liveLookupDelayMs = 0;
+// R5-L3: counts every live-lookup call this stub actually received, so a test can assert
+// Stripe was never even called for a charge with no matching payment.
+let liveLookupCallCount = 0;
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 stripeService._setStripeForTests({
   webhooks: {
     // Stub out real signature verification entirely — the webhook ROUTE is under test
@@ -46,6 +54,8 @@ stripeService._setStripeForTests({
   },
   paymentIntents: {
     retrieve: async (id) => {
+      liveLookupCallCount += 1;
+      if (liveLookupDelayMs) await sleep(liveLookupDelayMs);
       if (forceLiveLookupError) throw new Error('simulated Stripe outage (live amount_refunded lookup)');
       return {
         id,
@@ -55,6 +65,8 @@ stripeService._setStripeForTests({
   },
   charges: {
     retrieve: async (id) => {
+      liveLookupCallCount += 1;
+      if (liveLookupDelayMs) await sleep(liveLookupDelayMs);
       if (forceLiveLookupError) throw new Error('simulated Stripe outage (live amount_refunded lookup)');
       return { id, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' };
     },
@@ -121,6 +133,11 @@ async function main() {
   }
 
   // 1. First partial refund: $30 of a $100 booking
+  // R5-L1: the handler now ALWAYS asks Stripe for the live amount_refunded rather than
+  // trusting the payload (whether via amount_refunded or a refunds.data list) — every
+  // charge.refunded call site below sets liveAmountRefundedCentsOverride to the cumulative
+  // figure it intends Stripe to report, matching the amountRefundedCents argument.
+  liveAmountRefundedCentsOverride = 3000;
   let r = await post(chargeRefundedEvent('evt_test_1', 3000));
   let body = await r.json();
   t('first refund event -> 200', r.status === 200 && body.received === true, JSON.stringify(body));
@@ -130,6 +147,7 @@ async function main() {
   t('booking.total = 70 after first refund', booking.total === 70, booking.total);
 
   // 2. Second event: cumulative refund now $50 — delta from the first is $20, NOT $50
+  liveAmountRefundedCentsOverride = 5000;
   r = await post(chargeRefundedEvent('evt_test_2', 5000));
   body = await r.json();
   t('second refund event -> 200', r.status === 200 && body.received === true);
@@ -159,6 +177,7 @@ async function main() {
     return realPrepare(sql);
   };
 
+  liveAmountRefundedCentsOverride = 7000;
   r = await post(chargeRefundedEvent('evt_test_3', 7000));
   t('processing failure -> 400', r.status === 400, r.status);
   database.prepare = realPrepare; // restore before querying directly below
@@ -190,7 +209,8 @@ async function main() {
     if (sql.includes('UPDATE bookings SET total')) bookingUpdateCalls.push(sql);
     return realPrepareForSpy(sql);
   };
-  r = await post(chargeRefundedEvent('evt_test_stale', 4000)); // $40 < the $70 already recorded
+  liveAmountRefundedCentsOverride = 4000; // $40 < the $70 already recorded
+  r = await post(chargeRefundedEvent('evt_test_stale', 4000));
   database.prepare = realPrepareForSpy;
   body = await r.json();
   t('H1-DELTA: a stale event (lower cumulative than recorded) -> 200, treated as a no-op', r.status === 200 && body.received === true, JSON.stringify(body));
@@ -201,6 +221,7 @@ async function main() {
   t('H1-DELTA: booking.total still 30, NOT incorrectly increased to 60', booking.total === 30, booking.total);
   t('H1-DELTA: booking.updated_at untouched', booking.updated_at === bookingBeforeStale.updated_at, { before: bookingBeforeStale.updated_at, after: booking.updated_at });
   t('H1-DELTA: internal_notes untouched (no extra note appended)', booking.internal_notes === bookingBeforeStale.internal_notes, { before: bookingBeforeStale.internal_notes, after: booking.internal_notes });
+  liveAmountRefundedCentsOverride = null; // restore the ambient default the sections below assume
 
   // 6. L8: stripe_events_seen rows older than 30 days are pruned on boot (db.js's
   // initialize(), called again here — idempotent by design); newer rows are kept.
@@ -296,71 +317,93 @@ async function main() {
   t('R3-L3: refund_amount stays 30 (the live truth), NOT naively subtracted to 10', ooPayment.refund_amount === 30, ooPayment.refund_amount);
   t('R3-L3: booking.total untouched (still 70) since B was never actually deducted from it', ooBooking.total === 70, ooBooking.total);
 
-  // R4-L1: the late/retried delivery of B's ORIGINAL charge.refunded event carries the
+  // R5-L1: the late/retried delivery of B's ORIGINAL charge.refunded event carries the
   // REALISTIC STALE payload Stripe actually generates — a webhook body is frozen at
-  // generation time and never rewritten after a later cancellation. Cumulative
-  // amount_refunded is still $50 (A $30 + B $20), and refunds.data lists B with the status
-  // it had AT SEND TIME (succeeded — before it was later canceled), not 'canceled'. A
-  // handler that trusts amount_refunded (or refunds.data status) at face value would
-  // re-inflate refund_amount to 50 and re-reduce booking.total to 50 for a refund that
-  // never actually happened. The fix must instead notice — from OUR OWN ledger, which
-  // already recorded re_ooo_test as 'failed' via the charge.refund.updated just above —
-  // that B doesn't count, and treat this as a no-op (delta 0 against the already-current 30).
+  // generation time and never rewritten after a later cancellation. Its `refunds.data`
+  // list still lists B with the status it had AT SEND TIME (succeeded — before it was
+  // later canceled), and its own frozen `amount_refunded` is $50 (A $30 + B $20). Under
+  // R5-L1 this payload content is IGNORED ENTIRELY — the live lookup below (still
+  // returning $30, the true current state) is the only thing consulted, so this is simply
+  // a no-op (delta 0 against the already-current 30). Passing an explicit stale list here
+  // (rather than omitting it) proves the list's presence makes no difference at all.
   r = await post(chargeRefundedEvent('evt_ooo_2', 5000, 'pi_ooo_1', [
     { id: 're_ooo_a_test', amount: 3000, status: 'succeeded' },
-    { id: 're_ooo_test', amount: 2000, status: 'succeeded' }, // B's stale, pre-cancellation status
+    { id: 're_ooo_test', amount: 2000, status: 'succeeded' }, // B's stale, pre-cancellation status — irrelevant under R5-L1
   ]));
-  t('R4-L1: the late/retried STALE charge.refunded ($50 cumulative, uncorrected) -> 200', r.status === 200, r.status);
+  t('R5-L1: the late/retried STALE charge.refunded (list ignored, live truth used) -> 200', r.status === 200, r.status);
   ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
-  t('R4-L1 VERDICT: refund_amount stays 30 (B excluded via the ledger, not re-inflated by the stale $50 payload)', ooPayment.refund_amount === 30, ooPayment.refund_amount);
-  t('R4-L1 VERDICT: booking.total stays 70 (never re-reduced for a refund that never went out)', ooBooking.total === 70, ooBooking.total);
+  t('R5-L1 VERDICT: refund_amount stays 30 (the live figure, never the stale $50 list total)', ooPayment.refund_amount === 30, ooPayment.refund_amount);
+  t('R5-L1 VERDICT: booking.total stays 70 (never re-reduced for a refund that never went out)', ooBooking.total === 70, ooBooking.total);
 
   // Claude's variant: a DIFFERENT event id carrying the exact same stale payload (another
-  // redelivery/reorder) must be equally harmless — the fix is keyed on payload content and
-  // ledger state, never on the event id.
+  // redelivery/reorder) must be equally harmless — the fix depends only on the live
+  // lookup, never on payload content or event id.
   r = await post(chargeRefundedEvent('evt_ooo_3', 5000, 'pi_ooo_1', [
     { id: 're_ooo_a_test', amount: 3000, status: 'succeeded' },
     { id: 're_ooo_test', amount: 2000, status: 'succeeded' },
   ]));
-  t('R4-L1: a second, different-event-id redelivery of the same stale payload -> 200', r.status === 200, r.status);
+  t('R5-L1: a second, different-event-id redelivery of the same stale payload -> 200', r.status === 200, r.status);
   ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
-  t('R4-L1: still 30/70 after a second stale redelivery under a different event id', ooPayment.refund_amount === 30 && ooBooking.total === 70, { refund_amount: ooPayment.refund_amount, total: ooBooking.total });
+  t('R5-L1: still 30/70 after a second stale redelivery under a different event id', ooPayment.refund_amount === 30 && ooBooking.total === 70, { refund_amount: ooPayment.refund_amount, total: ooBooking.total });
   liveAmountRefundedCentsOverride = null;
 
-  // --- R5 mutation gap (L1-INCLUDE-CANCELED): a refund with status 'canceled' IN THE
-  // PAYLOAD ITSELF (not merely one our own ledger has since learned is failed/canceled —
-  // e.g. a refund attempted directly from the Stripe Dashboard, never created via our API,
-  // so there's no office_refunds row to cross-check against at all) must still be excluded
-  // from the cumulative sum by the payload's OWN status field. Every other R4-L1 test above
-  // happens to have a matching ledger row that ALSO excludes the refund, which left this
-  // specific filter (`r.status === 'canceled'`) without a test that could isolate it. -----
-  const cpCustomerId = uuid();
-  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'CancelPayload', 'Test')").run(cpCustomerId);
-  const cpBookingId = uuid();
+  // --- R5-L1: Claude's probe — a Dashboard refund frozen 'pending' in a COMPLETE
+  // (has_more:false) list, with NO office_refunds row at all (never created via this
+  // app's API, so the old ledger cross-check could never have excluded it either), that
+  // Stripe later actually canceled. The pre-R5-L1 code trusted a complete list at face
+  // value and re-inflated the books to 80/20; R5-L1 ignores the list outright and asks
+  // Stripe directly, so this must stay exactly 30/70. -------------------------------------
+  const dashCustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'Dashboard', 'Test')").run(dashCustomerId);
+  const dashBookingId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-CANCELPAYLOAD-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 70, 50, 0, 'paid')`).run(cpBookingId, cpCustomerId);
-  const cpPaymentId = uuid();
-  // $100 charge, refund A ($30) already reflected (refund_amount=30, total already 70).
+    VALUES (?, 'BM-DASHBOARD-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 70, 50, 0, 'paid')`).run(dashBookingId, dashCustomerId);
+  const dashPaymentId = uuid();
+  // $100 charge, refund A ($30, via this app) already reflected (refund_amount=30, total 70).
   database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
-    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_cancelpayload_1', 'completed', 30)`).run(cpPaymentId, cpBookingId, cpCustomerId);
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_dashboard_1', 'completed', 30)`).run(dashPaymentId, dashBookingId, dashCustomerId);
 
-  // A later charge.refunded (e.g. Stripe now shows a second refund attempt on this charge)
-  // lists A (succeeded) AND an entirely EXTERNAL refund attempt C ($20, made directly on
-  // the Stripe Dashboard, canceled immediately) — C has NO office_refunds row at all, so
-  // the ledger cross-check can never be what excludes it; only the payload's own
-  // `status === 'canceled'` filter can.
-  r = await post(chargeRefundedEvent('evt_cancelpayload_1', 3000, 'pi_cancelpayload_1', [
-    { id: 're_cancelpayload_a', amount: 3000, status: 'succeeded' },
-    { id: 're_cancelpayload_c', amount: 2000, status: 'canceled' },
+  // The payload's own (complete) list would sum to $80 if trusted: A ($30, succeeded) +
+  // Dashboard refund B ($50, still 'pending' at the moment this webhook body was frozen).
+  // Stripe's LIVE truth (mocked below) is that B never actually completed — only A ever
+  // went out — so the live amount_refunded is $30.
+  liveAmountRefundedCentsOverride = 3000;
+  r = await post(chargeRefundedEvent('evt_dashboard_1', 8000, 'pi_dashboard_1', [
+    { id: 're_dashboard_a', amount: 3000, status: 'succeeded' },
+    { id: 're_dashboard_b', amount: 5000, status: 'pending' }, // frozen mid-flight; later canceled at Stripe
   ]));
-  t('L1-INCLUDE-CANCELED: charge.refunded with a payload-canceled external refund -> 200', r.status === 200, r.status);
-  const cpPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(cpPaymentId);
-  const cpBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(cpBookingId);
-  t('L1-INCLUDE-CANCELED VERDICT: refund_amount stays 30 (the canceled $20 attempt is excluded by the PAYLOAD status alone)', cpPayment.refund_amount === 30, cpPayment.refund_amount);
-  t('L1-INCLUDE-CANCELED VERDICT: booking.total stays 70 (never reduced for a refund the payload itself says was canceled)', cpBooking.total === 70, cpBooking.total);
+  t('R5-L1 (Claude 80/20 case): a stale COMPLETE list with a pending-then-canceled Dashboard refund -> 200', r.status === 200, r.status);
+  const dashPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(dashPaymentId);
+  const dashBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(dashBookingId);
+  t('R5-L1 (Claude 80/20 case) VERDICT: refund_amount stays 30, NOT the list-implied 80', dashPayment.refund_amount === 30, dashPayment.refund_amount);
+  t('R5-L1 (Claude 80/20 case) VERDICT: booking.total stays 70, NOT re-inflated to 20', dashBooking.total === 70, dashBooking.total);
+  liveAmountRefundedCentsOverride = null;
+
+  // --- R5-L4 (remaining part): a payload where refunds.has_more is TRUE (an INCOMPLETE
+  // list) must be handled identically — the live figure is used regardless of has_more,
+  // since the list is never inspected at all any more. -----------------------------------
+  const hmCustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'HasMore', 'Test')").run(hmCustomerId);
+  const hmBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-HASMORE-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(hmBookingId, hmCustomerId);
+  const hmPaymentId = uuid();
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_hasmore_1', 'completed', 0)`).run(hmPaymentId, hmBookingId, hmCustomerId);
+  liveAmountRefundedCentsOverride = 4000; // the live truth — the has_more:true list below must be ignored
+  const hmChargeObj = { id: 'ch_test_1', payment_intent: 'pi_hasmore_1', amount_refunded: 9999 };
+  hmChargeObj.refunds = { object: 'list', data: [{ id: 're_hasmore_1', amount: 9999, status: 'succeeded' }], has_more: true };
+  r = await post(JSON.stringify({ id: 'evt_hasmore_1', type: 'charge.refunded', data: { object: hmChargeObj } }));
+  t('R5-L4: a has_more:true payload -> 200', r.status === 200, r.status);
+  const hmPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(hmPaymentId);
+  const hmBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(hmBookingId);
+  t('R5-L4 VERDICT: refund_amount uses the LIVE figure (40), never the incomplete list\'s own frozen total (99.99)', hmPayment.refund_amount === 40, hmPayment.refund_amount);
+  t('R5-L4 VERDICT: booking.total reduced by the live delta (100 -> 60)', hmBooking.total === 60, hmBooking.total);
+  liveAmountRefundedCentsOverride = null;
 
   // --- R4-L1 GAP: the REALISTIC MODERN Stripe payload shape — charge.refunds is NOT
   // guaranteed present at all (stripe-node's own CHANGELOG documents Charge.refunds as
@@ -442,6 +485,102 @@ async function main() {
   t('R4-L1 GAP (4): refund_amount correctly becomes 40 via the live-lookup fallback', gap2Payment.refund_amount === 40, gap2Payment.refund_amount);
   t('R4-L1 GAP (4): booking.total correctly reduced to 60', gap2Booking.total === 60, gap2Booking.total);
   liveAmountRefundedCentsOverride = null;
+
+  // --- R5-L3: a cheap payment match BEFORE ever calling Stripe. An event for a charge
+  // this app has no payment for must return 200 WITHOUT calling Stripe at all — even when
+  // Stripe is completely down (forceLiveLookupError=true would otherwise turn this into an
+  // avoidable 503 that Stripe would then retry for up to 3 days). --------------------------
+  {
+    forceLiveLookupError = true;
+    const callsBefore = liveLookupCallCount;
+    const r2 = await post(chargeRefundedEvent('evt_unknown_charge_1', 9999, 'pi_does_not_exist_at_all', null));
+    const body2 = await r2.json();
+    t('R5-L3: an unknown charge with Stripe DOWN -> 200 (not 503)', r2.status === 200 && body2.received === true, { status: r2.status, body: body2 });
+    t('R5-L3: Stripe was never actually called for the unknown charge', liveLookupCallCount === callsBefore, { before: callsBefore, after: liveLookupCallCount });
+    forceLiveLookupError = false;
+  }
+
+  // --- R5-L2: stripe_events_seen gets a processing -> done lifecycle ---------------------
+  {
+    // (a) A concurrent duplicate arriving while the FIRST delivery is still 'processing'
+    // (waiting on the live lookup below) must NOT get 200 duplicate:true — Stripe would
+    // then have no reason to ever redeliver an event this app hasn't actually finished. It
+    // gets 409 instead, so Stripe retries on its own schedule.
+    const procCustomerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'Proc', 'Test')").run(procCustomerId);
+    const procBookingId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, 'BM-PROC-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(procBookingId, procCustomerId);
+    const procPaymentId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_proc_1', 'completed', 0)`).run(procPaymentId, procBookingId, procCustomerId);
+
+    liveAmountRefundedCentsOverride = 3000;
+    liveLookupDelayMs = 200;
+    const evtProcBody = chargeRefundedEvent('evt_proc_1', 3000, 'pi_proc_1', null);
+    const [firstRes, secondRes] = await Promise.all([
+      post(evtProcBody),
+      sleep(50).then(() => post(evtProcBody)),
+    ]);
+    liveLookupDelayMs = 0;
+    t('R5-L2: the first (slow) delivery eventually succeeds -> 200', firstRes.status === 200, firstRes.status);
+    t('R5-L2: a concurrent duplicate while still processing -> 409, NOT 200 duplicate:true', secondRes.status === 409, secondRes.status);
+    const secondBody = await secondRes.json();
+    t('R5-L2: the 409 tells Stripe to retry, never reports duplicate:true', secondBody.duplicate !== true, secondBody);
+    const procPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(procPaymentId);
+    t('R5-L2: the event was still only actually processed once (refund_amount = 30, not doubled)', procPayment.refund_amount === 30, procPayment.refund_amount);
+    const procSeenRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get('evt_proc_1');
+    t('R5-L2: the row ends up done after the slow delivery finishes', procSeenRow && procSeenRow.status === 'done', procSeenRow);
+
+    // (b) A THIRD delivery of the same event, now that it's genuinely done, is a normal
+    // safe duplicate — proving 409 above was about timing, not a permanent block.
+    const thirdRes = await post(evtProcBody);
+    const thirdBody = await thirdRes.json();
+    t('R5-L2: a THIRD delivery once done -> 200 duplicate:true', thirdRes.status === 200 && thirdBody.duplicate === true, thirdBody);
+    liveAmountRefundedCentsOverride = null;
+  }
+
+  // (c) A stale 'processing' row (simulating an earlier crash mid-handler, which never
+  // reached the UPDATE-to-done or the DELETE-on-failure) is reclaimed and processed fresh,
+  // not 409'd forever.
+  {
+    const staleEventId = 'evt_stale_processing_1';
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now', '-10 minutes'))").run(staleEventId);
+    const staleCustomerId = uuid();
+    database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'Stale', 'Test')").run(staleCustomerId);
+    const staleBookingId = uuid();
+    database.prepare(`INSERT INTO bookings
+      (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+      VALUES (?, 'BM-STALEPROC-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(staleBookingId, staleCustomerId);
+    const stalePaymentId = uuid();
+    database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+      VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_stale_1', 'completed', 0)`).run(stalePaymentId, staleBookingId, staleCustomerId);
+    liveAmountRefundedCentsOverride = 2000;
+    const r3 = await post(chargeRefundedEvent(staleEventId, 2000, 'pi_stale_1', null));
+    const body3 = await r3.json();
+    t('R5-L2: a stale (>5min) processing row is reclaimed and actually processed, not 409\'d', r3.status === 200 && body3.duplicate !== true, { status: r3.status, body: body3 });
+    const stalePayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(stalePaymentId);
+    t('R5-L2: the reclaimed event was actually applied (refund_amount = 20)', stalePayment.refund_amount === 20, stalePayment.refund_amount);
+    const staleSeenRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(staleEventId);
+    t('R5-L2: the reclaimed row ends up done', staleSeenRow && staleSeenRow.status === 'done', staleSeenRow);
+    liveAmountRefundedCentsOverride = null;
+  }
+
+  // (d) 30-day prune still works with the new status column — age is what matters, not
+  // status; a 'done' and a 'processing' row are both pruned once old enough.
+  {
+    const { v4: uuidL8b } = require('uuid');
+    const doneOldId = uuidL8b();
+    const procOldId = uuidL8b();
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'done', datetime('now', '-40 days'))").run(doneOldId);
+    database.prepare("INSERT INTO stripe_events_seen (event_id, status, created_at) VALUES (?, 'processing', datetime('now', '-40 days'))").run(procOldId);
+    db.initialize();
+    const doneOldRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(doneOldId);
+    const procOldRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get(procOldId);
+    t('R5-L2: 30-day prune still removes an old row regardless of status (done)', !doneOldRow, doneOldRow);
+    t('R5-L2: 30-day prune still removes an old row regardless of status (processing)', !procOldRow, procOldRow);
+  }
 
   server.close();
   database.close();
