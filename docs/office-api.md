@@ -502,6 +502,20 @@ The endpoint (`/api/webhooks/stripe`) must subscribe to at least:
 - `charge.refunded` — the only place `payments.refund_amount`/`bookings.total` are
   reduced. Idempotent and monotonic against out-of-order delivery (H1): a stale/
   out-of-order event can never rewind `refund_amount` or over-reduce a booking's total.
+  **R4-L1:** a webhook body is frozen at generation time — a late/retried delivery can
+  still carry a since-canceled refund in its cumulative `amount_refunded`, even after
+  `charge.refund.updated` has already corrected the books for that cancellation. The
+  cumulative figure is recomputed rather than trusted at face value:
+  - If the payload's `charge.refunds.data` list is COMPLETE (present, not paginated), sums
+    the non-failed/non-canceled entries, cross-checked against what the `office_refunds`
+    ledger has since learned about each refund id — no network call.
+  - Otherwise — **the common case in production**: `Charge.refunds` is not guaranteed
+    present on a Charge object (stripe-node's own CHANGELOG documents this; do not assume
+    it will be there) — fetches the LIVE `amount_refunded` from Stripe directly instead
+    (the same authoritative, fails-closed `getLiveRefundedCents` the R3-L3 reversal uses).
+  - If that live fetch fails, the frozen payload total is NEVER applied: the webhook
+    responds `503` and explicitly un-marks the event as processed, so Stripe's automatic
+    redelivery (retried for up to 3 days) gets a fresh chance once Stripe is reachable.
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe
   itself later fails/cancels a refund that had already looked like it succeeded. **R2-L5:**
   if that refund's amount had already been folded into `payments.refund_amount`/

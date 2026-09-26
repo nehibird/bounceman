@@ -34,6 +34,10 @@ const stripeService = require('../services/stripe');
 // `payment_intent`/`charge` field; the existing R2-L5 fixtures don't, so they keep
 // exercising the old best-effort-subtraction fallback unchanged).
 let liveAmountRefundedCentsOverride = null;
+// R4-L1 GAP: forces the live amount_refunded lookup itself to fail (network outage etc.),
+// independent of liveAmountRefundedCentsOverride, to exercise charge.refunded's
+// live-fetch-failed path (must refuse 503 + un-dedup, never fall back to the frozen total).
+let forceLiveLookupError = false;
 stripeService._setStripeForTests({
   webhooks: {
     // Stub out real signature verification entirely — the webhook ROUTE is under test
@@ -41,13 +45,19 @@ stripeService._setStripeForTests({
     constructEvent: (rawBody) => JSON.parse(rawBody.toString('utf8')),
   },
   paymentIntents: {
-    retrieve: async (id) => ({
-      id,
-      latest_charge: { id: `ch_for_${id}`, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' },
-    }),
+    retrieve: async (id) => {
+      if (forceLiveLookupError) throw new Error('simulated Stripe outage (live amount_refunded lookup)');
+      return {
+        id,
+        latest_charge: { id: `ch_for_${id}`, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' },
+      };
+    },
   },
   charges: {
-    retrieve: async (id) => ({ id, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' }),
+    retrieve: async (id) => {
+      if (forceLiveLookupError) throw new Error('simulated Stripe outage (live amount_refunded lookup)');
+      return { id, amount: 10000, amount_refunded: liveAmountRefundedCentsOverride !== null ? liveAmountRefundedCentsOverride : 0, currency: 'usd' };
+    },
   },
 });
 
@@ -77,16 +87,21 @@ async function main() {
   const base = `http://127.0.0.1:${server.address().port}`;
 
   // R4-L1: refundsData models the REAL Stripe payload shape (charge.refunds.data) the
-  // handler now reads from — defaults to a single synthetic refund matching the cumulative
-  // total (so every EXISTING call site below behaves exactly as before) unless a test
-  // passes its own list to model a specific/stale set of underlying refunds.
+  // handler now reads from. Three modes:
+  //   - omitted (undefined): defaults to a single synthetic refund matching the cumulative
+  //     total, so every pre-existing call site below behaves exactly as before.
+  //   - an array: an explicit (complete) refunds.data list, for a specific/stale set of
+  //     underlying refunds.
+  //   - null (R4-L1 GAP): omits the `refunds` key from the payload entirely — the
+  //     REALISTIC MODERN Stripe shape (Charge.refunds is not guaranteed present; see the
+  //     R4-L1-gap commit), which forces the handler onto its live-lookup fallback path.
   function chargeRefundedEvent(id, amountRefundedCents, paymentIntent = 'pi_test_1', refundsData) {
-    const data = refundsData || [{ id: `re_synth_${id}`, amount: amountRefundedCents, status: 'succeeded' }];
-    return JSON.stringify({
-      id,
-      type: 'charge.refunded',
-      data: { object: { id: 'ch_test_1', payment_intent: paymentIntent, amount_refunded: amountRefundedCents, refunds: { object: 'list', data, has_more: false } } },
-    });
+    const chargeObj = { id: 'ch_test_1', payment_intent: paymentIntent, amount_refunded: amountRefundedCents };
+    if (refundsData !== null) {
+      const data = refundsData || [{ id: `re_synth_${id}`, amount: amountRefundedCents, status: 'succeeded' }];
+      chargeObj.refunds = { object: 'list', data, has_more: false };
+    }
+    return JSON.stringify({ id, type: 'charge.refunded', data: { object: chargeObj } });
   }
 
   function chargeRefundUpdatedEvent(id, { refundId, status, amountCents, officeRefundId, paymentIntent }) {
@@ -312,6 +327,87 @@ async function main() {
   ooPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(ooPaymentId);
   ooBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(ooBookingId);
   t('R4-L1: still 30/70 after a second stale redelivery under a different event id', ooPayment.refund_amount === 30 && ooBooking.total === 70, { refund_amount: ooPayment.refund_amount, total: ooBooking.total });
+  liveAmountRefundedCentsOverride = null;
+
+  // --- R4-L1 GAP: the REALISTIC MODERN Stripe payload shape — charge.refunds is NOT
+  // guaranteed present at all (stripe-node's own CHANGELOG documents Charge.refunds as
+  // "not guaranteed to be returned by the Stripe API"). This is the COMMON case, not an
+  // edge case: the handler must fetch the LIVE amount_refunded rather than trust the
+  // frozen payload total. ------------------------------------------------------------------
+  const gapCustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'L1Gap', 'Test')").run(gapCustomerId);
+  const gapBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-L1GAP-1', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 70, 50, 0, 'paid')`).run(gapBookingId, gapCustomerId);
+  const gapPaymentId = uuid();
+  // $100 charge, refund A ($30) already reflected (refund_amount=30, total already 70) —
+  // exactly like the ooo fixture, but this payment's charge.refunded events will carry NO
+  // refunds field at all (the modern shape).
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_l1gap_1', 'completed', 30)`).run(gapPaymentId, gapBookingId, gapCustomerId);
+
+  // (1) A stale/retried charge.refunded arrives with the modern shape: amount_refunded is
+  // the STALE frozen cumulative ($50, as if B's since-canceled $20 were still counted), and
+  // there is no refunds.data at all to cross-check against our ledger. The live lookup (the
+  // authoritative current truth) reports $30 — must be trusted over the frozen $50, so this
+  // is a no-op (delta 0 against the already-current 30).
+  liveAmountRefundedCentsOverride = 3000;
+  r = await post(chargeRefundedEvent('evt_l1gap_1', 5000, 'pi_l1gap_1', null));
+  t('R4-L1 GAP (1): modern-shape stale charge.refunded (live lookup available) -> 200', r.status === 200, r.status);
+  let gapPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(gapPaymentId);
+  let gapBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(gapBookingId);
+  t('R4-L1 GAP (1) VERDICT: refund_amount stays 30 (the LIVE truth), not the stale frozen $50', gapPayment.refund_amount === 30, gapPayment.refund_amount);
+  t('R4-L1 GAP (1) VERDICT: booking.total stays 70, never re-reduced by the stale frozen total', gapBooking.total === 70, gapBooking.total);
+  liveAmountRefundedCentsOverride = null;
+
+  // (2) Same modern-shape stale event, but the live lookup ITSELF fails (Stripe outage).
+  // Must NOT fall back to the frozen $50 — refuse with a non-2xx (503) so Stripe redelivers,
+  // AND the event must not be recorded as processed (a later redelivery of the SAME event id
+  // must still be handled, not swallowed as a duplicate).
+  forceLiveLookupError = true;
+  r = await post(chargeRefundedEvent('evt_l1gap_2', 5000, 'pi_l1gap_1', null));
+  t('R4-L1 GAP (2): modern-shape stale charge.refunded with live lookup DOWN -> non-2xx (503)', r.status === 503, r.status);
+  body = await r.json();
+  t('R4-L1 GAP (2): the error body identifies the live check as unavailable', body.error === 'live_refund_check_unavailable', body);
+  gapPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(gapPaymentId);
+  gapBooking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(gapBookingId);
+  t('R4-L1 GAP (2): refund_amount is UNCHANGED (still 30) — never guessed from the frozen total', gapPayment.refund_amount === 30, gapPayment.refund_amount);
+  t('R4-L1 GAP (2): booking.total is UNCHANGED (still 70)', gapBooking.total === 70, gapBooking.total);
+  const gapSeenRow = database.prepare('SELECT * FROM stripe_events_seen WHERE event_id = ?').get('evt_l1gap_2');
+  t('R4-L1 GAP (2): the event is NOT recorded as processed (un-deduped), so Stripe\'s redelivery will be handled', !gapSeenRow, gapSeenRow);
+
+  // Confirm the redelivery (SAME event id) actually gets processed once Stripe is reachable
+  // again — proving (2)'s un-dedup is real, not just a missing row by coincidence.
+  forceLiveLookupError = false;
+  liveAmountRefundedCentsOverride = 3000;
+  r = await post(chargeRefundedEvent('evt_l1gap_2', 5000, 'pi_l1gap_1', null));
+  t('R4-L1 GAP (2): the SAME event id, redelivered once Stripe is reachable, is processed (not "duplicate") -> 200', r.status === 200, r.status);
+  body = await r.json();
+  t('R4-L1 GAP (2): the redelivery is NOT reported as a duplicate', body.duplicate !== true, body);
+  gapPayment = database.prepare('SELECT * FROM payments WHERE id = ?').get(gapPaymentId);
+  t('R4-L1 GAP (2): after the successful redelivery, refund_amount still correctly stays 30 (live truth)', gapPayment.refund_amount === 30, gapPayment.refund_amount);
+  liveAmountRefundedCentsOverride = null;
+
+  // (4) Normal IN-ORDER charge.refunded still works on the MODERN shape (no refunds field):
+  // a fresh charge whose live amount_refunded genuinely matches the event's own cumulative
+  // total must still record the refund and reduce the booking normally via the fallback path.
+  const gap2CustomerId = uuid();
+  database.prepare("INSERT INTO customers (id, first_name, last_name) VALUES (?, 'L1Gap2', 'Test')").run(gap2CustomerId);
+  const gap2BookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-L1GAP-2', ?, 'confirmed', '2026-10-01', '11:00', '19:00', 100, 100, 50, 0, 'paid')`).run(gap2BookingId, gap2CustomerId);
+  const gap2PaymentId = uuid();
+  database.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, refund_amount)
+    VALUES (?, ?, ?, 100, 'charge', 'stripe', 'pi_l1gap_2', 'completed', 0)`).run(gap2PaymentId, gap2BookingId, gap2CustomerId);
+  liveAmountRefundedCentsOverride = 4000; // matches the event's own cumulative below — a genuine, in-order $40 refund
+  r = await post(chargeRefundedEvent('evt_l1gap_3', 4000, 'pi_l1gap_2', null));
+  t('R4-L1 GAP (4): normal in-order modern-shape charge.refunded -> 200', r.status === 200, r.status);
+  const gap2Payment = database.prepare('SELECT * FROM payments WHERE id = ?').get(gap2PaymentId);
+  const gap2Booking = database.prepare('SELECT * FROM bookings WHERE id = ?').get(gap2BookingId);
+  t('R4-L1 GAP (4): refund_amount correctly becomes 40 via the live-lookup fallback', gap2Payment.refund_amount === 40, gap2Payment.refund_amount);
+  t('R4-L1 GAP (4): booking.total correctly reduced to 60', gap2Booking.total === 60, gap2Booking.total);
   liveAmountRefundedCentsOverride = null;
 
   server.close();

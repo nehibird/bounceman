@@ -36,11 +36,26 @@ and defaults to today's effective value ($10,000).
 `https://bouncemanrentals.com/api/webhooks/stripe` must subscribe to:
 - `checkout.session.completed` — records payments (deposits and office payment-links).
 - `charge.refunded` — the only place `payments.refund_amount`/`bookings.total` are reduced.
+  **R4-L1:** a webhook body is frozen at generation time — a late/retried delivery can
+  still carry a since-canceled refund in its cumulative `amount_refunded`. The handler
+  recomputes the cumulative figure itself rather than trusting that field at face value:
+  - If the payload carries a COMPLETE `charge.refunds.data` list (not paginated), it sums
+    the non-failed/non-canceled entries, cross-checked against what our own
+    `office_refunds` ledger has since learned about each refund id.
+  - Otherwise (the common case in production — `Charge.refunds` is **not guaranteed
+    present** on a Charge object; see the R4-L1-gap commit for the stripe-node evidence),
+    it fetches the LIVE `amount_refunded` from Stripe directly instead.
+  - **If that live fetch itself fails, the webhook responds `503` and does NOT mark the
+    event processed** — Stripe redelivers automatically (retries for up to 3 days). This
+    is expected, not an outage to page on by itself; only alert if it persists across
+    multiple redeliveries (see §11).
 - `charge.refund.updated` — marks an `office_refunds` ledger row `failed` if Stripe itself
-  later fails/cancels a refund, **and now also corrects `payments.refund_amount`/
-  `bookings.total` back up by that refund's own amount if it had already been counted as
-  succeeded (R2-L5)**. This event was already required before round 3; nothing new to
-  subscribe to, but its handler now does more.
+  later fails/cancels a refund, **and (R3-L3) also corrects `payments.refund_amount` by
+  fetching the charge's CURRENT live `amount_refunded` and SETTING it to that absolute
+  figure (not "adding back" the refund's own amount — a plain add/subtract on top of a
+  possibly-stale prior value can under/overcorrect on out-of-order delivery), then
+  recomputes `bookings.total` from that.** This event was already required before round 3;
+  nothing new to subscribe to, but its handler now does more.
 
 Confirm recent deliveries return 2xx in the Stripe dashboard before and after cutover.
 
@@ -230,9 +245,17 @@ New/changed log lines this round, in addition to the round-2 set
 - `[OFFICE API] live charge lookup unverified — failing closed, no reservation, no Stripe
   refund call` — R2-H1's fail-closed path firing. A spike means the live-check Stripe call
   is failing/timing out a lot; refunds will 503 until it clears.
-- `[Stripe Webhook] charge.refund.updated: reversed $X.XX on payment ...` — R2-L5's
-  reversal-correction path firing. Rare; worth a manual look at the booking each time it
-  fires, just to confirm the correction matches reality.
+- `[Stripe Webhook] charge.refund.updated: refund_amount set to $X.XX (delta $X.XX) on
+  payment ...` (this is the exact current string — an earlier draft of this doc quoted
+  "reversed $X.XX", which the code has never logged) — R2-L5/R3-L3's reversal-correction
+  path firing. Rare; worth a manual look at the booking each time it fires, just to confirm
+  the correction matches reality.
+- `[Stripe Webhook] charge.refunded: refunds list incomplete/absent on the payload AND the
+  live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will
+  redeliver` (R4-L1) — the webhook responded `503` for this delivery; Stripe will retry
+  automatically. A single occurrence is not alarming. **Alert if this repeats for the same
+  charge across multiple redeliveries** (check the raw Stripe event log for that charge) —
+  that means the live Stripe API call itself is failing repeatedly, not just once.
 - `N row(s) need manual review` from the reconcile cron (§5) — should be rare; each one
   needs the resolve CLI (§6) to clear.
 - `[OFFICE API] Stripe refund error looked definitive, but a matching refund DOES exist at

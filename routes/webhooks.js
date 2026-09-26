@@ -291,18 +291,46 @@ router.post('/stripe', async (req, res) => {
         // charge.refund.updated handler has already corrected the books for that
         // cancellation. Trusting the frozen `amount_refunded` at face value would then
         // re-inflate refund_amount/re-reduce the booking total for money that never went
-        // out. Instead, recompute the cumulative figure from the payload's OWN
-        // `refunds.data` list — excluding anything failed/canceled — cross-checked
+        // out. When the payload carries a FULL `refunds.data` list, recompute the
+        // cumulative figure from THAT — excluding anything failed/canceled — cross-checked
         // against what OUR ledger has since learned about each refund id (a
         // charge.refund.updated we've already processed is more current than a stale
         // payload's own status field for that one refund). No network call needed, and a
-        // refund we know is canceled can never inflate the total. This only works when the
-        // payload carries the FULL refund list (Stripe's default is untruncated for any
-        // charge with a normal number of refunds); if it's missing or paginated
-        // (`has_more`), fall back to the plain frozen cumulative — a rare edge case, not
-        // the scenario this fix targets, and no worse than the prior behavior.
+        // refund we know is canceled can never inflate the total.
+        //
+        // R4-L1 GAP (found in re-review): `Charge.refunds` is NOT guaranteed to be present
+        // on a Charge object — stripe-node's own CHANGELOG (10.6.0, 2022-08-26) documents
+        // fixing `Charge.refunds`'s TYPE to reflect that it was "actually optional and not
+        // guaranteed to be returned by the Stripe API" (issue #1518); the bundled 14.25.0
+        // types (pinned to API version 2023-10-16) still type it as nullable
+        // (`ApiList<Refund> | null`), never guaranteed non-null/complete. In production this
+        // branch — not the full-list branch above — is the COMMON case for a webhook
+        // payload, not a rare edge case. Falling back to the frozen `amount_refunded` here
+        // would silently reproduce the exact R4-L1 bug this fix exists to close. Instead,
+        // fetch the CURRENT live `amount_refunded` from Stripe directly (the same
+        // authoritative, fails-closed-on-malformed-data helper the R3-L3 reversal already
+        // uses) — it reflects Stripe's truth right now, so a canceled refund can never
+        // inflate it, without needing the ledger cross-check at all. If that live fetch
+        // itself fails or is unusable, this must NOT fall back to the frozen payload total —
+        // it refuses outright (503, un-dedups the event) so Stripe's automatic redelivery
+        // (retried for up to 3 days) gets a fresh chance once Stripe is reachable again.
         const refundsList = charge.refunds && Array.isArray(charge.refunds.data) ? charge.refunds.data : null;
         const refundsListComplete = !!refundsList && !charge.refunds.has_more;
+
+        let liveRefundedCentsFallback = null;
+        if (!refundsListComplete) {
+          try {
+            liveRefundedCentsFallback = await stripeService.getLiveRefundedCents({
+              paymentIntentId: typeof charge.payment_intent === 'string' ? charge.payment_intent : undefined,
+              chargeId: charge.id,
+            });
+          } catch (liveErr) {
+            console.error('[Stripe Webhook] charge.refunded: refunds list incomplete/absent on the payload AND the live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will redeliver:', liveErr.message);
+            try { db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ?').run(event.id); }
+            catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
+            return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
+          }
+        }
 
         // R2-L4: the READ (prior refund_amount) THEN WRITE (new refund_amount, and the
         // booking bookkeeping derived from it) is wrapped in one BEGIN IMMEDIATE
@@ -329,7 +357,9 @@ router.post('/stripe', async (req, res) => {
               cumulativeRefundCents += r.amount;
             }
           } else {
-            cumulativeRefundCents = charge.amount_refunded;
+            // R4-L1 GAP: the live-fetched figure, never the frozen payload total — see the
+            // comment above. A live-fetch failure already returned 503 before reaching here.
+            cumulativeRefundCents = liveRefundedCentsFallback;
           }
           const cumulativeRefund = Math.round((cumulativeRefundCents / 100) * 100) / 100;
 

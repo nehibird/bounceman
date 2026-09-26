@@ -42,10 +42,19 @@ async function main() {
     if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
 
     const amountRefundedCents = parseInt(process.env.CHARGE_AMOUNT_REFUNDED_CENTS, 10);
+    // R4-L1 GAP: routes/webhooks.js's charge.refunded now needs a COMPLETE refunds.data
+    // list to avoid its live-amount_refunded-lookup fallback (this child's minimal Stripe
+    // stub has no paymentIntents/charges.retrieve at all — that fallback would otherwise
+    // fail closed with 503, which is correct production behavior but not what this test is
+    // exercising). Both sibling children report the SAME cumulative, so a single synthetic
+    // refund entry matching it is consistent and deterministic across the whole race.
     const event = JSON.stringify({
       id: `evt_race_${process.env.CHILD_INDEX}_${Date.now()}_${Math.random()}`,
       type: 'charge.refunded',
-      data: { object: { id: process.env.RACE_CHARGE_ID, payment_intent: process.env.RACE_PI, amount_refunded: amountRefundedCents } },
+      data: { object: {
+        id: process.env.RACE_CHARGE_ID, payment_intent: process.env.RACE_PI, amount_refunded: amountRefundedCents,
+        refunds: { object: 'list', data: [{ id: 're_race_synthetic', amount: amountRefundedCents, status: 'succeeded' }], has_more: false },
+      } },
     });
     let status = null;
     let errMsg = null;
