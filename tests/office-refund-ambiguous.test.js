@@ -506,6 +506,41 @@ async function main() {
     t('R2-M2c: the second call used starting_after from the last item of page 1', listCalls[1].starting_after === 're_page1_99', listCalls[1]);
   }
 
+  // --- I2 (optional hardening): if more than one refund shares one office_refund_id (only
+  // possible via a hand-copied metadata value), findRefundByOfficeId prefers a
+  // non-failed/non-canceled match over a dead one, rather than whichever came first in
+  // Stripe's list order. ------------------------------------------------------------------
+  {
+    const dupId = 'dup-office-refund-id';
+    const deadFirstStub = {
+      refunds: {
+        list: async () => ({
+          data: [
+            { id: 're_dup_failed', status: 'failed', metadata: { office_refund_id: dupId } },
+            { id: 're_dup_live', status: 'succeeded', metadata: { office_refund_id: dupId } },
+          ],
+          has_more: false,
+        }),
+      },
+    };
+    stripeService._setStripeForTests(deadFirstStub);
+    const foundLive = await stripeService.findRefundByOfficeId(dupId, { stripe_payment_id: 'pi_dup_test' });
+    t('I2: prefers the live (non-failed/non-canceled) match even when it comes second in the list', !!foundLive && foundLive.id === 're_dup_live', foundLive);
+
+    const onlyDeadStub = {
+      refunds: {
+        list: async () => ({
+          data: [{ id: 're_dup_canceled', status: 'canceled', metadata: { office_refund_id: dupId } }],
+          has_more: false,
+        }),
+      },
+    };
+    stripeService._setStripeForTests(onlyDeadStub);
+    const foundDead = await stripeService.findRefundByOfficeId(dupId, { stripe_payment_id: 'pi_dup_test2' });
+    stripeService._setStripeForTests(fakeStripe);
+    t('I2: falls back to the dead match when nothing better exists', !!foundDead && foundDead.id === 're_dup_canceled', foundDead);
+  }
+
   // --- R3-L4: findRefundByOfficeId hitting the page cap throws a DISTINGUISHABLE error
   // instead of silently returning null (which used to look identical to "confirmed not
   // found") — and reconcile surfaces that as needs_review with the error recorded, not a

@@ -272,13 +272,21 @@ async function findRefundByOfficeId(officeRefundId, payment) {
   else return null;
 
   let startingAfter;
+  // I2: if more than one refund ever shares one office_refund_id (only possible via a
+  // hand-copied metadata value — each ledger row normally gets its own), prefer a
+  // non-failed/non-canceled match over a dead one, rather than whichever came first in
+  // Stripe's list order.
+  let deadMatch = null;
   for (let page = 0; page < REFUND_LIST_MAX_PAGES; page++) {
     const params = startingAfter ? { ...baseParams, starting_after: startingAfter } : baseParams;
     const list = await stripe.refunds.list(params);
     const data = list.data || [];
-    const match = data.find((r) => r.metadata && r.metadata.office_refund_id === officeRefundId);
-    if (match) return match;
-    if (!list.has_more || !data.length) return null;
+    for (const r of data) {
+      if (!r.metadata || r.metadata.office_refund_id !== officeRefundId) continue;
+      if (r.status !== 'failed' && r.status !== 'canceled') return r;
+      if (!deadMatch) deadMatch = r;
+    }
+    if (!list.has_more || !data.length) return deadMatch;
     startingAfter = data[data.length - 1].id;
   }
   // R3-L4: hitting the page cap is NOT the same fact as "confirmed not found" — silently
