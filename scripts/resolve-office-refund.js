@@ -54,30 +54,56 @@ function printUsage() {
   ].join('\n'));
 }
 
+// R4-M1: both verify* helpers below RETURN a structured {outcome, ...} result instead of
+// throwing on a conflict — a POSITIVE Stripe finding (a live refund exists; a metadata or
+// amount mismatch) must ALWAYS win and can NEVER be overridden by --no-verify, which is
+// meant only for "Stripe couldn't be asked at all" (a failed/timed-out call, no
+// STRIPE_SECRET_KEY, or — R4-L4 — no pi_/ch_ id to even ask about). Throwing made both
+// cases look identical to the caller's catch block, which is exactly the R4-M1 hole:
+// --no-verify silently forced through a CONFIRMED live refund the same way it forced
+// through a network timeout. Outcomes: 'verified'/'none_found' (good — proceed),
+// 'conflict' (Stripe positively disagrees — never overridable), 'unavailable' (the Stripe
+// call itself failed — the only thing --no-verify may excuse), 'no_stripe_target' (R4-L4:
+// there was nothing to even ask Stripe about — NOT the same fact as a completed check).
 async function verifyStripeRefund(row, stripeRefundId) {
-  const refund = await stripeService.retrieveRefund(stripeRefundId);
-  if (!refund) throw new Error(`Stripe returned no refund for ${stripeRefundId}`);
+  let refund;
+  try {
+    refund = await stripeService.retrieveRefund(stripeRefundId);
+  } catch (err) {
+    return { outcome: 'unavailable', error: err.message };
+  }
+  if (!refund) return { outcome: 'unavailable', error: `Stripe returned no refund for ${stripeRefundId}` };
   const metaId = refund.metadata && refund.metadata.office_refund_id;
   if (metaId !== row.id) {
-    throw new Error(`refund ${stripeRefundId} metadata.office_refund_id (${metaId || 'none'}) does not match ledger id ${row.id}`);
+    return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} metadata.office_refund_id (${metaId || 'none'}) does not match ledger id ${row.id}` };
   }
   if (refund.amount !== row.amount_cents) {
-    throw new Error(`refund ${stripeRefundId} amount (${refund.amount}) does not match ledger amount_cents (${row.amount_cents})`);
+    return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} amount (${refund.amount}) does not match ledger amount_cents (${row.amount_cents})` };
   }
-  return refund;
+  return { outcome: 'verified', refund };
 }
 
 // R3-M1: before marking a row 'failed', confirm with Stripe that no refund actually went
 // out for it — mirrors routes/office.js's own "confirm before finalizing failed" rule
-// (R3-C1(b)). Returns the found refund (informational — null if genuinely not found, or
-// a failed/canceled one) so the caller can record what was checked. Throws if a refund
-// exists with a status OTHER than failed/canceled (i.e. it actually went through).
+// (R3-C1(b)). R4-L4: a payment with no pi_/ch_ id to check is refused BEFORE ever calling
+// stripeService — this is not "checked, none found", it's "there was nothing to check".
 async function verifyNoRefundWentOut(row, payment) {
-  const found = await stripeService.findRefundByOfficeId(row.id, payment);
-  if (found && found.status !== 'failed' && found.status !== 'canceled') {
-    throw new Error(`a Stripe refund already exists for this ledger row (${found.id}, status=${found.status}) — cannot mark failed`);
+  const hasStripeTarget = !!payment && (
+    (typeof payment.stripe_payment_id === 'string' && payment.stripe_payment_id.startsWith('pi_')) ||
+    (typeof payment.stripe_charge_id === 'string' && payment.stripe_charge_id.startsWith('ch_'))
+  );
+  if (!hasStripeTarget) return { outcome: 'no_stripe_target' };
+
+  let found;
+  try {
+    found = await stripeService.findRefundByOfficeId(row.id, payment);
+  } catch (err) {
+    return { outcome: 'unavailable', error: err.message };
   }
-  return found;
+  if (found && found.status !== 'failed' && found.status !== 'canceled') {
+    return { outcome: 'conflict', refund: found };
+  }
+  return { outcome: 'none_found', refund: found || null };
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -151,18 +177,28 @@ async function main(argv = process.argv.slice(2)) {
       return;
     }
     if (process.env.STRIPE_SECRET_KEY) {
-      try {
-        verifiedRefund = await verifyStripeRefund(row, stripeRefundId);
+      const result = await verifyStripeRefund(row, stripeRefundId);
+      if (result.outcome === 'verified') {
+        verifiedRefund = result.refund;
         stripeCheck = { checked: true, outcome: 'verified', refund_id_checked: stripeRefundId };
-      } catch (err) {
-        console.error(`Stripe verification failed: ${err.message}`);
+      } else if (result.outcome === 'conflict') {
+        // R4-M1: Stripe POSITIVELY disagrees (metadata or amount mismatch) — this is a
+        // confirmed finding, never overridable by --no-verify.
+        console.error(`Stripe verification found a conflict: ${result.error}`);
+        console.error('No change made. This cannot be overridden with --no-verify — a positive Stripe finding always wins.');
+        process.exitCode = 1;
+        return;
+      } else {
+        // 'unavailable' — the Stripe call itself failed; this is the only thing
+        // --no-verify may excuse.
+        console.error(`Stripe verification failed: ${result.error}`);
         if (!args['no-verify']) {
           console.error('No change made. Pass --no-verify to force this despite the failed verification (NOT recommended).');
           process.exitCode = 1;
           return;
         }
         console.error('--no-verify passed: proceeding WITHOUT Stripe verification despite the failure above.');
-        stripeCheck = { checked: true, outcome: 'verification_failed_forced', refund_id_checked: stripeRefundId, error: err.message };
+        stripeCheck = { checked: true, outcome: 'verification_failed_forced', refund_id_checked: stripeRefundId, error: result.error };
       }
     } else if (!args['no-verify']) {
       console.error('STRIPE_SECRET_KEY is not set, so this refund id cannot be verified against Stripe.');
@@ -178,18 +214,40 @@ async function main(argv = process.argv.slice(2)) {
     // confirmed nothing went out. Refuse if a non-failed/non-canceled refund exists for
     // it, or if the lookup itself fails; require --no-verify without Stripe access.
     if (process.env.STRIPE_SECRET_KEY) {
-      try {
-        const found = await verifyNoRefundWentOut(row, payment);
-        stripeCheck = { checked: true, outcome: found ? 'found_failed_or_canceled' : 'none_found', refund_id_checked: found ? found.id : null };
-      } catch (err) {
-        console.error(`Stripe verification failed: ${err.message}`);
+      const result = await verifyNoRefundWentOut(row, payment);
+      if (result.outcome === 'no_stripe_target') {
+        // R4-L4: nothing to even ask Stripe about — never record this as a completed
+        // check ('checked:true, none_found' would be a false claim of confirmation).
+        if (!args['no-verify']) {
+          console.error('This payment has no Stripe pi_/ch_ id to verify against — nothing was checked.');
+          console.error('Pass --no-verify to proceed anyway. No change made.');
+          process.exitCode = 1;
+          return;
+        }
+        console.error('--no-verify passed: this payment has no Stripe pi_/ch_ id, so nothing could be checked at all.');
+        stripeCheck = { checked: false, outcome: 'no_stripe_target' };
+      } else if (result.outcome === 'conflict') {
+        // R4-M1: Stripe POSITIVELY confirms a live refund exists — this always wins and
+        // is never overridable by --no-verify (that flag is for an UNAVAILABLE check, not
+        // a check that came back and disagreed with you).
+        console.error(`A Stripe refund already exists for this ledger row (${result.refund.id}, status=${result.refund.status}) — cannot mark failed.`);
+        console.error(`If that refund is correct, run instead: resolve-office-refund.js ${ledgerId} succeeded --stripe-refund ${result.refund.id} --actor <name> --reason "<text>"`);
+        console.error('No change made. This cannot be overridden with --no-verify.');
+        process.exitCode = 1;
+        return;
+      } else if (result.outcome === 'unavailable') {
+        console.error(`Stripe verification failed: ${result.error}`);
         if (!args['no-verify']) {
           console.error('No change made. Pass --no-verify to force this despite the failed verification (NOT recommended).');
           process.exitCode = 1;
           return;
         }
         console.error('--no-verify passed: proceeding WITHOUT Stripe verification despite the failure above.');
-        stripeCheck = { checked: true, outcome: 'verification_failed_forced', error: err.message };
+        stripeCheck = { checked: true, outcome: 'verification_failed_forced', error: result.error };
+      } else {
+        // 'none_found' — Stripe was actually asked and genuinely has nothing (or only a
+        // failed/canceled refund) for this row.
+        stripeCheck = { checked: true, outcome: 'none_found', refund_id_checked: result.refund ? result.refund.id : null };
       }
     } else if (!args['no-verify']) {
       console.error('STRIPE_SECRET_KEY is not set, so this cannot be verified against Stripe.');

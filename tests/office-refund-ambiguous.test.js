@@ -387,6 +387,49 @@ async function main() {
     t('[L1] the fresh retry created a NEW ledger row under the (freed) original idempotency key', freshRow && freshRow.id !== ledgerId && freshRow.status === 'succeeded', freshRow);
   }
 
+  // --- R4-L2 (N24): a resume/lookup that finds a CANCELED refund at Stripe must finalize
+  // as FAILED (never succeeded) — routes/office.js's finalizeFromStripeRefund maps
+  // Stripe's real refund.status via a failedLikeStatuses set that must include 'canceled',
+  // not just 'failed'. Exercised via the same-key resume path: a pending row's retry finds
+  // (via the stubbed refunds.list) a refund whose status is 'canceled'. ------------------
+  {
+    const { bookingNumber } = makeBookingAndPayment('BM-AMBIG-N24', 200, 'pi_ambig_n24');
+    const { rawKey } = createApiKey(database, { name: 'ambig-n24-key', scopes: ['refunds:create'], maxRefundCents: 10000, dailyRefundCapCents: 6000 });
+    const idem = 'idem-n24-a';
+
+    // First attempt -> ambiguous (kept pending, never released).
+    nextCreateOutcome = 'connection';
+    let r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    let body = await r.json();
+    t('[N24] first attempt -> ambiguous (502, outcome unknown)', r.status === 502 && body.outcome === 'unknown', body);
+    const ledgerId = body.ledger_id;
+
+    // The retry's own resume lookup (findRefundByOfficeId -> stripe.refunds.list) finds
+    // the refund, but Stripe has since CANCELED it.
+    const originalList = fakeStripe.refunds.list;
+    fakeStripe.refunds.list = async () => ({ data: [{ id: 're_n24_canceled', status: 'canceled', metadata: { office_refund_id: ledgerId } }], has_more: false });
+    r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    fakeStripe.refunds.list = originalList;
+    body = await r.json();
+    t('[N24] resume finding a CANCELED refund still finalizes 201 (Stripe returned a refund object)', r.status === 201, body);
+    t('[N24] the response reports ledger_status failed, not succeeded', body.ledger_status === 'failed', body);
+    const ledgerRow = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId);
+    t('[N24] the ledger row is marked FAILED (not succeeded) for a canceled refund', ledgerRow.status === 'failed', ledgerRow);
+    t('[N24] the idempotency key was retired (renamed) so a fresh reservation is possible', ledgerRow.idempotency_key !== idem, ledgerRow.idempotency_key);
+
+    // A fresh reservation with a NEW key now succeeds — proves the cap was actually
+    // released (a mutant leaving the row 'succeeded' would keep it counted/unresolved).
+    r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: `${idem}-newkey`, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 3000,
+    });
+    body = await r.json();
+    t('[N24] a fresh reservation with a new key succeeds (cap released, not blocked as unresolved)', r.status === 201, body);
+  }
+
   // --- R2-C1/R2-M2: reconcile sweeps 'needs_review' and legacy ambiguous-'failed' rows --
   {
     const { bookingId, paymentId } = makeBookingAndPayment('BM-RECONCILE-NR', 100, 'pi_reconcile_nr');
@@ -622,29 +665,99 @@ async function main() {
       return code;
     }
 
-    function seedRow(idemKey) {
-      const { bookingId, paymentId } = makeBookingAndPayment(`BM-CLI-STRIPECHECK-${idemKey}`, 100, `pi_cli_sc_${idemKey}`);
-      const { id: keyId } = createApiKey(database, { name: `cli-sc-${idemKey}`, scopes: ['refunds:create'] });
+    // R4-L4: noStripeTarget seeds a payment with no pi_/ch_ id at all, so there's nothing
+    // for verifyNoRefundWentOut to even ask Stripe about.
+    function seedRow(idemKey, { noStripeTarget = false } = {}) {
+      const { bookingId, bookingNumber, paymentId } = makeBookingAndPayment(`BM-CLI-STRIPECHECK-${idemKey}`, 100, noStripeTarget ? null : `pi_cli_sc_${idemKey}`);
+      const { id: keyId, rawKey } = createApiKey(database, { name: `cli-sc-${idemKey}`, scopes: ['refunds:create'] });
       const id = uuid();
       const oldTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
       database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
         .run(id, keyId, `cli-sc-${idemKey}`, idemKey, bookingId, paymentId, oldTimestamp, oldTimestamp);
-      return id;
+      return { id, bookingNumber, rawKey };
     }
 
     // A refund actually exists (succeeded) -> refused, no change, no second refund
     // possible afterwards (the row stays needs_review, still eligible for the SAME
     // resolution to be retried correctly later once reconcile/a human catches up).
-    let id = seedRow('idem-sc-exists');
+    let { id } = seedRow('idem-sc-exists');
     stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [{ id: 're_sc_exists', status: 'succeeded', metadata: { office_refund_id: id } }], has_more: false }) } });
     let code = await callMain([id, 'failed', '--reason', 'trying to mark failed anyway', '--actor', 'Nehemiah']);
     t('CLI Stripe-check: a refund that actually exists refuses "failed"', code === 1, code);
     let row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
     t('CLI Stripe-check: no change was made (still needs_review)', row.status === 'needs_review', row);
 
+    // --- R4-M1: --no-verify must NOT override a POSITIVE Stripe finding. A refund
+    // confirmed LIVE (not failed/canceled) must still refuse "failed" even with
+    // --no-verify — that flag is for "Stripe couldn't be asked", not "Stripe answered and
+    // disagreed with you". Exit 1, the row is completely unchanged (status, idempotency_key,
+    // still counted toward the cap — proven by a new-key request on the same payment still
+    // being refused as unresolved), and no audit "resolved" row is written. ---------------
+    {
+      const seeded = seedRow('idem-r4m1-exists');
+      const paymentIdForSeeded = database.prepare('SELECT payment_id FROM office_refunds WHERE id = ?').get(seeded.id).payment_id;
+      stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [{ id: 're_r4m1_live', status: 'succeeded', metadata: { office_refund_id: seeded.id } }], has_more: false }) } });
+      const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+      const rowBefore = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      const codeNv = await callMain([seeded.id, 'failed', '--reason', 'trying to force it anyway', '--actor', 'Nehemiah', '--no-verify']);
+      t('R4-M1: --no-verify does NOT override a confirmed live refund (still refuses "failed")', codeNv === 1, codeNv);
+      const rowAfter = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R4-M1: the row is completely UNCHANGED (status, idempotency_key)',
+        rowAfter.status === rowBefore.status && rowAfter.idempotency_key === rowBefore.idempotency_key, { before: rowBefore, after: rowAfter });
+      const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+      t('R4-M1: no audit "resolved" row was written', auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
+
+      // Still counted toward the cap: routes/office.js's R3-M3 guard (reserveRefund's
+      // unresolved-refund check, also used by dry_run) scans exactly this query — a new
+      // key's refund request on the same payment would still find this row and be refused,
+      // proving it was never released. (The HTTP server this suite used earlier in the file
+      // is already closed by this point — this is the same query that guard runs.)
+      const stillUnresolved = database.prepare(
+        "SELECT id FROM office_refunds WHERE payment_id = ? AND status IN ('pending', 'needs_review') LIMIT 1"
+      ).get(paymentIdForSeeded);
+      t('R4-M1: the row still blocks a new-key request on the same payment (still counted/capped)',
+        !!stillUnresolved && stillUnresolved.id === seeded.id, stillUnresolved);
+    }
+
+    // --- R4-M1: 'succeeded' with a metadata/amount mismatch always wins too, even with
+    // --no-verify. -------------------------------------------------------------------------
+    {
+      const seeded = seedRow('idem-r4m1-mismatch');
+      stripeService._setStripeForTests({ refunds: { retrieve: async () => ({ id: 're_r4m1_mismatch', metadata: { office_refund_id: 'some-other-ledger-id' }, amount: 1000 }) } });
+      const codeMismatch = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_r4m1_mismatch', '--no-verify']);
+      t('R4-M1: --no-verify does NOT override a metadata mismatch on "succeeded"', codeMismatch === 1, codeMismatch);
+      const rowMismatch = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R4-M1: the row is unchanged (still needs_review) after the mismatch refusal', rowMismatch.status === 'needs_review', rowMismatch);
+    }
+
+    // --- R4-L4: the payment row has no pi_/ch_ id at all -> outcome 'no_stripe_target',
+    // NEVER 'checked:true, none_found'. Requires --no-verify; the list endpoint must never
+    // even be called (there's nothing to ask); the audit row must not claim a Stripe check. -
+    {
+      const seeded = seedRow('idem-r4l4-notarget', { noStripeTarget: true });
+      let listCalled = false;
+      stripeService._setStripeForTests({ refunds: { list: async () => { listCalled = true; return { data: [], has_more: false }; } } });
+
+      const codeNoVerify = await callMain([seeded.id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
+      t('R4-L4: refuses without --no-verify (nothing to check)', codeNoVerify === 1, codeNoVerify);
+      t('R4-L4: refunds.list was never called', listCalled === false, listCalled);
+      let rowNoTarget = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R4-L4: no change was made without --no-verify', rowNoTarget.status === 'needs_review', rowNoTarget);
+
+      const codeForced = await callMain([seeded.id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah', '--no-verify']);
+      t('R4-L4: --no-verify allows it through (there is nothing to check)', codeForced === undefined, codeForced);
+      t('R4-L4: refunds.list is STILL never called', listCalled === false, listCalled);
+      rowNoTarget = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+      t('R4-L4: row finalized failed', rowNoTarget.status === 'failed', rowNoTarget);
+      const l4AuditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(seeded.id);
+      const l4Detail = l4AuditRow && JSON.parse(l4AuditRow.response_json);
+      t('R4-L4: the audit row honestly records outcome no_stripe_target, never claiming a completed check',
+        !!l4Detail && l4Detail.stripe_check && l4Detail.stripe_check.outcome === 'no_stripe_target' && l4Detail.stripe_check.checked === false, l4Detail);
+    }
+
     // None exists -> failed, key renamed, audit row records the lookup outcome.
-    id = seedRow('idem-sc-none');
+    ({ id } = seedRow('idem-sc-none'));
     const originalIdemKey = 'idem-sc-none';
     stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [], has_more: false }) } });
     code = await callMain([id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
@@ -663,7 +776,7 @@ async function main() {
     t('CLI Stripe-check: activity_log ALSO records the lookup outcome (stripe_check)', !!scDetail && scDetail.stripe_check && scDetail.stripe_check.outcome === 'none_found', scDetail);
 
     // Lookup itself fails -> refused, no change.
-    id = seedRow('idem-sc-error');
+    ({ id } = seedRow('idem-sc-error'));
     stripeService._setStripeForTests({ refunds: { list: async () => { throw new Error('simulated Stripe outage'); } } });
     code = await callMain([id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
     t('CLI Stripe-check: a lookup failure refuses "failed"', code === 1, code);
@@ -677,7 +790,7 @@ async function main() {
     // that concurrent process just wrote. Simulated by hooking the CLI's own initial row
     // SELECT: return the stale (still needs_review) row to the CLI, but flip the REAL row
     // to 'succeeded' first, mimicking another process finishing the race first.
-    id = seedRow('idem-sc-toctou');
+    ({ id } = seedRow('idem-sc-toctou'));
     stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [], has_more: false }) } });
     const realPrepare = database.prepare.bind(database);
     let hookFired = false;
