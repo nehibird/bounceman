@@ -654,6 +654,37 @@ async function main() {
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
     t('CLI Stripe-check: no change was made after a lookup failure', row.status === 'needs_review', row);
 
+    // M1-NOSTATUSGUARD: a TOCTOU race — the row's status changes (e.g. a concurrent
+    // reconcile run finalizes it) AFTER the CLI reads it for eligibility but BEFORE its
+    // own UPDATE commits. The `AND status = ?` clause (bound to the status the CLI itself
+    // validated eligibility against) must refuse rather than blindly overwrite whatever
+    // that concurrent process just wrote. Simulated by hooking the CLI's own initial row
+    // SELECT: return the stale (still needs_review) row to the CLI, but flip the REAL row
+    // to 'succeeded' first, mimicking another process finishing the race first.
+    id = seedRow('idem-sc-toctou');
+    stripeService._setStripeForTests({ refunds: { list: async () => ({ data: [], has_more: false }) } });
+    const realPrepare = database.prepare.bind(database);
+    let hookFired = false;
+    database.prepare = (sql) => {
+      const stmt = realPrepare(sql);
+      if (!hookFired && sql === 'SELECT * FROM office_refunds WHERE id = ?') {
+        hookFired = true;
+        return {
+          get: (...args) => {
+            const staleRow = stmt.get(...args);
+            realPrepare("UPDATE office_refunds SET status = 'succeeded' WHERE id = ?").run(args[0]);
+            return staleRow;
+          },
+        };
+      }
+      return stmt;
+    };
+    code = await callMain([id, 'failed', '--reason', 'confirmed never charged', '--actor', 'Nehemiah']);
+    database.prepare = realPrepare;
+    t('M1-NOSTATUSGUARD: a status change racing the CLI\'s own read is refused, not clobbered', code === 1, code);
+    row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
+    t('M1-NOSTATUSGUARD: the row keeps the RACING process\'s answer (succeeded), untouched by the CLI', row.status === 'succeeded', row);
+
     delete process.env.STRIPE_SECRET_KEY;
     process.exitCode = savedExitCode;
   }
