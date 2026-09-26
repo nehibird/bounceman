@@ -109,6 +109,24 @@ async function main() {
       name: 'amount_refunded as a string',
       setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: '0' } }); },
     },
+    // M17: a NEGATIVE amount_refunded (well-formed integer, impossible value) must still
+    // fail closed — this is the case Number.isInteger alone wouldn't catch without the
+    // explicit `< 0` guard.
+    {
+      name: 'amount_refunded negative',
+      setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: -100, amount: 20000, currency: 'usd' } }); },
+    },
+    // M18: a WRONG (but present and well-formed) currency.
+    {
+      name: 'currency wrong (eur)',
+      setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0, amount: 20000, currency: 'eur' } }); },
+    },
+    // M19: charge.amount present and well-formed, but doesn't match this payment's own
+    // captured amount ($200 = 20000 cents, per makeBookingAndPayment below).
+    {
+      name: 'amount mismatch vs payment',
+      setup: () => { retrieveBehavior = (id) => Promise.resolve({ id, latest_charge: { id: `ch_for_${id}`, amount_refunded: 0, amount: 15000, currency: 'usd' } }); },
+    },
     // R3-L2/M17-M19: a MISSING amount or currency must fail closed exactly like a wrong
     // one — round 2 only rejected a wrong value and let a missing one silently pass.
     {

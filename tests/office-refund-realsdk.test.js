@@ -293,6 +293,82 @@ async function main() {
     t('[aged, never happened] row marked needs_review', row.status === 'needs_review', row);
   }
 
+  // ---------------------------------------------------------------------------------
+  // Confirms the exact ORDER of R3-M2's resume logic: the 23h-age refusal only ever
+  // fires AFTER findRefundByOfficeId has run and come back with a definite "nothing
+  // found" — never when the lookup itself fails. A resume whose lookup fails always
+  // stays ambiguous (502/504, outcome:"unknown", no refunds.create), regardless of how
+  // old the reservation is (even older than the 23h window).
+  // ---------------------------------------------------------------------------------
+  {
+    // (i) A FRESH pending row (well under 23h) whose RESUME lookup fails.
+    const { bookingNumber, rawKey } = setupFixture();
+    const idem = 'idem-resume-lookupfail-fresh';
+    fake.pushRefundFault('reset_after_processing');
+    fake.pushRefundFault('429'); // first attempt: ambiguous, Stripe DID process it
+    let refundsBefore = fake.getRealRefundCount();
+    let r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[resume lookup fails, fresh] first attempt -> ambiguous', r.status === 502 && r.body.outcome === 'unknown', r);
+    const ledgerId1 = r.body.ledger_id;
+
+    // The RESUME's own findRefundByOfficeId call fails — must stay ambiguous, not call
+    // refunds.create again, and NOT be reinterpreted as "nothing found" (which would be
+    // wrong: the refund actually exists, we just couldn't confirm it this time).
+    fake.failNextList();
+    const callsBeforeResume = fake.getLog().filter((e) => e.path === '/v1/refunds' && e.method === 'POST').length;
+    r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[resume lookup fails, fresh] stays ambiguous (502/504, outcome:"unknown"), NOT refund_needs_reconcile',
+      (r.status === 502 || r.status === 504) && r.body.outcome === 'unknown' && r.body.error !== 'refund_needs_reconcile', r);
+    const callsAfterResume = fake.getLog().filter((e) => e.path === '/v1/refunds' && e.method === 'POST').length;
+    t('[resume lookup fails, fresh] NO refunds.create call was made on this resume', callsAfterResume === callsBeforeResume, { before: callsBeforeResume, after: callsAfterResume });
+    t('[resume lookup fails, fresh] no additional real refund was created', fake.getRealRefundCount() === refundsBefore + 1, fake.getRealRefundCount());
+    let row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId1);
+    t('[resume lookup fails, fresh] row still pending (never needs_review, never released)', row.status === 'pending', row);
+
+    // A later resume (lookup working again) correctly finds the real refund and finalizes.
+    r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[resume lookup fails, fresh] a later resume (lookup working) finalizes 201', r.status === 201, r);
+    t('[resume lookup fails, fresh] still exactly one real refund total', fake.getRealRefundCount() === refundsBefore + 1, fake.getRealRefundCount());
+
+    // (ii) The SAME scenario, but the reservation is ALSO older than the 23h window —
+    // proves the age-refusal (409 refund_needs_reconcile) does NOT preempt a lookup
+    // failure; a failed lookup is ALWAYS ambiguous, regardless of age.
+    const { bookingNumber: bn2, rawKey: rawKey2 } = setupFixture();
+    const idem2 = 'idem-resume-lookupfail-aged';
+    fake.pushRefundFault('reset_after_processing');
+    fake.pushRefundFault('429');
+    refundsBefore = fake.getRealRefundCount();
+    r = await write('POST', `/bookings/${bn2}/refunds`, rawKey2, {
+      idempotencyKey: idem2, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    const ledgerId2 = r.body.ledger_id;
+    database.prepare("UPDATE office_refunds SET created_at = datetime('now', '-25 hours') WHERE id = ?").run(ledgerId2);
+
+    fake.failNextList();
+    r = await write('POST', `/bookings/${bn2}/refunds`, rawKey2, {
+      idempotencyKey: idem2, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[resume lookup fails, AGED >23h] STILL ambiguous, not the age-refusal (409 refund_needs_reconcile never fires on a lookup failure)',
+      (r.status === 502 || r.status === 504) && r.body.outcome === 'unknown', r);
+    row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId2);
+    t('[resume lookup fails, AGED >23h] row stays pending (not needs_review)', row.status === 'pending', row);
+
+    // Once the lookup works again, findRefundByOfficeId finds the real (already-existing)
+    // refund and finalizes from it — the age check is never even reached, because
+    // something WAS found.
+    r = await write('POST', `/bookings/${bn2}/refunds`, rawKey2, {
+      idempotencyKey: idem2, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[resume lookup fails, AGED >23h] once the lookup works, finds the real refund and finalizes -> 201', r.status === 201, r);
+    t('[resume lookup fails, AGED >23h] exactly one real refund total (age never forced a fresh create)', fake.getRealRefundCount() === refundsBefore + 1, fake.getRealRefundCount());
+  }
+
   server.close();
   database.close();
   await fake.close();

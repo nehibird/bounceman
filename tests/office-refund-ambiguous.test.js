@@ -202,6 +202,13 @@ async function main() {
     t(`[${mode}] ledger row's error text was recorded`, !!ledgerRow.error, ledgerRow.error);
     t(`[${mode}] ledger row's idempotency_key was NEVER renamed`, ledgerRow.idempotency_key === idemA, ledgerRow.idempotency_key);
 
+    // M05/M06 setup: the audit row this FIRST (ambiguous) attempt wrote — captured now so
+    // the eventual resume can be proven to have updated THIS SAME ROW in place, not
+    // inserted a second one.
+    const auditRowAfterFirstAttempt = database.prepare('SELECT * FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA);
+    t(`[${mode}] the first attempt wrote exactly one audit row, recording the 502/504`, !!auditRowAfterFirstAttempt && auditRowAfterFirstAttempt.status_code === expectedStatus, auditRowAfterFirstAttempt);
+    const auditRowCountAfterFirstAttempt = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA).c;
+
     // 2. R3-M3: a NEW Idempotency-Key while ANY pending/needs_review reservation exists on
     //    this SAME PAYMENT is refused outright — even though there'd be numeric room under
     //    the daily cap ($5000 + $2000 <= $6000) — because a new reservation on top of one
@@ -233,10 +240,20 @@ async function main() {
     t(`[${mode}] the SAME ledger row id is now succeeded`, resolvedRow && resolvedRow.status === 'succeeded' && resolvedRow.id === ledgerId, resolvedRow);
     t(`[${mode}] Stripe idempotency key used was derived from the SAME ledger id both times`, stripeRefundCalls[callsBeforeRetry].idemKey === `office-refund-${ledgerId}`, stripeRefundCalls[callsBeforeRetry]);
 
-    // M05/M06: the resume updated the SAME audit row in place — exactly one audit row
-    // exists for this idempotency key, not a duplicate insert.
-    const auditRowsForIdemA = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA).c;
-    t(`[${mode}] exactly one audit row exists for the resumed idempotency key (updated in place, not duplicated)`, auditRowsForIdemA === 1, auditRowsForIdemA);
+    // M05/M06: the resume updated the SAME audit row IN PLACE — the row COUNT for this
+    // idempotency key is UNCHANGED across the resume (not incremented by a second
+    // INSERT), the row ID itself is identical to the one the first attempt wrote, and its
+    // content (status_code/response_json) now reflects the 201 success, not the original
+    // 502/504. This is the precise shape M05 (isAmbiguousRefundOutcome -> false) and M06
+    // (ignore resumingAuditId) would otherwise leave unasserted.
+    const auditRowCountAfterRetry = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA).c;
+    t(`[${mode}] the audit row COUNT for this idempotency key is unchanged by the resume (still exactly ${auditRowCountAfterFirstAttempt})`,
+      auditRowCountAfterRetry === auditRowCountAfterFirstAttempt, { before: auditRowCountAfterFirstAttempt, after: auditRowCountAfterRetry });
+    const auditRowAfterRetry = database.prepare('SELECT * FROM api_audit_log WHERE key_id = ? AND idempotency_key = ?').get(keyId, idemA);
+    t(`[${mode}] the SAME audit row id was updated in place (not a new row)`, auditRowAfterRetry.id === auditRowAfterFirstAttempt.id, { before: auditRowAfterFirstAttempt.id, after: auditRowAfterRetry.id });
+    t(`[${mode}] that row's status_code now reflects the 201 success (was ${expectedStatus})`, auditRowAfterRetry.status_code === 201, auditRowAfterRetry.status_code);
+    t(`[${mode}] that row's response_json now reflects the refund_id, not the old outcome:"unknown" body`,
+      JSON.parse(auditRowAfterRetry.response_json || '{}').refund_id === body.refund_id, auditRowAfterRetry.response_json);
 
     // 4. Payment's remainder now enforces the succeeded refund — a further attempt that
     //    would exceed what's left is rejected on the remainder, not just the daily cap.
@@ -612,9 +629,15 @@ async function main() {
     row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(id);
     t('CLI Stripe-check: row finalized failed', row.status === 'failed', row);
     t('CLI Stripe-check: idempotency_key retired (R3-M1, same convention as finalizeRefundLedger)', row.idempotency_key !== originalIdemKey, row.idempotency_key);
+    // R3-M1: the lookup result (found/none/error + which refund id, if any, was checked)
+    // must land in the api_audit_log ROW itself (response_json), not just activity_log.
+    const scAuditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(id);
+    const scAuditDetail = scAuditRow && JSON.parse(scAuditRow.response_json);
+    t('CLI Stripe-check: the api_audit_log row itself records the lookup outcome (stripe_check.outcome)',
+      !!scAuditDetail && scAuditDetail.stripe_check && scAuditDetail.stripe_check.outcome === 'none_found' && scAuditDetail.stripe_check.checked === true, scAuditDetail);
     const scActivityRow = database.prepare("SELECT * FROM activity_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(id);
     const scDetail = scActivityRow && JSON.parse(scActivityRow.details);
-    t('CLI Stripe-check: the audit trail records the lookup outcome (stripe_check)', !!scDetail && scDetail.stripe_check && scDetail.stripe_check.outcome === 'none_found', scDetail);
+    t('CLI Stripe-check: activity_log ALSO records the lookup outcome (stripe_check)', !!scDetail && scDetail.stripe_check && scDetail.stripe_check.outcome === 'none_found', scDetail);
 
     // Lookup itself fails -> refused, no change.
     id = seedRow('idem-sc-error');
