@@ -320,6 +320,50 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------------
+  // R4-L2 (N09): pins RESUME_MAX_AGE_MS at exactly 23h. The existing fixtures only ever
+  // exercise 22h (implicitly resumed before backdating) and 25h — neither one actually
+  // distinguishes the real 23h constant from a mutant that widened it to 25h. A resume at
+  // ~23.5h (nothing at Stripe) must still be refused needs_review/409 under the real
+  // constant, and a resume at ~22.5h must still proceed normally either way.
+  // ---------------------------------------------------------------------------------
+  {
+    const { bookingId, bookingNumber, paymentId } = makeBookingAndPayment('BM-REALSDK-N09A', 200, nextPiId());
+    const { rawKey, id: keyId } = createApiKey(database, { name: 'realsdk-n09a-key', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000 });
+    const idem = 'idem-n09-235h';
+    const ledgerId = uuid();
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'x', datetime('now', '-23 hours', '-30 minutes'), datetime('now', '-23 hours', '-30 minutes'))`)
+      .run(ledgerId, keyId, 'realsdk-n09a-key', idem, bookingId, paymentId);
+
+    const refundsBefore = fake.getRealRefundCount();
+    const r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[N09] a resume at ~23.5h with nothing at Stripe is refused (needs_review, 409 refund_needs_reconcile)', r.status === 409 && r.body.error === 'refund_needs_reconcile', r);
+    t('[N09] no refunds.create call was made at 23.5h', fake.getRealRefundCount() === refundsBefore, fake.getRealRefundCount());
+    const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId);
+    t('[N09] row marked needs_review at 23.5h', row.status === 'needs_review', row);
+  }
+  {
+    const { bookingId, bookingNumber, paymentId } = makeBookingAndPayment('BM-REALSDK-N09B', 200, nextPiId());
+    const { rawKey, id: keyId } = createApiKey(database, { name: 'realsdk-n09b-key', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000 });
+    const idem = 'idem-n09-225h';
+    const ledgerId = uuid();
+    database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'x', datetime('now', '-22 hours', '-30 minutes'), datetime('now', '-22 hours', '-30 minutes'))`)
+      .run(ledgerId, keyId, 'realsdk-n09b-key', idem, bookingId, paymentId);
+
+    const refundsBefore = fake.getRealRefundCount();
+    const r = await write('POST', `/bookings/${bookingNumber}/refunds`, rawKey, {
+      idempotencyKey: idem, reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 5000,
+    });
+    t('[N09] a resume at ~22.5h with nothing at Stripe still resumes normally -> 201', r.status === 201 && !!r.body.refund_id, r);
+    t('[N09] exactly one refunds.create call was made at 22.5h', fake.getRealRefundCount() === refundsBefore + 1, fake.getRealRefundCount());
+    const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(ledgerId);
+    t('[N09] row marked succeeded at 22.5h', row.status === 'succeeded', row);
+  }
+
+  // ---------------------------------------------------------------------------------
   // Confirms the exact ORDER of R3-M2's resume logic: the 23h-age refusal only ever
   // fires AFTER findRefundByOfficeId has run and come back with a definite "nothing
   // found" — never when the lookup itself fails. A resume whose lookup fails always
