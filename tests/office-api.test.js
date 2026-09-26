@@ -372,6 +372,37 @@ async function main() {
   body = await r.json();
   t('extending a multi-day range onto another booking\'s date -> 409', r.status === 409, body);
 
+  // 23. R2-L6: the GLOBAL blocked-dates check must cover EVERY day in a multi-day range,
+  // not just the new event_date — extending event_end_date onto a blocked day (with
+  // event_date itself untouched) must still 409/400.
+  database.prepare("INSERT INTO blocked_dates (id, date, reason, equipment_id) VALUES (?, '2026-12-20', 'owner unavailable', NULL)").run(uuid());
+  const blockRangeId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-BLOCKRANGE', ?, 'confirmed', '2026-12-18', '2026-12-19', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    .run(blockRangeId, customerId);
+  r = await write('PATCH', '/bookings/BM-TEST-BLOCKRANGE', fullKey, {
+    reason: 'extend onto a blocked day', idempotencyKey: 'idem-l6-blockrange', event_end_date: '2026-12-20',
+  });
+  body = await r.json();
+  t('R2-L6: extending event_end_date onto a globally blocked day -> conflict', r.status === 409 || r.status === 400, body);
+  t('R2-L6: the conflict names the blocked calendar day', r.status !== 409 || (Array.isArray(body.conflicts) && body.conflicts.some((c) => c.type === 'calendar_rule' && c.date === '2026-12-20')), body);
+  const blockRangeAfter = database.prepare('SELECT event_end_date FROM bookings WHERE id = ?').get(blockRangeId);
+  t('R2-L6: the booking was NOT updated onto the blocked range', blockRangeAfter.event_end_date === '2026-12-19', blockRangeAfter);
+
+  // A move whose new event_date itself changes onto (or through) a blocked day, with
+  // event_end_date left implicit (single-day booking), must also be caught.
+  const blockStartId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-TEST-BLOCKSTART', ?, 'confirmed', '2026-12-01', '11:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
+    .run(blockStartId, customerId);
+  r = await write('PATCH', '/bookings/BM-TEST-BLOCKSTART', fullKey, {
+    reason: 'move onto a blocked day', idempotencyKey: 'idem-l6-blockstart', event_date: '2026-12-20',
+  });
+  body = await r.json();
+  t('R2-L6: moving event_date directly onto a globally blocked day -> conflict', r.status === 409 || r.status === 400, body);
+
   server.close();
   database.close();
   fs.rmSync(TMP_DIR, { recursive: true, force: true });

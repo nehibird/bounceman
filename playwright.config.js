@@ -12,6 +12,7 @@ module.exports = defineConfig({
     '**/office-auth.test.js', '**/office-api.test.js', '**/office-money.test.js',
     '**/refund-webhook.test.js', '**/sarah-auth.test.js', '**/office-refund-ledger.test.js',
     '**/office-refund-ambiguous.test.js', '**/office-live-check.test.js', '**/office-link-reservation.test.js',
+    '**/office-multiproc.test.js',
   ],
   // NOTE: any new standalone node test added under tests/ must be listed above. Playwright's
   // default testMatch picks up *.test.js, and a script that calls process.exit(0) on import

@@ -151,6 +151,28 @@ async function main() {
   const discActivityRow = database.prepare("SELECT * FROM activity_log WHERE action = 'office_api_refund' AND entity_id = ?").get(discBookingNumber);
   t('client disconnect: an activity_log row exists too', !!discActivityRow, discActivityRow);
 
+  // R2-L2: a SAME-key retry after the disconnect must replay 201 from the ledger (the
+  // authoritative record), not a stale 409/403 — even though the disconnect's own audit
+  // row is stuck at 499 and was never updated in place (documented above; the retry gets
+  // its OWN fresh audit row instead).
+  const auditRowsBeforeRetry = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ?').get(discKeyId).c;
+  const discRetry = await write('POST', `/bookings/${discBookingNumber}/refunds`, discKey, {
+    idempotencyKey: 'idem-disc-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 4000,
+  });
+  const discRetryBody = await discRetry.json();
+  t('R2-L2: a same-key retry after a client disconnect replays 201 from the ledger',
+    discRetry.status === 201 && discRetryBody.refund_id === discLedgerRow.stripe_refund_id, discRetryBody);
+  t('R2-L2: the retry made NO second Stripe call', stripeCalls.refunds.length === 1, stripeCalls.refunds.length);
+  const auditRowsAfterRetry = database.prepare('SELECT COUNT(*) c FROM api_audit_log WHERE key_id = ?').get(discKeyId).c;
+  t('R2-L2: the retry wrote its OWN new audit row (the original 499 row is kept as history, not overwritten)',
+    auditRowsAfterRetry === auditRowsBeforeRetry + 1, { before: auditRowsBeforeRetry, after: auditRowsAfterRetry });
+  const freshAuditRow = database.prepare("SELECT * FROM api_audit_log WHERE idempotency_key = 'idem-disc-1'").get();
+  t('R2-L2: the exact idempotency-key row now reflects the 201 replay (the retry\'s own fresh row)',
+    !!freshAuditRow && freshAuditRow.status_code === 201, freshAuditRow);
+  const staleAuditRow = database.prepare("SELECT * FROM api_audit_log WHERE idempotency_key LIKE 'idem-disc-1:failed:%'").get();
+  t('R2-L2: the original disconnect audit row is still there at 499, retired off to the side (not deleted)',
+    !!staleAuditRow && staleAuditRow.status_code === 499, staleAuditRow);
+
   // A follow-up refund with a NEW idempotency key must be limited by a cap that already
   // includes the disconnected-but-succeeded first refund ($40 against a $60 cap).
   const followUp = await write('POST', `/bookings/${discBookingNumber}/refunds`, discKey, {

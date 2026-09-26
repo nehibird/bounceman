@@ -470,12 +470,46 @@ async function main() {
   r = await write('POST', `/bookings/BM-MONEY-CANCELLED/payment-link`, moneyKey, { idempotencyKey: 'idem-h7-cancelledlink', reason: 'x' });
   t('payment link on a cancelled booking -> 400', r.status === 400, r.status);
 
+  // LINK-COMPLETED: a booking already marked 'completed' must refuse a payment link too
+  // (only 'cancelled' had a dedicated test before this) — and make zero Stripe calls.
+  const completedLinkBookingId = uuid();
+  database.prepare(`INSERT INTO bookings
+    (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
+    VALUES (?, 'BM-MONEY-LINKCOMPLETED', ?, 'completed', '2026-09-01', '11:00', '19:00', 90, 90, 50, 0, 'paid')`).run(completedLinkBookingId, customerId);
+  const linkCallsBeforeCompleted = stripeCalls.checkoutSessions.length;
+  r = await write('POST', '/bookings/BM-MONEY-LINKCOMPLETED/payment-link', moneyKey, { idempotencyKey: 'idem-link-completed', reason: 'x', amount_cents: 1000 });
+  t('LINK-COMPLETED: payment link on a completed booking -> 400', r.status === 400, r.status);
+  t('LINK-COMPLETED: zero Stripe checkout-session calls were made', stripeCalls.checkoutSessions.length === linkCallsBeforeCompleted, stripeCalls.checkoutSessions.length);
+
   // Manual payment <= 0 -> 400
   r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, { idempotencyKey: 'idem-h7-manual-neg', reason: 'x', amount_cents: 0, payment_method: 'cash' });
   t('manual payment amount_cents <= 0 -> 400', r.status === 400, r.status);
   r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, { idempotencyKey: 'idem-h7-manual-legacy', reason: 'x', amount: 50, payment_method: 'cash' });
   body = await r.json();
   t('legacy `amount` field on manual payment -> 400, clear message (H4)', r.status === 400 && /amount_cents/.test(body.error || ''), body);
+
+  // --- R2-L3: the manual-payment ceiling has its OWN constant, decoupled from the
+  // refund ceiling — lowering OFFICE_REFUND_HARD_MAX_CENTS must never also silently
+  // lower it. Enforcement first, then a fresh subprocess proves the two are genuinely
+  // independent env vars (module-level envInt() calls only re-read the env once, at
+  // require time, so this can't be shown by mutating process.env in this process).
+  const { MANUAL_PAYMENT_HARD_MAX_CENTS } = require('../lib/refund-caps');
+  r = await write('POST', '/bookings/BM-MONEY-1/payments', moneyKey, {
+    idempotencyKey: 'idem-l3-overceiling', reason: 'x', amount_cents: MANUAL_PAYMENT_HARD_MAX_CENTS + 1, payment_method: 'cash',
+  });
+  body = await r.json();
+  t('R2-L3: a manual payment just above its own ceiling -> 400, naming that ceiling',
+    r.status === 400 && (body.error || '').includes(String(MANUAL_PAYMENT_HARD_MAX_CENTS)), body);
+
+  const { execFileSync } = require('child_process');
+  const capsCheck = execFileSync('node', ['-e', `
+    process.env.OFFICE_REFUND_HARD_MAX_CENTS = '1000';
+    const caps = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'refund-caps.js'))});
+    console.log(JSON.stringify({ hardMaxRefund: caps.HARD_MAX_REFUND_CENTS, manualPaymentMax: caps.MANUAL_PAYMENT_HARD_MAX_CENTS }));
+  `], { encoding: 'utf8' });
+  const capsResult = JSON.parse(capsCheck);
+  t('R2-L3: lowering OFFICE_REFUND_HARD_MAX_CENTS actually lowers the refund ceiling', capsResult.hardMaxRefund === 1000, capsResult);
+  t('R2-L3: ...but does NOT change the independent manual-payment ceiling', capsResult.manualPaymentMax === MANUAL_PAYMENT_HARD_MAX_CENTS, capsResult);
 
   // lib/payments.recordManualPayment's OWN guard, called directly — the office API's
   // amount_cents validation (parseCents) already rejects <= 0 before this is ever
@@ -522,13 +556,21 @@ async function main() {
   t('(a) response reports the live charge WAS checked', body.live_charge_checked === true, body);
 
   // (b) Same Dashboard $100, PLUS a pending office reservation of $50 on the same
-  // payment (from any key) — a further $100 must be rejected, but exactly $50 succeeds.
+  // payment FROM A DIFFERENT KEY — a further $100 must be rejected, but exactly $50
+  // succeeds. REMAIN-ALLKEYS: the remainder sum is scoped by payment_id only, never by
+  // key_id (a payment can only be refunded once no matter which key initiates it), so
+  // this MUST use a genuinely different key's id — inserting it under the SAME key that's
+  // about to call the endpoint would never distinguish "scoped to this payment" from "scoped
+  // to this key", and would pass even if a future change accidentally scoped the sum by key.
+  const { id: otherLiveKeyId } = createApiKey(database, {
+    name: 'test-money-live-other', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 50000,
+  });
   const { bkId: bId, payId: pId } = makeLivePayment('BM-LIVE-B', 'pi_live_b');
   liveRefundedByPI['pi_live_b'] = 10000;
-  const liveKeyId = database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-money-live').id;
   database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 5000, 'pending', 'Nehemiah', 'other in-flight refund', datetime('now'), datetime('now'))`)
-    .run(uuid(), liveKeyId, 'test-money-live', 'idem-live-b-other', bId, pId);
+    .run(uuid(), otherLiveKeyId, 'test-money-live-other', 'idem-live-b-other', bId, pId);
+  t('REMAIN-ALLKEYS: the in-flight reservation really was inserted under a DIFFERENT key', otherLiveKeyId !== database.prepare('SELECT id FROM api_keys WHERE name = ?').get('test-money-live').id, otherLiveKeyId);
 
   r = await write('POST', '/bookings/BM-LIVE-B/refunds', liveKey, {
     idempotencyKey: 'idem-live-b-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 10000,
@@ -631,6 +673,108 @@ async function main() {
     idempotencyKey: 'idem-l8-today', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 4000,
   });
   t('L8: a ledger row from a previous CT day is excluded from today\'s daily-cap sum', r.status === 201, r.status);
+
+  // --- CEIL-1/CEIL-2: a key's stored caps above the hard ceiling are clamped both in
+  // /whoami's reported "effective" values AND at actual enforcement time. --------------
+  const { HARD_MAX_REFUND_CENTS, HARD_DAILY_REFUND_CAP_CENTS, effectiveMaxRefundCents } = require('../lib/refund-caps');
+  const { rawKey: ceilKey } = createApiKey(database, {
+    name: 'test-ceil', scopes: ['refunds:create'], maxRefundCents: 999999, dailyRefundCapCents: 999999,
+  });
+
+  r = await get('/whoami', ceilKey);
+  body = await r.json();
+  t('CEIL-1: /whoami reports the CLAMPED per-refund cap for a key stored at 999999', body.max_refund_cents === HARD_MAX_REFUND_CENTS, body);
+  t('CEIL-2: /whoami reports the CLAMPED daily cap for a key stored at 999999', body.daily_refund_cap_cents === HARD_DAILY_REFUND_CAP_CENTS, body);
+
+  makeLivePayment('BM-CEIL', 'pi_ceil');
+  database.prepare('UPDATE payments SET amount = 3000 WHERE stripe_payment_id = ?').run('pi_ceil'); // plenty of headroom ($3,000 captured)
+
+  // CEIL-1: enforcement. A raw request for MORE than HARD_MAX_REFUND_CENTS 400s at
+  // parseCents's own input validation (its `max` is hardcoded to the absolute
+  // HARD_MAX_REFUND_CENTS, not the per-key value) — so a key stored at 999999 can never
+  // even be ASKED for more than the ceiling over HTTP, which is exactly what makes CEIL-1
+  // hard to observe end-to-end. The clamp this mutant actually targets lives in
+  // effectiveMaxRefundCents itself; verify it directly, at the unit level, rather than
+  // asserting an HTTP shape that structurally can't be reached.
+  t('CEIL-1: effectiveMaxRefundCents(999999) is clamped to the hard ceiling, not 999999',
+    effectiveMaxRefundCents(999999) === HARD_MAX_REFUND_CENTS, effectiveMaxRefundCents(999999));
+
+  // CEIL-2: two refunds AT the per-refund ceiling ($500 each) exactly reach the $1,000
+  // daily ceiling; a third refund that same day is rejected by the DAILY ceiling, even
+  // though the key's STORED daily_refund_cap_cents (999999) would have allowed it.
+  r = await write('POST', '/bookings/BM-CEIL/refunds', ceilKey, {
+    idempotencyKey: 'idem-ceil-daily-1', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: HARD_MAX_REFUND_CENTS,
+  });
+  t('CEIL-2: first $500 refund (at the per-refund ceiling) succeeds', r.status === 201, r.status);
+  r = await write('POST', '/bookings/BM-CEIL/refunds', ceilKey, {
+    idempotencyKey: 'idem-ceil-daily-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: HARD_MAX_REFUND_CENTS,
+  });
+  t('CEIL-2: second $500 refund reaches exactly the $1,000 daily ceiling and still succeeds', r.status === 201, r.status);
+  r = await write('POST', '/bookings/BM-CEIL/refunds', ceilKey, {
+    idempotencyKey: 'idem-ceil-daily-3', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 100,
+  });
+  body = await r.json();
+  t('CEIL-2: a third refund that day -> 403 by the HARD daily ceiling, even though the key is stored at 999999',
+    r.status === 403 && /daily_refund_cap_cents/.test(body.error || ''), body);
+
+  // --- DAILY-NR: 'needs_review' rows count toward the daily cap, not just pending/succeeded
+  const { rawKey: nrKey, id: nrKeyId } = createApiKey(database, { name: 'test-daily-nr', scopes: ['refunds:create'], maxRefundCents: 20000, dailyRefundCapCents: 6000 });
+  const { bkId: nrBkId, payId: nrPayId } = makeLivePayment('BM-DAILY-NR', 'pi_daily_nr');
+  database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5000, 'needs_review', 'Nehemiah', 'stuck review', datetime('now'), datetime('now'))`)
+    .run(uuid(), nrKeyId, 'test-daily-nr', 'idem-nr-stuck', nrBkId, nrPayId);
+  // A further $20 against the $60 cap (only $10 headroom left) must be rejected — it only
+  // fails if the $50 needs_review row correctly counts toward today's total.
+  r = await write('POST', '/bookings/BM-DAILY-NR/refunds', nrKey, {
+    idempotencyKey: 'idem-daily-nr-2', reason: 'x', confirmed_by: 'Nehemiah', amount_cents: 2000,
+  });
+  body = await r.json();
+  t('DAILY-NR: a needs_review row counts toward the daily cap', r.status === 403 && body.already_refunded_today_cents === 5000, body);
+
+  // --- R2-L1: scripts/api-key.js refuses caps above the hard ceiling (exit non-zero,
+  // nothing stored), and `list` prints the EFFECTIVE cap alongside the stored one. Run as
+  // a real child process against this test's own DB_PATH (inherited via env). ------------
+  {
+    const { execFileSync } = require('child_process');
+    const cliPath = path.join(__dirname, '..', 'scripts', 'api-key.js');
+    function runCli(args, opts = {}) {
+      try {
+        const stdout = execFileSync('node', [cliPath, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+        return { code: 0, stdout };
+      } catch (e) {
+        return { code: e.status, stdout: e.stdout ? e.stdout.toString() : '', stderr: e.stderr ? e.stderr.toString() : '' };
+      }
+    }
+
+    let res = runCli(['create', 'test-l1-overceiling', '--max-refund-cents', '60000']);
+    t('R2-L1: `create` refuses a per-refund cap above the hard ceiling (exit non-zero)', res.code !== 0, res);
+    let created = database.prepare("SELECT * FROM api_keys WHERE name = 'test-l1-overceiling'").get();
+    t('R2-L1: nothing was stored for the refused create', !created, created);
+
+    res = runCli(['create', 'test-l1-overceiling-daily', '--daily-cap-cents', '999999']);
+    t('R2-L1: `create` refuses a daily cap above the hard ceiling (exit non-zero)', res.code !== 0, res);
+    created = database.prepare("SELECT * FROM api_keys WHERE name = 'test-l1-overceiling-daily'").get();
+    t('R2-L1: nothing was stored for the refused daily-cap create', !created, created);
+
+    res = runCli(['create', 'test-l1-ok', '--max-refund-cents', '20000', '--daily-cap-cents', '40000']);
+    t('R2-L1: `create` with in-range caps still succeeds', res.code === 0, res);
+
+    res = runCli(['limits', 'test-l1-ok', '--max-refund-cents', '999999999']);
+    t('R2-L1: `limits` refuses a per-refund cap above the hard ceiling (exit non-zero)', res.code !== 0, res);
+    const unchangedKey = database.prepare("SELECT * FROM api_keys WHERE name = 'test-l1-ok'").get();
+    t('R2-L1: the existing key\'s caps were left unchanged by the refused `limits` call', unchangedKey.max_refund_cents === 20000, unchangedKey);
+
+    res = runCli(['list']);
+    t('R2-L1: `list` runs successfully', res.code === 0, res);
+    const l1OkLine = res.stdout.split('\n').find((line) => line.includes('name=test-l1-ok'));
+    t('R2-L1: `list` shows the STORED value for a key within range', /max_refund_cents=20000/.test(l1OkLine || ''), l1OkLine);
+    t('R2-L1: `list` ALSO shows the effective (dollar) value', /effective \$200\.00/.test(l1OkLine || ''), l1OkLine);
+
+    createApiKey(database, { name: 'test-l1-nullcaps', scopes: ['refunds:create'] });
+    const res2 = runCli(['list']);
+    const nullLine = res2.stdout.split('\n').find((line) => line.includes('name=test-l1-nullcaps'));
+    t('R2-L1: `list` marks a NULL-cap key as using the default', /max_refund_cents=none \(effective \$100\.00, default\)/.test(nullLine || ''), nullLine);
+  }
 
   // --- L9: payment-link description is truncated to 200 chars and control-char-stripped
   const { rawKey: l9Key } = createApiKey(database, { name: 'test-l9', scopes: ['payments:link'] });
