@@ -2,6 +2,9 @@
 // --require preload: blocks all outbound network except loopback (127.0.0.1/::1/localhost).
 // Patches net.Socket#connect (covers http/https/tls/undici-fetch sockets), tls.connect,
 // dns.lookup/dns.promises.lookup, and globalThis.fetch as a belt-and-suspenders guard.
+//
+// Usage: `node --require ./tests/block-net.js tests/<suite>.test.js` (a blocked attempt
+// prints `BLOCKED-NET <host>:<port>` to stderr instead of silently hitting the network).
 
 const net = require('net');
 const tls = require('tls');

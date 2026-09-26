@@ -12,6 +12,11 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFileSync } = require('child_process');
+// R6-I3: routes/office.js only attaches its test-only `_test.computeRefundLimits` export
+// under NODE_ENV==='test' — set explicitly here so this suite doesn't depend on however
+// it happens to be invoked (some runners don't set NODE_ENV themselves).
+process.env.NODE_ENV = 'test';
 const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-office-refund-ledger-'));
 process.env.DB_PATH = path.join(TMP_DIR, 'test.db');
 for (const k of ['STRIPE_SECRET_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SMTP_HOST', 'SMTP_USER',
@@ -266,6 +271,22 @@ async function main() {
     const withBoth = computeRefundLimits(database, key, payment, null);
     t('LEDGER-3: a seeded NEEDS_REVIEW row further reduces refundableCents by its amount_cents',
       withBoth.refundableCents === baseline.refundableCents - 2000 - 1500, { baseline, withBoth });
+  }
+
+  // --- R6-I3: router._test must be ABSENT under NODE_ENV==='production' — spawned as a
+  // real child process (a fresh `require` cache) rather than deleting/re-requiring
+  // in-process, since this process already has routes/office.js cached with _test attached
+  // from the NODE_ENV='test' setting above. -----------------------------------------------
+  {
+    const probeScript = `
+      process.env.NODE_ENV = 'production';
+      process.env.DB_PATH = ${JSON.stringify(path.join(TMP_DIR, 'prod-probe.db'))};
+      const officeRoutes = require(${JSON.stringify(path.join(__dirname, '..', 'routes', 'office.js'))});
+      console.log(JSON.stringify({ hasTest: typeof officeRoutes._test !== 'undefined' }));
+    `;
+    const out = execFileSync('node', ['-e', probeScript], { encoding: 'utf8' });
+    const parsed = JSON.parse(out.trim());
+    t('R6-I3: under NODE_ENV=production, router._test is absent', parsed.hasTest === false, parsed);
   }
 
   server.close();

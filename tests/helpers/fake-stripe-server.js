@@ -51,6 +51,8 @@ async function createFakeStripe({ port = 0 } = {}) {
     stripeKeyTtlMs: DEFAULT_STRIPE_KEY_TTL_MS,
     refundFaultQueue: [],
     liveFaultQueue: [],
+    retrieveFaultQueue: [], // R6-M1: faults for GET /v1/refunds/:id (resolve-office-refund's retrieveRefund)
+    listFaultQueue: [], // R6-M1: a QUEUE (not a single value) so 'reset' can be queued twice to survive stripe-node's hardcoded single retry-on-connection-reset
     charges: new Map(), // id (pi_ or ch_) -> { amount, amount_refunded, currency }
   };
 
@@ -216,11 +218,32 @@ async function createFakeStripe({ port = 0 } = {}) {
     return json(res, 200, chargeJsonFromOverride(id, override));
   }
 
+  // R6-M1: shared fault responder for GET /v1/refunds/:id and GET /v1/refunds (list) — the
+  // real-SDK CLI classifier tests drive both through the SAME simple mode names so a test
+  // can assert identical classification in the 'succeeded' (retrieve) and 'failed' (list)
+  // directions. 'reset' models a connection error (StripeConnectionError); the rest are
+  // real Stripe HTTP status/type shapes (401/403/429 are special-cased by statusCode alone
+  // by the real stripe-node client, regardless of the body's `type` — see the file header).
+  function applyFault(req, res, mode) {
+    switch (mode) {
+      case '400': json(res, 400, errBody('invalid_request_error', 'Invalid request (fake)', { code: 'parameter_invalid_empty' })); return true;
+      case '401': json(res, 401, errBody('invalid_request_error', 'Invalid API Key provided (fake)')); return true;
+      case '403': json(res, 403, errBody('invalid_request_error', 'Permission denied (fake)')); return true;
+      case '409': json(res, 409, errBody('idempotency_error', 'Idempotency error (fake)')); return true;
+      case '429': json(res, 429, errBody('rate_limit_error', 'Too many requests (fake)')); return true;
+      case '500': json(res, 500, errBody('api_error', 'Internal server error (fake)')); return true;
+      case '503': json(res, 503, errBody('api_error', 'Service unavailable (fake)')); return true;
+      case 'reset': req.socket.destroy(); return true;
+      default: return false;
+    }
+  }
+
   function handleListRefunds(req, res, searchParams) {
     logAttempt({ method: 'GET', path: '/v1/refunds', query: searchParams.toString() });
-    if (state.listFault) {
-      const err = state.listFault;
-      state.listFault = null;
+    if (state.listFaultQueue.length) {
+      const mode = state.listFaultQueue.shift();
+      if (applyFault(req, res, mode)) return;
+      const err = mode;
       return json(res, err.status || 500, errBody(err.type || 'api_error', err.message || 'fake refunds.list failure'));
     }
     const target = searchParams.get('payment_intent') || searchParams.get('charge');
@@ -241,6 +264,8 @@ async function createFakeStripe({ port = 0 } = {}) {
 
   function handleRetrieveRefund(req, res, id) {
     logAttempt({ method: 'GET', path: `/v1/refunds/${id}` });
+    const mode = popFault(state.retrieveFaultQueue);
+    if (mode !== 'ok' && applyFault(req, res, mode)) return;
     const refund = state.refundsById.get(id);
     if (!refund) return json(res, 404, errBody('invalid_request_error', `No such refund: ${id}`));
     return json(res, 200, refund);
@@ -286,12 +311,13 @@ async function createFakeStripe({ port = 0 } = {}) {
     port: actualPort,
     pushRefundFault(mode) { state.refundFaultQueue.push(mode); },
     pushLiveFault(mode) { state.liveFaultQueue.push(mode); },
+    pushRetrieveRefundFault(mode) { state.retrieveFaultQueue.push(mode); },
     // Makes the NEXT refunds.list call fail (used to simulate a findRefundByOfficeId
     // lookup failure independent of any refund-create fault). Defaults to a 400 — a 5xx
     // would be silently retried once by the real stripe-node client (its default
     // maxNetworkRetries:1 applies here; findRefundByOfficeId doesn't override it), so the
     // caller would never actually observe a failure.
-    failNextList(opts) { state.listFault = opts || { status: 400, type: 'invalid_request_error', message: 'simulated refunds.list outage' }; },
+    failNextList(opts) { state.listFaultQueue.push(opts || { status: 400, type: 'invalid_request_error', message: 'simulated refunds.list outage' }); },
     setCharge(id, { amount, amount_refunded = 0, currency = 'usd' } = {}) {
       state.charges.set(id, { amount, amount_refunded, currency });
     },

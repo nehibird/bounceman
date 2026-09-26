@@ -33,9 +33,11 @@ already exists for the row, or if the lookup itself fails) — both are verified
 Stripe whenever `STRIPE_SECRET_KEY` is set (for `succeeded`: the retrieved refund's status
 must be `succeeded` — a live `failed`/`canceled`/`pending`/`requires_action` refund is
 refused, never overridable — plus `metadata.office_refund_id`, amount and currency `usd`
-must match; a 404 "no such refund" is refused too, not treated as Stripe being down), and
-both require `--no-verify` explicitly without Stripe access (which only excuses the Stripe
-call itself failing — network/timeout/5xx/429/bad key). `--stripe-refund`, when given,
+must match; a 404 "no such refund" is refused too, as is any other 4xx including a
+bad/revoked API key (401), none of it treated as Stripe being down), and both require
+`--no-verify` explicitly without Stripe access. **`--no-verify` only covers
+network/connection errors, timeouts, 5xx, 429, a missing key, or no Stripe id; any other
+Stripe response (any 4xx incl. 401/403/404/409) refuses.** `--stripe-refund`, when given,
 must look like `re_...` even with `--no-verify`. A confirmed `failed` also retires the row's
 convention as a definitive Stripe failure) so a same-key retry can reserve fresh. Writes an
 audit row (`api_audit_log` + `activity_log`, including what was checked against Stripe) in

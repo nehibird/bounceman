@@ -23,10 +23,12 @@
 // and its currency must be usd. Without Stripe access (no STRIPE_SECRET_KEY), an explicit
 // --no-verify is required, so a typo'd refund id can never be recorded as fact by accident.
 //
-// R5: any live Stripe ANSWER — a status other than 'succeeded', a 404 (the id doesn't
-// exist), or a metadata/amount/currency mismatch — can NEVER be overridden by --no-verify.
-// That flag only covers the Stripe CALL itself failing: network/timeout/5xx/429, a bad or
-// missing STRIPE_SECRET_KEY, or no Stripe pi_/ch_ id on the payment to even check.
+// R5/R6-M1: any live Stripe ANSWER — a status other than 'succeeded', a 404 (the id
+// doesn't exist), a metadata/amount/currency mismatch, or any other 4xx (including a bad
+// API key, 401) — can NEVER be overridden by --no-verify. --no-verify only covers
+// network/connection errors, timeouts, 5xx, 429, a missing key, or no Stripe id; any other
+// Stripe response (any 4xx incl. 401/403/404/409) refuses. See lib/stripe-errors.js's
+// classifyStripeLookupError for the shared allow-list this is built on.
 //
 // The status change and its audit rows (api_audit_log + activity_log) are written in the
 // SAME better-sqlite3 transaction — either both happen, or neither does.
@@ -34,6 +36,7 @@
 const { v4: uuid } = require('uuid');
 const { getDb, initialize } = require('../db');
 const stripeService = require('../services/stripe');
+const { classifyStripeLookupError } = require('../lib/stripe-errors');
 
 const RESOLVABLE_TARGET_STATUSES = new Set(['succeeded', 'failed']);
 
@@ -81,11 +84,15 @@ function printUsage() {
 // answering). Optional hardening: also require currency 'usd', so a refund that happens
 // to share this ledger row's id/metadata/amount in a different currency can't slip through.
 //
-// R5-M2: the catch block below classifies retrieveRefund's own failure. A 404/
-// resource_missing ("No such refund") is Stripe POSITIVELY saying this id does not exist —
-// that's a conflict too, never overridable. A bad API key (StripeAuthenticationError) gets
-// its own message so it isn't mistaken for Stripe being unreachable. Everything else
-// (network, timeout, 5xx, 429) is the CALL failing — the only thing --no-verify may excuse.
+// R5-M2/R6-M1: the catch block below classifies retrieveRefund's own failure with the
+// SHARED allow-list classifier (lib/stripe-errors.js's classifyStripeLookupError) — only a
+// connection error, a 5xx, a 429, or a network/timeout code counts as the CALL failing
+// (the one thing --no-verify may excuse). A 404/resource_missing ("No such refund") is
+// Stripe POSITIVELY saying this id does not exist, so it keeps its own specific message
+// ahead of the shared classifier, but is still a conflict either way. A bad API key
+// (StripeAuthenticationError/401) is ALSO a conflict now, not an excusable outage — see
+// classifyStripeLookupError's comment for the reasoning (a key problem is the operator's
+// to fix, never to force through).
 async function verifyStripeRefund(row, stripeRefundId) {
   let refund;
   try {
@@ -94,19 +101,24 @@ async function verifyStripeRefund(row, stripeRefundId) {
     if (err && (err.statusCode === 404 || err.code === 'resource_missing')) {
       return { outcome: 'conflict', error: `Stripe says this refund id does not exist: ${err.message}` };
     }
-    if (err && err.type === 'StripeAuthenticationError') {
-      return { outcome: 'unavailable', error: `Stripe authentication failed (check STRIPE_SECRET_KEY): ${err.message}` };
-    }
-    return { outcome: 'unavailable', error: err.message };
+    const classified = classifyStripeLookupError(err);
+    return { outcome: classified.outcome, error: classified.message };
   }
   if (!refund) return { outcome: 'unavailable', error: `Stripe returned no refund for ${stripeRefundId}` };
+  // R6-I1: computed before the status check (and named in ITS message too) so a `failed`
+  // refund that actually belongs to a DIFFERENT ledger row reports the metadata mismatch
+  // as well, rather than only ever hinting "resolve this row as failed" — the failed path
+  // re-verifies with findRefundByOfficeId(row) regardless, so this is a hint, not a gate.
+  const metaId = refund.metadata && refund.metadata.office_refund_id;
+  const metaMismatchNote = metaId !== row.id
+    ? ` (also: its metadata.office_refund_id is '${metaId || 'none'}', not this row's '${row.id}' — it may belong to a different ledger row entirely)`
+    : '';
   if (refund.status !== 'succeeded') {
     const message = (refund.status === 'failed' || refund.status === 'canceled')
-      ? `refund ${stripeRefundId} status is '${refund.status}' — resolve this row as 'failed' instead of 'succeeded'`
-      : `refund ${stripeRefundId} status is '${refund.status}', not final yet — leave it to reconcile`;
+      ? `refund ${stripeRefundId} status is '${refund.status}' — resolve this row as 'failed' instead of 'succeeded'${metaMismatchNote}`
+      : `refund ${stripeRefundId} status is '${refund.status}', not final yet — leave it to reconcile${metaMismatchNote}`;
     return { outcome: 'conflict', refund, error: message };
   }
-  const metaId = refund.metadata && refund.metadata.office_refund_id;
   if (metaId !== row.id) {
     return { outcome: 'conflict', refund, error: `refund ${stripeRefundId} metadata.office_refund_id (${metaId || 'none'}) does not match ledger id ${row.id}` };
   }
@@ -134,7 +146,14 @@ async function verifyNoRefundWentOut(row, payment) {
   try {
     found = await stripeService.findRefundByOfficeId(row.id, payment);
   } catch (err) {
-    return { outcome: 'unavailable', error: err.message };
+    // R6-M1: same shared allow-list classifier as verifyStripeRefund — a 400/403/409/401
+    // (or any other definitive Stripe answer) from this LOOKUP CALL ITSELF is never
+    // forceable, exactly like the succeeded direction. Returned as its own
+    // 'lookup_conflict' outcome (not plain 'conflict') so the caller in main() never
+    // confuses this with the "a live refund was actually found" conflict below, which
+    // carries a `refund` object the lookup-error case has none of.
+    const classified = classifyStripeLookupError(err);
+    return { outcome: classified.outcome === 'conflict' ? 'lookup_conflict' : classified.outcome, error: classified.message };
   }
   if (found && found.status !== 'failed' && found.status !== 'canceled') {
     return { outcome: 'conflict', refund: found };
@@ -269,6 +288,14 @@ async function main(argv = process.argv.slice(2)) {
         console.error(`A Stripe refund already exists for this ledger row (${result.refund.id}, status=${result.refund.status}) — cannot mark failed.`);
         console.error(`If that refund is correct, run instead: resolve-office-refund.js ${ledgerId} succeeded --stripe-refund ${result.refund.id} --actor <name> --reason "<text>"`);
         console.error('No change made. This cannot be overridden with --no-verify.');
+        process.exitCode = 1;
+        return;
+      } else if (result.outcome === 'lookup_conflict') {
+        // R6-M1: the LOOKUP CALL ITSELF got a definitive Stripe answer (400/403/409/401/
+        // etc) rather than failing to reach Stripe at all — never forceable, same as the
+        // 'succeeded' direction.
+        console.error(`Stripe verification found a conflict: ${result.error}`);
+        console.error('No change made. This cannot be overridden with --no-verify — a positive Stripe finding always wins.');
         process.exitCode = 1;
         return;
       } else if (result.outcome === 'unavailable') {

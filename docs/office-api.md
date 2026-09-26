@@ -364,9 +364,11 @@ actor). `--stripe-refund` must look like `re_...` even with `--no-verify`. Marki
 `STRIPE_SECRET_KEY` is set: the retrieved refund's own status must be `succeeded` (a live
 `failed`/`canceled`/`pending`/`requires_action` refund is refused — R5-M1), plus
 `metadata.office_refund_id`, amount and currency (`usd`) must match; without Stripe
-access, pass `--no-verify` explicitly. A 404 ("no such refund") is refused too (R5-M2) —
-never treated as Stripe being unavailable. **`--no-verify` can never override any of
-those live answers**, only a genuinely failed/unreachable Stripe call. **R3-M1: marking
+access, pass `--no-verify` explicitly. A 404 ("no such refund") is refused too (R5-M2), and
+so is any other 4xx including a bad/revoked API key, 401 (R6-M1) — none of these are
+treated as Stripe being unavailable. **`--no-verify` only covers network/connection
+errors, timeouts, 5xx, 429, a missing key, or no Stripe id; any other Stripe response (any
+4xx incl. 401/403/404/409) refuses.** **R3-M1: marking
 `failed` now requires the SAME kind of confirmation** — with Stripe access, it calls
 `findRefundByOfficeId` and refuses (no change) if any non-`failed`/non-`canceled` refund
 already exists for the row, or if the lookup itself fails; without Stripe access,

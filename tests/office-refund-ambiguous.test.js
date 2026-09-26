@@ -868,21 +868,27 @@ async function main() {
         !!detail && detail.stripe_check && detail.stripe_check.outcome === 'verification_failed_forced' && detail.verified_against_stripe === false, detail);
     }
 
-    // --- R5-M2: a bad API key (StripeAuthenticationError) is classified 'unavailable' (the
-    // call failed, not a Stripe answer) — overridable like any other unavailable call — but
-    // gets a distinct message so an operator doesn't mistake it for Stripe being down. -----
-    {
-      const seeded = seedRow('idem-r5m2-auth');
+    // --- R6-M1 (supersedes R5-M2): a bad API key (StripeAuthenticationError/401) is now a
+    // CONFLICT, not 'unavailable' — a bad/revoked key is a key problem for the operator to
+    // fix, never an outage to route around, so --no-verify must NEVER force it through
+    // either. This replaces the old round-5 test, which expected 401 to be forceable. -----
+    for (const noVerify of [false, true]) {
+      const seeded = seedRow(`idem-r6m1-auth-${noVerify}`);
       stripeService._setStripeForTests({ refunds: { retrieve: async () => { const e = new Error('Invalid API Key provided'); e.type = 'StripeAuthenticationError'; e.statusCode = 401; throw e; } } });
       const errs = [];
       const origErr = console.error;
       console.error = (...a) => { errs.push(a.join(' ')); };
-      const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_auth']);
+      const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+      const argv = [seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_auth'];
+      if (noVerify) argv.push('--no-verify');
+      const code = await callMain(argv);
       console.error = origErr;
-      t('R5-M2: a bad API key refuses without --no-verify', code === 1, code);
-      t('R5-M2: the auth failure gets a distinct message naming Stripe authentication', errs.some((e) => /[Ss]tripe authentication failed/.test(e)), errs);
+      t(`R6-M1: a bad API key refuses${noVerify ? ' even with --no-verify' : ''}`, code === 1, code);
+      t('R6-M1: the message says to fix STRIPE_SECRET_KEY and that it cannot be forced', errs.some((e) => /fix STRIPE_SECRET_KEY/.test(e) && /can't be forced/.test(e)), errs);
       const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
-      t('R5-M2: row unchanged after the auth-failure refusal', row.status === 'needs_review', row);
+      t(`R6-M1: [401${noVerify ? '+nv' : ''}] row unchanged after the auth-failure refusal`, row.status === 'needs_review', row);
+      const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+      t(`R6-M1: [401${noVerify ? '+nv' : ''}] no resolved audit row was written`, auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
     }
 
     // --- R4-L4: the payment row has no pi_/ch_ id at all -> outcome 'no_stripe_target',

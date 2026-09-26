@@ -1561,7 +1561,11 @@ router.use((err, req, res, next) => {
 // unreachable from outside this module. Exported so a direct unit test can seed a
 // pending/needs_review row and prove the term still reduces refundableCents, in case a
 // future relaxation of R3-M3's blanket unresolved-refund refusal ever makes this the only
-// thing preventing a double refund.
-router._test = { computeRefundLimits };
+// thing preventing a double refund. R6-I3: gated to test only — it was never reachable
+// over HTTP even in prod (router._test isn't a route, and nothing iterates/serializes the
+// router), but there's no reason for the property to exist on the prod export at all.
+if (process.env.NODE_ENV === 'test') {
+  router._test = { computeRefundLimits };
+}
 
 module.exports = router;

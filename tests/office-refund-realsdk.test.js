@@ -439,6 +439,122 @@ async function main() {
     t('[resume lookup fails, AGED >23h] exactly one real refund total (age never forced a fresh create)', fake.getRealRefundCount() === refundsBefore + 1, fake.getRealRefundCount());
   }
 
+  // ---------------------------------------------------------------------------------
+  // R6-M1: scripts/resolve-office-refund.js's error classifier, against the REAL Stripe
+  // SDK error shapes (400/403/409/401/500/503/429/connection-reset) — driven through the
+  // fake Stripe HTTP server exactly like the refund-create tests above, but exercising
+  // stripeService.retrieveRefund (the 'succeeded' direction) and findRefundByOfficeId's
+  // list call (the 'failed' direction). 400/403/409/401 must NEVER be forceable with
+  // --no-verify (conflict, exit 1, row/audit untouched, in BOTH directions); 500/503/429/
+  // a connection reset ARE forceable and get audited as forced.
+  //
+  // A separate client with maxNetworkRetries:0 avoids stripe-node's own automatic retry
+  // (which would otherwise consume the queued fault on a hidden retry and land on a
+  // second, unfaulted attempt) — except for a connection reset, which stripe-node retries
+  // exactly once REGARDLESS of maxNetworkRetries (RequestSender._shouldRetry's hardcoded
+  // ECONNRESET/EPIPE case), so 'reset' is queued twice to survive that hidden retry.
+  // ---------------------------------------------------------------------------------
+  {
+    const resolveCli = require('../scripts/resolve-office-refund');
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fake_for_resolve_realsdk';
+    const cliClient = Stripe('sk_test_fake', {
+      timeout: 3000, maxNetworkRetries: 0, host: '127.0.0.1', port: fake.port, protocol: 'http',
+    });
+    stripeService._setStripeForTests(cliClient);
+
+    async function callMain(argv) {
+      process.exitCode = undefined;
+      await resolveCli.main(argv);
+      const code = process.exitCode;
+      process.exitCode = undefined;
+      return code;
+    }
+
+    function seedCliRow(idemKey) {
+      const piId = nextPiId();
+      fake.setCharge(`ch_for_${piId}`, { amount: 10000, amount_refunded: 0, currency: 'usd' });
+      const { bookingId, paymentId } = makeBookingAndPayment(`BM-CLI-REALSDK-${idemKey}`, 100, piId);
+      const { id: keyId } = createApiKey(database, { name: `cli-realsdk-${idemKey}`, scopes: ['refunds:create'] });
+      const id = uuid();
+      const oldTimestamp = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+      database.prepare(`INSERT INTO office_refunds (id, key_id, key_name, idempotency_key, booking_id, payment_id, amount_cents, status, confirmed_by, reason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1000, 'needs_review', 'Nehemiah', 'x', ?, ?)`)
+        .run(id, keyId, `cli-realsdk-${idemKey}`, idemKey, bookingId, paymentId, oldTimestamp, oldTimestamp);
+      return { id, bookingId, paymentId };
+    }
+
+    const NEVER_FORCEABLE = ['400', '403', '409', '401'];
+    for (const mode of NEVER_FORCEABLE) {
+      for (const noVerify of [false, true]) {
+        const label = `${mode}${noVerify ? '+nv' : ''}`;
+
+        // succeeded direction: retrieveRefund
+        {
+          const seeded = seedCliRow(`idem-realsdk-succ-${mode}-${noVerify}`);
+          fake.pushRetrieveRefundFault(mode);
+          const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+          const argv = [seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_realsdk_fake'];
+          if (noVerify) argv.push('--no-verify');
+          const code = await callMain(argv);
+          t(`[realsdk succeeded ${label}] refuses, never forceable`, code === 1, code);
+          const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+          t(`[realsdk succeeded ${label}] row unchanged (still needs_review)`, row.status === 'needs_review', row);
+          const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+          t(`[realsdk succeeded ${label}] no resolved audit row`, auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
+        }
+
+        // failed direction: findRefundByOfficeId (list)
+        {
+          const seeded = seedCliRow(`idem-realsdk-fail-${mode}-${noVerify}`);
+          fake.failNextList(mode);
+          const auditCountBefore = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+          const argv = [seeded.id, 'failed', '--reason', 'x', '--actor', 'Nehemiah'];
+          if (noVerify) argv.push('--no-verify');
+          const code = await callMain(argv);
+          t(`[realsdk failed ${label}] refuses, never forceable`, code === 1, code);
+          const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+          t(`[realsdk failed ${label}] row unchanged (still needs_review)`, row.status === 'needs_review', row);
+          const auditCountAfter = database.prepare('SELECT COUNT(*) c FROM api_audit_log').get().c;
+          t(`[realsdk failed ${label}] no resolved audit row`, auditCountAfter === auditCountBefore, { before: auditCountBefore, after: auditCountAfter });
+        }
+      }
+    }
+
+    const FORCEABLE_WITH_NO_VERIFY = ['500', '503', '429', 'reset'];
+    for (const mode of FORCEABLE_WITH_NO_VERIFY) {
+      // succeeded direction, forced
+      {
+        const seeded = seedCliRow(`idem-realsdk-force-succ-${mode}`);
+        fake.pushRetrieveRefundFault(mode);
+        if (mode === 'reset') fake.pushRetrieveRefundFault(mode); // survive the hidden retry-on-reset
+        const code = await callMain([seeded.id, 'succeeded', '--reason', 'x', '--actor', 'Nehemiah', '--stripe-refund', 're_realsdk_forced', '--no-verify']);
+        t(`[realsdk succeeded ${mode}+nv] forced through`, code === undefined, code);
+        const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+        t(`[realsdk succeeded ${mode}+nv] row recorded succeeded via the forced path`, row.status === 'succeeded' && row.stripe_refund_id === 're_realsdk_forced', row);
+        const auditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(seeded.id);
+        const detail = auditRow && JSON.parse(auditRow.response_json);
+        t(`[realsdk succeeded ${mode}+nv] audited as forced (verification_failed_forced)`,
+          !!detail && detail.stripe_check.outcome === 'verification_failed_forced' && detail.verified_against_stripe === false, detail);
+      }
+      // failed direction, forced
+      {
+        const seeded = seedCliRow(`idem-realsdk-force-fail-${mode}`);
+        fake.failNextList(mode);
+        if (mode === 'reset') fake.failNextList(mode); // survive the hidden retry-on-reset
+        const code = await callMain([seeded.id, 'failed', '--reason', 'x', '--actor', 'Nehemiah', '--no-verify']);
+        t(`[realsdk failed ${mode}+nv] forced through`, code === undefined, code);
+        const row = database.prepare('SELECT * FROM office_refunds WHERE id = ?').get(seeded.id);
+        t(`[realsdk failed ${mode}+nv] row recorded failed via the forced path`, row.status === 'failed', row);
+        const auditRow = database.prepare("SELECT * FROM api_audit_log WHERE action = 'office_refund_manual_resolve' AND entity_id = ?").get(seeded.id);
+        const detail = auditRow && JSON.parse(auditRow.response_json);
+        t(`[realsdk failed ${mode}+nv] audited as forced (verification_failed_forced)`,
+          !!detail && detail.stripe_check.outcome === 'verification_failed_forced' && detail.verified_against_stripe === false, detail);
+      }
+    }
+
+    delete process.env.STRIPE_SECRET_KEY;
+  }
+
   server.close();
   database.close();
   await fake.close();

@@ -294,11 +294,13 @@ docker compose exec -T web node scripts/resolve-office-refund.js <ledger_id> fai
   of verification** — it refuses (no change) if Stripe shows a non-failed/non-canceled
   refund already exists for the row, or if the lookup itself fails; a confirmed-`failed`
   row also retires its idempotency key so a same-key retry can reserve fresh.
-  **`--no-verify` can NEVER override any live Stripe ANSWER** (R4-M1, extended by R5-M1/
-  R5-M2): a confirmed live refund (for `failed`), a non-`succeeded` status, a 404, or a
-  metadata/amount/currency mismatch (for `succeeded`) always refuses, with or without
-  `--no-verify`. That flag only excuses the Stripe CALL itself failing — unreachable,
-  timed out, a 5xx/429, or no/bad `STRIPE_SECRET_KEY`. If `failed` refuses because a refund
+  **`--no-verify` can NEVER override any live Stripe ANSWER** (R4-M1, extended by
+  R5-M1/R5-M2/R6-M1): a confirmed live refund (for `failed`), a non-`succeeded` status, a
+  404, a metadata/amount/currency mismatch (for `succeeded`), or any other 4xx (including a
+  bad/revoked API key, 401) always refuses, with or without `--no-verify`. **`--no-verify`
+  only covers network/connection errors, timeouts, 5xx, 429, a missing key, or no Stripe
+  id; any other Stripe response (any 4xx incl. 401/403/404/409) refuses.** If `failed`
+  refuses because a refund
   already exists, run `succeeded --stripe-refund <that re_ id>` instead — the tool prints
   this suggestion itself. **R4-L4:** if the payment row has no Stripe `pi_`/`ch_` id at
   all, there is nothing to check — this requires `--no-verify` and is recorded honestly as

@@ -9,7 +9,7 @@
 // Run from the app root: node tests/stripe-errors-classify.test.js
 
 'use strict';
-const { isDefinitiveStripeError, isTimeoutError, DEFINITIVE_ERROR_TYPES } = require('../lib/stripe-errors');
+const { isDefinitiveStripeError, isTimeoutError, DEFINITIVE_ERROR_TYPES, classifyStripeLookupError } = require('../lib/stripe-errors');
 
 let pass = 0, fail = 0;
 function t(name, ok, detail) {
@@ -63,6 +63,56 @@ t('ETIMEDOUT is a timeout', isTimeoutError({ code: 'ETIMEDOUT' }) === true, null
 t('ESOCKETTIMEDOUT is a timeout', isTimeoutError({ code: 'ESOCKETTIMEDOUT' }) === true, null);
 t('a message matching /timed?\\s*out/i is a timeout', isTimeoutError({ message: 'Request aborted due to timeout being reached' }) === true, null);
 t('a 429 is NOT itself a timeout', isTimeoutError(err('StripeRateLimitError', 429)) === false, null);
+
+// --- R6-M1: classifyStripeLookupError — the shared allow-list used by
+// scripts/resolve-office-refund.js's verifyStripeRefund and verifyNoRefundWentOut. Only a
+// connection error, a 5xx, a 429, or a network/timeout code is 'unavailable' (forceable
+// with --no-verify); everything else, including every other 4xx, is 'conflict' (never
+// forceable). --------------------------------------------------------------------------
+
+// --- unavailable (forceable) ----------------------------------------------------------
+t('StripeConnectionError is unavailable', classifyStripeLookupError(err('StripeConnectionError', undefined)).outcome === 'unavailable', null);
+t('StripeAPIError (500) is unavailable', classifyStripeLookupError(err('StripeAPIError', 500)).outcome === 'unavailable', null);
+t('a bare statusCode 500 with no recognized type is unavailable', classifyStripeLookupError(err('SomeFutureType', 500)).outcome === 'unavailable', null);
+t('statusCode 503 is unavailable', classifyStripeLookupError(err('StripeAPIError', 503)).outcome === 'unavailable', null);
+t('StripeRateLimitError is unavailable', classifyStripeLookupError(err('StripeRateLimitError', 429)).outcome === 'unavailable', null);
+t('a bare statusCode 429 with no recognized type is unavailable', classifyStripeLookupError(err('SomeFutureType', 429)).outcome === 'unavailable', null);
+for (const code of ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'ECONNABORTED', 'EPIPE']) {
+  t(`node network code ${code} is unavailable`, classifyStripeLookupError({ code }).outcome === 'unavailable', null);
+}
+t('a timeout-shaped message (no code) is unavailable', classifyStripeLookupError({ message: 'Request aborted due to timeout being reached (5000ms)' }).outcome === 'unavailable', null);
+
+// --- conflict (never forceable) — every other 4xx, named explicitly in the review -----
+t('400 StripeInvalidRequestError is a conflict', classifyStripeLookupError(err('StripeInvalidRequestError', 400)).outcome === 'conflict', null);
+t('403 StripePermissionError is a conflict', classifyStripeLookupError(err('StripePermissionError', 403)).outcome === 'conflict', null);
+t('409 StripeIdempotencyError is a conflict', classifyStripeLookupError(err('StripeIdempotencyError', 409)).outcome === 'conflict', null);
+t('404 (resource_missing shape) is a conflict', classifyStripeLookupError(err('StripeInvalidRequestError', 404, { code: 'resource_missing' })).outcome === 'conflict', null);
+t('an unrecognized 4xx (402) is a conflict', classifyStripeLookupError(err('StripeCardError', 402)).outcome === 'conflict', null);
+
+// --- 401 gets the special "fix the key" message, and is a conflict, not unavailable ----
+{
+  const r = classifyStripeLookupError(err('StripeAuthenticationError', 401));
+  t('401 StripeAuthenticationError is a conflict (NOT forceable, unlike the old deny-list)', r.outcome === 'conflict', r);
+  t('401 gets the "fix STRIPE_SECRET_KEY" message, not a generic lookup message', /fix STRIPE_SECRET_KEY/.test(r.message) && /can't be forced/.test(r.message), r);
+}
+{
+  const r = classifyStripeLookupError(err('SomeFutureType', 401));
+  t('a bare statusCode 401 with no recognized type is STILL the key-specific conflict', r.outcome === 'conflict' && /fix STRIPE_SECRET_KEY/.test(r.message), r);
+}
+
+// --- generic conflict message names the status and type/code -------------------------
+{
+  const r = classifyStripeLookupError(err('StripePermissionError', 403));
+  t('the generic conflict message names the status and type', /403/.test(r.message) && /StripePermissionError/.test(r.message) && /can't be forced with --no-verify/.test(r.message), r);
+}
+
+// --- fail-closed: no statusCode AND no recognized network/timeout code -> conflict ----
+{
+  const r = classifyStripeLookupError(new Error('something truly unexpected'));
+  t('an unrecognized error with no statusCode and no network code fails CLOSED as a conflict', r.outcome === 'conflict', r);
+}
+t('null is a conflict (fail closed, not a crash)', classifyStripeLookupError(null).outcome === 'conflict', null);
+t('a non-error-shaped value is a conflict (fail closed)', classifyStripeLookupError('x').outcome === 'conflict', null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
