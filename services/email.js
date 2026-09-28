@@ -430,6 +430,7 @@ Hi ${who},<br/><br/>
 Thanks for booking with us! Your invoice is attached as a PDF, with the sales tax broken out by
 jurisdiction for your records.
 </td></tr>
+${opts.note ? `<tr><td style="font-size:14px;color:#333;line-height:1.6;padding-bottom:14px;white-space:pre-line;">${opts.note}</td></tr>` : ''}
 </table>
 
 <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;">
@@ -455,6 +456,12 @@ We also take cash or card on the day of the event.
 
 // Emails a PDF invoice. Used for the bookings that do not pay online — chambers,
 // schools, churches — where somebody has to hand a document to a treasurer.
+//
+// opts.note    — plain text shown above the invoice summary. Newlines are preserved
+//                (white-space:pre-line), so a real message can go out with the PDF
+//                instead of forcing a second email just to say something.
+// opts.subject — override the default "Invoice <number> — Bounce Man Rentals", e.g. to
+//                keep an existing email thread's subject so it doesn't fork.
 async function sendInvoice(booking, customer, items, opts) {
   opts = opts || {};
   const to = opts.to || customer.email;
@@ -465,7 +472,7 @@ async function sendInvoice(booking, customer, items, opts) {
     from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
     to,
     cc: opts.cc || undefined,
-    subject: 'Invoice ' + booking.booking_number + ' — Bounce Man Rentals',
+    subject: opts.subject || ('Invoice ' + booking.booking_number + ' — Bounce Man Rentals'),
     html: wrap('Invoice ' + booking.booking_number, invoiceEmailBody(booking, customer, opts)),
     attachments: [{ filename: 'BounceMan-Invoice-' + booking.booking_number + '.pdf', content: pdf, contentType: 'application/pdf' }],
   });
