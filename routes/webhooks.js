@@ -104,7 +104,7 @@ router.post('/stripe', async (req, res) => {
           })(eventId, reg.kid_count);
 
           const amountPaid = (session.amount_total || 0) / 100;
-          db.prepare(`UPDATE walk_up_registrations SET payment_status = 'completed', stripe_payment_intent = ?, amount_paid = ?, wristband_start = ?, wristband_end = ? WHERE id = ?`)
+          db.prepare('UPDATE walk_up_registrations SET payment_status = \'completed\', stripe_payment_intent = ?, amount_paid = ?, wristband_start = ?, wristband_end = ? WHERE id = ?')
             .run(session.payment_intent, amountPaid, start, end, regId);
 
           const updatedReg = db.prepare('SELECT * FROM walk_up_registrations WHERE id = ?').get(regId);
@@ -354,7 +354,7 @@ router.post('/slack/events', async (req, res) => {
 
       // Today's registrations
       const todayRegs = db.prepare(
-        "SELECT r.*, e.name as event_name, e.price_per_kid FROM walk_up_registrations r JOIN walk_up_events e ON r.event_id = e.id WHERE r.created_at >= ? ORDER BY r.created_at DESC"
+        'SELECT r.*, e.name as event_name, e.price_per_kid FROM walk_up_registrations r JOIN walk_up_events e ON r.event_id = e.id WHERE r.created_at >= ? ORDER BY r.created_at DESC'
       ).all(today + ' 00:00:00');
 
       const totalKids = todayRegs.reduce((s, r) => s + (r.kid_count || 0), 0);
@@ -783,7 +783,7 @@ router.post('/slack/interactivity', async (req, res) => {
     } else if (actionId === 'call_back') {
       await handleCallBack(value, user, response_url, message, payload);
     } else if (actionId === 'call_customer') {
-      await handleCallCustomer(value, user, response_url);
+      await handleCallCustomer(value, user, response_url, payload);
     }
 
   } catch (err) {
@@ -801,8 +801,12 @@ router.post('/slack/interactivity', async (req, res) => {
 // DIRECT_ROUTE_HOURS) so a single conversation doesn't permanently route someone around
 // the assistant.
 const DIRECT_ROUTE_HOURS = 72;
-async function handleCallCustomer(value, user, response_url) {
+async function handleCallCustomer(value, user, response_url, payload) {
   const { phone, name, booking_id } = value || {};
+  // Same derivation handleOnMyWay uses — Slack puts the channel in different places
+  // depending on whether the button was in a message or a modal.
+  const channel = (payload && payload.channel && payload.channel.id)
+    || (payload && payload.container && payload.container.channel_id) || null;
   const digits = String(phone || '').replace(/\D/g, '').slice(-10);
   if (digits.length !== 10) {
     await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: No usable phone number on that booking.' });
@@ -826,17 +830,43 @@ async function handleCallCustomer(value, user, response_url) {
     try {
       const { getDb } = require('../db');
       const until = new Date(Date.now() + DIRECT_ROUTE_HOURS * 3600 * 1000).toISOString();
-      getDb().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      getDb().prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
         .run('direct_route:' + toE164, until + '|' + owner);
       console.log('[CALL] Direct routing set for', toE164, 'until', until);
     } catch (e) { console.error('[CALL] direct-route flag failed:', e.message); }
 
     console.log('[CALL] Ringing owner', owner, '-> bridging to', toE164, '| SID:', call.sid);
-    await respondToSlack(response_url, {
-      response_type: 'ephemeral',
-      text: ':telephone_receiver: Calling your phone now — answer it and you\'ll be connected to ' +
-            (name || toE164) + '. Their callbacks will reach you directly for the next ' + DIRECT_ROUTE_HOURS + ' hours.'
-    });
+    // POST the confirmation as a NEW ephemeral message rather than a reply on the
+    // response_url. Slack treats a bare response_url reply as a replacement for the
+    // message the button sits on, so this button used to delete the entire delivery
+    // card and leave one sentence behind — on 2026-10-01 it wiped Marissa Hafen's card
+    // on the morning of the delivery. The sibling handlers (On My Way, Call Back) avoid
+    // this by rebuilding the blocks with chat.update; here there is nothing to rebuild,
+    // so send a standalone ephemeral and leave the card completely untouched.
+    const confirmText = ':telephone_receiver: Calling your phone now — answer it and you\'ll be connected to ' +
+            (name || toE164) + '. Their callbacks will reach you directly for the next ' + DIRECT_ROUTE_HOURS + ' hours.';
+    let posted = false;
+    if (channel && user && user.id) {
+      try {
+        const pr = await fetch('https://slack.com/api/chat.postEphemeral', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + process.env.SLACK_BOT_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: channel, user: user.id, text: confirmText })
+        });
+        const pd = await pr.json();
+        posted = !!pd.ok;
+        if (!pd.ok) console.error('[CALL] postEphemeral failed:', pd.error);
+      } catch (e) { console.error('[CALL] postEphemeral error:', e.message); }
+    }
+    // Fallback only if postEphemeral could not run. replace_original:false is what
+    // stops the response_url from clobbering the card.
+    if (!posted) {
+      await respondToSlack(response_url, {
+        response_type: 'ephemeral',
+        replace_original: false,
+        text: confirmText
+      });
+    }
   } catch (e) {
     console.error('[CALL] failed:', e.message);
     await respondToSlack(response_url, { response_type: 'ephemeral', text: ':x: Could not place the call: ' + e.message });
@@ -981,7 +1011,7 @@ async function handleCallBack(value, user, response_url, originalMessage, payloa
     try {
       const { getDb } = require('../db');
       const until = new Date(Date.now() + DIRECT_ROUTE_HOURS * 3600 * 1000).toISOString();
-      getDb().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      getDb().prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
         .run('direct_route:' + customerNumber, until + '|' + agentNumber);
     } catch (e) { console.error('[CALL BACK] direct-route flag failed:', e.message); }
     console.log('[CALL BACK] Ringing agent', agentNumber, '(slack', user.id + ') then bridging to', customerNumber);
@@ -1058,14 +1088,14 @@ async function callSarahToolInternal(name, args, callerPhone, vapiCallId) {
       }
       let callSid = null;
       try {
-        const row = db.prepare(`SELECT call_sid FROM twilio_call_map WHERE caller_phone = ? AND created_at > datetime('now', '-60 minutes') ORDER BY created_at DESC LIMIT 1`).get(realPhone);
+        const row = db.prepare('SELECT call_sid FROM twilio_call_map WHERE caller_phone = ? AND created_at > datetime(\'now\', \'-60 minutes\') ORDER BY created_at DESC LIMIT 1').get(realPhone);
         callSid = row && row.call_sid;
       } catch (e) { /* ignore */ }
       if (!callSid) {
         console.error('[TRANSFER] No live Twilio CallSid for caller', realPhone, '— cannot transfer');
         return { result: 'TRANSFER_UNAVAILABLE: Could not connect the caller to Nehemiah right now. Apologize briefly, tell them Nehemiah will call them right back, then end the call politely.' };
       }
-      const twilio = require("twilio")(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       const BASE = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
       // Screened transfer: <Number url> plays a press-any-key whisper so voicemail
       // (which can't press a key) is never bridged to the customer; the Dial action
@@ -1482,7 +1512,7 @@ router.post('/twilio-entry', (req, res) => {
     // <Play> pointed at /assets/audio/thanks-for-calling.mp3 which does not exist (404),
     // causing Twilio to fail the whole call with "an application error has occurred" and
     // never present the press-1 prompt. <Say> has no external dependency and can't 404.
-    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" action="/api/webhooks/twilio-gather" method="POST" timeout="8"><Say voice="Polly.Joanna">Press 1 to bounce!</Say></Gather><Hangup/></Response>`);
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" action="/api/webhooks/twilio-gather" method="POST" timeout="8"><Say voice="Polly.Joanna">Press 1 to bounce!</Say></Gather><Hangup/></Response>');
   };
 
   const logCall = (status, reason) => {
@@ -1589,7 +1619,7 @@ router.post('/twilio-entry', (req, res) => {
       const data = await lookupRes.json();
       const lineType = data?.line_type_intelligence?.type;
       if (lineType && lineType !== 'mobile' && lineType !== 'nonFixedVoip') {
-        db.prepare(`INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked) VALUES (?, ?, 'non_mobile', 1)`)
+        db.prepare('INSERT OR IGNORE INTO blocked_numbers (id, number, reason, auto_blocked) VALUES (?, ?, \'non_mobile\', 1)')
           .run(uuid(), from);
         console.log('[TWILIO SPAM]', from, '-> auto-blocked async (line type:', lineType + ')');
       }
@@ -1655,14 +1685,14 @@ router.post('/twilio-gather', (req, res) => {
           caller_phone TEXT NOT NULL,
           created_at TEXT DEFAULT (datetime('now'))
         )`).run();
-        db.prepare(`INSERT OR REPLACE INTO twilio_call_map (call_sid, caller_phone, created_at) VALUES (?, ?, datetime('now'))`).run(callSid, callerPhone);
+        db.prepare('INSERT OR REPLACE INTO twilio_call_map (call_sid, caller_phone, created_at) VALUES (?, ?, datetime(\'now\'))').run(callSid, callerPhone);
       } catch (e) { console.error('[TWILIO GATHER] call map store failed:', e.message); }
     }
     console.log('[TWILIO GATHER] Digit=1, caller:', callerPhone, 'CallSid:', callSid, '-> SIP dial to sip:bounceman@sip.vapi.ai');
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerPhone}"><Sip>sip:bounceman@sip.vapi.ai</Sip></Dial></Response>`);
   } else {
     console.log('[TWILIO GATHER] Digit=' + (digit || 'none') + ' -> hanging up');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
   }
 });
 
@@ -1696,7 +1726,7 @@ router.post('/transfer-accept', (req, res) => {
   if (parent) { _pruneTransfers(); transferAccepted.set(parent, Date.now()); }
   console.log('[TRANSFER] Owner accepted transfer for parent', parent);
   res.type('text/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting now.</Say></Response>`);
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting now.</Say></Response>');
 });
 
 // Answered by the owner after he taps "Call Customer" in Slack. Dials the customer
@@ -1730,10 +1760,10 @@ router.post('/transfer-result', (req, res) => {
   res.type('text/xml');
   if (accepted) {
     console.log('[TRANSFER] Result for', parent, 'status=' + status, '-> was connected, ending');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
   } else {
     console.log('[TRANSFER] Result for', parent, 'status=' + status, '-> owner unavailable, callback message');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Nehemiah is not available to take your call right now. He will call you back as soon as he can. Thanks for calling Bounce Man. Goodbye.</Say><Hangup/></Response>`);
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Nehemiah is not available to take your call right now. He will call you back as soon as he can. Thanks for calling Bounce Man. Goodbye.</Say><Hangup/></Response>');
   }
 });
 

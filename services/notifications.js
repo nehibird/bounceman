@@ -199,6 +199,16 @@ function buildDeliveryCardBlocks(booking, customer, items) {
     }
   ];
 
+  // Where to actually put it. These are the owner's own notes from the booking —
+  // gate codes, "round the back", which side of the stage — and they were only
+  // visible in the admin UI, which is the one place nobody looks from a driveway.
+  if (booking.delivery_notes && String(booking.delivery_notes).trim()) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: ':pushpin: *Setup notes:*\n' + String(booking.delivery_notes).trim() }
+    });
+  }
+
   // Payment Status box — flips to Completed once the balance is cleared.
   let payText;
   if (paid) {
