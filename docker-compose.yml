@@ -2,11 +2,23 @@ services:
   web:
     build: .
     ports:
-      - "3202:3200"
+      # R2-M4: bound to loopback only — this port must never be reachable directly from
+      # outside the host. nginx (also on this host) is the only intended path in, and it
+      # is nginx, not this container, that's expected to overwrite X-Forwarded-For before
+      # requests reach here (see server.js's `trust proxy` comment). Publishing on all
+      # interfaces (the old "3202:3200") let anyone who could reach the host's public IP
+      # on 3202 bypass nginx entirely and spoof X-Forwarded-For directly.
+      - "127.0.0.1:3202:3200"
     env_file: .env
     environment:
       - DB_PATH=/app/data/bounceman.db
       - NODE_ENV=production
+      # I4: belt-and-braces only — every "today" calendar computation in the code now
+      # resolves America/Chicago explicitly (via Intl's timeZone option) and no longer
+      # depends on this at all. Set anyway so any OTHER code path that still reads the
+      # container's local clock (e.g. SQLite's own date('now','localtime')) lines up with
+      # Central time instead of defaulting to UTC.
+      - TZ=America/Chicago
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

@@ -11,6 +11,13 @@ function getTransporter() {
       port: parseInt(process.env.SMTP_PORT || '587', 10),
       secure: false,
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      // R6-L1: nodemailer's own defaults have no timeout at all (a stalled SMTP socket
+      // hangs indefinitely) — a send triggered from the Stripe webhook's non-money side
+      // effects (checkout.session.completed's confirmation email) could otherwise run well
+      // past the 5-minute stale-processing window and race a reclaim.
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
     });
   }
   return _transporter;

@@ -3,6 +3,7 @@ const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { shouldSkipGlobalLimiter } = require('./lib/global-limiter-skip');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const db = require('./db');
@@ -16,6 +17,7 @@ const eventRoutes = require('./routes/event');
 const sarahRoutes = require('./routes/sarah');
 const callsRouter = require('./routes/calls');
 const bankRoutes = require('./routes/bank');
+const officeRoutes = require('./routes/office');
 
 const cookieParser = require('cookie-parser');
 const app = express();
@@ -73,7 +75,24 @@ app.use(helmet({
 // HIGH-2: Restrict CORS origin — no wildcard in production
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://bouncemanrentals.com' }));
 
-// Trust proxy — required behind nginx so rate limiter sees real client IPs
+// Trust proxy — required behind nginx so rate limiter sees real client IPs.
+//
+// R2-M4: deliberately left as `1` (trust the first hop's X-Forwarded-For literally),
+// NOT changed to `'loopback'` (which would only trust a hop whose ACTUAL socket peer
+// address is a loopback address). docker-compose.yml now binds this container's port to
+// `127.0.0.1:3202:3200`, so only the host itself (nginx) can reach it — but Docker's
+// bridge networking means a connection that ENTERS via that published port arrives at
+// this process with a peer address of the docker bridge gateway (e.g. 172.17.0.1), NOT
+// 127.0.0.1, regardless of what address the host-side caller connected to. Setting
+// `trust proxy` to `'loopback'` here would therefore never actually match, silently
+// trusting NOTHING — X-Forwarded-For would be ignored entirely and every request would
+// appear to come from the same bridge-gateway address, breaking both the rate limiter
+// and middleware/office-auth.js's per-IP failed-auth tracking far worse than the
+// spoofing risk it would claim to fix. The remaining protection against a spoofed
+// X-Forwarded-For is now that port 3202 itself is unreachable from outside the host (the
+// docker-compose loopback binding above) plus Dan confirming nginx overwrites
+// X-Forwarded-For before proxying — an ops/deploy responsibility, not something
+// Express's `trust proxy` setting can enforce on its own.
 app.set('trust proxy', 1);
 
 
@@ -83,10 +102,9 @@ const limiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting for authenticated server-to-server routes
-    return req.path.startsWith('/sarah') || req.path.startsWith('/webhooks');
-  }
+  // Skip rate limiting for authenticated server-to-server routes — see
+  // lib/global-limiter-skip.js for why /office is included (M7).
+  skip: (req) => shouldSkipGlobalLimiter(req.path)
 });
 app.use('/api/', limiter);
 
@@ -121,6 +139,7 @@ app.use('/api/sarah', sarahRoutes);
 app.use('/api/call', callsRouter);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/bank', bankRoutes);
+app.use('/api/office/v1', officeRoutes);
 app.use('/api', apiRoutes);
 app.use('/event', eventRoutes);
 

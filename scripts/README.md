@@ -1,5 +1,53 @@
 # scripts/ — operational scripts
 
+## api-key.js
+
+Office API key management CLI (`/api/office/v1`, see `docs/office-api.md`). Creates,
+lists, revokes, and adjusts the scopes/refund caps of `api_keys` rows. `create` reads the
+raw key from stdin when piped in (so it's generated elsewhere and never printed by this
+process); otherwise it generates one and prints it exactly once.
+
+## reconcile-office-refunds.js
+
+Sweeps office refund-ledger rows (`office_refunds`) stuck `pending`/`needs_review`, plus
+`failed` rows whose error was never classified `definitive` (R2-C1 — a legacy ambiguous
+failure from before that fix shipped), and finalizes them against Stripe's own record —
+see `docs/office-api.md` §5 for the full design. **Never calls `stripe.refunds.create`** —
+only looks a refund up by `metadata.office_refund_id`. Run on a schedule (e.g. every few
+minutes via cron); exits non-zero if any row ends `needs_review`, so a cron wrapper can
+alert.
+
+```bash
+node scripts/reconcile-office-refunds.js [--older-than-minutes 15]
+```
+
+## resolve-office-refund.js
+
+The audited, manual escape hatch for a `needs_review` (or old-enough `pending`)
+`office_refunds` row that `reconcile-office-refunds.js` couldn't settle on its own — see
+`docs/office-api.md` §5. Never calls `stripe.refunds.create`; it only RECORDS an outcome a
+human has already confirmed on Stripe's own dashboard/API. `--reason` and `--actor` are
+both required. Marking `succeeded` requires `--stripe-refund re_...`; marking `failed`
+requires the SAME kind of Stripe confirmation (refuses if a non-failed/non-canceled refund
+already exists for the row, or if the lookup itself fails) — both are verified against
+Stripe whenever `STRIPE_SECRET_KEY` is set (for `succeeded`: the retrieved refund's status
+must be `succeeded` — a live `failed`/`canceled`/`pending`/`requires_action` refund is
+refused, never overridable — plus `metadata.office_refund_id`, amount and currency `usd`
+must match; a 404 "no such refund" is refused too, as is any other 4xx including a
+bad/revoked API key (401), none of it treated as Stripe being down), and both require
+`--no-verify` explicitly without Stripe access. **`--no-verify` only covers
+network/connection errors, timeouts, 5xx, 429, a missing key, or no Stripe id; any other
+Stripe response (any 4xx incl. 401/403/404/409) refuses.** `--stripe-refund`, when given,
+must look like `re_...` even with `--no-verify`. A confirmed `failed` also retires the row's
+convention as a definitive Stripe failure) so a same-key retry can reserve fresh. Writes an
+audit row (`api_audit_log` + `activity_log`, including what was checked against Stripe) in
+the same transaction as the status change.
+
+```bash
+node scripts/resolve-office-refund.js <ledger_id> succeeded --reason "confirmed on Stripe dashboard by Nehemiah" --stripe-refund re_123 --actor Nehemiah
+node scripts/resolve-office-refund.js <ledger_id> failed --reason "confirmed never charged, cancelling the reservation" --actor Nehemiah
+```
+
 ## cron-bank-sync.js
 
 Daily Plaid refresh + auto-import of card/bank charges into the `expenses` table.

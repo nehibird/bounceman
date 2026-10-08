@@ -5,11 +5,21 @@ module.exports = defineConfig({
   // pricing-availability and regression-pre-pr are standalone node scripts that run on
   // import and call process.exit() — Playwright collecting them killed the whole run
   // before the browser specs executed, and still exited 0. Run those via `npm run test:all`.
-  testIgnore: ['**/pricing-availability.test.js', '**/addon-pricing.test.js', '**/call-routing.test.js', '**/regression-pre-pr.test.js', '**/sunday-rules.test.js', '**/phone-format.test.js', '**/sarah-noreply.test.js', '**/quiet-hours.test.js'],
+  testIgnore: [
+    '**/pricing-availability.test.js', '**/addon-pricing.test.js', '**/call-routing.test.js',
+    '**/regression-pre-pr.test.js', '**/sunday-rules.test.js', '**/phone-format.test.js', '**/sarah-noreply.test.js',
+    // H6: the 5 office-API standalone suites — same process.exit(0)-on-import hazard.
+    '**/office-auth.test.js', '**/office-api.test.js', '**/office-money.test.js',
+    '**/refund-webhook.test.js', '**/sarah-auth.test.js', '**/office-refund-ledger.test.js',
+    '**/office-refund-ambiguous.test.js', '**/office-live-check.test.js', '**/office-link-reservation.test.js',
+    '**/office-multiproc.test.js', '**/stripe-errors-classify.test.js', '**/office-refund-realsdk.test.js',
+    '**/quiet-hours.test.js',
+  ],
   // NOTE: any new standalone node test added under tests/ must be listed above. Playwright's
   // default testMatch picks up *.test.js, and a script that calls process.exit(0) on import
   // ends the whole run early WITH A GREEN EXIT CODE. addon-pricing.test.js reintroduced this
-  // on 2026-09-03 and the browser specs silently did not run.
+  // on 2026-09-03 and the browser specs silently did not run. Verify with
+  // `npx playwright test --list` that none of the standalone suites execute during collection.
   timeout: 90000,
   retries: 0,
   use: {

@@ -1068,7 +1068,192 @@ function initialize() {
     for (const eqId of eqIds) pkgItemInsert.run(uuid(), pid, eqId);
   }
 
+  // --- Office API (feature/office-api) ---
+  // api_keys: server-to-server credentials for the office API. Only the sha256 hash of
+  // the raw key is ever stored (key_prefix is a short indexed slice used to narrow the
+  // lookup before a timingSafeEqual compare — see lib/api-keys.js). Refund limits are
+  // per-key and nullable (NULL = no cap), set via scripts/api-key.js.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      key_prefix TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      scopes TEXT NOT NULL DEFAULT '[]',
+      max_refund_cents INTEGER,
+      daily_refund_cap_cents INTEGER,
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      revoked_at TEXT
+    );
+
+    -- Every office API write is required to carry a reason and an Idempotency-Key
+    -- (see middleware/office-auth.js). response_json lets a retried request with the
+    -- same (key_id, idempotency_key) replay the original response instead of
+    -- re-executing the write.
+    CREATE TABLE IF NOT EXISTS api_audit_log (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      action TEXT,
+      reason TEXT,
+      idempotency_key TEXT,
+      request_json TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      status_code INTEGER,
+      response_json TEXT,
+      stripe_object_id TEXT,
+      ip TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_api_audit_key_idem ON api_audit_log(key_id, idempotency_key);
+
+    -- Dedup table for Stripe webhook event delivery/retries (office API refund flow).
+    CREATE TABLE IF NOT EXISTS stripe_events_seen (
+      event_id TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // R5-L2: a 'processing' -> 'done' lifecycle for the row above. Previously a row's mere
+  // EXISTENCE meant "seen" — inserted before work, deleted on failure — which made a
+  // same-event-id duplicate that arrived while the FIRST delivery was still working (e.g.
+  // waiting on the live Stripe lookup, up to several seconds) get an early 200
+  // duplicate:true. Stripe then has no reason to ever redeliver an event this app hasn't
+  // actually finished. Existing rows default to 'done' — every row that existed before
+  // this column did was, by the old model, already fully processed (an incomplete one
+  // would have been deleted, never left behind).
+  if (!columnExists(d, 'stripe_events_seen', 'status')) {
+    d.prepare("ALTER TABLE stripe_events_seen ADD COLUMN status TEXT NOT NULL DEFAULT 'done'").run();
+  }
+
+  // R6-L1: a per-DELIVERY-ATTEMPT token, set on the initial INSERT and again on every
+  // reclaim UPDATE, so a redelivery that reclaims a stale 'processing' row and a still-
+  // running earlier attempt on that SAME row can each be told apart — the earlier
+  // attempt's own 'done' UPDATE and error/503 DELETE are scoped `AND attempt_id = ?`, so
+  // finishing (or failing) after losing ownership can never touch the reclaimer's row.
+  // Existing rows get NULL, which matches no attempt_id a live request could ever compare
+  // against — harmless, since a pre-existing row is never 'processing' by the time this
+  // migration runs (see the 'status' migration above).
+  if (!columnExists(d, 'stripe_events_seen', 'attempt_id')) {
+    d.prepare('ALTER TABLE stripe_events_seen ADD COLUMN attempt_id TEXT').run();
+  }
+
+  // Migration: track the dollar amount (in cents) a money-moving office API write
+  // touched — refunds, manual payments, payment links — so a key's daily refund cap can
+  // be summed straight off the audit trail instead of a second ledger.
+  //
+  // I1: guarded by PRAGMA table_info, not a try/catch that would swallow every error
+  // (a real one — disk full, corrupt schema — not just "column already exists").
+  if (!columnExists(d, 'api_audit_log', 'amount_cents')) {
+    d.prepare('ALTER TABLE api_audit_log ADD COLUMN amount_cents INTEGER').run();
+  }
+
+  // Migration: canonical request hash (method + path + sorted-key JSON body), so a
+  // reused Idempotency-Key with a DIFFERENT body can be told apart from a genuine
+  // replay (M1) — middleware/office-auth.js returns 422 on mismatch instead of
+  // replaying a stale success.
+  if (!columnExists(d, 'api_audit_log', 'request_hash')) {
+    d.prepare('ALTER TABLE api_audit_log ADD COLUMN request_hash TEXT').run();
+  }
+
+  // --- Office API refund ledger (C1) ---
+  // Reserves a refund's amount against the key's daily cap and the payment's
+  // refundable balance BEFORE Stripe is ever called (see routes/office.js), so
+  // concurrent requests and client disconnects can't blow past a cap or leave a
+  // successful refund with no record. See docs/office-api.md for the full design.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS office_refunds (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT,
+      booking_id TEXT NOT NULL,
+      payment_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_refund_id TEXT,
+      stripe_status TEXT,
+      confirmed_by TEXT,
+      reason TEXT,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_office_refunds_key_idem ON office_refunds(key_id, idempotency_key);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_payment ON office_refunds(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_created ON office_refunds(created_at);
+    CREATE INDEX IF NOT EXISTS idx_office_refunds_status ON office_refunds(status);
+  `);
+
+  // R2-C1: set only when a refund is finalized 'failed' because of a DEFINITIVE Stripe
+  // error (lib/stripe-errors.js) — never for an ambiguous one, and never for a genuine
+  // Stripe refund.status of 'failed'/'canceled' (those have no `error` at all). Lets
+  // lib/refund-reconcile.js tell apart a row this app is already certain about from a
+  // 'failed' row created by the OLD (pre-fix) code, which finalized every thrown error as
+  // failed regardless of whether Stripe may have actually processed it — those legacy rows
+  // need the same Stripe-side re-check as a 'needs_review' row, exactly once.
+  if (!columnExists(d, 'office_refunds', 'error_classification')) {
+    d.prepare('ALTER TABLE office_refunds ADD COLUMN error_classification TEXT').run();
+  }
+
+  // R2-M1: reserves a payment-link (key_id, idempotency_key) pair synchronously, in the
+  // same style as office_refunds, BEFORE the Stripe Checkout Session call — a concurrent
+  // duplicate request hits the UNIQUE index below and gets 409/replay instead of both
+  // racing to create two Checkout Sessions with no audit row for the loser. expires_at is
+  // stored so a retry recomputes the exact same value rather than a fresh "now + 24h" that
+  // would make Stripe see a different idempotent request.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS office_payment_link_reservations (
+      id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT,
+      booking_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_id TEXT,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_office_link_res_key_idem ON office_payment_link_reservations(key_id, idempotency_key);
+  `);
+
+  // L8: prune the Stripe webhook dedup table — it otherwise grows forever. 30 days is
+  // far beyond Stripe's own retry window, so nothing live is ever at risk.
+  try { d.prepare("DELETE FROM stripe_events_seen WHERE created_at < datetime('now', '-30 days')").run(); } catch { /* best-effort */ }
+
+  // R2-L4/R3-L5: a busy_timeout so a BEGIN IMMEDIATE transaction (reserveRefund,
+  // reservePaymentLink, the charge.refunded handler) blocks and retries internally for up
+  // to 5s when another connection — today, only ever a script run against the same file;
+  // in a hypothetical multi-process deployment, a second app instance — holds the write
+  // lock, instead of surfacing SQLITE_BUSY as an immediate 500. 5000ms is also
+  // better-sqlite3's own built-in default for a connection opened without an explicit
+  // timeout, so this line's practical effect is making that value explicit and immune to
+  // a future upstream default change, not raising it from some lower value. Set on every
+  // call (cheap, idempotent per-connection pragma) so it's never accidentally skipped if
+  // getDb() ever gains a code path that opens the connection without going through here
+  // first. A write lock held longer than this (e.g. by a stalled script) makes other
+  // requests wait out the full 5s before failing, and the event loop stays blocked for
+  // that same window on the connection doing the waiting — tested at 7s/15s hold times:
+  // I4: requests wait, then either succeed or return a JSON 500 (a 15s hold produced a
+  // JSON 500 in testing) — not "still resolve correctly", which overstated it.
+  d.pragma('busy_timeout = 5000');
+
   console.log('[DB] Database initialized successfully');
+}
+
+function columnExists(d, table, column) {
+  return d.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
 
 module.exports = { getDb, initialize };

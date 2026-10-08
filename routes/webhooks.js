@@ -7,6 +7,11 @@ const vapiSvc = require('../services/vapi');
 const crypto = require('crypto');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c162c';
 
+// R6-L1: undici's default fetch timeout is ~300s — far longer than the 5-minute
+// stripe_events_seen stale-processing window, so a stalled Slack call could otherwise let
+// a "live" delivery get reclaimed by a redelivery while it's still genuinely working.
+const SLACK_FETCH_TIMEOUT_MS = 10000;
+
 // SECURITY: require SARAH_API_KEY (no insecure fallback) — used to auth internal /api/sarah/* calls
 const SARAH_API_KEY = process.env.SARAH_API_KEY;
 if (!SARAH_API_KEY) throw new Error('[SECURITY] SARAH_API_KEY environment variable is required');
@@ -65,6 +70,55 @@ function guardVapi(req, res) {
   return true;
 }
 
+// R6-L1: cheap ownership check before firing a non-money side effect (Slack/email) that
+// runs after this handler's own synchronous work is done — if a slow enough stall let
+// ANOTHER delivery attempt reclaim this event_id in the meantime (see the dedup/reclaim
+// logic below), this attempt no longer owns the row and should skip a duplicate
+// notification rather than fire it anyway. Only ever gates a notification — never a money
+// write, which stays exactly as before.
+function stillOwnsEventAttempt(db, eventId, attemptId) {
+  try {
+    const row = db.prepare('SELECT 1 FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').get(eventId, attemptId);
+    return !!row;
+  } catch {
+    return true; // fail open — never let the check itself swallow a real notification
+  }
+}
+
+const PROCESSING_STALE_MS_DEFAULT = 5 * 60 * 1000;
+const FUTURE_SKEW_TOLERANCE_MS_DEFAULT = 60 * 1000;
+
+// R6-L1/R6-L3: the three statements below are extracted to module scope (rather than
+// inlined in the handler) SPECIFICALLY so a test can exercise the EXACT production
+// statement — via the NODE_ENV=test-gated router._test at the bottom of this file — instead
+// of a hand-copied duplicate of the SQL that could silently drift from the real thing and
+// stop proving anything (a round-7 mutation pass found exactly this gap in an earlier draft
+// of this suite's own tests).
+
+// The atomic reclaim CAS: only a 'processing' row that's stale (too old) or clock-skewed
+// (created_at too far in the future) is reclaimed, and ONLY via this one UPDATE's WHERE
+// clause — see the handler below for the full TOCTOU reasoning.
+function reclaimStaleEvent(db, eventId, attemptId, { staleMs = PROCESSING_STALE_MS_DEFAULT, futureSkewMs = FUTURE_SKEW_TOLERANCE_MS_DEFAULT } = {}) {
+  const staleCutoff = new Date(Date.now() - staleMs).toISOString().replace('T', ' ').slice(0, 19);
+  const futureSkewCutoff = new Date(Date.now() + futureSkewMs).toISOString().replace('T', ' ').slice(0, 19);
+  return db.prepare(
+    `UPDATE stripe_events_seen SET created_at = datetime('now'), attempt_id = ?
+     WHERE event_id = ? AND status = 'processing' AND (created_at <= ? OR created_at > ?)`
+  ).run(attemptId, eventId, staleCutoff, futureSkewCutoff);
+}
+
+// Marks this attempt's own row done — a no-op (changes:0) if a redelivery already
+// reclaimed it (attempt_id no longer matches).
+function markEventDone(db, eventId, attemptId) {
+  return db.prepare("UPDATE stripe_events_seen SET status = 'done' WHERE event_id = ? AND attempt_id = ?").run(eventId, attemptId);
+}
+
+// Un-dedups this attempt's own row (processing failed / needs a fresh retry) — a no-op
+// (changes:0) if a redelivery already reclaimed it, same reasoning as markEventDone.
+function deleteEventAttempt(db, eventId, attemptId) {
+  return db.prepare('DELETE FROM stripe_events_seen WHERE event_id = ? AND attempt_id = ?').run(eventId, attemptId);
+}
+
 // Stripe webhook
 router.post('/stripe', async (req, res) => {
   const webhookSecret = process.env.STRIPE_EVENT_WEBHOOK_SECRET;
@@ -73,11 +127,108 @@ router.post('/stripe', async (req, res) => {
     return res.status(400).json({ error: 'Stripe webhook not configured' });
   }
 
+  let event;
   try {
     const sig = req.headers['stripe-signature'];
-    const event = stripeService.constructWebhookEvent(req.body, sig, webhookSecret);
-    const db = getDb();
+    event = stripeService.constructWebhookEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[Stripe Webhook Error] signature verification failed:', err.message);
+    return res.status(400).json({ error: err.message });
+  }
 
+  const db = getDb();
+
+  // R6-L1: a per-DELIVERY-ATTEMPT token — set on the INSERT below and again on a reclaim
+  // UPDATE — so this attempt's later 'done' UPDATE / error-DELETE can be scoped to ONLY the
+  // row it actually still owns (see stillOwnsEventAttempt and the end of this handler). A
+  // redelivery that reclaims a stale row gets its OWN fresh attempt_id, so a since-reclaimed
+  // earlier attempt that's still (slowly) running can never mark or delete the reclaimer's
+  // row out from under it.
+  const myAttemptId = crypto.randomUUID();
+
+  // Dedup: Stripe retries a webhook delivery until it gets a 2xx (and can occasionally
+  // redeliver an already-handled event for other reasons). INSERT OR IGNORE is atomic, so
+  // two concurrent deliveries of the same event can't both "win" — whichever loses this
+  // race sees changes === 0 and falls into the status check below instead of the switch.
+  //
+  // The row is inserted BEFORE processing, not after, specifically to close that race. The
+  // tradeoff: if processing then throws, the event would be marked seen despite never having
+  // been handled, silently swallowing Stripe's automatic retry. So on any processing
+  // exception below we DELETE the seen row before responding with an error — that un-dedups
+  // the event so the retry Stripe sends next reaches the switch statement again.
+  //
+  // R5-L2: a 'processing' -> 'done' lifecycle closes a narrower race than the one above —
+  // a SECOND delivery of the SAME event arriving while the FIRST is still working (e.g.
+  // waiting on charge.refunded's live Stripe lookup, up to several seconds) must NOT get
+  // an early 200 duplicate:true, or Stripe has no reason to ever redeliver an event this
+  // app hasn't actually finished. Only a 'done' row is a safe-to-ignore duplicate; a
+  // 'processing' row gets 409 so Stripe retries on its own schedule. A 'processing' row
+  // can also be ORPHANED if this process crashes/is killed mid-handler (never reaching the
+  // UPDATE or the DELETE below) — PROCESSING_STALE_MS reclaims it rather than 409ing
+  // forever, exactly like resolve-office-refund.js's --older-than-minutes eligibility
+  // check (a JS-computed cutoff string, compared lexically against the stored datetime).
+  //
+  // R6-I2: a 'processing' row whose created_at is in the FUTURE (a container clock that
+  // was briefly ahead) is stale in the OTHER direction — it would otherwise sit unreclaimed
+  // past the normal 5-minute window for however far ahead the clock had drifted, 409ing
+  // every redelivery in between for no reason (Stripe just keeps retrying, so nothing is
+  // lost, but it's needless delay). FUTURE_SKEW_TOLERANCE_MS gives a 1-minute grace window
+  // for ordinary clock jitter before treating a future created_at as skew rather than a
+  // genuinely fresh, still-live row.
+  let alreadyDone = false;
+  try {
+    const dedupInfo = db.prepare("INSERT OR IGNORE INTO stripe_events_seen (event_id, status, attempt_id) VALUES (?, 'processing', ?)").run(event.id, myAttemptId);
+    if (dedupInfo.changes === 0) {
+      const existing = db.prepare('SELECT status, created_at FROM stripe_events_seen WHERE event_id = ?').get(event.id);
+      if (!existing) {
+        // R6-L2: the INSERT OR IGNORE found a conflicting row (changes===0), but this
+        // follow-up SELECT finds NOTHING — the row vanished in between, which can only
+        // happen across processes (another process's own first delivery just failed and
+        // DELETEd it). Silently treating this as a safe 200 duplicate would ACK an event
+        // that was never actually processed and that Stripe would otherwise have retried.
+        // 409 instead, so Stripe redelivers and either this or another attempt picks it up.
+        console.log('[Stripe Webhook] dedup row vanished between INSERT and SELECT — asking Stripe to retry:', event.id, event.type);
+        return res.status(409).json({ error: 'event_processing', retry: true });
+      } else if (existing.status === 'done') {
+        alreadyDone = true;
+      } else {
+        // Hardening: the reclaim itself is the ONE atomic statement that decides it — the
+        // staleness check lives in the UPDATE's own WHERE clause, not in a separate SELECT
+        // branch beforehand. A plain "SELECT, then decide in JS, then UPDATE unconditionally"
+        // (the original shape) is a classic TOCTOU: across two real OS processes sharing this
+        // SQLite file (the same concern R2-L4's BEGIN IMMEDIATE guards elsewhere), both could
+        // read the same stale row before either UPDATE commits, and both would reclaim and
+        // both process the same event. Folding the condition into the UPDATE means SQLite's
+        // own single-writer serialization is what arbitrates — at most one UPDATE can ever
+        // match a given row's still-stale `created_at`, because the FIRST one to commit
+        // moves `created_at` to now(), which no longer satisfies the WHERE clause for anyone
+        // still holding a stale read.
+        const reclaim = reclaimStaleEvent(db, event.id, myAttemptId);
+        if (reclaim.changes === 1) {
+          console.log('[Stripe Webhook] reclaiming a stale processing row (likely an earlier crash or clock skew):', event.id, event.type);
+        } else {
+          // The atomic reclaim didn't match — either the row genuinely isn't stale (a live
+          // concurrent delivery: 409, Stripe retries), or it raced to 'done' between our
+          // SELECT above and this UPDATE (a safe duplicate: 200). Re-read to tell them apart.
+          const recheck = db.prepare('SELECT status FROM stripe_events_seen WHERE event_id = ?').get(event.id);
+          if (recheck && recheck.status === 'done') {
+            alreadyDone = true;
+          } else {
+            console.log('[Stripe Webhook] event still processing elsewhere — asking Stripe to retry:', event.id, event.type);
+            return res.status(409).json({ error: 'event_processing', retry: true });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Stripe Webhook] dedup insert failed (processing anyway):', err.message);
+  }
+  if (alreadyDone) {
+    console.log('[Stripe Webhook] duplicate event ignored:', event.id, event.type);
+    return res.json({ received: true, duplicate: true });
+  }
+
+  try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
@@ -113,6 +264,13 @@ router.post('/stripe', async (req, res) => {
           // Update Slack card if one exists
           setTimeout(async () => {
             try {
+              // R6-L1: cheap ownership check — skip if this attempt was reclaimed while
+              // this callback sat queued (never gates the money write above, only this
+              // notification).
+              if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+                console.log('[Stripe Webhook] Walk-up Slack notify skipped — attempt no longer owns the row:', event.id);
+                return;
+              }
               const slackToken = process.env.SLACK_BOT_TOKEN;
               if (slackToken && updatedReg.slack_card_ts && updatedReg.slack_card_channel) {
                 const wristbandLabel = start === end ? '#' + start : '#' + start + '–#' + end;
@@ -135,7 +293,8 @@ router.post('/stripe', async (req, res) => {
                 await fetch('https://slack.com/api/chat.update', {
                   method: 'POST',
                   headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ channel: updatedReg.slack_card_channel, ts: updatedReg.slack_card_ts, blocks, text: updatedReg.parent_name + ' — paid & ready' })
+                  body: JSON.stringify({ channel: updatedReg.slack_card_channel, ts: updatedReg.slack_card_ts, blocks, text: updatedReg.parent_name + ' — paid & ready' }),
+                  signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
                 });
               }
               // Also post a new notification to #events if no card to update
@@ -145,7 +304,8 @@ router.post('/stripe', async (req, res) => {
                 await fetch('https://slack.com/api/chat.postMessage', {
                   method: 'POST',
                   headers: { 'Authorization': 'Bearer ' + slackToken, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ channel: eventsChannel, text: '✅ ' + updatedReg.parent_name + ' paid $' + amountPaid.toFixed(2) + ' — wristbands ' + wristbandLabel })
+                  body: JSON.stringify({ channel: eventsChannel, text: '✅ ' + updatedReg.parent_name + ' paid $' + amountPaid.toFixed(2) + ' — wristbands ' + wristbandLabel }),
+                  signal: AbortSignal.timeout(SLACK_FETCH_TIMEOUT_MS),
                 });
               }
             } catch (e) { console.error('[Stripe Webhook] Walk-up Slack notify failed:', e.message); }
@@ -188,7 +348,10 @@ router.post('/stripe', async (req, res) => {
         const newBalance = Math.max(0, booking.total - totalPaid);
         const depositPaid = totalPaid >= booking.deposit_amount ? 1 : 0;
         const paymentStatus = newBalance <= 0 ? 'paid' : (depositPaid ? 'deposit_paid' : 'partial');
-        const bookingStatus = depositPaid ? 'confirmed' : booking.status;
+        // M3: only PROMOTE pending -> confirmed. A later payment-link payment on an
+        // already-completed/cancelled/declined booking must never demote it back to
+        // confirmed, and an already-confirmed booking is left alone too.
+        const bookingStatus = (depositPaid && booking.status === 'pending') ? 'confirmed' : booking.status;
 
         db.prepare(
           "UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?, updated_at = datetime('now') WHERE id = ?"
@@ -214,6 +377,13 @@ router.post('/stripe', async (req, res) => {
         // Send confirmation email (webhook is reliable path; page redirect may never fire)
         setTimeout(async () => {
           try {
+            // R6-L1: cheap ownership check right before this deferred non-money side
+            // effect fires — if this attempt was reclaimed while queued, skip rather than
+            // risk a duplicate email/Slack post racing the reclaiming attempt's own.
+            if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+              console.log('[STRIPE WEBHOOK] Confirmation email skipped — attempt no longer owns the row:', event.id);
+              return;
+            }
             const refreshedBooking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
             if (!refreshedBooking.confirmation_email_sent) {
               const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(refreshedBooking.customer_id);
@@ -237,6 +407,10 @@ router.post('/stripe', async (req, res) => {
         // Update Slack live card if one exists for this booking
         setTimeout(async () => {
           try {
+            if (!stillOwnsEventAttempt(db, event.id, myAttemptId)) {
+              console.log('[STRIPE WEBHOOK] Slack card update skipped — attempt no longer owns the row:', event.id);
+              return;
+            }
             const { updateBookingSlackCard } = require('../services/notifications');
             await updateBookingSlackCard(bookingId);
           } catch (e) { console.error('[STRIPE WEBHOOK] Slack card update failed:', e.message); }
@@ -246,14 +420,94 @@ router.post('/stripe', async (req, res) => {
 
       case 'charge.refunded': {
         const charge = event.data.object;
-        const refundAmount = charge.amount_refunded / 100;
-        const payment = db.prepare(
-          'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
+        // charge.amount_refunded is CUMULATIVE — the total refunded on this charge to
+        // date, not the incremental amount of this particular event. A 2nd partial
+        // refund (or a plain webhook retry re-delivering the SAME cumulative total)
+        // used to subtract that cumulative figure from bookings.total every time,
+        // double- (or triple-) reducing it. Only the DELTA since the last time we saw
+        // this payment may touch the booking.
+        //
+        // R5-L3: a cheap, PLAIN (non-transactional) payment match BEFORE ever calling
+        // Stripe. An event for a charge this app has no payment for used to still trigger
+        // the live lookup below, so a Stripe outage turned an entirely ignorable event
+        // into a 503 that Stripe would then retry for up to 3 days. There is nothing here
+        // for a live lookup to even confirm, so skip it and return 200 outright.
+        const paymentExists = db.prepare(
+          'SELECT 1 FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
         ).get(charge.payment_intent || charge.id, charge.id);
-        if (payment) {
-          db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?')
-            .run(refundAmount, payment.id);
-          console.log('[Stripe Webhook] charge.refunded: $' + refundAmount.toFixed(2) + ' recorded');
+        if (!paymentExists) {
+          console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
+          break;
+        }
+
+        // R5-L1: ALWAYS use Stripe's LIVE amount_refunded — the frozen payload total is
+        // never trusted, whether or not it happens to carry a `refunds.data` list.
+        //
+        // R4-L1 originally tried to make the frozen list trustworthy by cross-checking
+        // each entry's status against our own ledger (a `charge.refund.updated` we'd
+        // already processed being more current than the list's own frozen status field).
+        // That still had two gaps: `Charge.refunds` isn't even guaranteed present on a
+        // Charge object (stripe-node's own CHANGELOG documents this — issue #1518), making
+        // the live-lookup branch the COMMON case in production, not a rare fallback; and a
+        // refund made directly from the Stripe Dashboard (never created via this app's
+        // API) has no office_refunds row to cross-check against at all — a list entry
+        // frozen as `pending` that Stripe later canceled would inflate the total with
+        // nothing here able to catch it (R5-L1: Claude's probe showed exactly this,
+        // re-inflating the books from 30/70 to 80/20). The live figure is Stripe's own
+        // current truth and can never be stale by definition, so R5-L1 drops the list-sum
+        // path entirely rather than trying to patch it further. If the live fetch itself
+        // fails or is unusable, this must NOT fall back to the frozen payload total — it
+        // refuses outright (503, un-dedups the event) so Stripe's automatic redelivery
+        // (retried for up to 3 days) gets a fresh chance once Stripe is reachable again.
+        let liveRefundedCents;
+        try {
+          liveRefundedCents = await stripeService.getLiveRefundedCents({
+            paymentIntentId: typeof charge.payment_intent === 'string' ? charge.payment_intent : undefined,
+            chargeId: charge.id,
+          });
+        } catch (liveErr) {
+          console.error('[Stripe Webhook] charge.refunded: live amount_refunded lookup failed — refusing to trust the frozen total, Stripe will redeliver:', liveErr.message);
+          // R6-L1: scoped to OUR OWN attempt_id — if this row was already reclaimed by a
+          // redelivery (this attempt lost ownership), deleting it unconditionally would
+          // erase the reclaimer's still-in-flight row instead of just this attempt's own.
+          try {
+            const del = deleteEventAttempt(db, event.id, myAttemptId);
+            if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id);
+          } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after live-lookup failure:', dedupErr.message); }
+          return res.status(503).json({ error: 'live_refund_check_unavailable', detail: liveErr.message });
+        }
+
+        // R2-L4: the READ (prior refund_amount) THEN WRITE (new refund_amount, and the
+        // booking bookkeeping derived from it) is wrapped in one BEGIN IMMEDIATE
+        // transaction — a second process handling an out-of-order or concurrent delivery
+        // for the SAME charge must never interleave between this read and this write
+        // (WEBHOOK-1 in the review; see tests/office-multiproc.test.js). `break` can't
+        // cross this function boundary, so the outcome is returned and logged/broken-out-
+        // of afterward instead. The payment is re-fetched here (rather than reusing the
+        // plain SELECT above) under the transaction's own consistent view, in the
+        // vanishingly unlikely case it stopped existing between the two reads.
+        const outcome = db.transaction(() => {
+          const payment = db.prepare(
+            'SELECT * FROM payments WHERE stripe_payment_id = ? OR stripe_charge_id = ?'
+          ).get(charge.payment_intent || charge.id, charge.id);
+          if (!payment) return { result: 'no_payment' };
+
+          const cumulativeRefund = Math.round((liveRefundedCents / 100) * 100) / 100;
+          const priorRefund = parseFloat(payment.refund_amount) || 0;
+          const delta = Math.round((cumulativeRefund - priorRefund) * 100) / 100;
+
+          // H1: Stripe does not guarantee webhook delivery order. A stale/out-of-order
+          // event carrying an amount lower than what's already recorded (delta <= 0)
+          // must NOT rewind refund_amount OR touch bookings.total — check the delta
+          // BEFORE writing anything. 0.004 absorbs floating-point cents noise from
+          // repeated /100 divisions without masking any real (>= half a cent) refund.
+          if (delta <= 0.004) return { result: 'stale', delta };
+
+          // MAX() is defense-in-depth on top of the delta check above: even if two
+          // events for the same payment are processed out of order, refund_amount can
+          // never move backwards.
+          db.prepare('UPDATE payments SET refund_amount = MAX(refund_amount, ?) WHERE id = ?')
+            .run(cumulativeRefund, payment.id);
 
           // Write the refund back to the BOOKING as well. Recording it only against the
           // payment left bookings.total claiming revenue that had been given back, and
@@ -262,39 +516,169 @@ router.post('/stripe', async (req, res) => {
           //
           // A refund here is a price concession: it REDUCES the sale. It must not raise
           // balance_due, or the "pay your remaining balance" SMS below fires at a customer
-          // who has just been given money back.
+          // who has just been given money back. Its own errors are swallowed (never fail
+          // the webhook over bookkeeping — Stripe would just retry the refund event) —
+          // caught HERE, inside the transaction function, so a bookkeeping failure never
+          // rolls back the refund_amount write above.
+          let booking = null;
           try {
             const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
             if (bk) {
               const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
                 FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
               // Never below what was actually kept, so the books cannot show a phantom debt.
-              const newTotal = Math.max(0, Math.round((bk.total - refundAmount) * 100) / 100);
+              const newTotal = Math.max(0, Math.round((bk.total - delta) * 100) / 100);
               const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
               db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
                 payment_status = CASE WHEN ? <= 0 THEN 'paid' ELSE payment_status END,
                 internal_notes = TRIM(COALESCE(internal_notes,'') ||
                   ' [refund] $' || ? || ' refunded ' || date('now') || '; total reduced to $' || ? || '.'),
                 updated_at = datetime('now') WHERE id = ?`)
-                .run(newTotal, newBalance, newBalance, refundAmount.toFixed(2), newTotal.toFixed(2), bk.id);
-              console.log('[Stripe Webhook] booking ' + bk.booking_number +
-                ' total ' + bk.total.toFixed(2) + ' -> ' + newTotal.toFixed(2) +
-                ', balance -> ' + newBalance.toFixed(2));
+                .run(newTotal, newBalance, newBalance, delta.toFixed(2), newTotal.toFixed(2), bk.id);
+              booking = { bookingNumber: bk.booking_number, oldTotal: bk.total, newTotal, newBalance };
             }
           } catch (e) {
-            // Never fail the webhook over bookkeeping — Stripe would retry the refund event.
-            console.error('[Stripe Webhook] refund write-back failed:', e.message);
+            booking = { error: e.message };
           }
-        } else {
+          return { result: 'recorded', delta, cumulativeRefund, booking };
+        }).immediate();
+
+        if (outcome.result === 'no_payment') {
           console.log('[Stripe Webhook] charge.refunded: no matching payment found for', charge.id);
+        } else if (outcome.result === 'stale') {
+          console.log('[Stripe Webhook] charge.refunded: no new refund amount (delta $' +
+            outcome.delta.toFixed(2) + ') — refund_amount and booking total left unchanged');
+        } else {
+          console.log('[Stripe Webhook] charge.refunded: $' + outcome.cumulativeRefund.toFixed(2) +
+            ' cumulative refund recorded (delta $' + outcome.delta.toFixed(2) + ')');
+          if (outcome.booking && outcome.booking.error) {
+            console.error('[Stripe Webhook] refund write-back failed:', outcome.booking.error);
+          } else if (outcome.booking) {
+            console.log('[Stripe Webhook] booking ' + outcome.booking.bookingNumber +
+              ' total ' + outcome.booking.oldTotal.toFixed(2) + ' -> ' + outcome.booking.newTotal.toFixed(2) +
+              ' (delta $' + outcome.delta.toFixed(2) + '), balance -> ' + outcome.booking.newBalance.toFixed(2));
+          }
+        }
+        break;
+      }
+
+      // H1: a refund that Stripe itself later marks failed/canceled (e.g. the card no
+      // longer accepts refunds) must not keep counting against the office API key's
+      // daily cap. event.data.object here is the Refund itself, and
+      // metadata.office_refund_id is what routes/office.js stamped onto it at creation.
+      case 'charge.refund.updated': {
+        const refund = event.data.object;
+        const officeRefundId = refund.metadata && refund.metadata.office_refund_id;
+        if (officeRefundId && (refund.status === 'failed' || refund.status === 'canceled')) {
+          try {
+            const officeRow = db.prepare('SELECT * FROM office_refunds WHERE id = ?').get(officeRefundId);
+            const info = db.prepare(`UPDATE office_refunds SET status = 'failed', stripe_refund_id = ?, stripe_status = ?, updated_at = datetime('now')
+              WHERE id = ? AND status != 'failed'`).run(refund.id, refund.status, officeRefundId);
+            if (info.changes) {
+              console.log('[Stripe Webhook] charge.refund.updated: marked office refund', officeRefundId, 'failed (status ' + refund.status + ')');
+
+              // R2-L5: a REVERSAL. If this refund's amount had already been folded into
+              // payments.refund_amount/bookings.total (the ledger row was 'succeeded'
+              // before this event landed), that money was never actually given back after
+              // all — the office_refunds status flip above just made it official on our
+              // side. The charge.refunded handler's MAX() guard exists specifically to
+              // reject a LOWER cumulative figure as stale/out-of-order, so it would
+              // swallow Stripe's own legitimate downward correction if we just waited for
+              // a follow-up charge.refunded event; instead, apply the correction directly
+              // here using THIS REFUND'S OWN amount (not a cumulative total) — idempotent
+              // because it's gated on `info.changes` (only fires the one time this row
+              // transitions into 'failed').
+              if (officeRow && officeRow.status === 'succeeded' && officeRow.payment_id) {
+                // R3-L3: don't blindly SUBTRACT this refund's own amount from
+                // payments.refund_amount — if THIS refund's own charge.refunded event
+                // hasn't arrived yet (out-of-order delivery), refund_amount never
+                // included it in the first place, and subtracting would drive the books
+                // wrong (then a later charge.refunded would re-apply the delta on top of
+                // that wrong base). Ask Stripe directly for the charge's LIVE
+                // amount_refunded and SET refund_amount to that absolute figure instead —
+                // inside one IMMEDIATE transaction with the booking bookkeeping, so a
+                // concurrent/interleaved charge.refunded for the same charge can't race
+                // this correction. Falls back to the old subtract-by-this-refund's-amount
+                // behavior if the live lookup itself fails (best-effort; this is
+                // after-the-fact bookkeeping, not a new money-moving decision).
+                let liveRefundedCents = null;
+                try {
+                  liveRefundedCents = await stripeService.getLiveRefundedCents({
+                    paymentIntentId: typeof refund.payment_intent === 'string' ? refund.payment_intent : undefined,
+                    chargeId: typeof refund.charge === 'string' ? refund.charge : undefined,
+                  });
+                } catch (liveErr) {
+                  console.error('[Stripe Webhook] charge.refund.updated: live amount_refunded lookup failed, falling back to a plain subtraction:', liveErr.message);
+                }
+
+                const reversedDollars = Math.round((refund.amount / 100) * 100) / 100;
+                const reversalOutcome = db.transaction(() => {
+                  const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(officeRow.payment_id);
+                  if (!payment) return null;
+                  const priorRefundAmount = parseFloat(payment.refund_amount || 0);
+                  const newRefundAmount = liveRefundedCents !== null
+                    ? Math.round((liveRefundedCents / 100) * 100) / 100
+                    : Math.max(0, Math.round((priorRefundAmount - reversedDollars) * 100) / 100);
+                  const actualDelta = Math.round((priorRefundAmount - newRefundAmount) * 100) / 100;
+                  db.prepare('UPDATE payments SET refund_amount = ? WHERE id = ?').run(newRefundAmount, payment.id);
+
+                  let bookingResult = null;
+                  if (actualDelta !== 0) {
+                    const bk = db.prepare('SELECT * FROM bookings WHERE id = ?').get(payment.booking_id);
+                    if (bk) {
+                      const paidNet = db.prepare(`SELECT COALESCE(SUM(amount - COALESCE(refund_amount,0)),0) p
+                        FROM payments WHERE booking_id = ? AND status = 'completed'`).get(bk.id).p;
+                      const newTotal = Math.round((bk.total + actualDelta) * 100) / 100;
+                      const newBalance = Math.max(0, Math.round((newTotal - paidNet) * 100) / 100);
+                      db.prepare(`UPDATE bookings SET total = ?, balance_due = ?,
+                        internal_notes = TRIM(COALESCE(internal_notes,'') ||
+                          ' [refund reversed] $' || ? || ' refund failed/canceled ' || date('now') || '; total restored to $' || ? || '.'),
+                        updated_at = datetime('now') WHERE id = ?`)
+                        .run(newTotal, newBalance, Math.abs(actualDelta).toFixed(2), newTotal.toFixed(2), bk.id);
+                      bookingResult = { bookingNumber: bk.booking_number, oldTotal: bk.total, newTotal };
+                    }
+                  }
+                  return { paymentId: payment.id, newRefundAmount, actualDelta, booking: bookingResult };
+                }).immediate();
+
+                if (reversalOutcome) {
+                  console.log('[Stripe Webhook] charge.refund.updated: refund_amount set to $' + reversalOutcome.newRefundAmount.toFixed(2) +
+                    ' (delta $' + reversalOutcome.actualDelta.toFixed(2) + ') on payment ' + reversalOutcome.paymentId);
+                  if (reversalOutcome.booking) {
+                    console.log('[Stripe Webhook] charge.refund.updated: booking ' + reversalOutcome.booking.bookingNumber +
+                      ' total ' + reversalOutcome.booking.oldTotal.toFixed(2) + ' -> ' + reversalOutcome.booking.newTotal.toFixed(2));
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[Stripe Webhook] failed to update office_refunds ledger:', e.message);
+          }
         }
         break;
       }
     }
 
+    // R5-L2: only reached once every case above has actually finished — flips this event's
+    // row to 'done' so a future duplicate delivery gets the fast 200 path instead of 409.
+    // R6-L1: scoped to OUR OWN attempt_id — if a redelivery already reclaimed this row
+    // (this attempt lost ownership, e.g. it stalled past the stale window), changes===0
+    // here and we must NOT stamp 'done' over whatever the reclaiming attempt is doing.
+    try {
+      const doneInfo = markEventDone(db, event.id, myAttemptId);
+      if (doneInfo.changes === 0) console.log('[Stripe Webhook] done-marking skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
+    } catch (doneErr) { console.error('[Stripe Webhook] failed to mark event done (harmless — worst case a later duplicate gets 409 and Stripe retries):', doneErr.message); }
     res.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook Error]', err.message);
+    // R5-L2: applies to every event type, not just charge.refunded's own 503 path above —
+    // deleting the row (rather than merely marking it 'failed') means a retry's INSERT OR
+    // IGNORE succeeds fresh, identical to the pre-R5-L2 un-dedup behavior.
+    // R6-L1: scoped to OUR OWN attempt_id, same reasoning as the 'done' UPDATE above.
+    try {
+      const del = deleteEventAttempt(db, event.id, myAttemptId);
+      if (del.changes === 0) console.log('[Stripe Webhook] un-dedup skipped — this attempt no longer owns the row (reclaimed):', event.id, event.type);
+    } catch (dedupErr) { console.error('[Stripe Webhook] failed to un-dedup after error:', dedupErr.message); }
     res.status(400).json({ error: err.message });
   }
 });
@@ -1877,5 +2261,13 @@ router.post('/slack/command', async (req, res) => {
     await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':x: Couldn’t send to ' + who + ': ' + e.message });
   }
 });
+
+// R6-L1/R6-L3 (following R6-I3's precedent): test-only access to the dedup/reclaim
+// statements themselves, gated to NODE_ENV==='test' — not reachable over HTTP either way
+// (router._test isn't a route). Exists so mutation/regression tests exercise the ACTUAL
+// production statements rather than a hand-copied duplicate.
+if (process.env.NODE_ENV === 'test') {
+  router._test = { stillOwnsEventAttempt, reclaimStaleEvent, markEventDone, deleteEventAttempt };
+}
 
 module.exports = router;
