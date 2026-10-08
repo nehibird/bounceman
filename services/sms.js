@@ -234,7 +234,9 @@ async function sendLeadOpener(phone, body, tag, opts) {
     console.error('[LEAD] guard check failed, not texting:', e.message);
     return false;   // a broken guard must fail closed — this path sends money
   }
-  await sendSms(digits, body, { tag });
+  // The customer handed us their number on the site moments ago, so this is a
+  // response rather than unprompted outreach — it goes out even at 2 AM.
+  await sendSms(digits, body, { tag, skipQuietHours: true });
   return true;
 }
 

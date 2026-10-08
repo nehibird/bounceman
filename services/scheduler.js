@@ -201,7 +201,10 @@ async function releaseExpiredHolds() {
       // and we already have their email on file, so back it up.
       if (b.phone) {
         try {
-          await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`);
+          await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`,
+            // Held until morning this would announce a hold that expired at 30
+            // minutes. A wrong text is worse than a late-night one.
+            { skipQuietHours: true });
           console.log('[HOLD] Last-chance SMS sent', b.booking_number);
         } catch (e) { console.error('[HOLD] reminder SMS failed:', e.message); }
       }
@@ -301,11 +304,6 @@ function start() {
   }, 30 * 1000);
   // Hold release/reminders run more frequently (every 20 min) so the 5h window is tight.
   setInterval(() => { releaseExpiredHolds().catch(e => console.error('[HOLD] run failed:', e.message)); }, 20 * 60 * 1000);
-  // Texts parked overnight by the quiet-hours guard. Sharing the 20-minute tick
-  // means the backlog goes out within 20 minutes of 8 AM Central, not on the hour.
-  const drain = () => { smsService.drainSmsQueue().catch(e => console.error('[SMS QUEUE] run failed:', e.message)); };
-  setTimeout(drain, 45 * 1000);
-  setInterval(drain, 20 * 60 * 1000);
 }
 
 module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds, sendQuoteFollowUps, centralHour, centralDay };

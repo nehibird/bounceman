@@ -432,7 +432,7 @@ async function actOnSuggestion(id, act, actedBy) {
     const label = _customerName(db, row.phone10) || ('+1' + row.phone10);
     let newText;
     if (act === 'send') {
-      await smsService.sendSms('+1' + row.phone10, row.body, { skipMirror: true });
+      await smsService.sendSms('+1' + row.phone10, row.body, { skipMirror: true, skipQuietHours: true });
       db.prepare("UPDATE suggested_replies SET status = 'sent', acted_by = ?, acted_at = datetime('now') WHERE id = ?").run(actedBy || '', id);
       newText = ':outbox_tray: *You → ' + label + ':*\n' + row.body;
     } else {

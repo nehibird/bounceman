@@ -627,7 +627,7 @@ router.post('/create-and-send-link', async (req, res) => {
     // Track the real outcome — this used to swallow the failure and still report success.
     let smsOk = false;
     try {
-      await smsService.sendSms(phone, smsBody);
+      await smsService.sendSms(phone, smsBody, { skipQuietHours: true });
       smsOk = true;
       console.log('[SARAH] SMS sent to', phone);
     } catch (smsErr) {
@@ -807,7 +807,7 @@ router.post('/send-checkout-link', async (req, res) => {
   } catch (e) { /* dedupe is best-effort; never block a real send */ }
 
   try {
-    await smsService.sendSms(phone, smsBody);
+    await smsService.sendSms(phone, smsBody, { skipQuietHours: true });
     console.log('[SARAH] checkout link sent to', phone, '->', link);
     try {
       db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -941,7 +941,7 @@ router.post('/text-pricing', async (req, res) => {
   const pricingText = settings.pricing_info || 'Contact us for pricing at bouncemanrentals.com';
 
   try {
-    await require('../services/sms').sendSms(phone, pricingText);
+    await require('../services/sms').sendSms(phone, pricingText, { skipQuietHours: true });
     res.json({ success: true, message: `Pricing texted to ${phone}` });
   } catch (err) {
     console.error('[SARAH] Text pricing error:', err.message);
@@ -965,7 +965,7 @@ router.post('/walkin-link', async (req, res) => {
   const url = `${baseUrl}?event=${event.id}`;
 
   try {
-    await require('../services/sms').sendSms(phone, `Hey! Sign your waiver and pay for your kids to bounce at ${event.name}: ${url}`);
+    await require('../services/sms').sendSms(phone, `Hey! Sign your waiver and pay for your kids to bounce at ${event.name}: ${url}`, { skipQuietHours: true });
     res.json({ success: true, message: `Walk-up link sent to ${phone} for "${event.name}"` });
   } catch (err) {
     console.error('[SARAH] Walkin link error:', err.message);

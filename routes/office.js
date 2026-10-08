@@ -883,7 +883,7 @@ router.post('/bookings/:booking_number/payment-link', requireScope('payments:lin
   let smsSent = false;
   if (sendSms && customer && customer.phone) {
     try {
-      await smsService.sendSms(customer.phone, `Bounce Man payment link for booking #${booking.booking_number}: ${session.url}`);
+      await smsService.sendSms(customer.phone, `Bounce Man payment link for booking #${booking.booking_number}: ${session.url}`, { skipQuietHours: true });
       smsSent = true;
     } catch (err) {
       console.error('[OFFICE API] payment-link SMS failed:', err.message);

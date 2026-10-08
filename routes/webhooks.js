@@ -975,7 +975,7 @@ Rules:
 
       let smsSent = false;
       try {
-        await smsService.sendSms(parsed.phone, smsBody);
+        await smsService.sendSms(parsed.phone, smsBody, { skipQuietHours: true });
         smsSent = true;
       } catch (e) {
         console.error('[SARAH-SLACK] SMS failed:', e.message);
@@ -1324,7 +1324,7 @@ async function handleOnMyWay(value, user, response_url, originalMessage, payload
       if (!booking.contract_signed && booking.contract_id) smsMsg += '\n\nPlease sign your rental agreement before we arrive: ' + baseUrl + '/contract/' + booking.contract_id;
       if (parseFloat(booking.balance_due) > 0) smsMsg += '\n\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + '/booking/pay/' + booking_number;
       smsMsg += '\n\nSee you soon!';
-      await smsService.sendSms(customerPhone, smsMsg);
+      await smsService.sendSms(customerPhone, smsMsg, { skipQuietHours: true });
       smsOk = true;
       console.log('[ON MY WAY] SMS sent to', customerPhone, 'for', booking_number);
     } catch (err) {
@@ -2255,7 +2255,7 @@ router.post('/slack/command', async (req, res) => {
   res.json({ response_type: 'ephemeral', text: ':outbox_tray: Sending to *' + who + '*…' });
   const TEXTS = process.env.SLACK_TEXTS_CHANNEL || 'C0B845ESG30';
   try {
-    await require('../services/sms').sendSms(phone, message);
+    await require('../services/sms').sendSms(phone, message, { skipQuietHours: true });
     await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':white_check_mark: Sent to *' + who + '*. It’s a thread in <#' + TEXTS + '> now — their reply comes back there.' });
   } catch (e) {
     await respondToSlack(req.body.response_url, { replace_original: true, response_type: 'ephemeral', text: ':x: Couldn’t send to ' + who + ': ' + e.message });

@@ -1472,7 +1472,7 @@ router.get('/messages', (req, res) => {
 router.post('/messages/send', async (req, res) => {
   const { to, body } = req.body;
   if (!to || !body) return res.redirect('/admin/messages');
-  try { await require('../services/sms').sendSms(to, body); } catch (e) { console.error('[MSG SEND] failed:', e.message); }
+  try { await require('../services/sms').sendSms(to, body, { skipQuietHours: true }); } catch (e) { console.error('[MSG SEND] failed:', e.message); }
   try { require('../services/sarah-sms').pauseThread(to); } catch (e) { /* */ }
   res.redirect('/admin/messages?to=' + encodeURIComponent(to));
 });

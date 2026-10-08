@@ -236,6 +236,16 @@ app.listen(PORT, '0.0.0.0', () => {
     const runHoldRelease = () => releaseExpiredHolds().catch((e) => console.error('[HOLD] run failed:', e.message));
     setTimeout(() => { runHoldRelease(); setInterval(runHoldRelease, 5 * 60 * 1000); }, 60 * 1000);
     console.log('[BounceMan] Hold auto-release scheduled (every 5 min; remind 10 min, release 30 min)');
+
+    // Texts parked overnight by the quiet-hours guard in services/sms.js. This sits
+    // inside the DISABLE_SCHEDULER gate deliberately: a dev instance draining the
+    // queue would send real texts to real customers. Five-minute cadence so the
+    // backlog clears within five minutes of 8 AM Central rather than on the hour;
+    // a pass during quiet hours returns immediately without touching the DB.
+    const { drainSmsQueue } = require('./services/sms');
+    const runSmsDrain = () => drainSmsQueue().catch((e) => console.error('[SMS QUEUE] run failed:', e.message));
+    setTimeout(() => { runSmsDrain(); setInterval(runSmsDrain, 5 * 60 * 1000); }, 90 * 1000);
+    console.log('[BounceMan] Quiet-hours SMS queue drain scheduled (every 5 min; window 9 PM-8 AM CT)');
   }
 
   // Google Business Profile reviews — sync on startup + daily.
