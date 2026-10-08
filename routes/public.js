@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
-const { formatRentalPeriod, formatPhoneUS } = require('../lib/helpers');
+const { formatRentalPeriod, formatPhoneUS, shouldSendDepositNudge } = require('../lib/helpers');
 
 // Helper: get settings as object
 function getSettings() {
@@ -527,7 +527,7 @@ router.post('/contract/:id/sign', (req, res) => {
 
   // Sign-before-pay: once signed, send them to the deposit checkout if it isn't
   // paid yet; otherwise (e.g. signing later via the email link) show the signed page.
-  const bk = db.prepare('SELECT booking_number, deposit_paid FROM bookings WHERE id = ?').get(contract.booking_id);
+  const bk = db.prepare('SELECT booking_number, deposit_paid, deposit_amount FROM bookings WHERE id = ?').get(contract.booking_id);
   const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
   console.log('[SIGN] ' + (justSigned ? 'SIGNED' : 'already signed') + ' ' + (bk ? bk.booking_number : '?') + ' -> ' + next);
 
@@ -537,7 +537,7 @@ router.post('/contract/:id/sign', (req, res) => {
   // minutes, and texting "finish your deposit" one second after they sign nags
   // people who are actively paying. So we wait, then re-check the DB and only
   // send the link if the deposit is STILL unpaid (and the hold is still alive).
-  if (justSigned && bk && !bk.deposit_paid) {
+  if (justSigned && shouldSendDepositNudge(bk)) {
     const bookingId = contract.booking_id;
     const customerId = contract.customer_id;
     const bookingNumber = bk.booking_number;
@@ -547,9 +547,10 @@ router.post('/contract/:id/sign', (req, res) => {
     setTimeout(async () => {
       try {
         const db2 = getDb();
-        const fresh = db2.prepare('SELECT deposit_paid, status FROM bookings WHERE id = ?').get(bookingId);
-        // Paid in the meantime, or the hold was released — don't nag them.
-        if (!fresh || fresh.deposit_paid || fresh.status === 'cancelled') return;
+        const fresh = db2.prepare('SELECT deposit_paid, status, deposit_amount FROM bookings WHERE id = ?').get(bookingId);
+        // Paid in the meantime, the hold was released, or the deposit was zeroed
+        // out (tax-exempt customers get set up after signing) — don't nag them.
+        if (!shouldSendDepositNudge(fresh)) return;
         const cust = db2.prepare('SELECT first_name, last_name, email, phone FROM customers WHERE id = ?').get(customerId);
         const bkFull = db2.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
         const deposit = parseFloat(bkFull.deposit_amount || 0).toFixed(2);

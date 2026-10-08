@@ -1006,6 +1006,21 @@ function initialize() {
       acted_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    -- Outbound texts held back by quiet hours (see services/sms.js). A booking
+    -- signed at 12:45 AM used to fire its deposit nudge ten minutes later; this
+    -- parks the message instead and the scheduler drains it after 8 AM Central.
+    CREATE TABLE IF NOT EXISTS sms_queue (
+      id TEXT PRIMARY KEY,
+      to_number TEXT NOT NULL,
+      body TEXT NOT NULL,
+      tag TEXT,
+      opts_json TEXT,
+      status TEXT DEFAULT 'queued',
+      error TEXT,
+      queued_at TEXT DEFAULT (datetime('now')),
+      sent_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sms_queue_status ON sms_queue(status, queued_at);
   `);
 
   // Fix the Portable Generator image. Its DB rows pointed at generator-1.jpg, but the

@@ -301,6 +301,11 @@ function start() {
   }, 30 * 1000);
   // Hold release/reminders run more frequently (every 20 min) so the 5h window is tight.
   setInterval(() => { releaseExpiredHolds().catch(e => console.error('[HOLD] run failed:', e.message)); }, 20 * 60 * 1000);
+  // Texts parked overnight by the quiet-hours guard. Sharing the 20-minute tick
+  // means the backlog goes out within 20 minutes of 8 AM Central, not on the hour.
+  const drain = () => { smsService.drainSmsQueue().catch(e => console.error('[SMS QUEUE] run failed:', e.message)); };
+  setTimeout(drain, 45 * 1000);
+  setInterval(drain, 20 * 60 * 1000);
 }
 
 module.exports = { start, runScheduler, sendDeliveryReminders, sendReviewRequests, releaseExpiredHolds, sendQuoteFollowUps, centralHour, centralDay };
