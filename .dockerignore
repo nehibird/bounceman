@@ -2,3 +2,7 @@ node_modules
 data
 .env
 *.md
+
+# SECURITY: the deploy clone keeps a GitHub PAT in .git/config.
+# Without this line the token is baked into every image build.
+.git

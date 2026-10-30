@@ -23,21 +23,40 @@ document.addEventListener('DOMContentLoaded', function() {
   var calendarEl = document.getElementById('calendar');
   var statusColors = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
 
-  var bookingEvents = [
-    ${bookings.map(function(b) {
-      var name = (b.first_name + ' ' + b.last_name).replace(/'/g, '');
-      var items = b.items || '';
-      var days = parseInt(b.rental_days) || 1;
-      var endDate = (b.event_end_date && b.event_end_date !== b.event_date) ? b.event_end_date : b.event_date;
-      return "{title:'" + name + (items ? ' - ' + items.replace(/'/g, '') : '') + (days > 1 ? ' (' + days + ' days)' : '') + "',start:'" + b.event_date + "T" + (b.event_start_time || '08:00') + "',end:'" + endDate + "T" + (b.event_end_time || '17:00') + "',url:'/admin/bookings/" + b.id + "',backgroundColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',borderColor:'" + ({pending:'#F39C12',confirmed:'#2ECC71',completed:'#3498DB',cancelled:'#E74C3C'}[b.status] || '#6c757d') + "',textColor:'#fff'}";
-    }).join(',')}
-  ];
+  // SECURITY: these values are customer-supplied (names, item names, block reasons). They used
+  // to be concatenated into single-quoted JS literals with only apostrophes stripped, so a
+  // </script> in a booking name broke out of the script block -- stored XSS in the admin panel,
+  // which is one POST away from creating another admin user. Build real objects and let
+  // JSON.stringify do the escaping, then neutralise </script> for the HTML parser.
+  // Side benefit: names like O'Brien are no longer mangled.
+  var bookingEvents = ${JSON.stringify(bookings.map(function(b) {
+    var STATUS_COLORS = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
+    var name = (b.first_name || '') + ' ' + (b.last_name || '');
+    var items = b.items || '';
+    var days = parseInt(b.rental_days) || 1;
+    var endDate = (b.event_end_date && b.event_end_date !== b.event_date) ? b.event_end_date : b.event_date;
+    var color = STATUS_COLORS[b.status] || '#6c757d';
+    return {
+      title: name + (items ? ' - ' + items : '') + (days > 1 ? ' (' + days + ' days)' : ''),
+      start: b.event_date + 'T' + (b.event_start_time || '08:00'),
+      end: endDate + 'T' + (b.event_end_time || '17:00'),
+      url: '/admin/bookings/' + b.id,
+      backgroundColor: color,
+      borderColor: color,
+      textColor: '#fff'
+    };
+  })).replace(/</g, '\\u003c')};
 
-  var blockedEvents = [
-    ${blocked.map(function(bl) {
-      return "{title:'" + (bl.reason || 'Blocked').replace(/'/g, '') + "',start:'" + bl.date + "',allDay:true,display:'background',backgroundColor:'rgba(231,76,60,0.2)',borderColor:'#E74C3C'}";
-    }).join(',')}
-  ];
+  var blockedEvents = ${JSON.stringify(blocked.map(function(bl) {
+    return {
+      title: bl.reason || 'Blocked',
+      start: bl.date,
+      allDay: true,
+      display: 'background',
+      backgroundColor: 'rgba(231,76,60,0.2)',
+      borderColor: '#E74C3C'
+    };
+  })).replace(/</g, '\\u003c')};
 
   // On phones the month grid is unreadable — default to a clean list view
   // with a simplified toolbar; desktop keeps the full month/week/day grid.

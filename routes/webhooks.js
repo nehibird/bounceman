@@ -2158,6 +2158,17 @@ router.post('/transfer-result', (req, res) => {
 // link in Slack is not reliably playable — pull the bytes and hand them to Slack instead.
 async function postTwilioRecordingToSlack(recUrl, channel, comment, filenameHint) {
   try {
+    // SECURITY: recUrl arrives in a webhook body. Never attach account credentials to a
+    // host we did not choose -- an attacker-supplied RecordingUrl would otherwise send the
+    // Twilio Account SID + Auth Token wherever they pointed it. Allowlist Twilio's own
+    // media hosts before the Authorization header is built.
+    let recHost = '';
+    try { recHost = new URL(recUrl).hostname.toLowerCase(); } catch { recHost = ''; }
+    const TWILIO_MEDIA_HOSTS = ['api.twilio.com', 'media.twiliocdn.com'];
+    if (TWILIO_MEDIA_HOSTS.indexOf(recHost) === -1) {
+      console.error('[TWILIO REC] refusing non-Twilio recording host:', recHost || '(unparseable)');
+      return false;
+    }
     const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN;
     const auth = 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64');
     const r = await fetch(recUrl + '.mp3', { headers: { Authorization: auth } });
@@ -2177,6 +2188,7 @@ async function postTwilioRecordingToSlack(recUrl, channel, comment, filenameHint
 
 // Recording of a transfer-to-Nehemiah leg (the human half of the conversation).
 router.post('/transfer-recording', async (req, res) => {
+  if (!guardTwilio(req, res)) return;
   res.status(204).end();
   try {
     const recUrl = req.body && req.body.RecordingUrl;
@@ -2199,6 +2211,7 @@ router.post('/transfer-recording', async (req, res) => {
 });
 
 router.post('/callback-recording', async (req, res) => {
+  if (!guardTwilio(req, res)) return;
   res.status(204).end();
   try {
     const recUrl = req.body && req.body.RecordingUrl;
