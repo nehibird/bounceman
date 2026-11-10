@@ -205,6 +205,14 @@ const resolve = (a) => H.resolveTaxCity(a.zip, a.city, dp(a));
   // booking must resolve the SAME way, or the same address is taxed differently by whichever door
   // it came in through. Each calcPricing() call that takes a delivery city must be fed from
   // `await resolveTaxCity(..., { address ... })`, not a raw typed-city string.
+  // Accepted resolvers -- all three take the delivery ADDRESS and answer by municipal boundary:
+  //   resolveTaxCity         awaited, 4 s deadline; the charge paths (booking.js, sarah.js)
+  //   resolveTaxCityBounded  same, hard-capped so an admin form cannot hang (admin.js)
+  //   cachedTaxCity          sync cache-only peek; Sarah's spoken QUOTE paths, which must not
+  //                          block a live call. Flagged tax_estimated, and the charge path
+  //                          re-resolves before money moves.
+  // A raw typed-city string is never acceptable. `quoteTax.taxCity` is traced through `quoteTax`.
+  const RESOLVERS = /resolveTaxCity(?:Bounded)?\s*\(|cachedTaxCity\s*\(/;
   function channelAudit(file) {
     const src = fs.readFileSync(path.join(root, 'routes', file), 'utf8');
     const bad = [];
@@ -213,8 +221,13 @@ const resolve = (a) => H.resolveTaxCity(a.zip, a.city, dp(a));
       const args = m[1].split(',').map((s) => s.trim());
       if (args.length < 4 || /^(null|undefined)$/.test(args[3])) continue; // sample/quote math with no city
       const id = args[3];
-      const fed = new RegExp('\\b' + id.replace(/[.$]/g, '\\$&') + '\\s*=\\s*await\\s+(?:\\w+\\.)?resolveTaxCity\\([^;]*address', 's');
-      if (!fed.test(src)) bad.push(args[3]);
+      const base = id.split('.')[0];
+      const asg = new RegExp('\\b' + base.replace(/[.$]/g, '\\$&') + '\\s*=\\s*([^;]*)', 'gs');
+      let ok = false, a;
+      while ((a = asg.exec(src))) {
+        if (RESOLVERS.test(a[1]) && /address/.test(a[1])) { ok = true; break; }
+      }
+      if (!ok) bad.push(id);
     }
     return bad;
   }

@@ -521,9 +521,9 @@ router.post('/review', bookingLimiter, async (req, res) => {
   // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
   // 3rd arg = delivery point: lets resolveTaxCity test the real city/county boundary and return a
   // verified jurisdiction OBJECT (calcPricing accepts it in place of a city string).  It has a 4 s
-  // deadline and on ANY failure (no key, timeout, imprecise geocode) silently returns the same
-  // ZIP/typed-city string as before, so a quote is never slowed past 4 s or broken.  State is fixed to
-  // OK: the booking form has no state field and the service area is Oklahoma only.
+  // deadline and on ANY failure (no key, timeout, imprecise geocode) returns null, which calcPricing
+  // prices at the state+county floor -- never the typed city's rate.  A quote is never slowed past
+  // 4 s or broken.  State is fixed to OK: the form has no state field, the service area is OK only.
   const tax_city = await resolveTaxCity(delivery_zip, delivery_city, { address: delivery_address, state: 'OK' });
   const pricing = calcPricing(settings, subtotal, delivery_fee, tax_city, taxExemptHonored, surface_fee, discount_amount + free_extra_day);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;

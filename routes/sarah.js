@@ -13,8 +13,10 @@ const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedE
 // (see resolveTaxCity). Two flavours, chosen per call site by latency tolerance:
 //  - cachedTaxCity(): SYNC, cache-only (peekTaxJurisdiction). Never touches the network, so it
 //    is safe on a live voice call / waiting text. On a miss it kicks a fire-and-forget lookup
-//    that fills the cache for the next call (the booking step), and returns the typed city
-//    (legacy behaviour) with estimated=true so the caller can flag the number as an estimate.
+//    that fills the cache for the next call (the booking step), and returns the typed city with
+//    estimated=true so the caller can flag the number as an estimate. This is the ONE place a
+//    typed city still sets a rate, and only for a spoken ESTIMATE: by the time money is charged
+//    the cache is warm, and the charge path awaits the real answer either way.
 //  - resolveTaxCity(): awaited (<=4s deadline, silent fallback) -- ONLY where money is charged.
 function cachedTaxCity(zip, typedCity, address) {
   if (!address) return { taxCity: typedCity || null, estimated: true };
@@ -540,7 +542,7 @@ router.post('/create-and-send-link', async (req, res) => {
     }
 
     // Money is charged here, so await the boundary-verified jurisdiction (4s deadline, 180-day
-    // cache, silent fallback to ZIP/typed city). Same call booking.js makes.
+    // cache; unverified => null => the state+county floor). Same call booking.js makes.
     const tax_city = await resolveTaxCity(delivery_zip, delivery_city, { address: delivery_address, state: 'OK' });
     const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, tax_city);
     let total = Math.round((rawTotal - discount_amount) * 100) / 100;
