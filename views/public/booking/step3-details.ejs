@@ -51,13 +51,30 @@
   .wd-btn.wd-disabled:hover { border-color: #e3e7ec; }
   .wd-why { font-size: 12px; color: #b9521f; margin-top: 8px; }
 
+  /* Tap rows. The old power/water/SMS/tax checkboxes were 22x22px with a label you could only hit on the text
+     (audit at 375x667). A row is now >=56px (>=48px for the long-text consent rows), the whole row is the label,
+     and the control itself is 28px. #b84a12 on white = 5.22:1 for the checked border. */
+  .tap-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; margin: 0 0 10px; border: 2px solid #e3e7ec; border-radius: 13px; background: #f7f9fb; cursor: pointer; font-weight: 600; color: #1c2733; }
+  .tap-row input { width: 28px; height: 28px; flex: 0 0 28px; margin: 0; cursor: pointer; accent-color: #b84a12; }
+  .tap-row:has(input:checked) { border-color: #b84a12; background: #fff4ec; }
+  .tap-row:focus-within { outline: 3px solid var(--bm-ink); outline-offset: 2px; }
+  .tap-row.tap-plain { align-items: flex-start; min-height: 48px; font-weight: 400; background: #fff; }
+  .tap-row.tap-plain input { margin-top: 2px; }
+  /* Inline per-field errors replace the top-right toast, which on a phone sat on the header, far from the field that failed.
+     #b3261e on white = 6.5:1. */
+  .field-err { display: none; color: #b3261e; font-size: 14px; font-weight: 600; margin-top: 6px; }
+  .has-err > .tap-opts .tap-row, .has-err .tap-row.tap-err-target { border-color: #b3261e; }
+  .site-note { font-size: 14px; color: #3d4652; background: #fff4ec; border-left: 4px solid #b84a12; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; display: none; }
+  .site-q { margin-bottom: 18px; }
+  .site-q:last-child { margin-bottom: 0; }
+
   /* Order summary. A text scan of this page found no $, Subtotal, Total or Deposit across ~2,800px of form.
      Native <details>: collapsed on phones (one 48px line that still shows the running figure), open on
      desktop. Deliberately NOT sticky - the cart sheet on step 2 showed a pinned panel eats a 375px viewport. */
   .order-sum { background: #fff; border: 2px solid #f0e3d8; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 16px; }
   .order-sum > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; min-height: 48px; cursor: pointer; font-weight: 700; color: var(--bm-blue); }
   .order-sum > summary::-webkit-details-marker { display: none; }
-  .order-sum .os-head { color: var(--bm-orange); white-space: nowrap; }
+  .order-sum .os-head { color: var(--bm-orange-text, #b84a12); /* price text: #d77c42 is 3.07:1 on white, #b84a12 is 5.22:1 */ white-space: nowrap; }
   .order-sum .os-chev { font-size: 12px; margin-left: 6px; transition: transform .2s; }
   .order-sum[open] .os-chev { transform: rotate(180deg); }
   .order-sum .os-body { padding: 0 16px 14px; font-size: 14.5px; }
@@ -131,6 +148,35 @@
                here (they close the outer tag). Only rendered when the cart holds a
                water-capable unit. -->
           <div id="wetDryMount"></div>
+
+          <!-- Power & water, asked EARLY and as a plain yes/no (it used to be two small checkboxes at the bottom of
+               the delivery card that only failed at submit, with a toast, and cost the customer their wet/dry answer
+               by sending them Back). Which questions appear is driven by the cart in siteSync() below. The radios are
+               UI-only (power_choice / water_choice): the server turns ANY non-empty power_available/water_available
+               into 1 (the string "false" is truthy), so only the hidden inputs below are ever submitted, and only for "yes". -->
+          <div class="details-card" id="siteCard" style="display:none">
+            <h5><i class="fas fa-plug me-2"></i>Power &amp; water at your setup spot</h5>
+            <div class="site-q" id="powerQ" style="display:none">
+              <div class="wd-q"><span id="powerQLabel">Is there a power outlet close to where it will go?</span></div>
+              <div class="tap-opts" role="radiogroup" aria-labelledby="powerQLabel">
+                <label class="tap-row"><input type="radio" name="power_choice" value="yes"><span>Yes, there is an outlet nearby</span></label>
+                <label class="tap-row"><input type="radio" name="power_choice" value="no"><span>No, there is no outlet nearby</span></label>
+              </div>
+              <div class="site-note" id="powerNote"></div>
+              <div class="field-err" id="err-power" role="alert"></div>
+              <input type="hidden" name="power_available" value="true" id="powerAvail" disabled>
+            </div>
+            <div class="site-q" id="waterCheckWrap" style="display:none">
+              <div class="wd-q"><span id="waterQLabel">Is there a water hookup (garden hose) close to where it will go?</span></div>
+              <div class="tap-opts" role="radiogroup" aria-labelledby="waterQLabel">
+                <label class="tap-row"><input type="radio" name="water_choice" value="yes"><span>Yes, there is a hookup nearby</span></label>
+                <label class="tap-row"><input type="radio" name="water_choice" value="no"><span>No, there is no water nearby</span></label>
+              </div>
+              <div class="site-note" id="waterNote"></div>
+              <div class="field-err" id="err-water" role="alert"></div>
+              <input type="hidden" name="water_available" value="true" id="waterAvail" disabled>
+            </div>
+          </div>
 
           <!-- Customer Information -->
           <div class="details-card">
@@ -222,44 +268,28 @@
                 </select>
                 <div id="surfaceFeeNote" style="display:none;margin-top:6px;font-size:12px;color:#5b6b7f"><i class="fas fa-info-circle me-1"></i>On concrete, asphalt or indoors we anchor with sandbags instead of stakes — no extra charge.</div>
               </div>
-              <div class="col-md-6 d-flex align-items-end">
-                <div class="form-check mb-2">
-                  <input class="form-check-input" type="checkbox" name="power_available" value="true" id="powerCheck">
-                  <label class="form-check-label fw-bold" for="powerCheck">
-                    <i class="fas fa-plug me-1"></i>Power outlet available nearby
-                  </label>
-                </div>
-              </div>
-              <div class="col-md-6 d-flex align-items-end" id="waterCheckWrap" style="display:none">
-                <div class="form-check mb-2">
-                  <input class="form-check-input" type="checkbox" name="water_available" value="true" id="waterCheck">
-                  <label class="form-check-label fw-bold" for="waterCheck">
-                    <i class="fas fa-tint me-1" style="color:#3b82f6"></i>Water hookup available nearby
-                  </label>
-                </div>
-              </div>
             </div>
           </div>
 
           <!-- SMS Consent -->
           <div class="details-card">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sms_consent" value="1" id="smsConsent">
-              <label class="form-check-label" for="smsConsent" style="font-size:13px;color:#666">
+            <label class="tap-row tap-plain" for="smsConsent" style="font-size:13px;color:#666;margin:0">
+              <input type="checkbox" name="sms_consent" value="1" id="smsConsent">
+              <span>
                 I agree to receive text messages from Bounce Man LLC regarding my booking, including confirmations, reminders, and follow-ups. Msg & data rates may apply. Msg frequency varies. Reply STOP to opt out. Reply HELP for help.
-                <a href="/privacy" target="_blank" style="color:var(--bm-orange)">Privacy Policy</a> | <a href="/terms" target="_blank" style="color:var(--bm-orange)">Terms</a>
-              </label>
-            </div>
+                <a href="/privacy" target="_blank" style="color:var(--bm-orange-text,#b84a12)">Privacy Policy</a> | <a href="/terms" target="_blank" style="color:var(--bm-orange-text,#b84a12)">Terms</a>
+              </span>
+            </label>
           </div>
 
           <!-- Tax Exempt -->
           <div class="details-card">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="tax_exempt_claimed" value="1" id="taxExemptCheck">
-              <label class="form-check-label" for="taxExemptCheck" style="font-size:13px;color:#666">
+            <label class="tap-row tap-plain" for="taxExemptCheck" style="font-size:13px;color:#666;margin:0">
+              <input type="checkbox" name="tax_exempt_claimed" value="1" id="taxExemptCheck">
+              <span>
                 <strong>We are a tax-exempt organization</strong> (church, school, or nonprofit) — A copy of your Oklahoma Sales Tax Exemption Certificate will be required prior to your balance due date.
-              </label>
-            </div>
+              </span>
+            </label>
             <div id="taxExemptCodeWrap" style="display:none;margin-top:12px;">
               <input type="text" class="form-control" name="tax_exempt_cert" id="taxExemptCert" placeholder="Oklahoma Sales Tax Exemption Permit #" autocomplete="off">
               <small class="text-muted" style="font-size:12px">Enter your exemption permit / certificate number to claim tax-exempt status.</small>
@@ -342,7 +372,7 @@
           : '') +
       '</div>';
     });
-    html += '</div>';
+    html += '<div class="field-err" id="err-wd" role="alert"></div></div>';
     mount.innerHTML = html;
   }
 
@@ -359,8 +389,7 @@
   function wdSyncHidden() {
     var wetIds = Object.keys(wdChoice).filter(function(id) { return wdChoice[id]; });
     document.getElementById('hiddenWetItems').value = wetIds.join(',');
-    var wrap = document.getElementById('waterCheckWrap');
-    if (wrap) { wrap.style.display = wetIds.length > 0 ? '' : 'none'; }
+    siteSync(); // water question follows the wet/dry answer
     refreshBackHref(); // the Back link must carry the wet/dry answer as it stands NOW
   }
 
@@ -402,6 +431,106 @@
     var btn = e.target && e.target.closest ? e.target.closest('.wd-btn') : null;
     if (!btn || btn.classList.contains('wd-disabled')) return;
     wdSet(btn.getAttribute('data-unit'), btn.getAttribute('data-mode') === 'wet');
+  });
+
+  // --- Power & water (asked early, driven by the cart) ----------------------
+  // WHICH units need power comes from the route: cartUnits[i].needsPower (false for equipment whose
+  // power_required starts "None" or "Battery": Toddler Soft Play Playground = "None - no power needed",
+  // Cornhole = "None", Speaker = "Battery powered"). The old rule keyed off a hard-coded generator UUID
+  // (fff4986b-...) that matches NO row in equipment (the real Portable Generator is E68C23DC-...), so
+  // every cart without that ghost id - including soft play - was forced to tick "power available" or leave.
+  // If the route has not been updated, needsPower is undefined and we keep asking (safe default), but as an
+  // inline yes/no, never as a top-of-page toast at submit.
+  // The optional powerAddon local ({id,name,price}) lets "no outlet" add the generator right here.
+  var PW_ADDON = ${ typeof powerAddon !== 'undefined' && powerAddon && powerAddon.id ? JSON.stringify({ id: String(powerAddon.id), name: String(powerAddon.name || 'Portable Generator'), price: (powerAddon.price === null || powerAddon.price === undefined || !isFinite(Number(powerAddon.price))) ? null : Number(powerAddon.price) }).replace(/</g, '\\u003c') : 'null' };
+
+  function pwIsGen(u) { return /generator/i.test(u.name || '') || (PW_ADDON && u.id === PW_ADDON.id); }
+  var PW_HAS_GEN = WD_UNITS.some(pwIsGen);   // a generator already in the cart satisfies "no outlet"
+  var PW_NEEDS = !WD_UNITS.length || WD_UNITS.some(function(u) { return !pwIsGen(u) && u.needsPower !== false; });
+
+  function pwVal(name) {
+    var r = document.querySelector('input[name="' + name + '"]:checked');
+    return r ? r.value : '';
+  }
+  function fieldErr(id, msg, focusEl) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg; el.style.display = 'block';
+    if (el.parentNode && el.parentNode.classList) el.parentNode.classList.add('has-err');
+    var t = focusEl || el;
+    if (t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (focusEl && focusEl.focus) { try { focusEl.focus({ preventScroll: true }); } catch (x) { focusEl.focus(); } }
+  }
+  function clearFieldErr(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = 'none'; el.textContent = '';
+    if (el.parentNode && el.parentNode.classList) el.parentNode.classList.remove('has-err');
+  }
+
+  // Show only the questions this cart needs. Called whenever wet/dry changes.
+  function siteSync() {
+    var pq = document.getElementById('powerQ'), wq = document.getElementById('waterCheckWrap'), card = document.getElementById('siteCard');
+    if (!pq || !wq || !card) return;
+    var showP = PW_NEEDS && !PW_HAS_GEN;
+    var showW = (document.getElementById('hiddenWetItems').value || '').length > 0;
+    pq.style.display = showP ? '' : 'none';
+    wq.style.display = showW ? '' : 'none';
+    card.style.display = (showP || showW) ? '' : 'none';
+    // A hidden question must not submit a stale answer.
+    document.getElementById('powerAvail').disabled = !(showP && pwVal('power_choice') === 'yes');
+    document.getElementById('waterAvail').disabled = !(showW && pwVal('water_choice') === 'yes');
+    pwNote(); waterNote();
+  }
+
+  function pwNote() {
+    var n = document.getElementById('powerNote');
+    if (!n) return;
+    n.textContent = '';
+    if (pwVal('power_choice') !== 'no') { n.style.display = 'none'; return; }
+    n.style.display = 'block';
+    if (PW_ADDON) {
+      n.appendChild(document.createTextNode('No problem - we will add a ' + PW_ADDON.name + (PW_ADDON.price !== null ? ' (' + osMoney(PW_ADDON.price) + ')' : '') + ' to your rental so it runs anywhere. The price is confirmed on the next step.'));
+    } else {
+      var a = document.createElement('a');
+      a.href = buildBackHref(); a.textContent = 'Go back and add the Portable Generator';
+      n.appendChild(document.createTextNode('A generator runs it without an outlet. '));
+      n.appendChild(a);
+      n.appendChild(document.createTextNode(' (your answers are kept), or call (580) 308-9288.'));
+    }
+  }
+
+  function waterNote() {
+    var n = document.getElementById('waterNote');
+    if (!n) return;
+    n.textContent = '';
+    if (pwVal('water_choice') !== 'no') { n.style.display = 'none'; return; }
+    n.style.display = 'block';
+    var canDry = WD_UNITS.every(function(u) { return !u.wetCapable || !u.dryBlocked; });
+    n.appendChild(document.createTextNode('A wet setup needs a hose hookup nearby. '));
+    if (canDry) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-sm btn-outline-primary rounded-pill'; b.id = 'switchDry';
+      b.style.minHeight = '44px';
+      b.textContent = 'Switch to dry (same price)';
+      n.appendChild(b);
+    } else {
+      n.appendChild(document.createTextNode('Please call (580) 308-9288 and we will sort out a dry option for your date.'));
+    }
+  }
+
+  document.addEventListener('change', function(e) {
+    var nm = e.target && e.target.name;
+    if (nm === 'power_choice') { clearFieldErr('err-power'); siteSync(); }
+    if (nm === 'water_choice') { clearFieldErr('err-water'); siteSync(); }
+  });
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'switchDry') {
+      Object.keys(wdChoice).forEach(function(id) { if (wdChoice[id]) wdSet(id, false); });
+      var wr = document.querySelector('input[name="water_choice"]:checked'); if (wr) wr.checked = false;
+      clearFieldErr('err-water'); siteSync();
+    }
+    if (e.target && e.target.closest && e.target.closest('.wd-btn')) clearFieldErr('err-wd');
   });
 
   // --- Order summary --------------------------------------------------------
@@ -494,13 +623,12 @@
     } else {
       // No water-capable units — preserve the old passthrough behaviour exactly.
       document.getElementById('hiddenWetItems').value = wetItems;
-      if (wetItems && wetItems.length > 0) {
-        document.getElementById('waterCheckWrap').style.display = '';
-      }
+      siteSync();
     }
 
     // Build back link (full param set — see buildBackHref)
     refreshBackHref();
+    siteSync();
   })();
 
 
@@ -525,6 +653,9 @@
     var wetItems = document.getElementById('hiddenWetItems').value || '';
     var items = params.get('items') || '';
 
+    // Failures are shown INLINE under the field that failed (first failure wins, in page order). They used to be
+    // a top-right toast that overlapped the header on a 375px screen, away from the field, and the power/water
+    // ones sent the customer Back, losing their wet/dry answer.
     // Every water-capable unit needs an explicit answer. Previously this page
     // inherited whatever the link said, so a texted link could book the wrong
     // setup or dead-end at a 409 the customer could do nothing about.
@@ -535,50 +666,73 @@
         var q = el.querySelector('.wd-q span');
         return q ? q.textContent : 'your rental';
       });
-      showToast('Please choose wet or dry for: ' + names.join(', '), 'warning');
       unanswered.forEach(function(el) {
         var req = el.querySelector('.wd-req');
         if (req) { req.classList.remove('wd-flash'); void req.offsetWidth; req.classList.add('wd-flash'); }
       });
-      unanswered[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      fieldErr('err-wd', 'Please choose wet or dry for: ' + names.join(', '), unanswered[0]);
       return;
     }
 
-    // No park setups on Sundays — see sundayParkSelected() below.
+    // Power: asked only when the cart needs it and no generator is in it.
+    var powerShown = document.getElementById('powerQ').style.display !== 'none';
+    if (powerShown) {
+      var pc = pwVal('power_choice');
+      if (!pc) {
+        e.preventDefault();
+        fieldErr('err-power', 'Please tell us whether there is an outlet nearby.', document.querySelector('input[name="power_choice"]'));
+        return;
+      }
+      if (pc === 'no' && !PW_ADDON) {
+        e.preventDefault();
+        fieldErr('err-power', 'Without an outlet this rental needs our Portable Generator. Use the link above to add it, or call (580) 308-9288.', document.getElementById('powerNote'));
+        return;
+      }
+    }
+
+    // Wet units require a water hookup.
+    if (wetItems.length > 0) {
+      var wc = pwVal('water_choice');
+      if (!wc) {
+        e.preventDefault();
+        fieldErr('err-water', 'Please tell us whether there is a water hookup nearby.', document.querySelector('input[name="water_choice"]'));
+        return;
+      }
+      if (wc === 'no') {
+        e.preventDefault();
+        fieldErr('err-water', 'A wet setup needs a water hookup within 100 feet. Switch to dry above, or say yes if you have one.', document.getElementById('waterNote'));
+        return;
+      }
+    }
+
+    // No park setups on Sundays — see sundayParkSelected() below. The inline note already exists; surface it.
     if (sundayParkSelected()) {
       e.preventDefault();
-      showToast('We can\\'t set up at a park on Sundays — Sunday rentals are picked up Monday morning, so the unit would be left out overnight. Please choose a backyard, indoor, or commercial location, or pick a Saturday instead.', 'warning');
-      document.querySelector('select[name="venue_type"]').focus();
+      var spn = document.getElementById('sundayParkNote');
+      spn.style.display = '';
+      spn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.querySelector('select[name="venue_type"]').focus({ preventScroll: true });
       return;
     }
 
-    // Wet units require water hookup
-    if (wetItems.length > 0) {
-      var waterCheck = document.getElementById('waterCheck');
-      if (!waterCheck.checked) {
-        e.preventDefault();
-        showToast('You selected a wet setup, which requires a water hookup within 100 feet. Please confirm water is available or go back and select the dry option.', 'warning');
-        waterCheck.focus();
-        return;
-      }
+    // "No outlet" + generator offered here: put it in the cart the review step prices (equipment_ids).
+    if (powerShown && pwVal('power_choice') === 'no' && PW_ADDON) {
+      var hi = document.getElementById('hiddenItems');
+      if (hi.value.split(',').indexOf(PW_ADDON.id) === -1) hi.value = hi.value ? hi.value + ',' + PW_ADDON.id : PW_ADDON.id;
     }
 
-    // No power = must have generator
-    var powerCheck = document.getElementById('powerCheck');
-    if (!powerCheck.checked) {
-      var hasGenerator = items.indexOf('fff4986b-1b23-4202-9bcb-ddc8775c5410') !== -1;
-      if (!hasGenerator) {
-        e.preventDefault();
-        showToast('Inflatables require power to run. Please confirm a power outlet is available nearby, or go back and add a Portable Generator to your rental.', 'warning');
-        powerCheck.focus();
-        return;
-      }
-    }
     // ZIP must be in service area
     if (!zipValid) {
       e.preventDefault();
-      showToast('Your ZIP code is outside our delivery area. Please call <a href="tel:5803089288" style="color:white;text-decoration:underline">(580) 308-9288</a> to discuss delivery options.', 'error');
-      document.getElementById('zipInput').focus();
+      var zr = document.getElementById('zipResult');
+      zr.style.display = 'block'; zr.textContent = '';
+      var zs = document.createElement('span'); zs.style.color = '#c62828'; zs.style.fontWeight = '600';
+      var short5 = document.getElementById('zipInput').value.replace(/\\D/g, '').length < 5;
+      zs.appendChild(document.createTextNode(short5 ? 'Enter your 5-digit ZIP so we can price delivery.' : 'That ZIP is outside our delivery area. Please call '));
+      if (!short5) { var za = document.createElement('a'); za.href = 'tel:5803089288'; za.textContent = '(580) 308-9288'; za.style.color = 'inherit'; zs.appendChild(za); zs.appendChild(document.createTextNode(' to discuss delivery options.')); }
+      zr.appendChild(zs);
+      zr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('zipInput').focus({ preventScroll: true });
       return;
     }
   });
@@ -587,7 +741,7 @@
   var zipValid = false;
   var zipTimer = null;
   function checkZip(val) {
-    val = val.replace(/\D/g, '');
+    val = val.replace(/\\D/g, '');
     if (val.length < 5) {
       document.getElementById('zipResult').style.display = 'none';
       zipValid = false;

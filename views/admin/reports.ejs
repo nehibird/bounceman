@@ -143,26 +143,35 @@
           <div class="small text-muted mb-1 fw-semibold">STS-20021 — city &amp; county supplement</div>
           <div class="table-responsive">
             <table class="table table-sm">
-              <thead><tr><th>Jurisdiction</th><th class="text-end">Net sales</th><th class="text-end">Rate</th><th class="text-end">Tax</th></tr></thead>
+              <thead><tr><th>Jurisdiction</th><th>Basis</th><th class="text-end">Net sales</th><th class="text-end">Rate</th><th class="text-end">Tax</th></tr></thead>
               <tbody>
                 ${okReturn.jurisdictions.map(function(j){
                   return '<tr'+(j.resolved?'':' class="table-warning"')+'><td>'+j.city+(j.resolved?'':' <span class="badge bg-danger">unresolved jurisdiction</span>')+'</td>'
+                    +'<td>'+(j.verifiedBase?'<span class="badge bg-success" title="Delivery point tested against the real city limits when booked">verified $'+j.verifiedBase.toFixed(2)+'</span> ':'')+(j.guessBase?'<span class="badge bg-warning text-dark" title="Not boundary-verified: derived from the typed city name">unverified $'+j.guessBase.toFixed(2)+'</span>':'')+'</td>'
                     +'<td class="text-end">$'+j.base.toFixed(2)+'</td>'
                     +'<td class="text-end">'+(j.rate*100).toFixed(3)+'%</td>'
                     +'<td class="text-end">$'+j.tax.toFixed(2)+'</td></tr>';
                 }).join('')}
                 ${okReturn.counties.map(function(c){
-                  return '<tr><td class="text-muted">'+c.county+' COUNTY</td>'
+                  return '<tr><td class="text-muted">'+c.county+' COUNTY</td><td></td>'
                     +'<td class="text-end text-muted">$'+c.base.toFixed(2)+'</td>'
                     +'<td class="text-end text-muted">'+(c.rate*100).toFixed(3)+'%</td>'
                     +'<td class="text-end text-muted">$'+c.tax.toFixed(2)+'</td></tr>';
                 }).join('')}
-                <tr class="border-top"><td colspan="3" class="fw-semibold text-end">Item P total &rarr; Line 7</td><td class="text-end fw-bold">$${okReturn.localTax.toFixed(2)}</td></tr>
+                <tr class="border-top"><td colspan="4" class="fw-semibold text-end">Item P total &rarr; Line 7</td><td class="text-end fw-bold">$${okReturn.localTax.toFixed(2)}</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
+
+      ${okReturn.provenance.guessCount ? `
+      <div class="alert alert-warning py-2 px-3 small mt-2 mb-2">
+        <i class="fas fa-triangle-exclamation me-1"></i><strong>$${okReturn.provenance.guessBase.toFixed(2)} of taxable sales (${okReturn.provenance.guessCount} booking${okReturn.provenance.guessCount===1?'':'s'}) is NOT boundary-verified.</strong>
+        Those rows were taxed by the typed city name, so their jurisdiction is a guess. Verified: $${okReturn.provenance.verifiedBase.toFixed(2)} (${okReturn.provenance.verifiedCount}).
+        See the <em>Basis</em> column below.
+      </div>` : `
+      <div class="alert alert-success py-2 px-3 small mt-2 mb-2">All ${okReturn.provenance.verifiedCount} taxable booking(s) in this period are boundary-verified.</div>`}
 
       ${okReturn.lines.some(function(l){return l.mismatch || l.unresolved;}) ? `
       <div class="alert alert-warning py-2 px-3 small mt-2 mb-2">
@@ -172,13 +181,15 @@
 
       <div class="table-responsive mt-2">
         <table class="table table-sm table-hover">
-          <thead><tr><th>Booking</th><th>Date</th><th>Customer</th><th>City</th><th class="text-end">Taxable</th><th class="text-end">Delivery</th><th class="text-end">Tax charged</th><th class="text-end">Per rate table</th><th>Exempt</th></tr></thead>
+          <thead><tr><th>Booking</th><th>Date</th><th>Customer</th><th>City</th><th>Jurisdiction used</th><th>Basis</th><th class="text-end">Taxable</th><th class="text-end">Delivery</th><th class="text-end">Tax charged</th><th class="text-end">Expected</th><th>Exempt</th></tr></thead>
           <tbody>
             ${okReturn.lines.map(function(l){
               var cls = l.unresolved ? ' class="table-danger"' : (l.mismatch ? ' class="table-warning"' : '');
               var ex = l.exempt ? (l.cert ? '<span class="badge bg-success">'+l.cert+'</span>' : '<span class="badge bg-danger">UNBACKED</span>') : '';
               return '<tr'+cls+'><td><a href="/admin/bookings?q='+l.booking_number+'">'+l.booking_number+'</a></td>'
                 +'<td>'+l.event_date+'</td><td>'+l.who+'</td><td>'+(l.city||'<span class="text-danger">none</span>')+'</td>'
+                +'<td class="small">'+(l.jurisdiction||'')+'</td>'
+                +'<td>'+(l.source==='verified'?'<span class="badge bg-success">verified</span>':l.source==='stored-guess'?'<span class="badge bg-warning text-dark" title="'+l.basis+'">name-based</span>':l.source==='legacy'?'<span class="badge bg-secondary" title="Booked before the jurisdiction was stored; re-derived from the typed city">legacy guess</span>':'')+'</td>'
                 +'<td class="text-end">$'+l.base.toFixed(2)+'</td>'
                 +'<td class="text-end text-muted">'+(l.delivery?'$'+l.delivery.toFixed(2):'—')+'</td>'
                 +'<td class="text-end">$'+l.taxCharged.toFixed(2)+'</td>'

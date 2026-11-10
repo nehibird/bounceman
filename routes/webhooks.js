@@ -4,6 +4,7 @@ const { getDb } = require('../db');
 const { v4: uuid } = require('uuid');
 const stripeService = require('../services/stripe');
 const vapiSvc = require('../services/vapi');
+const { bookingLinkPath } = require('../lib/booking-links');
 const crypto = require('crypto');
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || '2549cba6-1c8e-44df-86ed-a0f7533c162c';
 
@@ -1056,61 +1057,20 @@ Rules:
       return;
     }
 
-    // Create customer
-    const customerId = uuid();
-    db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone, source) VALUES (?, ?, ?, ?, ?, \'slack\')').run(
-      customerId, parsed.first_name || 'Unknown', parsed.last_name || '', parsed.email || null, parsed.phone || null
-    );
-
-    // Calculate pricing
-    let subtotal = 0;
-    const items = [];
-    for (const eqId of parsed.equipment_ids) {
-      const equip = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eqId);
-      if (!equip) continue;
-      const dur = parsed.duration_type || 'daily';
-      const price = dur === '4hr' ? equip.price_4hr : dur === 'overnight' ? equip.price_overnight : equip.price_daily;
-      subtotal += price;
-      items.push({ id: eqId, name: equip.name, price, dur });
-    }
-
-    const total = subtotal;
-    const depositAmount = Math.round(total * 0.5 * 100) / 100;
-    const bookingId = uuid();
-    const bookingNumber = generateBookingNumber();
-
-    db.prepare(`INSERT INTO bookings (id, booking_number, customer_id, status, event_date,
-      event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due,
-      payment_status, internal_notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
-      bookingId, bookingNumber, customerId, parsed.status || 'confirmed',
-      parsed.event_date, parsed.event_start_time || '09:00', parsed.event_end_time || '17:00',
-      subtotal, total, depositAmount, total,
-      parsed.payment_status || 'unpaid', parsed.notes || 'Created via Slack by Sarah'
-    );
-
-    // Add booking items
-    for (const item of items) {
-      db.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, item_type, quantity, unit_price, total_price, duration_type)
-        VALUES (?, ?, ?, ?, 'equipment', 1, ?, ?, ?)`).run(
-        uuid(), bookingId, item.id, item.name, item.price, item.price, item.dur
-      );
-    }
-
-    console.log('[SARAH-SLACK] Booking created:', bookingNumber);
-
-    // Reply in thread
-    const itemList = items.map(i => i.name + ' ($' + i.price + ')').join(', ');
-    const msg = `Done! Booking *${bookingNumber}* created:\n` +
-      `*Customer:* ${parsed.first_name} ${parsed.last_name}\n` +
-      `*Date:* ${parsed.event_date}\n` +
-      `*Equipment:* ${itemList}\n` +
-      `*Total:* $${total.toFixed(2)}\n` +
-      `*Payment:* ${parsed.payment_status || 'unpaid'}\n` +
-      (parsed.notes ? `*Notes:* ${parsed.notes}\n` : '') +
-      `<https://bouncemanrentals.com/admin/bookings/${bookingId}|View in Admin>`;
-
-    await slackReply(SLACK_TOKEN, event.channel, event.ts, msg);
+    // DECLINED ON PURPOSE (2026-11): this path no longer creates bookings.
+    // The old hand-rolled creator wrote real bookings with no sales tax, no delivery fee, no
+    // priceForBooking (specials/ride-along/overnight rules), no availability check, no
+    // validateBookingDate, a 50%-of-total deposit instead of the flat $50, no delivery address
+    // (so tax could not even be computed), no payment row, and an LLM-supplied status /
+    // payment_status / event_date written unvalidated. A mispriced, double-bookable record is
+    // worse than no record. Bookings come from the admin panel (full pricing + availability
+    // + tax-boundary pipeline) or the public funnel / Sarah SMS+voice.
+    console.warn('[SARAH-SLACK] create_booking declined (Slack booking creation disabled; use admin panel)');
+    await slackReply(SLACK_TOKEN, event.channel, event.ts,
+      ":no_entry: I can't create bookings from Slack anymore - they were being saved without sales tax, delivery fees, or an availability check. " +
+      'Please create it in the admin panel instead: <https://bouncemanrentals.com/admin/bookings/new|New booking>. ' +
+      'I can still text walk-up event links from here.');
+    return;
 
   } catch (err) {
     console.error('[SARAH-SLACK] Error:', err.message);
@@ -1348,7 +1308,7 @@ async function handleOnMyWay(value, user, response_url, originalMessage, payload
       const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
       let smsMsg = 'Bounce Man is on the way! ' + first_name + ', we should arrive within 30-60 minutes.';
       if (!booking.contract_signed && booking.contract_id) smsMsg += '\n\nPlease sign your rental agreement before we arrive: ' + baseUrl + '/contract/' + booking.contract_id;
-      if (parseFloat(booking.balance_due) > 0) smsMsg += '\n\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + '/booking/pay/' + booking_number;
+      if (parseFloat(booking.balance_due) > 0) smsMsg += '\n\nPay your remaining balance of $' + parseFloat(booking.balance_due).toFixed(2) + ': ' + baseUrl + bookingLinkPath('pay', booking_number); // signed token so the SMS link skips the verify form
       smsMsg += '\n\nSee you soon!';
       await smsService.sendSms(customerPhone, smsMsg, { skipQuietHours: true });
       smsOk = true;

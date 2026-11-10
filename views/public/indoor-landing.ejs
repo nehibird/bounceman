@@ -1,0 +1,137 @@
+<%#
+  Shared view for the two year-round indoor landing pages (routes/public.js,
+  INDOOR_PAGES): /indoor-bounce-house-rental-kay-county-ok and
+  /church-lock-in-rentals-kay-county-ok.
+
+  Built on city-landing.ejs (same hero, content + sidebar, card grid, link strip) with ONE
+  deliberate difference: city-landing hardcodes its four equipment cards and its "4 Units
+  Available" stat, which goes stale the moment the fleet changes. Here the cards come from
+  the live equipment table (the route queries it), so price, size, power and age range on
+  the page are always whatever the booking page says.
+
+  This is a JS template literal inside an EJS include: no EJS output tags in the body, no
+  stray backticks, no unescaped dollar-brace. Anything from the DB goes through esc().
+%>
+<%- include('../layouts/public', { body: `
+
+<section class="hero-section" style="padding:60px 0">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <span class="badge-category mb-3 d-inline-block">${esc(pageData.badge)}</span>
+        <h1 style="font-size:42px;font-weight:700;margin-bottom:16px">${esc(pageData.h1)}</h1>
+        <p style="font-size:19px;opacity:0.9;margin-bottom:28px">${esc(pageData.subheading)}</p>
+        <div class="d-flex gap-3 flex-wrap">
+          <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Book Online Now</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light btn-lg"><i class="fas fa-phone me-2"></i>(580) 308-9288</a>
+        </div>
+        <div class="d-flex gap-4 mt-4">
+          <div><strong style="font-size:24px;display:block">FREE</strong><small>Delivery in Kay County</small></div>
+          <div><strong style="font-size:24px;display:block">${items.length}</strong><small>Indoor-ready rentals</small></div>
+          <div><strong style="font-size:24px;display:block">Year-round</strong><small>Indoor bookings</small></div>
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        ${pageData.heroImage ? `<img ${imgAttrs(pageData.heroImage, { sizes: '(min-width:992px) 440px, 100vw', eager: true })} alt="${esc(pageData.heroAlt)}" class="img-fluid rounded-4" style="max-height:320px;object-fit:cover;width:100%">` : ''}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Page content -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8">
+        <h2 style="color:var(--bm-blue);font-size:30px;margin-bottom:20px">${esc(pageData.h2)}</h2>
+        ${pageData.bodyHtml}
+      </div>
+      <div class="col-lg-4">
+        <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
+          <h4 style="color:var(--bm-blue)"><i class="fas fa-truck me-2" style="color:var(--bm-orange)"></i>Delivery</h4>
+          <div class="alert alert-success border-0 rounded-3 py-2 mb-3">
+            <strong><i class="fas fa-check-circle me-1"></i>FREE in Kay County</strong>
+          </div>
+          <p class="mb-2" style="font-size:15px">Tonkawa, Ponca City, Blackwell, Newkirk and the rest of Kay County. Stillwater, Enid and Perry get a flat fee, quoted by ZIP code.</p>
+          <p class="mb-0" style="font-size:15px"><a href="/delivery">See every town and what it costs</a></p>
+        </div>
+        <div class="card border-0 rounded-4 p-4" style="background:var(--bm-gradient);color:white">
+          <h4>Ready to Book?</h4>
+          <p style="opacity:0.9;font-size:15px">Check availability for your date and lock in your rental today.</p>
+          <a href="/booking" class="btn btn-light fw-bold w-100" style="color:var(--bm-orange)"><i class="fas fa-calendar-check me-2"></i>Check Availability</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light mt-2 w-100"><i class="fas fa-phone me-2"></i>Call (580) 308-9288</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Equipment: live from the equipment table -->
+<section class="py-5 fun-bg" style="background:var(--bm-light-bg)">
+  <div class="shape-circle shape-1"></div>
+  <div class="shape-circle shape-2"></div>
+  <div class="container">
+    <div class="section-title">
+      <h2>${esc(pageData.gridTitle)}</h2>
+      <p>${esc(pageData.gridSubtitle)}</p>
+    </div>
+    <div class="row g-4">
+${items.map(item => `
+      <div class="col-md-6 col-lg-4">
+        <a href="/equipment/${esc(item.slug)}" class="equipment-card-link" style="text-decoration:none;color:inherit;display:block">
+          <div class="equipment-card">
+            ${item.image ? `<img ${imgAttrs(item.image, { sizes: '(min-width:992px) 360px, (min-width:768px) 50vw, 100vw' })} class="card-img-top" alt="${esc(item.name)} rental, Kay County OK" style="object-fit:cover">` : ''}
+            <div class="card-body">
+              <span class="badge-category mb-2 d-inline-block">${esc(String(item.category).replace(/[-_]/g, ' '))}</span>
+              <h5 class="card-title">${esc(item.name)}</h5>
+              <p class="text-muted small mb-2">${esc(item.indoorNote)}</p>
+              <ul class="list-unstyled small text-muted mb-0">
+                ${item.dimensions ? `<li>Size: ${esc(item.dimensions)}</li>` : ''}
+                <li>Power: ${esc(item.power_required || 'ask us')}</li>
+                ${item.age_range ? `<li>Ages: ${esc(item.age_range)}</li>` : ''}
+              </ul>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <span class="price-tag">$${Math.round(item.price_daily)}${item.full_day_only ? '' : '/day'}${item.price_overnight ? ' &middot; $' + Math.round(item.price_overnight) + ' overnight' : ''}</span>
+                <span class="btn btn-sm btn-outline-primary rounded-pill">Details <i class="fas fa-arrow-right ms-1"></i></span>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+`).join('')}
+    </div>
+    <div class="text-center mt-4">
+      <a href="/equipment" class="btn btn-outline-primary rounded-pill px-4">View All Equipment</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="section-title">
+      <h2>Common Questions</h2>
+    </div>
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+${pageData.faqs.map(f => `
+        <h5 style="color:var(--bm-blue);margin-top:20px">${esc(f.q)}</h5>
+        <p>${esc(f.a)}</p>
+`).join('')}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Related pages -->
+<section class="py-4" style="background:var(--bm-light-bg)">
+  <div class="container text-center">
+    <h3 style="color:var(--bm-blue);margin-bottom:16px">More Ways We Can Help</h3>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      ${pageData.related.map(r => `<a href="${esc(r.url)}" class="btn btn-outline-secondary rounded-pill px-3 py-2" style="font-size:14px">${esc(r.name)}</a>`).join('')}
+      <a href="/delivery" class="btn btn-outline-primary rounded-pill px-3 py-2" style="font-size:14px">View All Service Areas</a>
+    </div>
+  </div>
+</section>
+
+`, scripts: `<script type="application/ld+json">${faqSchema}</script>\n<script type="application/ld+json">${serviceSchema}</script>` }) %>

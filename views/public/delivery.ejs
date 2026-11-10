@@ -191,6 +191,8 @@
   display:inline-flex;align-items:baseline;gap:6px;background:var(--dm-paper);
   border:1px solid var(--dm-rule);border-radius:999px;padding:5px 12px;font-size:13.5px;font-weight:600;
 }
+.dmp .dm-town a{color:inherit;text-decoration:underline;text-decoration-color:var(--dm-rule);text-underline-offset:3px}
+.dmp .dm-town a:hover{color:var(--dm-clay);text-decoration-color:currentColor}
 .dmp .dm-town s{text-decoration:none;color:#9c9184;font-size:12px;font-variant-numeric:tabular-nums}
 
 .dmp .dm-far{
@@ -295,7 +297,11 @@
         '<div class="dm-fee">' + (tier.fee === 0 ? 'Free' : '$' + tier.fee) + '</div></div>' +
         '<p class="note">' + tier.note + '</p>' +
         '<div class="dm-towns">' + towns.map(function(t) {
-          return '<span class="dm-town">' + t.n + (t.s === 'KS' ? ', KS' : '') +
+          /* Towns with a landing page link to it (cityPages, from routes/public.js). Plain-string
+             concatenation, not an EJS tag: see the note on the outer template literal below. */
+          var href = cityPages[t.n];
+          var name = t.n + (t.s === 'KS' ? ', KS' : '');
+          return '<span class="dm-town">' + (href ? '<a href="' + href + '">' + name + '</a>' : name) +
                  ' <s>' + t.mi + ' mi</s></span>';
         }).join('') + '</div></div>';
     }).join('')}

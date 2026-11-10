@@ -158,6 +158,26 @@ ${featured.length > 0 ? featured.map((item, idx) => `
   </div>
 </section>
 
+<!-- Rentals by occasion. Added because /wedding-soft-play-rental had zero inbound links from anywhere, and December-March
+     looked closed: indoor rentals run year-round, and these are the pages that sell them. -->
+<section class="py-5" style="background:white">
+  <div class="container py-3 text-center">
+    <div class="section-title">
+      <h2>Rentals for Every Occasion</h2>
+      <p>Outdoor season is April through November. Indoor rentals run all year.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      <a href="/indoor-bounce-house-rental-kay-county-ok" class="btn btn-outline-primary rounded-pill px-4 py-2">Indoor Rentals, Year-Round</a>
+      <a href="/church-lock-in-rentals-kay-county-ok" class="btn btn-outline-primary rounded-pill px-4 py-2">Church Lock-Ins</a>
+      <a href="/church-event-bounce-house-rental" class="btn btn-outline-secondary rounded-pill px-4 py-2">Church Events</a>
+      <a href="/school-field-day-bounce-house-rental" class="btn btn-outline-secondary rounded-pill px-4 py-2">School Field Days</a>
+      <a href="/wedding-soft-play-rental" class="btn btn-outline-secondary rounded-pill px-4 py-2">Wedding Soft Play</a>
+      <a href="/bounce-house-rental-birthday-party" class="btn btn-outline-secondary rounded-pill px-4 py-2">Birthday Parties</a>
+      <a href="/graduation-party-bounce-house-rental" class="btn btn-outline-secondary rounded-pill px-4 py-2">Graduation Parties</a>
+    </div>
+  </div>
+</section>
+
 <!-- Service Areas -->
 <section class="py-5 fun-bg">
   <div class="shape-circle shape-1"></div>
@@ -167,19 +187,24 @@ ${featured.length > 0 ? featured.map((item, idx) => `
       <h2>Free Delivery Across Kay County</h2>
       <p>And beyond — serving Oklahoma communities near and far</p>
     </div>
+    <!-- Each town pill links to its landing page (these were plain text, which left Newkirk, Enid and Perry with zero inbound links). Kaw City has no page of its own, so it goes to /delivery. -->
     <div class="row g-3 justify-content-center">
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Tonkawa</strong> <span class="badge bg-success">FREE</span></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Ponca City</strong> <span class="badge bg-success">FREE</span></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Blackwell</strong> <span class="badge bg-success">FREE</span></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Newkirk</strong> <span class="badge bg-success">FREE</span></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Kaw City</strong> <span class="badge bg-success">FREE</span></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Stillwater</strong></div></div>
-      <div class="col-auto"><div class="bg-white rounded-pill px-4 py-2 shadow-sm"><strong>Enid</strong></div></div>
+      <div class="col-auto"><a href="/bounce-house-rental-tonkawa-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Tonkawa</strong> <span class="badge bg-success">FREE</span></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-ponca-city-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Ponca City</strong> <span class="badge bg-success">FREE</span></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-blackwell-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Blackwell</strong> <span class="badge bg-success">FREE</span></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-newkirk-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Newkirk</strong> <span class="badge bg-success">FREE</span></a></div>
+      <div class="col-auto"><a href="/delivery" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Kaw City</strong> <span class="badge bg-success">FREE</span></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-stillwater-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Stillwater</strong></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-enid-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Enid</strong></a></div>
+      <div class="col-auto"><a href="/bounce-house-rental-perry-ok" class="bg-white rounded-pill px-4 py-2 shadow-sm d-inline-block" style="text-decoration:none;color:inherit"><strong>Perry</strong></a></div>
     </div>
     <div class="text-center mt-4">
-      <a href="/service-areas" class="btn btn-outline-primary rounded-pill">View Delivery Zones & Pricing</a>
+      <a href="/delivery" class="btn btn-outline-primary rounded-pill">View Delivery Zones & Pricing</a>
     </div>
   </div>
 </section>
+
+<!-- /bounceintobiz had no inbound links. It is a conference demo of the platform, not a rental page, so it gets a quiet line at the very bottom rather than a spot in the customer funnel. -->
+<p class="text-center text-muted small py-3 mb-0">This booking site is a custom platform. <a href="/bounceintobiz">See how it works</a>.</p>
 
 `, scripts: '' }) %>

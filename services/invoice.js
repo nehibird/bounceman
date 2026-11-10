@@ -12,6 +12,80 @@ const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 const { taxBreakdown } = require('../lib/helpers');
+const { jurisdictionBreakdown } = require('../lib/ok-tax-data');
+
+// ---- sales-tax split: what was CHARGED, not what the city name implies -------
+// An invoice is a document a customer and an auditor rely on, so the split it prints
+// must foot to the tax actually stored on the booking (tax_rate / tax_amount). It must
+// NOT be re-derived from delivery_city: a booking repriced after a boundary check keeps
+// its typed city, and a city rate that was never charged would print again.
+//
+// Order of preference:
+//   1. the jurisdiction stored on the booking (when that column exists and its total
+//      equals the stored rate),
+//   2. a reconstruction VALIDATED against the stored rate (the typed city only picks a
+//      county / candidate city; the stored rate decides whether it is believed),
+//   3. otherwise say so: one honest line, no invented breakdown.
+const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+const rateEq = (a, b) => Math.abs(a - b) < 1e-6;
+
+function storedJurisdiction(booking) {
+  for (const col of ['tax_jurisdiction', 'tax_jurisdiction_json']) {
+    let v = booking[col];
+    if (!v) continue;
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { continue; } }
+    if (v && typeof v === 'object') return v;
+  }
+  return null;
+}
+
+// Returns { parts: [{label, rate}], total, basis, base } or { unreconciled: true, rate }.
+function invoiceTaxSplit(booking) {
+  const num = (v) => parseFloat(v) || 0;
+  const subtotal = num(booking.subtotal);
+  const taxAmt = num(booking.tax_amount);
+  const bases = [subtotal, Math.max(0, subtotal - Math.abs(num(booking.discount_amount)))];
+  let rate = num(booking.tax_rate);
+  if (!(rate > 0)) {
+    // No stored rate: the only honest rate is the one implied by what was charged.
+    const b = bases.find((x) => x > 0);
+    rate = b ? Math.round((taxAmt / b) * 1e5) / 1e5 : 0;
+  }
+  // The rate must actually explain the amount charged (either taxable base, to the cent).
+  const base = bases.find((b) => Math.abs(Math.round(b * rate * 100) / 100 - taxAmt) <= 0.011);
+  if (!(rate > 0) || base === undefined) return { unreconciled: true, rate };
+
+  const fromBreakdown = (tb, cityLabel, how) => {
+    if (!tb || !rateEq(tb.total, rate)) return null;
+    const parts = [
+      { label: 'Oklahoma state', rate: tb.stateRate },
+      { label: titleCase(tb.countyName) + ' County', rate: tb.countyRate },
+    ];
+    if (cityLabel && tb.cityRate > 0) parts.push({ label: 'City of ' + cityLabel, rate: tb.cityRate });
+    return { parts: parts.filter((p) => p.rate > 0), total: tb.total, basis: how, base };
+  };
+
+  // 1. stored jurisdiction
+  const sj = storedJurisdiction(booking);
+  if (sj) {
+    const tb = jurisdictionBreakdown(Object.assign({ verified: true }, sj));
+    const r = tb && fromBreakdown(tb, tb.unincorporated ? '' : titleCase(tb.key), 'stored');
+    if (r) return r;
+  }
+
+  // 2. reconstruct, validated against the stored rate
+  const typed = taxBreakdown(booking.delivery_city);
+  if (typed) {
+    const full = typed.cityRate > 0 && fromBreakdown(typed, titleCase(typed.key), 'reconstructed');
+    if (full) return full;
+    // Same county, no city levy: what an address outside city limits owes.
+    const co = fromBreakdown(Object.assign({}, typed, { cityRate: 0, total: typed.stateRate + typed.countyRate }), '', 'reconstructed');
+    if (co) return co;
+  }
+
+  // 3. cannot be reconciled with any known jurisdiction
+  return { unreconciled: true, rate };
+}
 
 // The wordmark is a 600x600 PNG whose artwork only occupies the middle band, so a
 // naive placement leaves a pile of dead space above and below it. These offsets are
@@ -172,31 +246,33 @@ function buildInvoicePdf(booking, customer, items, opts) {
     if (booking.tax_exempt_claimed) {
       line('Sales tax (exempt)', money(0));
     } else if (taxAmt > 0) {
-      const tb = taxBreakdown(booking.delivery_city);
-      if (tb) {
+      const split = invoiceTaxSplit(booking);
+      const pct = (r) => (r * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
+      if (!split.unreconciled) {
         // Tax applies to the rental subtotal; delivery is excluded under
-        // OAC 710:65-19-70(b). Split the charged amount across the three
-        // jurisdictions so the totals still foot exactly.
-        const parts = [
-          ['Oklahoma state', tb.stateRate],
-          [(tb.countyName ? tb.countyName.charAt(0) + tb.countyName.slice(1).toLowerCase() : '') + ' County', tb.countyRate],
-          ['City of ' + (booking.delivery_city || '').replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\B\w/g, (c) => c.toLowerCase()), tb.cityRate],
-        ].filter((p) => p[1] > 0);
+        // OAC 710:65-19-70(b). Split the charged amount across the jurisdictions
+        // so the totals still foot exactly.
         let running = 0;
-        parts.forEach((p, i) => {
-          const amt = i === parts.length - 1
+        split.parts.forEach((p, i) => {
+          const amt = i === split.parts.length - 1
             ? Math.round((taxAmt - running) * 100) / 100
-            : Math.round(subtotal * p[1] * 100) / 100;
+            : Math.round(split.base * p.rate * 100) / 100;
           running += amt;
           doc.font('Helvetica').fillColor(GREY).fontSize(9)
-            .text(p[0] + ' sales tax  ' + (p[1] * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%', 280, y, { width: 180, align: 'right' })
+            .text(p.label + ' sales tax  ' + pct(p.rate), 280, y, { width: 180, align: 'right' })
             .text(money(amt), 460, y, { width: 78, align: 'right' });
           y += 14;
         });
         doc.fillColor(NAVY);
-        line('Total sales tax  ' + (tb.total * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%', money(taxAmt));
+        line('Total sales tax  ' + pct(split.total), money(taxAmt));
       } else {
-        line('Sales tax', money(taxAmt));
+        // The stored rate matches no jurisdiction we can identify: print what was
+        // charged and say the breakdown is unavailable, rather than a wrong split.
+        line('Sales tax' + (split.rate > 0 ? '  ' + pct(split.rate) : ''), money(taxAmt));
+        doc.font('Helvetica').fillColor(GREY).fontSize(8)
+          .text('Jurisdiction breakdown not available for this charge.', 280, y - 2, { width: 258, align: 'right' });
+        y += 12;
+        doc.fillColor(NAVY);
       }
     }
 
@@ -231,4 +307,4 @@ function buildInvoicePdf(booking, customer, items, opts) {
   });
 }
 
-module.exports = { buildInvoicePdf };
+module.exports = { buildInvoicePdf, invoiceTaxSplit };

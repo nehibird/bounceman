@@ -78,13 +78,14 @@
       "bestRating": "5",
       "worstRating": "1"
     },
+    <%# XSS: JSON.stringify does NOT escape '<', so an approved review containing </script> closed this ld+json block and ran the rest as HTML. \u003c is valid JSON for '<' (same pattern as step3-details / equipment-detail escJson). %>
     <% if (_rs.samples && _rs.samples.length) { %>
     "review": [
       <% _rs.samples.forEach(function (r, i) { %><%- i ? ',' : '' %>{
         "@type": "Review",
-        "author": { "@type": "Person", "name": <%- JSON.stringify(String(r.name || 'Customer')) %> },
+        "author": { "@type": "Person", "name": <%- JSON.stringify(String(r.name || 'Customer')).replace(/</g, '\\u003c') %> },
         "reviewRating": { "@type": "Rating", "ratingValue": "<%= r.rating %>", "bestRating": "5", "worstRating": "1" },
-        "reviewBody": <%- JSON.stringify(String(r.comment || '')) %>
+        "reviewBody": <%- JSON.stringify(String(r.comment || '')).replace(/</g, '\\u003c') %>
       }<% }); %>
     ],
     <% } %>
@@ -138,6 +139,9 @@
       --bm-purple: #7B2D8E;
       --bm-light-bg: #FFF9F0;
       --bm-ink: #1c1530;
+      /* PRICE TEXT on light surfaces. Measured: --bm-orange #d77c42 text is 2.91:1 on the #f8f9fa tier card (3.07:1 on white) at 24px bold - fails 4.5:1.
+         #b84a12 = 4.95:1 on #f8f9fa, 5.22:1 on white, 4.98:1 on --bm-light-bg. Use ONLY for text; fills/buttons keep the bright --bm-orange. */
+      --bm-orange-text: #b84a12;
       --bm-gradient: linear-gradient(135deg, var(--bm-orange) 0%, #ee5626 100%);
       --bm-gradient-cool: linear-gradient(140deg, #17123a 0%, #2a1c5e 52%, #3c2270 100%);
       /* Make Bootstrap utility classes inherit the brand palette instead of framework defaults */
@@ -576,7 +580,7 @@
     <div class="container">
       <h2>Ready to Bounce?</h2>
       <p class="mb-4" style="font-size:18px">Book your party equipment today and make your event unforgettable!</p>
-      <a href="/booking" class="btn btn-cta"><i class="fas fa-calendar-check me-2"></i>Book Your Rental</a>
+      <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn btn-cta"><i class="fas fa-calendar-check me-2"></i>Book Your Rental</a>
     </div>
   </section>
   <% } %>
@@ -608,9 +612,9 @@
           </ul>
         </div>
         <div class="col-md-3 mb-4">
-          <h5><a href="/service-areas" style="color:var(--bm-yellow);text-decoration:none">Service Areas</a></h5>
+          <h5><a href="/delivery" style="color:var(--bm-yellow);text-decoration:none">Service Areas</a></h5>
           <ul class="list-unstyled" style="opacity:0.7">
-            <%# Each town links to its own city landing page (routes/public.js "City landing page routes"); /service-areas stays on the heading for the full list. %>
+            <%# Each town links to its own city landing page (routes/public.js "City landing page routes"); /delivery (the old /service-areas 301s there) stays on the heading for the full list. %>
             <li class="mb-1"><a href="/bounce-house-rental-tonkawa-ok" style="color:inherit;text-decoration:none">Tonkawa (FREE)</a></li>
             <li class="mb-1"><a href="/bounce-house-rental-ponca-city-ok" style="color:inherit;text-decoration:none">Ponca City (FREE)</a></li>
             <li class="mb-1"><a href="/bounce-house-rental-blackwell-ok" style="color:inherit;text-decoration:none">Blackwell (FREE)</a></li>
@@ -656,7 +660,8 @@
   <div style="display:flex;gap:10px;align-items:center;max-width:600px;margin:0 auto">
     <a href="tel:5803089288" style="flex:0 0 auto;width:48px;height:48px;border-radius:50%;background:var(--bm-blue,#004E89);color:white;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px"><i class="fas fa-phone"></i></a>
     <%# .btn-book-now supplies the gradient + ink text (white-on-orange was 3.07-3.50:1); only layout is inline so colour is styled centrally. %>
-    <a href="/booking" class="btn-book-now" style="flex:1;display:block;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
+    <%# bookHref: a page (equipment-detail) may pass '/booking?preselect=<id>' so the big thumb-sized bar carries the unit like the in-page button does (it used to drop it: reader of Blue Crush landed on a generic /booking). Anything else falls back to plain /booking. %>
+    <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn-book-now" style="flex:1;display:block;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
   </div>
 </div>
 <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>

@@ -14,6 +14,7 @@ const { parseCents, isValidEmail, isValidPhone, isValidTimeString, sanitizeDescr
 const { effectiveMaxRefundCents, effectiveDailyRefundCapCents, HARD_MAX_REFUND_CENTS, MANUAL_PAYMENT_HARD_MAX_CENTS } = require('../lib/refund-caps');
 const { isDefinitiveStripeError, isTimeoutError } = require('../lib/stripe-errors');
 const stripeService = require('../services/stripe');
+const { bookingLinkPath } = require('../lib/booking-links');
 const smsService = require('../services/sms');
 
 // All office API responses are JSON, all dates are Central Time (matching lib/helpers'
@@ -862,7 +863,11 @@ router.post('/bookings/:booking_number/payment-link', requireScope('payments:lin
       // so it needs a success page that records exactly what was paid, not one that
       // assumes a fixed amount or does nothing.
       successUrl: `${baseUrl}/booking/pay/${booking.booking_number}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${baseUrl}/booking/pay/${booking.booking_number}/cancel`,
+      // The cancel route is token-gated (it only renders the "Try Again" link for a valid ?t=), so
+      // without the token a customer who backs out of Checkout lands on a dead end.  bookingLinkPath
+      // returns /booking/pay/N?t=TOKEN; splice "/cancel" in before the query.  The success URL stays
+      // tokenless on purpose: a paid session_id is itself proof (see GET /pay/:n/success).
+      cancelUrl: `${baseUrl}${bookingLinkPath('pay', booking.booking_number).replace(/(\?|$)/, '/cancel$1')}`,
     });
   } catch (err) {
     linkReservationsInFlight.delete(reservation.reservationId);

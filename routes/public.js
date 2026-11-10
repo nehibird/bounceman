@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { formatRentalPeriod, formatPhoneUS, shouldSendDepositNudge } = require('../lib/helpers');
 const { imgv, imgAttrs } = require('../lib/img-variants');
+const { bookingLinkPath } = require('../lib/booking-links');
 
 // Responsive equipment photos (400w/800w WebP, falls back to the original): exposed to every public
 // view as locals instead of editing server.js. See lib/img-variants.js.
@@ -440,6 +441,20 @@ const DELIVERY_TIERS = [
     note:'Twelve towns, out as far as 26 miles. No charge at all.' }
 ];
 
+// Towns on the delivery page that have their own landing page (see "City landing page routes"
+// below). The town list used to be plain text; linking each name gives those pages inbound
+// links from a page that already ranks for the town names. Keys are DELIVERY_TOWNS[].n; a town
+// absent from this map stays plain text, so never add a URL here without a matching route.
+const DELIVERY_CITY_PAGES = {
+  'Tonkawa': '/bounce-house-rental-tonkawa-ok',
+  'Ponca City': '/bounce-house-rental-ponca-city-ok',
+  'Blackwell': '/bounce-house-rental-blackwell-ok',
+  'Newkirk': '/bounce-house-rental-newkirk-ok',
+  'Stillwater': '/bounce-house-rental-stillwater-ok',
+  'Enid': '/bounce-house-rental-enid-ok',
+  'Perry': '/bounce-house-rental-perry-ok'
+};
+
 function renderDelivery(req, res) {
   const db = getDb();
   const settings = getSettings();
@@ -448,12 +463,22 @@ function renderDelivery(req, res) {
     title: 'Delivery Areas & Fees | Bounce Man | Tonkawa, Ponca City, Blackwell OK',
     metaDescription: 'Free bounce house delivery across Kay County, Oklahoma — Tonkawa, Ponca City, Blackwell, Newkirk, Lamont, Deer Creek and more. Check your ZIP for an instant delivery quote.',
     canonicalPath: '/delivery', settings, zones,
-    townsByFee: DELIVERY_TOWNS, tiers: DELIVERY_TIERS, page: 'delivery'
+    townsByFee: DELIVERY_TOWNS, tiers: DELIVERY_TIERS, cityPages: DELIVERY_CITY_PAGES, page: 'delivery'
   });
 }
 router.get('/delivery', renderDelivery);
-// Kept so older links, the footer and the FAQ reference keep working.
-router.get('/service-areas', renderDelivery);
+// CANONICAL DECISION (2026-11): /delivery is the one URL for this page; /service-areas is a
+// permanent 301 to it. Why /delivery won: the page already declared canonicalPath '/delivery',
+// the top nav links to it, the view/handler/page key/DELIVERY_* constants are all named for
+// it, and the page's content is fees and zones (what people search for), not "areas". The
+// sitemap used to list /service-areas while the canonical tag said /delivery -- that told
+// Google the sitemap URL was a duplicate of another URL. Now the sitemap, the canonical tag,
+// llms.txt and every internal link say /delivery. A 301 (not a second 200) so old links,
+// bookmarks and any backlinks pass their weight to /delivery. Query string is kept.
+router.get('/service-areas', (req, res) => {
+  const q = req.originalUrl.indexOf('?');
+  res.redirect(301, '/delivery' + (q >= 0 ? req.originalUrl.slice(q) : ''));
+});
 
 // Privacy Policy
 router.get('/privacy', (req, res) => {
@@ -540,7 +565,8 @@ router.post('/contract/:id/sign', (req, res) => {
   // Sign-before-pay: once signed, send them to the deposit checkout if it isn't
   // paid yet; otherwise (e.g. signing later via the email link) show the signed page.
   const bk = db.prepare('SELECT booking_number, deposit_paid, deposit_amount FROM bookings WHERE id = ?').get(contract.booking_id);
-  const next = (bk && !bk.deposit_paid) ? `/booking/pay-deposit/${bk.booking_number}` : `/contract/${req.params.id}`;
+  const next = (bk && !bk.deposit_paid) ? bookingLinkPath('pay-deposit', bk.booking_number) : // token: a customer who just signed must reach checkout, not the verify form
+    `/contract/${req.params.id}`;
   console.log('[SIGN] ' + (justSigned ? 'SIGNED' : 'already signed') + ' ' + (bk ? bk.booking_number : '?') + ' -> ' + next);
 
   // Safety net for the rare device (in-app browsers commonly block the Stripe
@@ -554,7 +580,7 @@ router.post('/contract/:id/sign', (req, res) => {
     const customerId = contract.customer_id;
     const bookingNumber = bk.booking_number;
     const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
-    const link = `${baseUrl}/booking/pay-deposit/${bookingNumber}`;
+    const link = `${baseUrl}${bookingLinkPath('pay-deposit', bookingNumber)}`; // SMS/email link: needs the signed token
     const nudgeDelayMs = (parseInt(process.env.DEPOSIT_NUDGE_DELAY_MIN, 10) || 10) * 60 * 1000;
     setTimeout(async () => {
       try {
@@ -921,6 +947,146 @@ router.get('/bounce-house-rental-perry-ok', (req, res) => {
   res.render('public/city-landing', { title: cityData.title, metaDescription: cityData.metaDescription, canonicalPath: '/bounce-house-rental-perry-ok', settings, cityData, page: 'city-landing' });
 });
 
+// ===== YEAR-ROUND INDOOR LANDING PAGES =====
+// Why these exist: the site reads as "closed" from December to March, and those months are
+// dead revenue. They are not dead for us -- the outdoor season is April-November, but indoor
+// rentals (church lock-ins, school gyms, community centers) run all year. Nobody searching
+// "indoor bounce house rental near me" in January could find that out, so each page below
+// answers one real search.
+//
+// Equipment is NOT hardcoded into the pages. The route queries the live `equipment` table for
+// the slugs listed here, so price, size, power and age range always match the booking page and
+// a unit that goes unavailable drops off the page by itself. The slugs are the units that
+// genuinely run indoors, chosen from the DB (descriptions that say "indoor"/"gym"/"community
+// center", power_required = none) plus the dual-lane games, which work in a gym:
+//   toddler-soft-play-playground  no power, 12x12, indoor floors
+//   dual-lane-axe-throw           description: "sets up indoors, so it works year round"
+//   dual-lane-hoop-shot, dual-lane-blitz   dual-lane games, work in a gym
+//   cornhole-set                  no power, "gym floor"
+//   mini-castle-bounce-slide      runs dry year-round; fits "community-center rooms"
+//   the-gauntlet                  "Run it dry for indoor gyms"
+// Deliberately NOT listed: Castle Clash, Buccaneer Bay, Blue Crush, Riptide, Tropical Combo,
+// Monkey Jumper, Pixel Quest, Mini Enchanted -- nothing in the DB says they are indoor-safe,
+// and we do not advertise what we have not confirmed.
+//
+// Hard floors: sandbags are FREE. surfaceSurcharge() was retired 2026-08-28 and returns 0, so
+// no page may mention a surface fee.
+const INDOOR_NOTES = {
+  'toddler-soft-play-playground': { note: 'Needs no power. Foam flooring, ball pit and climbers on any indoor floor.', dims: '12 ft x 12 ft' },
+  'mini-castle-bounce-slide': { note: 'Compact castle bounce house with a slide. Runs dry, and small enough for a community-center room.' },
+  'the-gauntlet': { note: 'Our longest unit, run dry for gyms. Measure the floor and the ceiling height before you book it.' },
+  'dual-lane-axe-throw': { note: 'Two lanes, soft velcro axes. Sets up indoors.' },
+  'dual-lane-hoop-shot': { note: 'Two lanes, soft oversized balls. Works in a gym.' },
+  'dual-lane-blitz': { note: 'Two-lane football toss with soft footballs. Works in a gym.' },
+  'cornhole-set': { note: 'Regulation boards. No power, no blower, plays on a gym floor.' }
+};
+
+const INDOOR_PAGES = {
+  indoor: {
+    path: '/indoor-bounce-house-rental-kay-county-ok',
+    slugs: ['toddler-soft-play-playground', 'mini-castle-bounce-slide', 'the-gauntlet', 'dual-lane-axe-throw', 'dual-lane-hoop-shot', 'dual-lane-blitz', 'cornhole-set'],
+    title: 'Indoor Bounce House & Party Rentals in Kay County OK | Bounce Man',
+    metaDescription: 'Indoor party rentals in Kay County, OK, all year. Soft play, dual-lane games and a dry obstacle course for gyms and church halls. Free delivery. (580) 308-9288.',
+    badge: 'Indoor Rentals',
+    h1: 'Indoor Bounce House Rentals in Kay County, Oklahoma',
+    subheading: 'Gyms, church halls and community centers, December through March too. We deliver, set up on your floor and pick up.',
+    h2: 'Indoor Party Rentals in Kay County',
+    heroImage: '/uploads/equipment/soft-play-venue.jpg',
+    heroAlt: 'Toddler soft play playground set up indoors in Kay County OK',
+    gridTitle: 'What Runs Indoors',
+    gridSubtitle: 'Every rental here is set up inside a building. Prices and sizes come straight from our booking page.',
+    bodyHtml: `<p>Our outdoor season runs April through November, but <strong>indoor rentals run all year</strong>. When it is too cold to be in the yard, the gym, fellowship hall or community center you already have can hold the party. Bounce Man delivers, sets up on your floor, and comes back to take it down.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">What Works Inside</h3>
+<ul>
+<li><strong>Toddler Soft Play Playground</strong> &mdash; 12 x 12, needs no power, and sets up on an indoor floor. Ages 0-5.</li>
+<li><strong>Dual Lane Hoop Shot, Blitz and Axe Throw</strong> &mdash; two-lane games that work in a gym and keep a line moving.</li>
+<li><strong>Cornhole</strong> &mdash; no power at all.</li>
+<li><strong>Mini Castle Bounce House &amp; Slide</strong> &mdash; a compact inflatable, run dry.</li>
+<li><strong>The Gauntlet</strong> &mdash; our 38-foot obstacle course, run dry for a gym with the room for it.</li>
+</ul>
+<h3 style="color:var(--bm-blue);margin-top:24px">Gym Floors and Anchoring</h3>
+<p>Stakes do not go into a gym floor, so we anchor with sandbags instead. <strong>Sandbag anchoring is free.</strong> There is no surface fee for hard floors.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">What We Need From Your Space</h3>
+<p>Inflatables run off a blower, so you need one standard 20-amp outlet within reach of the setup spot. The soft play and cornhole need no power. Measure the room and the ceiling height first, then call us with the numbers and we will tell you which units fit.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">Delivery</h3>
+<p>Delivery is free across Kay County: Tonkawa, Ponca City, Blackwell, Newkirk and the towns around them. Stillwater, Enid and Perry are a flat fee, quoted by ZIP code. Book online or call <strong>(580) 308-9288</strong>.</p>`,
+    faqs: [
+      { q: 'Do you rent bounce houses in the winter?', a: 'Yes. Our outdoor season is April through November, but indoor rentals run all year. Gyms, church halls and community centers book through the winter.' },
+      { q: 'Is there an extra charge for setting up on a gym floor?', a: 'No. We anchor with sandbags on hard floors and sandbag anchoring is free. There is no surface fee.' },
+      { q: 'Which rentals need no power?', a: 'The Toddler Soft Play Playground and the cornhole set need no power. The inflatables and the dual-lane games run off one standard 20-amp outlet.' },
+      { q: 'Do you deliver indoor rentals outside Kay County?', a: 'Yes. Stillwater, Enid, Perry and other towns are a flat delivery fee, shown by ZIP code on our delivery page.' }
+    ],
+    related: [
+      { name: 'Church Lock-Ins', url: '/church-lock-in-rentals-kay-county-ok' },
+      { name: 'School Field Days', url: '/school-field-day-bounce-house-rental' },
+      { name: 'Wedding Soft Play', url: '/wedding-soft-play-rental' },
+      { name: 'Church Events', url: '/church-event-bounce-house-rental' }
+    ]
+  },
+  lockin: {
+    path: '/church-lock-in-rentals-kay-county-ok',
+    slugs: ['dual-lane-hoop-shot', 'dual-lane-blitz', 'dual-lane-axe-throw', 'the-gauntlet', 'cornhole-set', 'toddler-soft-play-playground'],
+    title: 'Church Lock-In Rentals in Kay County OK | Games & Inflatables | Bounce Man',
+    metaDescription: 'Games and obstacle courses for church lock-ins and youth nights in Kay County, OK. Set up in your gym or fellowship hall. Free delivery. Call (580) 308-9288.',
+    badge: 'Church Lock-Ins',
+    h1: 'Church Lock-In Rentals in Kay County, Oklahoma',
+    subheading: 'Something for the youth group to do in your gym or fellowship hall, all night. We deliver and set up before the doors open.',
+    h2: 'Rentals for Your Church Lock-In',
+    heroImage: '/assets/images/equipment/hoop-shot-1.jpg',
+    heroAlt: 'Dual lane hoop shot game rental for a church lock-in in Kay County OK',
+    gridTitle: 'Good Fits for a Lock-In',
+    gridSubtitle: 'All of these set up inside. Prices and sizes come straight from our booking page.',
+    bodyHtml: `<p>A lock-in is a long night, and a youth group runs out of things to do before midnight. Bounce Man rents games and an obstacle course that set up in a church gym or fellowship hall, so the night has something going the whole way through. We are a family-owned company in Tonkawa with Christ-centered values, and we are glad to serve our local churches.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">What Youth Groups Use</h3>
+<ul>
+<li><strong>Dual Lane Hoop Shot, Blitz and Axe Throw</strong> &mdash; two kids play at once, head to head, so the line moves twice as fast and the competition runs itself.</li>
+<li><strong>The Gauntlet</strong> &mdash; a 38-foot obstacle course, run dry for a gym. It is our longest unit, so measure the floor and the ceiling height first.</li>
+<li><strong>Cornhole</strong> &mdash; no power, no setup fuss, good for the kids who would rather stand around and talk.</li>
+<li><strong>Toddler Soft Play Playground</strong> &mdash; for the nursery or the younger brothers and sisters. No power needed.</li>
+</ul>
+<h3 style="color:var(--bm-blue);margin-top:24px">Overnight Pricing</h3>
+<p>Where a unit has an overnight rate it is shown on the card below, straight from our booking page. Tell us when your lock-in starts and ends when you call and we will work out the delivery and pickup times with you.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">Gym Floors and Anchoring</h3>
+<p>We anchor with sandbags on gym and hard floors, and <strong>sandbag anchoring is free</strong>. The inflatable and the games run off a standard 20-amp outlet near the setup spot.</p>
+<h3 style="color:var(--bm-blue);margin-top:24px">Delivery</h3>
+<p>Delivery is free across Kay County. Stillwater, Enid and Perry are a flat fee. Book online or call <strong>(580) 308-9288</strong>.</p>`,
+    faqs: [
+      { q: 'Can you set up in a church gym or fellowship hall?', a: 'Yes. Indoor rentals run all year. We deliver, set up on your floor, and take it down afterward. Call us with the room size and ceiling height and we will tell you what fits.' },
+      { q: 'Is there a fee for anchoring on a gym floor?', a: 'No. We anchor with sandbags and sandbag anchoring is free. There is no surface fee.' },
+      { q: 'What do we need to provide?', a: 'One standard 20-amp outlet near the setup spot for the inflatable and the dual-lane games. The cornhole set and the Toddler Soft Play Playground need no power.' },
+      { q: 'Do you rent for church events outdoors too?', a: 'Yes. Our outdoor season runs April through November, with bounce houses and water slides for fall festivals, VBS and fellowship days.' }
+    ],
+    related: [
+      { name: 'Indoor Rentals', url: '/indoor-bounce-house-rental-kay-county-ok' },
+      { name: 'Church Events', url: '/church-event-bounce-house-rental' },
+      { name: 'School Field Days', url: '/school-field-day-bounce-house-rental' },
+      { name: 'Tonkawa', url: '/bounce-house-rental-tonkawa-ok' }
+    ]
+  }
+};
+
+function renderIndoorPage(res, key) {
+  const db = getDb();
+  const settings = getSettings();
+  const pageData = INDOOR_PAGES[key];
+  // One query, then ordered to match the slug list above (IN () has no order guarantee).
+  const rows = db.prepare(`
+    SELECT e.*,
+      (SELECT image_path FROM equipment_images WHERE equipment_id = e.id AND is_primary = 1 LIMIT 1) as image
+    FROM equipment e
+    WHERE e.status = 'available' AND e.slug IN (${pageData.slugs.map(() => '?').join(',')})
+  `).all(...pageData.slugs);
+  const items = pageData.slugs
+    .map(slug => rows.find(r => r.slug === slug))
+    .filter(Boolean)
+    .map(r => ({ ...r, indoorNote: INDOOR_NOTES[r.slug].note, dimensions: r.dimensions || INDOOR_NOTES[r.slug].dims || '' }));
+  const faqSchema = JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: pageData.faqs.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) });
+  const serviceSchema = JSON.stringify({ '@context': 'https://schema.org', '@type': 'Service', serviceType: 'Indoor party equipment rental', provider: { '@type': 'LocalBusiness', name: 'Bounce Man Rentals', telephone: '+1-580-308-9288' }, areaServed: { '@type': 'AdministrativeArea', name: 'Kay County, Oklahoma' }, description: pageData.metaDescription });
+  res.render('public/indoor-landing', { title: pageData.title, metaDescription: pageData.metaDescription, canonicalPath: pageData.path, settings, pageData, items, faqSchema, serviceSchema, page: 'indoor-landing' });
+}
+router.get(INDOOR_PAGES.indoor.path, (req, res) => renderIndoorPage(res, 'indoor'));
+router.get(INDOOR_PAGES.lockin.path, (req, res) => renderIndoorPage(res, 'lockin'));
+
 // ===== SITEMAP.XML =====
 router.get('/sitemap.xml', (req, res) => {
   const baseUrl = 'https://bouncemanrentals.com';
@@ -936,7 +1102,8 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/contact', priority: '0.7', changefreq: 'monthly' },
     { loc: '/faq', priority: '0.6', changefreq: 'monthly' },
     { loc: '/reviews', priority: '0.5', changefreq: 'weekly' },
-    { loc: '/service-areas', priority: '0.8', changefreq: 'monthly' },
+    // Canonical URL only -- /service-areas 301s here, and a redirecting URL does not belong in a sitemap.
+    { loc: '/delivery', priority: '0.8', changefreq: 'monthly' },
     { loc: '/bounceintobiz', priority: '0.5', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-tonkawa-ok', priority: '0.9', changefreq: 'monthly' },
     { loc: '/bounce-house-rental-ponca-city-ok', priority: '0.9', changefreq: 'monthly' },
@@ -950,7 +1117,11 @@ router.get('/sitemap.xml', (req, res) => {
     { loc: '/church-event-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
     { loc: '/school-field-day-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
     { loc: '/graduation-party-bounce-house-rental', priority: '0.8', changefreq: 'monthly' },
-    { loc: '/wedding-soft-play-rental', priority: '0.8', changefreq: 'monthly' }
+    { loc: '/wedding-soft-play-rental', priority: '0.8', changefreq: 'monthly' },
+    // Year-round indoor pages (INDOOR_PAGES). Listed from the same constants the routes use, so
+    // the sitemap URL and the page's canonical tag cannot drift apart.
+    { loc: INDOOR_PAGES.indoor.path, priority: '0.8', changefreq: 'monthly' },
+    { loc: INDOOR_PAGES.lockin.path, priority: '0.8', changefreq: 'monthly' }
   ];
 
   const db = getDb();
@@ -1065,7 +1236,7 @@ Farther out is usually still possible; the website calculates the exact fee from
 - How do I book? ${baseUrl}/booking, or call or text (580) 308-9288.
 
 ## Pages
-${['/', '/equipment', '/packages', '/booking', '/how-it-works', '/faq', '/reviews', '/service-areas', '/contact'].map(u => `- ${baseUrl}${u}`).join('\n')}
+${['/', '/equipment', '/packages', '/booking', '/how-it-works', '/faq', '/reviews', '/delivery', '/contact'].map(u => `- ${baseUrl}${u}`).join('\n')}
 
 Last generated: ${new Date().toISOString().split('T')[0]}
 `;

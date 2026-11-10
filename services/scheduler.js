@@ -14,6 +14,7 @@ const emailService = require('./email');
 const smsService = require('./sms');
 const notifyService = require('./notifications');
 const { fmtDate } = require('../lib/helpers');
+const { bookingLinkPath } = require('../lib/booking-links');
 
 // Unpaid online holds. Measured against real behaviour: median time from booking to
 // deposit is 2.1 minutes, and the slowest genuine same-session payer took 24.9 minutes
@@ -217,7 +218,7 @@ async function releaseExpiredHolds() {
   const nowMs = Date.now();
   for (const b of candidates) {
     b.age_hours = activeHoldHours(b.created_at, nowMs);
-    const link = `${baseUrl}/booking/pay-deposit/${b.booking_number}`;
+    const link = `${baseUrl}${bookingLinkPath('pay-deposit', b.booking_number)}`; // last-chance SMS: must carry the signed token
 
     if (b.age_hours >= HOLD_RELEASE_HOURS) {
       db.prepare(`UPDATE bookings SET status = 'cancelled', updated_at = datetime('now'),

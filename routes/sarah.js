@@ -7,7 +7,26 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, resolveTaxCity, peekTaxJurisdiction, taxBreakdown, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+
+// Sales tax is owed by the real municipal boundary of the delivery point, not the postal city
+// (see resolveTaxCity). Two flavours, chosen per call site by latency tolerance:
+//  - cachedTaxCity(): SYNC, cache-only (peekTaxJurisdiction). Never touches the network, so it
+//    is safe on a live voice call / waiting text. On a miss it kicks a fire-and-forget lookup
+//    that fills the cache for the next call (the booking step), and returns the typed city
+//    (legacy behaviour) with estimated=true so the caller can flag the number as an estimate.
+//  - resolveTaxCity(): awaited (<=4s deadline, silent fallback) -- ONLY where money is charged.
+function cachedTaxCity(zip, typedCity, address) {
+  if (!address) return { taxCity: typedCity || null, estimated: true };
+  const inp = { address, city: typedCity, state: 'OK', zip };
+  try {
+    const j = peekTaxJurisdiction(inp);
+    if (j && taxBreakdown(j)) return { taxCity: j, estimated: false };
+  } catch (e) { /* fall through */ }
+  // Warm the cache in the background; never awaited, never throws.
+  try { resolveTaxCity(zip, typedCity, { address, state: 'OK' }).catch(() => {}); } catch (e) { /* ignore */ }
+  return { taxCity: typedCity || null, estimated: true };
+}
 
 // Wet-capable equipment: water slides + combo units (per-unit $20 wet upcharge).
 const isWetCapable = (eq) => ['water-slides', 'combo-units'].includes(eq.category) || Number(eq.price_wet) > 0;
@@ -166,7 +185,9 @@ router.post('/check-availability', async (req, res) => {
     // Sample total using first available item (full day) so Sarah can quote a ballpark
     if (available.length > 0) {
       const samplePrice = available[0].fullDayPrice;
-      const pricing = calcPricing(settings, samplePrice, delivery_fee);
+      // Ballpark only, and this is a live voice/text turn: cache-only tax (never awaits a geocoder).
+      const sampleTax = cachedTaxCity(zip, req.body.delivery_city || null, req.body.delivery_address || null);
+      const pricing = calcPricing(settings, samplePrice, delivery_fee, sampleTax.taxCity);
       sample_total = pricing.total;
       sample_deposit = pricing.depositAmount;
     }
@@ -340,7 +361,11 @@ router.post('/get-quote', async (req, res) => {
   }
 
   const { fee: delivery_fee, zone: zone_name } = await resolveDeliveryFee(db, delivery_zip);
-  const { taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee, req.body.delivery_city || null);
+  // Quote is read aloud / texted to a waiting customer: cache-only tax, no geocoder wait.
+  // The booking step (create-and-send-link) awaits the authoritative lookup; the background
+  // warm kicked here normally makes that instant.
+  const quoteTax = cachedTaxCity(delivery_zip, req.body.delivery_city || null, req.body.delivery_address || null);
+  const { taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total, depositAmount: deposit_amount } = calcPricing(settings, subtotal, delivery_fee, quoteTax.taxCity);
 
   const itemList = lineItems.map(i => `${i.name} ($${i.price})`).join(', ');
 
@@ -350,6 +375,7 @@ router.post('/get-quote', async (req, res) => {
     delivery_fee,
     delivery_zone: zone_name,
     tax_amount,
+    tax_estimated: quoteTax.estimated,
     damage_waiver_fee,
     total,
     deposit_amount,
@@ -513,7 +539,10 @@ router.post('/create-and-send-link', async (req, res) => {
       // DO NOT subtract from subtotal yet — tax must be computed on undiscounted subtotal
     }
 
-    const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, delivery_city);
+    // Money is charged here, so await the boundary-verified jurisdiction (4s deadline, 180-day
+    // cache, silent fallback to ZIP/typed city). Same call booking.js makes.
+    const tax_city = await resolveTaxCity(delivery_zip, delivery_city, { address: delivery_address, state: 'OK' });
+    const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal, depositAmount: deposit_amount_raw } = calcPricing(settings, subtotal, delivery_fee, tax_city);
     let total = Math.round((rawTotal - discount_amount) * 100) / 100;
     // Comp: delivery survives a subtotal discount, so zero the whole thing and record
     // the full comped value as the discount for the books.

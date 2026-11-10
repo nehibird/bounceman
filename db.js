@@ -832,7 +832,19 @@ function initialize() {
   // Migration: track last-chance deposit reminder before an unpaid hold auto-releases
   try { d.prepare('ALTER TABLE bookings ADD COLUMN hold_reminder_sent INTEGER DEFAULT 0').run(); } catch {}
   try { d.prepare('ALTER TABLE bookings ADD COLUMN confirmation_email_sent INTEGER DEFAULT 0').run(); } catch {} // dedup confirmation email
+  // Not every account on a Plaid connection belongs to this business. FNBOK returned two
+  // accounts on one item: ....7636 is Bounce Man's operating account (178 txns back to April,
+  // every Stripe payout), ....8287 belongs to True Light Christmas and was inflating this
+  // dashboard's Total Cash Position by its balance. Excluded accounts still sync (harmless,
+  // and the item covers both) but are left out of every total and hidden from the cards.
+  try { db.exec("ALTER TABLE bank_accounts ADD COLUMN exclude_from_totals INTEGER DEFAULT 0"); } catch (e) { /* already applied */ }
   try { d.prepare('ALTER TABLE bookings ADD COLUMN surface_fee REAL DEFAULT 0').run(); } catch {} // 10% concrete/indoor surcharge
+  // Migration: STORE the sales-tax jurisdiction decision (see lib/tax-decision.js). All nullable, no
+  // defaults, no backfill: NULL = legacy row; consumers re-derive from delivery_city and label it unverified.
+  for (const col of ['tax_basis TEXT', 'tax_county TEXT', 'tax_place TEXT', 'tax_state_rate REAL',
+                     'tax_county_rate REAL', 'tax_city_rate REAL', 'tax_resolved_at TEXT']) {
+    try { d.prepare('ALTER TABLE bookings ADD COLUMN ' + col).run(); } catch {} // column already exists
+  }
   try { d.prepare('ALTER TABLE bookings ADD COLUMN hazard_check_sent INTEGER DEFAULT 0').run(); } catch {} // ~1wk-ahead underground-hazard text
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_ts TEXT').run(); } catch {}
   try { d.prepare('ALTER TABLE walk_up_registrations ADD COLUMN slack_card_channel TEXT').run(); } catch {}

@@ -79,9 +79,9 @@
             <h5><i class="fas fa-box me-2"></i>Rental Items</h5>
             ${lineItems.map(function(item) {
               return '<div class="line-item">' +
-                '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" alt="' + item.item_name + '">' +
+                '<img src="' + esc(item.image || '/assets/images/placeholder-bounce.svg') + '" alt="' + esc(item.item_name) + '">' +
                 '<div class="item-info">' +
-                  '<div class="fw-bold">' + item.item_name + '</div>' +
+                  '<div class="fw-bold">' + esc(item.item_name) + '</div>' +
                   '<div class="text-muted small">' + (rental_duration === '4hr' ? '4-hour rental' : rental_duration === 'overnight' ? 'Overnight rental' : 'Full day rental') + '</div>' +
                 '</div>' +
                 '<div class="item-price">$' + parseFloat(item.unit_price).toFixed(0) + '</div>' +
@@ -94,7 +94,7 @@
             <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
             <div class="review-row">
               <span class="label">Date</span>
-              <span class="value">${typeof fmtDate === 'function' ? fmtDate(event.event_date) : event.event_date}</span>
+              <span class="value">${esc(typeof fmtDate === 'function' ? fmtDate(event.event_date) : event.event_date)}</span>
             </div>
             <div class="review-row">
               <span class="label">Duration</span>
@@ -102,11 +102,11 @@
             </div>
             <div class="review-row">
               <span class="label">Time</span>
-              <span class="value">${rental_duration === 'overnight' ? '9:00 AM - 9:00 AM (next-day pickup)' : (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_start_time) + ' - ' + (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(event.event_end_time)}</span>
+              <span class="value">${rental_duration === 'overnight' ? '9:00 AM - 9:00 AM (next-day pickup)' : (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+esc(m)+' '+a})(event.event_start_time) + ' - ' + (function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+esc(m)+' '+a})(event.event_end_time)}</span>
             </div>
             <div class="review-row">
               <span class="label">Event Type</span>
-              <span class="value">${event.event_type}</span>
+              <span class="value">${esc(event.event_type)}</span>
             </div>
           </div>
 
@@ -131,25 +131,25 @@
             <h5><i class="fas fa-truck me-2"></i>Delivery Details</h5>
             <div class="review-row">
               <span class="label">Address</span>
-              <span class="value">${delivery.delivery_address}</span>
+              <span class="value">${esc(delivery.delivery_address)}</span>
             </div>
             <div class="review-row">
               <span class="label">City / ZIP</span>
-              <span class="value">${delivery.delivery_city}, ${delivery.delivery_zip}</span>
+              <span class="value">${esc(delivery.delivery_city)}, ${esc(delivery.delivery_zip)}</span>
             </div>
             <div class="review-row">
               <span class="label">Venue Type</span>
-              <span class="value">${delivery.venue_type}</span>
+              <span class="value">${esc(delivery.venue_type)}</span>
             </div>
             <div class="review-row">
               <span class="label">Surface</span>
-              <span class="value">${delivery.surface_type}</span>
+              <span class="value">${esc(delivery.surface_type)}</span>
             </div>
             <div class="review-row">
               <span class="label">Power Available</span>
               <span class="value">${delivery.power_available ? '<i class="fas fa-check-circle text-success"></i> Yes' : '<i class="fas fa-times-circle text-danger"></i> No'}</span>
             </div>
-            ${delivery.delivery_notes ? '<div class="review-row"><span class="label">Notes</span><span class="value">' + delivery.delivery_notes + '</span></div>' : ''}
+            ${delivery.delivery_notes ? '<div class="review-row"><span class="label">Notes</span><span class="value">' + esc(delivery.delivery_notes) + '</span></div>' : ''}
           </div>
 
           <!-- Customer Details -->
@@ -157,15 +157,15 @@
             <h5><i class="fas fa-user me-2"></i>Customer Details</h5>
             <div class="review-row">
               <span class="label">Name</span>
-              <span class="value">${customer.first_name} ${customer.last_name}</span>
+              <span class="value">${esc(customer.first_name)} ${esc(customer.last_name)}</span>
             </div>
             <div class="review-row">
               <span class="label">Email</span>
-              <span class="value">${customer.email}</span>
+              <span class="value">${esc(customer.email)}</span>
             </div>
             <div class="review-row">
               <span class="label">Phone</span>
-              <span class="value">${customer.phone}</span>
+              <span class="value">${esc(customer.phone)}</span>
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@
               ${pricing.surface_fee && parseFloat(pricing.surface_fee) > 0 ? '<div class="price-line"><span><i class="fas fa-layer-group me-1"></i>Hard-surface / indoor setup (10%)</span><span>$' + parseFloat(pricing.surface_fee).toFixed(2) + '</span></div>' : ''}
               ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
               ${tax_exempt_claimed && parseFloat(pricing.tax_amount) === 0 ? '<div class="price-line" style="color:#2e7d32"><span><i class="fas fa-check-circle me-1"></i>Tax Exempt (pending verification)</span><span>$0.00</span></div>' : '<div class="price-line"><span>Tax (' + (parseFloat(pricing.tax_rate) * 100).toFixed(1) + '%)</span><span>$' + parseFloat(pricing.tax_amount).toFixed(2) + '</span></div>'}
-              ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><i class="fas fa-tag me-1"></i>Discount (' + (pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
+              ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><i class="fas fa-tag me-1"></i>Discount (' + esc(pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
               ${pricing.free_extra_day && parseFloat(pricing.free_extra_day) > 0 ? '<div class="price-line discount"><span><i class="fas fa-gift me-1"></i>3+ Item Bonus — 1 Extra Day FREE</span><span>-$' + parseFloat(pricing.free_extra_day).toFixed(2) + '</span></div>' : ''}
               <div class="price-line total">
                 <span>Total</span>
@@ -214,38 +214,38 @@
 
             <!-- Hidden form fields carrying ALL data -->
             ${lineItems.map(function(item) {
-              return '<input type="hidden" name="equipment_ids" value="' + item.equipment_id + '">';
+              return '<input type="hidden" name="equipment_ids" value="' + esc(item.equipment_id) + '">';
             }).join('')}
-            <input type="hidden" name="event_date" value="${event.event_date}">
-            <input type="hidden" name="event_start_time" value="${event.event_start_time}">
-            <input type="hidden" name="event_end_time" value="${event.event_end_time}">
-            <input type="hidden" name="event_type" value="${event.event_type}">
-            <input type="hidden" name="rental_duration" value="${rental_duration || 'daily'}">
-            <input type="hidden" name="wet_items" value="${wet_items || ''}">
-            <input type="hidden" name="rental_days" value="${rental_days || 1}">
-            <input type="hidden" name="event_end_date" value="${event_end_date || event.event_date}">
+            <input type="hidden" name="event_date" value="${esc(event.event_date)}">
+            <input type="hidden" name="event_start_time" value="${esc(event.event_start_time)}">
+            <input type="hidden" name="event_end_time" value="${esc(event.event_end_time)}">
+            <input type="hidden" name="event_type" value="${esc(event.event_type)}">
+            <input type="hidden" name="rental_duration" value="${esc(rental_duration || 'daily')}">
+            <input type="hidden" name="wet_items" value="${esc(wet_items || '')}">
+            <input type="hidden" name="rental_days" value="${esc(rental_days || 1)}">
+            <input type="hidden" name="event_end_date" value="${esc(event_end_date || event.event_date)}">
             <input type="hidden" name="subtotal" value="${pricing.subtotal}">
             <input type="hidden" name="delivery_fee" value="${pricing.delivery_fee}">
             <input type="hidden" name="tax_amount" value="${pricing.tax_amount}">
             <input type="hidden" name="tax_rate" value="${pricing.tax_rate}">
             <input type="hidden" name="discount_amount" value="${pricing.discount_amount || 0}">
-            <input type="hidden" name="discount_code" value="${pricing.discount_code || ''}">
+            <input type="hidden" name="discount_code" value="${esc(pricing.discount_code || '')}">
             ${tax_exempt_claimed ? '<input type="hidden" name="tax_exempt_claimed" value="1">' : ''}
-            ${tax_exempt_claimed && typeof tax_exempt_cert !== 'undefined' && tax_exempt_cert ? '<input type="hidden" name="tax_exempt_cert" value="' + String(tax_exempt_cert).replace(/"/g, '&quot;') + '">' : ''}
+            ${tax_exempt_claimed && typeof tax_exempt_cert !== 'undefined' && tax_exempt_cert ? '<input type="hidden" name="tax_exempt_cert" value="' + esc(tax_exempt_cert) + '">' : ''}
             <input type="hidden" name="damage_waiver_fee" value="${pricing.damage_waiver_fee || 0}">
             <input type="hidden" name="total" value="${pricing.total}">
             <input type="hidden" name="deposit_amount" value="${pricing.deposit_amount}">
-            <input type="hidden" name="first_name" value="${customer.first_name}">
-            <input type="hidden" name="last_name" value="${customer.last_name}">
-            <input type="hidden" name="email" value="${customer.email}">
-            <input type="hidden" name="phone" value="${customer.phone}">
-            <input type="hidden" name="delivery_address" value="${delivery.delivery_address}">
-            <input type="hidden" name="delivery_city" value="${delivery.delivery_city}">
-            <input type="hidden" name="delivery_zip" value="${delivery.delivery_zip}">
-            <input type="hidden" name="delivery_notes" value="${delivery.delivery_notes || ''}">
-            <input type="hidden" name="venue_type" value="${delivery.venue_type}">
-            <input type="hidden" name="surface_type" value="${delivery.surface_type}">
-            <input type="hidden" name="power_available" value="${delivery.power_available || false}">
+            <input type="hidden" name="first_name" value="${esc(customer.first_name)}">
+            <input type="hidden" name="last_name" value="${esc(customer.last_name)}">
+            <input type="hidden" name="email" value="${esc(customer.email)}">
+            <input type="hidden" name="phone" value="${esc(customer.phone)}">
+            <input type="hidden" name="delivery_address" value="${esc(delivery.delivery_address)}">
+            <input type="hidden" name="delivery_city" value="${esc(delivery.delivery_city)}">
+            <input type="hidden" name="delivery_zip" value="${esc(delivery.delivery_zip)}">
+            <input type="hidden" name="delivery_notes" value="${esc(delivery.delivery_notes || '')}">
+            <input type="hidden" name="venue_type" value="${esc(delivery.venue_type)}">
+            <input type="hidden" name="surface_type" value="${esc(delivery.surface_type)}">
+            <input type="hidden" name="power_available" value="${esc(delivery.power_available || false)}">
 
             <div style="background:#fff3cd;border-radius:10px;padding:10px 14px;margin-top:16px;font-size:13px;color:#856404;text-align:center">
               <i class="fas fa-exclamation-triangle me-1"></i>

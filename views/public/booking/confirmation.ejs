@@ -38,7 +38,7 @@
       </div>
       <h1 style="color:var(--bm-blue);font-size:42px;">Almost there &mdash; not booked yet</h1>
       <p style="font-size:18px;color:var(--bm-ink);">Your booking is <strong>not confirmed</strong> until the deposit is paid. We are holding your date for now, but the hold expires and the equipment is released to the next customer if the deposit is not received.</p>
-      <p class="mt-3"><a href="/booking/pay-deposit/${bookingNumber}" class="btn btn-book-now btn-lg px-5"><i class="fas fa-lock me-2"></i>Pay Your Deposit Now</a></p>
+      <p class="mt-3"><a href="${esc(locals.payDepositPath || ('/booking/pay-deposit/' + bookingNumber))}" class="btn btn-book-now btn-lg px-5"><i class="fas fa-lock me-2"></i>Pay Your Deposit Now</a></p>
       <p class="text-muted">Trouble paying? Call or text us at <a href="tel:5803089288" style="color:var(--bm-blue);font-weight:700;">(580) 308-9288</a> and we will take the deposit for you.</p>
       `}
 

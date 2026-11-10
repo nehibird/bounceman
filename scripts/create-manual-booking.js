@@ -92,7 +92,11 @@ const req = (v, name) => { if (v === undefined || v === null || v === '') throw 
 
   // --- tax + totals (app helper) ---
   const taxExempt = !!input.tax_exempt;
-  const pricing = H.calcPricing(settings, subtotal, delivery_fee, d.city || null, taxExempt, surface_fee);
+  // Test the real city/county boundary (same call as routes/booking.js + routes/admin.js); 4 s deadline,
+  // falls back silently to the typed/ZIP city. The decision is stored on the booking below.
+  const taxCity = await require('../lib/tax-decision').resolveTaxCityBounded(d.zip || null, d.city || null, { address: d.address, state: 'OK' }, 6000);
+  const pricing = H.calcPricing(settings, subtotal, delivery_fee, taxCity, taxExempt, surface_fee);
+  const taxDec = require('../lib/tax-decision').taxDecision(taxCity, pricing, taxExempt);
 
   // --- discount (percent OR labeled code) ---
   let discount_amount = 0, discount_code = input.discount_code || null;
@@ -117,6 +121,7 @@ const req = (v, name) => { if (v === undefined || v === null || v === '') throw 
   console.log('Deliver:', [d.address, d.city, 'OK', d.zip].filter(Boolean).join(', '));
   lines.forEach(l => console.log('  •', l.eq.name, `(${l.duration}${l.wet ? ', wet' : ''})`, '—', money(l.price)));
   console.log('Subtotal:', money(subtotal), '| Delivery:', money(delivery_fee), '| Surface:', money(surface_fee));
+  console.log('Tax basis:', taxExempt ? 'n/a (exempt)' : (taxDec.tax_basis || 'unknown') + (taxDec.tax_basis ? ' -> ' + (taxDec.tax_place || ('unincorporated ' + taxDec.tax_county)) : ''));
   console.log('Tax:', taxExempt ? '$0.00 (EXEMPT' + (input.tax_exempt_cert ? ' — permit ' + input.tax_exempt_cert : '') + ')' : money(pricing.taxAmount) + ` (${(pricing.taxRate * 100).toFixed(2)}%)`);
   if (discount_amount) console.log('Discount:', '-' + money(discount_amount), discount_code ? '(' + discount_code + ')' : '(' + input.discount_percent + '%)');
   console.log('TOTAL:', money(total), '| Deposit:', money(deposit_amount) + (noDeposit ? ' (deposit_paid=1, pay by ' + (input.payment_method || 'check') + ')' : ''), '| Balance:', money(balance_due));
@@ -151,8 +156,9 @@ const req = (v, name) => { if (v === undefined || v === null || v === '') throw 
       delivery_notes, surface_type, power_available,
       subtotal, delivery_fee, surface_fee, tax_amount, tax_rate, discount_amount, discount_code,
       total, deposit_amount, deposit_paid, balance_due, damage_waiver_fee,
-      payment_status, payment_method, tax_exempt_claimed, internal_notes, source
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      payment_status, payment_method, tax_exempt_claimed, internal_notes, source,
+      tax_basis, tax_county, tax_place, tax_state_rate, tax_county_rate, tax_city_rate, tax_resolved_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       bookingId, bookingNumber, cid, input.status || 'confirmed', input.event_date,
       input.event_start_time || null, input.event_end_time || null,
       input.event_type || null, input.venue_type || 'residential',
@@ -161,7 +167,9 @@ const req = (v, name) => { if (v === undefined || v === null || v === '') throw 
       subtotal, delivery_fee, surface_fee, taxExempt ? 0 : pricing.taxAmount, taxExempt ? 0 : pricing.taxRate,
       discount_amount, discount_code, total, deposit_amount, deposit_paid, balance_due, pricing.damageWaiverFee || 0,
       noDeposit ? 'unpaid' : 'unpaid', input.payment_method || null, taxExempt ? 1 : 0,
-      input.notes || null, 'admin'
+      input.notes || null, 'admin',
+      taxDec.tax_basis, taxDec.tax_county, taxDec.tax_place, taxDec.tax_state_rate,
+      taxDec.tax_county_rate, taxDec.tax_city_rate, taxDec.tax_resolved_at
     );
 
     for (const l of lines) {

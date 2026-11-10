@@ -1,5 +1,6 @@
 'use strict';
 const nodemailer = require('nodemailer');
+const { bookingLinkPath } = require('../lib/booking-links');
 const { rentalDays, formatRentalPeriod, fmtTime12, sundayPickupApplies } = require('../lib/helpers');
 
 let _transporter = null;
@@ -155,7 +156,7 @@ function deliveryReminderBody(booking, customer, contractId) {
   
   let actionButtons = '';
   if (hasBalance || needsSignature) {
-    const manageUrl = `${BASE_URL}/booking/manage/${booking.booking_number}`;
+    const manageUrl = `${BASE_URL}${bookingLinkPath('manage', booking.booking_number)}`;
     const btnLabel = hasBalance && needsSignature ? 'Pay Balance & Sign Agreement'
                    : hasBalance ? `Pay Balance ($${fmtMoney(booking.balance_due)})`
                    : 'Sign Rental Agreement';

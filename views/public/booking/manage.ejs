@@ -5,22 +5,22 @@
 
     <div class="text-center mb-4">
       <h1 style="color:var(--bm-blue);font-weight:700"><i class="fas fa-clipboard-list me-2"></i>Your Booking</h1>
-      <p class="text-muted">Booking #<strong>${booking.booking_number}</strong></p>
+      <p class="text-muted">Booking #<strong>${esc(booking.booking_number)}</strong></p>
     </div>
 
     <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
       <div class="row g-3">
         <div class="col-sm-6">
           <div class="text-muted small">Event Date</div>
-          <div class="fw-bold">${booking.rental_period || booking.event_date}</div>
+          <div class="fw-bold">${esc(booking.rental_period || booking.event_date)}</div>
         </div>
         <div class="col-sm-6">
           <div class="text-muted small">Delivery Address</div>
-          <div class="fw-bold">${booking.delivery_address}, ${booking.delivery_city}, OK ${booking.delivery_zip}</div>
+          <div class="fw-bold">${esc(booking.delivery_address)}, ${esc(booking.delivery_city)}, OK ${esc(booking.delivery_zip)}</div>
         </div>
         <div class="col-sm-6">
           <div class="text-muted small">Items</div>
-          <div class="fw-bold">${itemList}</div>
+          <div class="fw-bold">${esc(itemList)}</div>
         </div>
         <div class="col-sm-6">
           <div class="text-muted small">Balance Due on Delivery</div>
@@ -35,7 +35,7 @@
     <div class="bg-white rounded-4 p-4 shadow-sm mb-4">
       <h5 style="color:var(--bm-blue);font-weight:700;margin-bottom:4px"><i class="fas fa-credit-card me-2"></i>Pay Balance</h5>
       <p class="text-muted small mb-3">Pay online now or hand cash/card to our crew on delivery day.</p>
-      <a href="/booking/pay/${booking.booking_number}" class="btn btn-book-now btn-lg w-100">
+      <a href="${esc(locals.payPath || ('/booking/pay/' + encodeURIComponent(booking.booking_number)))}" class="btn btn-book-now btn-lg w-100">
         <i class="fas fa-lock me-2"></i>Pay $${parseFloat(booking.balance_due).toFixed(2)} Online
       </a>
     </div>
@@ -47,7 +47,7 @@
         <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><i class="fas fa-file-contract me-2"></i>Rental Agreement</h5>
         <p class="text-muted small mt-1 mb-0">Please read and sign before your event.</p>
       </div>
-      <div class="p-4" style="max-height:350px;overflow-y:auto;line-height:1.8;color:#555;font-size:14px;white-space:pre-wrap">${contract.content}</div>
+      <div class="p-4" style="max-height:350px;overflow-y:auto;line-height:1.8;color:#555;font-size:14px;white-space:pre-wrap">${esc(contract.content)}</div>
       <div class="p-4" style="border-top:1px solid #eee">
         <label class="fw-bold mb-2">Your Signature</label>
         <div style="border:2px dashed #ccc;border-radius:12px;background:#fafafa;position:relative;margin-bottom:12px">
@@ -59,7 +59,7 @@
         </div>
         <div class="mb-3">
           <label for="signerName" class="form-label fw-bold">Print Name</label>
-          <input type="text" id="signerName" class="form-control" value="${booking.first_name} ${booking.last_name || ''}" style="border-radius:12px">
+          <input type="text" id="signerName" class="form-control" value="${esc(booking.first_name)} ${esc(booking.last_name || '')}" style="border-radius:12px">
         </div>
         <div class="form-check mb-4">
           <input class="form-check-input" type="checkbox" id="agreeCheck">
@@ -75,7 +75,7 @@
     <div class="bg-white rounded-4 p-4 shadow-sm mb-4 text-center">
       <i class="fas fa-check-circle fa-2x mb-2" style="color:#06D6A0"></i>
       <div class="fw-bold">Rental Agreement Signed</div>
-      <div class="text-muted small">Signed by ${contract.signer_name || booking.first_name}</div>
+      <div class="text-muted small">Signed by ${esc(contract.signer_name || booking.first_name)}</div>
     </div>
     ` : ''}
 
@@ -127,7 +127,7 @@
     var name = document.getElementById('signerName').value.trim();
     if (!name || !hasSigned || !agreeCheck.checked) return;
     signBtn.disabled = true;
-    fetch('/contract/${contract ? contract.id : ''}/sign', {
+    fetch('/contract/${contract ? encodeURIComponent(contract.id) : ''}/sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ signature_data: canvas.toDataURL('image/png'), signer_name: name })

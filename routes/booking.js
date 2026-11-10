@@ -12,6 +12,7 @@ const { isValidEmail } = require('../lib/validation');
 const { appendInternalNote } = require('../lib/helpers');
 const { notifyNewBooking } = require('../services/notifications');
 const facebookAds = require('../services/facebook-ads');
+const { signBookingToken, verifyBookingToken, bookingLinkPath } = require('../lib/booking-links');
 
 // HIGH-6: Rate limiter for booking endpoints
 const bookingLimiter = rateLimit({
@@ -337,16 +338,40 @@ router.get('/details', (req, res) => {
   // way to change it. A wrong guess dead-ended at a 409 on submit whose only button
   // was "Go Home". Hand the view enough to ask the question here instead.
   let cartUnits = [];
+  let cartSubtotal = 0;
   try {
     const ids = String(req.query.items || '').split(',').map(s => s.trim()).filter(Boolean);
     if (ids.length) {
       const rows = db.prepare(
-        `SELECT id, name, category, price_wet FROM equipment WHERE id IN (${ids.map(() => '?').join(',')})`
+        `SELECT id, name, category, price_wet, power_required FROM equipment WHERE id IN (${ids.map(() => '?').join(',')})`
       ).all(...ids);
       // Same wet-capability test step 2 uses, so both steps agree on which units ask.
       const WET_CATS = ['water_slides', 'water-slides', 'combo_units', 'combo-units'];
       const checkDate = req.query.event_date || '';
       const checkStart = req.query.event_start_time || '11:00';
+      // Prices for the step-3 order summary. Computed with the SAME calls /review makes
+      // (priceForBooking + addonPricedIds ride-along rates, same duration/days clamp) so the
+      // figure shown here can never disagree with what the server later charges; the browser
+      // must not re-derive pricing. Wet is passed through for parity though wet == dry today.
+      const cartDuration = req.query.rental_duration || 'daily';
+      const cartDays = cartDuration === '4hr' ? 1 : Math.min(30, Math.max(1, parseInt(req.query.rental_days) || 1));
+      const cartWet = new Set(String(req.query.wet_items || '').split(',').filter(Boolean));
+      const cartEqs = ids.map(id => db.prepare('SELECT * FROM equipment WHERE id = ?').get(id)).filter(Boolean);
+      let cartAddonIds = new Set();
+      try { cartAddonIds = addonPricedIds(db, cartEqs, { duration: cartDuration, days: cartDays, date: checkDate }); }
+      catch (e) { console.error('[BOOKING] details addon pricing failed:', e.message); }
+      const cartPrice = (id) => {
+        const eq = cartEqs.find(q => q.id === id);
+        if (!eq) return null;
+        const isWet = cartWet.has(id);
+        try {
+          return priceForBooking(db, eq, { duration: cartDuration, days: cartDays, wet: isWet, date: checkDate, asAddon: cartAddonIds.has(id) });
+        } catch (e) {
+          // Identical fallback to /review.
+          const base = getPrice(eq, cartDuration);
+          return isWet ? base + getWetUpcharge(eq) : base;
+        }
+      };
       cartUnits = ids
         .map(id => rows.find(r => r.id === id))
         .filter(Boolean)
@@ -363,19 +388,32 @@ router.get('/details', (req, res) => {
               dryBlocked = false;
             }
           }
-          return { id: u.id, name: u.name, wetCapable, dryBlocked };
+          // Real power data replaces the old hardcoded generator-id test (that id matched no row, so
+          // every cart, even Toddler Soft Play, was asked about power). "None..."/"Battery..." need no
+          // outlet; NULL/blank is treated as needing power (fail toward asking, never toward silently skipping).
+          const needsPower = !/^\s*(none|battery)/i.test(u.power_required || '');
+          return { id: u.id, name: u.name, wetCapable, dryBlocked, needsPower, price: cartPrice(u.id) };
         });
+      cartSubtotal = cartUnits.reduce((sum, u) => sum + (Number(u.price) || 0), 0);
     }
   } catch (e) {
     // Never block checkout over this — fall back to the old hidden-field behaviour.
     console.error('[BOOKING] details cart lookup failed:', e.message);
   }
 
+  // The generator offered when a cart needs power and the customer has no outlet.  Looked up by its
+  // real id (verified against the live table); null (page degrades gracefully) if it is missing or
+  // not currently available, and a lookup failure must never break the page.
+  let powerAddon = null;
+  try {
+    powerAddon = db.prepare("SELECT id, name, price_daily AS price FROM equipment WHERE id = ? AND status = 'available'").get('E68C23DC-BD86-4E73-9563-9CA803574FCF') || null;
+  } catch (e) { console.error('[BOOKING] details power addon lookup failed:', e.message); }
+
   res.render('public/booking/step3-details', {
     title: previewTitle || 'Your Details - Bounce Man',
     metaDescription: previewDesc,
     ogImage,
-    settings, zones, cartUnits,
+    settings, zones, cartUnits, cartSubtotal, powerAddon,
     page: 'booking'
   });
 });
@@ -481,7 +519,12 @@ router.post('/review', bookingLimiter, async (req, res) => {
   // Hard-surface (concrete/asphalt) or indoor setups need sandbags → 10% surcharge.
   const surface_fee = surfaceSurcharge(subtotal, surface_type, venue_type);
   // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
-  const tax_city = await resolveTaxCity(delivery_zip, delivery_city);
+  // 3rd arg = delivery point: lets resolveTaxCity test the real city/county boundary and return a
+  // verified jurisdiction OBJECT (calcPricing accepts it in place of a city string).  It has a 4 s
+  // deadline and on ANY failure (no key, timeout, imprecise geocode) silently returns the same
+  // ZIP/typed-city string as before, so a quote is never slowed past 4 s or broken.  State is fixed to
+  // OK: the booking form has no state field and the service area is Oklahoma only.
+  const tax_city = await resolveTaxCity(delivery_zip, delivery_city, { address: delivery_address, state: 'OK' });
   const pricing = calcPricing(settings, subtotal, delivery_fee, tax_city, taxExemptHonored, surface_fee, discount_amount + free_extra_day);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee, total: rawTotal } = pricing;
   let total = Math.max(0, rawTotal - discount_amount - free_extra_day);
@@ -651,7 +694,8 @@ router.post('/submit', bookingLimiter, async (req, res) => {
     // Hard-surface/indoor 10% surcharge (same helper the review preview uses).
     const recalcSurfaceFee = surfaceSurcharge(recalcSubtotal, data.surface_type, data.venue_type);
     // Tax jurisdiction from the ZIP (not the free-typed city); discount reduces the taxable base.
-    const recalcTaxCity = await resolveTaxCity(data.delivery_zip, data.delivery_city);
+    // Same boundary-verified lookup as /review so the charged tax matches the quote (cached after review).
+    const recalcTaxCity = await resolveTaxCity(data.delivery_zip, data.delivery_city, { address: data.delivery_address, state: 'OK' });
     const recalcPricing = calcPricing(settings, recalcSubtotal, recalcDeliveryFee, recalcTaxCity, taxExempt, recalcSurfaceFee, recalcDiscountAmount + recalcFreeExtraDay);
     let recalcTotal = Math.max(0, recalcPricing.total - recalcDiscountAmount - recalcFreeExtraDay);
     // Comp: delivery and the surface surcharge survive a subtotal discount, so zero the
@@ -917,7 +961,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
           .catch(err => console.error('[EMAIL ERROR]', err.message));
       }
       console.log('[BOOKING] Created', bookingNumber, '-> $0 deposit, marked settled (no Stripe)');
-      return res.render('public/booking/confirmation', { title: 'Booking Confirmed! - Bounce Man', settings, bookingNumber, bookingId, page: 'booking' });
+      return res.render('public/booking/confirmation', { title: 'Booking Confirmed! - Bounce Man', settings, bookingNumber, bookingId, payDepositPath: bookingLinkPath('pay-deposit', bookingNumber), page: 'booking' });
     }
 
     try {
@@ -948,6 +992,7 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       res.render('public/booking/confirmation', {
         title: 'Booking Confirmed! - Bounce Man',
         settings, bookingNumber, bookingId,
+        payDepositPath: bookingLinkPath('pay-deposit', bookingNumber),
         page: 'booking'
       });
     }
@@ -1130,6 +1175,7 @@ router.get('/confirmation', async (req, res) => {
     settings,
     bookingNumber,
     bookingId: booking.id,
+    payDepositPath: bookingLinkPath('pay-deposit', bookingNumber), // token-bearing: this is the "Pay Your Deposit Now" button
     depositPaid,
     conversionValue: booking.total || booking.deposit_amount || 0,
     ecEmailHash,
@@ -1180,9 +1226,75 @@ router.post('/lookup', (req, res) => {
 // PAY BALANCE ROUTES
 // ============================================
 
+// ---- Access control for /manage, /pay and /pay-deposit (October review Batch 0.4) ----------
+// These three routes used to be keyed ONLY on the booking number, which leaked the customer's
+// name, delivery address, event time and balance to anyone holding the number (it travels in
+// texts, emails, Stripe URLs and screenshots).  Two ways in, both server-checked:
+//   1. a signed link token (?t=...) minted by lib/booking-links.js -- what SMS/email/QR links
+//      carry, so a customer standing in a driveway taps once and is in, with no typing;
+//   2. a verify form: the email OR mobile number on the booking.  This is the fallback for
+//      links minted before tokens existed and for customers with NO email (one booked entirely
+//      by text) -- email-only (as POST /lookup requires) would lock them out.
+// A bare booking number gets neither, and a bad/missing token renders the SAME form whether or
+// not the booking exists, so the page is not an oracle for valid numbers.
+const verifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15, // per IP; the booking number is not secret, so the contact guess is what we throttle
+  message: 'Too many attempts. Please try again in a few minutes, or call (580) 308-9288.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false
+});
+
+const ACCESS_DESTS = ['manage', 'pay', 'pay-deposit'];
+
+function renderVerify(res, bookingNumber, dest, error) {
+  return res.status(error ? 401 : 200).render('public/booking/verify', {
+    title: 'Confirm It\'s You', settings: getSettings(), page: 'booking',
+    verifyBookingNumber: bookingNumber || '', verifyDest: dest, verifyError: error || ''
+  });
+}
+
+// Returns true when the request carries a valid token; otherwise renders the verify form.
+function requireBookingAccess(req, res, dest) {
+  if (verifyBookingToken(req.params.bookingNumber, req.query.t)) return true;
+  renderVerify(res, req.params.bookingNumber, dest, null);
+  return false;
+}
+
+router.post('/verify', verifyLimiter, (req, res) => {
+  const db = getDb();
+  const number = String(req.body.booking_number || '').trim();
+  const dest = ACCESS_DESTS.includes(req.body.dest) ? req.body.dest : 'manage'; // allowlist: no open redirect
+  const contact = String(req.body.contact || '').trim();
+  const row = number && contact ? db.prepare(
+    'SELECT c.email, c.phone FROM bookings b JOIN customers c ON c.id = b.customer_id WHERE b.booking_number = ?'
+  ).get(number) : null;
+  let ok = false;
+  if (row) {
+    if (contact.includes('@')) {
+      ok = !!row.email && String(row.email).trim().toLowerCase() === contact.toLowerCase();
+    } else {
+      // Compare the last 10 digits so "+1 (580) 555-1234", "580-555-1234" and "5805551234" all match.
+      const want = String(row.phone || '').replace(/\D/g, '').slice(-10);
+      const got = contact.replace(/\D/g, '');
+      ok = want.length === 10 && got.length >= 10 && got.slice(-10) === want;
+    }
+  }
+  // One generic message for unknown booking / wrong contact -- never say which.
+  if (!ok) return renderVerify(res, number, dest, 'That did not match our records. Check the email or mobile number you booked with.');
+  const token = signBookingToken(number);
+  if (!token) {
+    console.error('[BOOKING ACCESS] no BOOKING_LINK_SECRET/JWT_SECRET configured -- cannot mint link token');
+    return res.status(500).render('error', { title: 'Error', status: 500, message: 'Sorry, something went wrong. Please call or text (580) 308-9288.' });
+  }
+  return res.redirect(303, `/booking/${dest}/${encodeURIComponent(number)}?t=${token}`);
+});
+
 // Pay the DEPOSIT (used by the sign-before-pay flow: after signing the rental
 // agreement, the customer lands here to pay the deposit via Stripe).
 router.get('/pay-deposit/:bookingNumber', async (req, res) => {
+  if (!requireBookingAccess(req, res, 'pay-deposit')) return;
   const db = getDb();
   const settings = getSettings();
   const booking = db.prepare(`
@@ -1282,6 +1394,7 @@ router.get('/pay-deposit/:bookingNumber', async (req, res) => {
 
 // Pay remaining balance - shows amount and redirects to Stripe
 router.get('/pay/:bookingNumber', async (req, res) => {
+  if (!requireBookingAccess(req, res, 'pay')) return;
   const db = getDb();
   const settings = getSettings();
   const booking = db.prepare(`
@@ -1317,7 +1430,8 @@ router.get('/pay/:bookingNumber', async (req, res) => {
       customerEmail: validEmail,
       description: `Balance payment for booking ${booking.booking_number} - Event ${booking.event_date}`,
       successUrl: `${baseUrl}/booking/pay/${booking.booking_number}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${baseUrl}/booking/pay/${booking.booking_number}/cancel`
+      // Token rides on the cancel URL so "Try Again" works without re-verifying.
+      cancelUrl: `${baseUrl}${bookingLinkPath('pay', booking.booking_number).replace(/(\?|$)/, '/cancel$1')}`
     });
 
     res.redirect(303, session.url);
@@ -1341,9 +1455,17 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
     WHERE b.booking_number = ?
   `).get(req.params.bookingNumber);
 
+  // Same no-oracle rule as the gated routes: only a valid token may learn a number is unknown.
+  const hasToken = verifyBookingToken(req.params.bookingNumber, req.query.t);
   if (!booking) {
+    if (!hasToken) return renderVerify(res, req.params.bookingNumber, 'manage', null);
     return res.status(404).render('error', { title: 'Not Found', message: 'Booking not found', status: 404 });
   }
+
+  // A paid Stripe session id that names THIS booking is itself proof of having paid it, so the
+  // normal post-Checkout redirect (and office.js payment links, which carry no token) needs no
+  // token.  Anything else needs one.
+  let sessionProvesBooking = false;
 
   // Verify payment with Stripe
   if (session_id) {
@@ -1351,11 +1473,26 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
       const stripe = require('../services/stripe');
       const session = await stripe.retrieveSession(session_id);
 
+      // The session must have been CREATED FOR this booking.  This route used to trust any paid
+      // session id in the query string: someone holding any paid session (their own $25 one) plus
+      // a victim's booking number could credit that payment to the victim's booking and, because
+      // the receipt email sat outside the dedupe guard, re-send the victim a receipt for the
+      // wrong amount on every reload.  createCheckoutSession stamps metadata.booking_id on every
+      // session (deposit, balance, office payment link), so this is a safe equality check.
+      const sessionBookingId = session && session.metadata && session.metadata.booking_id;
+      if (!sessionBookingId || sessionBookingId !== booking.id) {
+        console.warn('[PAY BALANCE] session', session_id, 'metadata.booking_id', sessionBookingId || '(none)',
+          'does not match booking', booking.booking_number, '-- ignored, nothing recorded or sent');
+        return res.status(400).render('error', { title: 'Payment Not Found', status: 400,
+          message: 'That payment does not belong to this booking. If you were charged, please call or text us on (580) 308-9288.' });
+      }
+      sessionProvesBooking = true;
+
       if (session.payment_status === 'paid') {
         const amountPaid = session.amount_total / 100;
         const intentId = (session.payment_intent && session.payment_intent.id) ? session.payment_intent.id : (session.payment_intent || session.id);
 
-        // Record the payment — idempotent: the Stripe webhook may have recorded it first
+        // Record the payment -- idempotent: the Stripe webhook may have recorded it first
         // (both paths dedup on stripe_payment_id, so the balance is only ever counted once).
         const existing = db.prepare('SELECT id FROM payments WHERE stripe_payment_id = ?').get(intentId);
         if (!existing) {
@@ -1363,31 +1500,57 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
           db.prepare(`INSERT INTO payments (id, booking_id, customer_id, amount, payment_type, payment_method, stripe_payment_id, status, created_at)
             VALUES (?, ?, ?, ?, 'charge', 'card', ?, 'completed', datetime('now'))`).run(paymentId, booking.id, booking.customer_id, amountPaid, intentId);
 
-          const newBalance = Math.max(0, parseFloat(booking.balance_due) - amountPaid);
-          const newStatus = newBalance <= 0 ? 'paid' : 'partial';
-          db.prepare("UPDATE bookings SET balance_due = ?, payment_status = ?, updated_at = datetime('now') WHERE id = ?")
-            .run(newBalance, newStatus, booking.id);
+          // Mirror routes/webhooks.js checkout.session.completed (and lib/payments.js, fixed for
+          // the same bug): derive everything from the SUM of completed payments and set
+          // deposit_paid + status too.  This path used to set only balance_due/payment_status
+          // (and compute 'paid'/'partial' from a subtraction), so a Stripe payment that beat the
+          // webhook left deposit_paid=0 -- /booking/pay-deposit then charged the deposit a second
+          // time -- and a pending booking never became confirmed.
+          const totalPaid = db.prepare(
+            "SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE booking_id = ? AND status = 'completed'"
+          ).get(booking.id).paid;
+          const newBalance = Math.max(0, parseFloat(booking.total) - totalPaid);
+          const depositPaid = totalPaid >= (parseFloat(booking.deposit_amount) || 0) ? 1 : 0;
+          const newStatus = newBalance <= 0 ? 'paid' : (depositPaid ? 'deposit_paid' : 'partial');
+          // Only PROMOTE pending -> confirmed; never resurrect cancelled/declined/completed.
+          const bookingStatus = (depositPaid && booking.status === 'pending') ? 'confirmed' : booking.status;
+          db.prepare("UPDATE bookings SET status = ?, payment_status = ?, balance_due = ?, deposit_paid = ?, updated_at = datetime('now') WHERE id = ?")
+            .run(bookingStatus, newStatus, newBalance, depositPaid, booking.id);
           try { db.prepare('UPDATE customers SET total_revenue = total_revenue + ? WHERE id = ?').run(amountPaid, booking.customer_id); } catch (e) { /* non-critical */ }
+
+          // Flip the existing Slack card(s) Payment Status in place -- no new card.  Inside the
+          // dedupe guard: reloading this page must not re-fire it.  (If the webhook recorded the
+          // payment first it has already refreshed the cards itself.)
+          try {
+            const notif = require('../services/notifications');
+            await notif.refreshDeliveryCard(booking.id);
+            await notif.updateBookingSlackCard(booking.id);
+          } catch (e) { console.error('[PAY BALANCE] card refresh failed:', e.message); }
+
+          console.log('[PAY BALANCE] $' + amountPaid.toFixed(2) + ' paid for ' + booking.booking_number);
         }
 
-        // Flip the existing Slack card(s) Payment Status in place — no new card.
-        try {
-          const notif = require('../services/notifications');
-          await notif.refreshDeliveryCard(booking.id);
-          await notif.updateBookingSlackCard(booking.id);
-        } catch (e) { console.error('[PAY BALANCE] card refresh failed:', e.message); }
-
-        // Send receipt email
-        const email = require('../services/email');
-        email.sendPaymentReceipt(booking, { first_name: booking.first_name, last_name: booking.last_name, email: booking.email }, amountPaid)
-          .catch(e => console.error('[EMAIL] Receipt failed:', e.message));
-
-        console.log('[PAY BALANCE] $' + amountPaid.toFixed(2) + ' paid for ' + booking.booking_number);
+        // Receipt email: exactly once per Stripe payment, whoever recorded it.  It cannot simply
+        // live inside `!existing` -- the webhook usually wins that race and sends a booking
+        // CONFIRMATION, not a receipt, so the customer would never get one.  The claim row is
+        // written synchronously (better-sqlite3) before any await, so concurrent reloads cannot
+        // both pass the check.
+        const receiptClaim = db.prepare("SELECT 1 FROM activity_log WHERE action = 'receipt_emailed' AND entity_type = 'payment' AND entity_id = ?").get(String(intentId));
+        if (!receiptClaim) {
+          db.prepare("INSERT INTO activity_log (id, action, entity_type, entity_id, details) VALUES (?, 'receipt_emailed', 'payment', ?, ?)")
+            .run(require('crypto').randomUUID(), String(intentId), JSON.stringify({ booking_id: booking.id, amount: amountPaid }));
+          const email = require('../services/email');
+          const freshBooking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking.id) || booking;
+          email.sendPaymentReceipt(freshBooking, { first_name: booking.first_name, last_name: booking.last_name, email: booking.email }, amountPaid)
+            .catch(e => console.error('[EMAIL] Receipt failed:', e.message));
+        }
       }
     } catch (err) {
       console.error('[PAY BALANCE] Stripe verification error:', err.message);
     }
   }
+
+  if (!hasToken && !sessionProvesBooking) return renderVerify(res, req.params.bookingNumber, 'manage', null);
 
   if (booking) booking.rental_period = formatRentalPeriod(booking);
   res.render('public/booking/payment-success', { title: 'Payment Complete!', settings, booking });
@@ -1397,12 +1560,18 @@ router.get('/pay/:bookingNumber/success', async (req, res) => {
 router.get('/pay/:bookingNumber/cancel', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const booking = db.prepare('SELECT * FROM bookings WHERE booking_number = ?').get(req.params.bookingNumber);
+  // Expose nothing but a retry link, and only with a valid token -- the full row used to be
+  // handed to the view for anyone holding the booking number.
+  const number = req.params.bookingNumber;
+  const booking = verifyBookingToken(number, req.query.t)
+    ? { booking_number: number, pay_path: bookingLinkPath('pay', number) }
+    : null;
 
   res.render('public/booking/payment-cancel', { title: 'Payment Cancelled', settings, booking });
 });
 
 router.get('/manage/:bookingNumber', (req, res) => {
+  if (!requireBookingAccess(req, res, 'manage')) return;
   const db = getDb();
   const settings = getSettings();
   const booking = db.prepare(`
@@ -1422,7 +1591,8 @@ router.get('/manage/:bookingNumber', (req, res) => {
 
   booking.rental_period = formatRentalPeriod(booking);
 
-  res.render('public/booking/manage', { title: 'Your Booking', settings, booking, contract, itemList, page: 'booking' });
+  // linkToken lets the page's own "Pay online" button carry the capability forward.
+  res.render('public/booking/manage', { title: 'Your Booking', settings, booking, contract, itemList, page: 'booking', payPath: bookingLinkPath('pay', booking.booking_number) });
 });
 
 module.exports = router;

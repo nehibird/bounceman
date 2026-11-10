@@ -201,7 +201,13 @@ router.get('/', async (req, res) => {
     GROUP BY e.id ORDER BY bookings DESC LIMIT 8
   `).all();
 
-  const bankAccounts = db.prepare('SELECT * FROM bank_accounts ORDER BY sort_order, name').all();
+  // exclude_from_totals: an account that arrived on a shared Plaid connection but belongs to a
+  // different business. FNBOK returned two accounts on one item -- ....7636 is Bounce Man's
+  // operating account (178 txns back to April, every Stripe payout), ....8287 is True Light
+  // Christmas, opened 2026-11-05. It was silently inflating Total Cash Position and, through it,
+  // Safe to Spend. Excluded accounts keep syncing (the item covers both) but are left out of
+  // every total and hidden from the account cards.
+  const bankAccounts = db.prepare('SELECT * FROM bank_accounts WHERE COALESCE(exclude_from_totals,0) = 0 ORDER BY sort_order, name').all();
 
   let stripePayouts = null;
   try { stripePayouts = await require('../services/stripe').getPayoutSummary(); } catch (e) { console.error('[DASH] stripe payouts failed:', e.message); }
@@ -404,7 +410,11 @@ router.post('/bookings/create', async (req, res) => {
   // Tax + totals (canonical: tax on undiscounted subtotal, discount off final total)
   const taxExempt = data.tax_exempt_claimed === '1';
   const settings = getSettings();
-  const pricing = calcPricing(settings, subtotal, delivery_fee, data.delivery_city || null, taxExempt);
+  // Same shape as routes/booking.js: test the real city/county boundary (4 s deadline, cached, falls back
+  // silently to the typed/ZIP city) and pass the verified jurisdiction object to calcPricing in place of a name.
+  const tax_city = await require('../lib/tax-decision').resolveTaxCityBounded(deliveryZip, data.delivery_city || null, { address: data.delivery_address, state: 'OK' }, 6000);
+  const pricing = calcPricing(settings, subtotal, delivery_fee, tax_city, taxExempt);
+  const taxDec = require('../lib/tax-decision').taxDecision(tax_city, pricing, taxExempt);
   const { taxRate: tax_rate, taxAmount: tax_amount, damageWaiverFee: damage_waiver_fee } = pricing;
   let total = Math.round((pricing.total - discount_amount) * 100) / 100;
   // Comp: delivery survives a subtotal discount, so zero the whole thing and record
@@ -453,8 +463,9 @@ router.post('/bookings/create', async (req, res) => {
       delivery_address, delivery_city, delivery_state, delivery_zip,
       subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
       total, deposit_amount, balance_due, payment_status, internal_notes, source,
+      tax_basis, tax_county, tax_place, tax_state_rate, tax_county_rate, tax_city_rate, tax_resolved_at,
       created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', datetime('now'), datetime('now'))`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`).run(
       bookingId, bookingNumber, customer.id, data.status || 'confirmed',
       data.event_date, eventEndDate,
       data.event_start_time || null, data.event_end_time || null,
@@ -463,7 +474,9 @@ router.post('/bookings/create', async (req, res) => {
       data.delivery_state || 'OK', deliveryZip,
       subtotal, delivery_fee, discount_amount, tax_amount, tax_rate, damage_waiver_fee,
       total, deposit_amount, balance_due,
-      data.payment_status || 'unpaid', data.internal_notes || null
+      data.payment_status || 'unpaid', data.internal_notes || null,
+      taxDec.tax_basis, taxDec.tax_county, taxDec.tax_place, taxDec.tax_state_rate,
+      taxDec.tax_county_rate, taxDec.tax_city_rate, taxDec.tax_resolved_at
     );
 
     // Add booking items
@@ -1054,6 +1067,7 @@ router.get('/reports', (req, res) => {
       SELECT b.booking_number, b.event_date, b.delivery_city,
              b.subtotal, b.discount_amount, b.delivery_fee, b.surface_fee, b.damage_waiver_fee,
              b.tax_amount, b.total, b.tax_exempt_claimed,
+             b.tax_basis, b.tax_county, b.tax_place, b.tax_state_rate, b.tax_county_rate, b.tax_city_rate,
              c.first_name, c.last_name, c.tax_exempt_cert
       FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
       WHERE b.status NOT IN ('cancelled','declined')
@@ -1061,8 +1075,14 @@ router.get('/reports', (req, res) => {
       ORDER BY b.event_date
     `).all(filingMonth);
 
-    const byCity = {};
+    // Jurisdiction groups. A booking that STORED its decision (tax_basis NOT NULL) is filed under the
+    // jurisdiction and rates that were actually charged; an older row has nothing stored, so it is
+    // re-derived from the typed city exactly as before and tagged legacy (unverified guess).
+    // 'boundary' = verified against the real city limits; 'typed_city'/'fallback_default' = the lookup
+    // fell back at booking time, so that row is a name-based guess even though it was stored.
+    const groups = {};
     let totalSales = 0, exemptSales = 0, deliveryExcluded = 0, taxCollected = 0, taxableSales = 0;
+    let verifiedBase = 0, guessBase = 0, verifiedCount = 0, guessCount = 0;
     const lines = [];
 
     for (const r of rows) {
@@ -1074,23 +1094,40 @@ router.get('/reports', (req, res) => {
       const delivery = r.delivery_fee || 0;
       const base = (r.subtotal || 0) - (r.discount_amount || 0) + (r.surface_fee || 0) + (r.damage_waiver_fee || 0);
       const exempt = r.tax_exempt_claimed === 1;
-      const city = (taxBreakdown(r.delivery_city) || {}).key || ((r.delivery_city || '').trim().toUpperCase() || '(NO CITY ON BOOKING)');
+      const stored = r.tax_basis != null && r.tax_state_rate != null;
+      const legacyBd = stored ? null : taxBreakdown(r.delivery_city);
+      const bd = stored ? {
+        key: r.tax_place || ('UNINCORPORATED ' + r.tax_county), countyName: r.tax_county,
+        countyRate: r.tax_county_rate || 0, cityRate: r.tax_city_rate || 0,
+        total: (r.tax_state_rate || 0) + (r.tax_county_rate || 0) + (r.tax_city_rate || 0)
+      } : legacyBd;
+      const verified = stored && r.tax_basis === 'boundary';
+      const sourceLabel = verified ? 'verified' : (stored ? 'stored-guess' : 'legacy');
+      const city = (bd || {}).key || ((r.delivery_city || '').trim().toUpperCase() || '(NO CITY ON BOOKING)');
 
       totalSales += gross;
       deliveryExcluded += delivery;
       taxCollected += (r.tax_amount || 0);
       if (exempt) exemptSales += base;
-      else { taxableSales += base; byCity[city] = (byCity[city] || 0) + base; }
+      else {
+        taxableSales += base;
+        if (verified) { verifiedBase += base; verifiedCount++; } else { guessBase += base; guessCount++; }
+        // Group by jurisdiction AND the rates charged, so a mid-month rate change cannot blend two rates.
+        const gk = city + '|' + (bd ? bd.cityRate : 'x') + '|' + (bd ? bd.countyRate : 'x');
+        const g = groups[gk] || (groups[gk] = { city, bd, base: 0, verifiedBase: 0, guessBase: 0 });
+        g.base += base;
+        if (verified) g.verifiedBase += base; else g.guessBase += base;
+      }
 
-      // What the CURRENT rate table says this sale should have carried. Surfaces any
-      // booking whose stored tax no longer matches the jurisdiction it was sold into.
-      const bd = taxBreakdown(r.delivery_city);
+      // Stored rows: the rate that was actually charged. Legacy rows: what the CURRENT rate table says the
+      // typed city should carry. Either way a booking whose tax_amount disagrees is flagged below.
       const liveRate = exempt ? 0 : (bd ? bd.total : 0);
       const shouldBe = Math.round(base * liveRate * 100) / 100;
       lines.push({
         booking_number: r.booking_number, event_date: r.event_date,
         who: ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || '—',
-        city: r.delivery_city || '', base, delivery, exempt,
+        city: r.delivery_city || '', jurisdiction: exempt ? '' : city, source: exempt ? 'exempt' : sourceLabel, basis: r.tax_basis || null,
+        base, delivery, exempt,
         cert: r.tax_exempt_cert || '', taxCharged: r.tax_amount || 0, shouldBe,
         mismatch: Math.abs(shouldBe - (r.tax_amount || 0)) > 0.01,
         unresolved: !exempt && bd == null
@@ -1100,22 +1137,26 @@ router.get('/reports', (req, res) => {
     const stateTax = Math.round(taxableSales * OK_STATE_RATE * 100) / 100;
 
     // City lines for STS-20021.
-    const jurisdictions = Object.entries(byCity).map(([city, base]) => {
-      const bd = taxBreakdown(city);
-      const rate = bd ? bd.cityRate : 0;
-      return { city, base: Math.round(base * 100) / 100, rate, tax: Math.round(base * rate * 100) / 100,
-               county: bd ? bd.countyName : null, resolved: !!bd };
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const jurisdictions = Object.values(groups).map((g) => {
+      const rate = g.bd ? g.bd.cityRate : 0;
+      return { city: g.city, base: r2(g.base), rate, tax: r2(g.base * rate),
+               county: g.bd ? g.bd.countyName : null, countyRate: g.bd ? g.bd.countyRate : 0, resolved: !!g.bd,
+               verifiedBase: r2(g.verifiedBase), guessBase: r2(g.guessBase) };
     }).sort((a, b) => b.base - a.base);
 
-    // County lines are billed on the whole taxable base for that county, not per city.
-    const countyBase = {};
-    for (const j of jurisdictions) if (j.county) countyBase[j.county] = (countyBase[j.county] || 0) + j.base;
-    const counties = Object.entries(countyBase).map(([county, base]) => {
-      // Every city in a county shares the county rate, so take it from any member city.
-      const member = jurisdictions.find(j => j.county === county);
-      const rate = member ? (taxBreakdown(member.city) || {}).countyRate || 0 : 0;
-      return { county, base: Math.round(base * 100) / 100, rate, tax: Math.round(base * rate * 100) / 100 };
-    }).sort((a, b) => b.base - a.base);
+    // County lines are billed on the whole taxable base for that county (at the rate charged), not per city.
+    const countyGroups = {};
+    for (const j of jurisdictions) {
+      if (!j.county) continue;
+      const k = j.county + '|' + j.countyRate;
+      const cg = countyGroups[k] || (countyGroups[k] = { county: j.county, rate: j.countyRate, base: 0, verifiedBase: 0, guessBase: 0 });
+      cg.base += j.base; cg.verifiedBase += j.verifiedBase; cg.guessBase += j.guessBase;
+    }
+    const counties = Object.values(countyGroups).map((c) => ({
+      county: c.county, base: r2(c.base), rate: c.rate, tax: r2(c.base * c.rate),
+      verifiedBase: r2(c.verifiedBase), guessBase: r2(c.guessBase)
+    })).sort((a, b) => b.base - a.base);
 
     const localTax = Math.round((jurisdictions.reduce((s, j) => s + j.tax, 0)
       + counties.reduce((s, c) => s + c.tax, 0)) * 100) / 100;
@@ -1128,6 +1169,7 @@ router.get('/reports', (req, res) => {
       deliveryExcluded: Math.round(deliveryExcluded * 100) / 100,
       taxableSales: Math.round(taxableSales * 100) / 100,
       stateTax, jurisdictions, counties, localTax, totalDue,
+      provenance: { verifiedCount, guessCount, verifiedBase: r2(verifiedBase), guessBase: r2(guessBase) },
       taxCollected: Math.round(taxCollected * 100) / 100,
       outOfPocket: Math.round((totalDue - taxCollected) * 100) / 100,
       lines

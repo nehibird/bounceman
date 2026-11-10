@@ -100,6 +100,54 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://bouncemanrentals.com'
 app.set('trust proxy', 1);
 
 
+// /healthz — liveness + dead-man signal for uptime monitoring, the compose healthcheck and
+// scripts/deploy.sh's rollback gate. Born from a gap, not a feature: before this, /health
+// 404ed, a stopped scheduler or an unreadable DB logged to console.error and nothing else,
+// and the owner would have learned of it from a customer on a Saturday.
+//
+// SCHEDULER SIGNAL: lastHoldTickAt is stamped when a hold-release pass FINISHES (success or
+// failure, via .finally) - so it means "the 5-min loop is actually firing and not hung"; it
+// cannot be faked by a timer that was merely armed at boot. A tick that throws still counts
+// as alive (the failure is already console.error'd; failing health on a transient
+// SQLITE_BUSY would make the deploy gate roll back good builds). A hung pass never reaches
+// .finally, so it goes stale - exactly the failure we want to see. Threshold = 3 missed
+// ticks. Before the first tick (first pass runs 60s after boot) grace is measured from boot.
+// When DISABLE_SCHEDULER=true the loop is intentionally absent, so it is not judged.
+//
+// NO AUTH, deliberately: uptime monitors and the docker healthcheck cannot hold a secret
+// safely, and the body is three coarse facts. It discloses NO version, path, row count,
+// error text, env name or customer data - only ok/not-ok per subsystem and uptime seconds.
+// Failure detail goes to the server log, never the response. Cost: one schema-page read.
+const HOLD_TICK_MS = 5 * 60 * 1000;
+const HOLD_STALE_MS = 3 * HOLD_TICK_MS;
+const bootedAt = Date.now();
+let lastHoldTickAt = 0;
+app.get('/healthz', (req, res) => {
+  let dbOk = false;
+  let schedOk = true;
+  try {
+    // A sqlite_master read touches the file; a bare SELECT 1 would not notice a vanished DB.
+    db.getDb().prepare('SELECT COUNT(*) AS n FROM sqlite_master').get();
+    // ...but an UNLINKED db (file deleted/replaced while open) still reads fine from its
+    // orphaned inode while every write vanishes, so also require the path to exist.
+    dbOk = require('fs').existsSync(process.env.DB_PATH || path.join(__dirname, 'data', 'bounceman.db'));
+  } catch (e) {
+    console.error('[HEALTHZ] db check failed:', e.message);
+  }
+  try {
+    if (process.env.DISABLE_SCHEDULER !== 'true') {
+      const ref = lastHoldTickAt || bootedAt;
+      schedOk = (Date.now() - ref) < HOLD_STALE_MS;
+      if (!schedOk) console.error('[HEALTHZ] scheduler stale: no hold-release tick completed in', Math.round((Date.now() - ref) / 1000), 's');
+    }
+  } catch (e) {
+    schedOk = false;
+  }
+  const ok = dbOk && schedOk;
+  res.set('Cache-Control', 'no-store');
+  res.status(ok ? 200 : 503).json({ ok, db: dbOk, scheduler: schedOk, uptime_s: Math.round(process.uptime()) });
+});
+
 // Rate limiting — only on public-facing endpoints, not server-to-server calls
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -237,7 +285,7 @@ app.listen(PORT, '0.0.0.0', () => {
     // 10 min, release at 30 min. Runs every 5 min (first pass 60s after boot) — at the
     // old 20-min cadence a 30-minute hold would not actually expire until 40-50 min.
     const { releaseExpiredHolds } = require('./services/scheduler');
-    const runHoldRelease = () => releaseExpiredHolds().catch((e) => console.error('[HOLD] run failed:', e.message));
+    const runHoldRelease = () => releaseExpiredHolds().catch((e) => console.error('[HOLD] run failed:', e.message)).finally(() => { lastHoldTickAt = Date.now(); }); // feeds /healthz
     setTimeout(() => { runHoldRelease(); setInterval(runHoldRelease, 5 * 60 * 1000); }, 60 * 1000);
     console.log('[BounceMan] Hold auto-release scheduled (every 5 min; remind 10 min, release 30 min)');
 
