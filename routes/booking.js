@@ -8,6 +8,8 @@ const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedE
 const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
+const { isValidEmail } = require('../lib/validation');
+const { appendInternalNote } = require('../lib/helpers');
 const { notifyNewBooking } = require('../services/notifications');
 const facebookAds = require('../services/facebook-ads');
 
@@ -1146,25 +1148,49 @@ router.get('/pay-deposit/:bookingNumber', async (req, res) => {
   }
 
   try {
+    // Stripe throws "Invalid email address" on an empty string. A phone-booked customer
+    // with no email on file hit exactly that, and the catch below then told her she was
+    // "Booking Confirmed!" for 3 days while she could not pay (she finally used Cash App).
+    // Omit the field entirely and Stripe collects an address on its own checkout page.
+    // Same rule as /pay/:bookingNumber below (its inline regex is lib/validation's EMAIL_RE).
+    const validEmail = isValidEmail(booking.email) ? String(booking.email).trim() : undefined;
+
     const session = await stripeService.createCheckoutSession({
       bookingId: booking.id,
       bookingNumber: booking.booking_number,
       depositAmount,
-      customerEmail: booking.email,
+      customerEmail: validEmail,
       description: `${itemNames} — Deposit for ${booking.booking_number}`,
       successUrl: `${baseUrl}/booking/confirmation?booking_number=${booking.booking_number}`,
       cancelUrl: `${baseUrl}/booking/lookup?booking_number=${booking.booking_number}`
     });
-    db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
-      .run(`stripe_session:${session.id}`, booking.id);
+    // APPEND, never overwrite: this used to SET internal_notes = the marker, which erased
+    // the scheduler's "Auto-released: deposit unpaid" breadcrumb (the only record of why a
+    // booking was cancelled). routes/sarah.js check-payment (and booking.js's own copy)
+    // read the marker with an UNANCHORED, first-match /stripe_session:(cs_...)/, so a
+    // plain append would be a regression: booking creation already wrote a marker for an
+    // earlier session, and the parser would keep finding that stale one first. Demote any
+    // older marker to a spelling the regex cannot match (history kept, not deleted; NOT
+    // `superseded_stripe_session:` -- the unanchored regex would match inside that), then
+    // append the fresh one so it is the only live `stripe_session:cs_...` in the field.
+    db.prepare("UPDATE bookings SET payment_method = 'stripe' WHERE id = ?").run(booking.id);
+    const priorNotes = db.prepare('SELECT internal_notes FROM bookings WHERE id = ?').get(booking.id).internal_notes || '';
+    if (/stripe_session:cs_/.test(priorNotes)) {
+      db.prepare('UPDATE bookings SET internal_notes = ? WHERE id = ?')
+        .run(priorNotes.replace(/stripe_session:(cs_)/g, 'superseded_checkout_session:$1'), booking.id);
+    }
+    // The text after the actor tag is the exact deposit marker; office.js payment-link
+    // notes are worded differently on purpose so they never match this regex.
+    appendInternalNote(db, booking.id, 'pay-deposit', `stripe_session:${session.id}`);
     return res.redirect(303, session.url);
   } catch (err) {
     console.error('[PAY DEPOSIT] Stripe error:', err.message);
-    // Stripe failed but the booking + signed agreement exist — show confirmation.
-    return res.render('public/booking/confirmation', {
-      title: 'Booking Confirmed! - Bounce Man',
-      settings, bookingNumber: booking.booking_number, bookingId: booking.id, page: 'booking'
-    });
+    // Was: render "Booking Confirmed!" here. That is false -- the deposit is UNPAID and
+    // the hold-release sweep will cancel the booking -- and it is why a customer kept
+    // re-tapping this link believing she was done. Say so, and give a way to pay.
+    // Same wording/shape as /pay/:bookingNumber's failure path.
+    return res.status(500).render('error', { title: 'Payment Error', status: 500,
+      message: `Sorry -- we could not start your deposit payment, so booking ${booking.booking_number} is NOT confirmed yet. Please try this link again in a minute, or call or text us on (580) 308-9288 and we will take the deposit for you.` });
   }
 });
 

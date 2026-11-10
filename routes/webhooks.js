@@ -367,6 +367,32 @@ router.post('/stripe', async (req, res) => {
         console.log('[Stripe Webhook] checkout.session.completed: booking', bookingId,
           'confirmed, $' + amountPaid.toFixed(2) + ' recorded via webhook');
 
+        // The status guard above is deliberate (a late payment must never auto-resurrect a
+        // dead booking), but it used to decline SILENTLY: Dale Evans (BM-MW7DKI7K-17N) was
+        // auto-released at 11:41 PM, paid $50 at 7:49 AM through his still-live Stripe link,
+        // and the booking stayed `cancelled` while the card looked like a normal new booking.
+        // Nobody knew for two days. So the money stays recorded, the status stays put, and a
+        // human gets told NOW. Fire-and-forget: Slack trouble must never 500 this webhook
+        // (Stripe would retry and the dedup above would skip it anyway).
+        if (booking.status !== 'pending' && booking.status !== 'confirmed') {
+          try {
+            const cust = db.prepare('SELECT first_name, last_name FROM customers WHERE id = ?').get(booking.customer_id);
+            const who = cust ? (cust.first_name + ' ' + (cust.last_name || '')).trim() : 'unknown customer';
+            const alertText = ':rotating_light::rotating_light: *PAYMENT RECEIVED ON A NON-ACTIVE BOOKING — ACT NOW*\n' +
+              '*Booking:* `' + booking.booking_number + '`\n' +
+              '*Customer:* ' + who + '\n' +
+              '*Amount paid:* $' + amountPaid.toFixed(2) + '\n' +
+              '*Event date:* ' + (booking.event_date || 'TBD') + '\n' +
+              '*Booking status:* *' + String(booking.status).toUpperCase() + '* (left unchanged)\n' +
+              'Stripe money was ACCEPTED against a booking that is NOT active. The equipment may have been released to someone else. ' +
+              'Check availability, then either reinstate the booking or refund the customer and tell them — they believe they are booked.';
+            require('../services/notifications').sendAlert({
+              text: ':rotating_light: Payment on ' + String(booking.status) + ' booking ' + booking.booking_number + ' — $' + amountPaid.toFixed(2),
+              blocks: [{ type: 'section', text: { type: 'mrkdwn', text: alertText } }]
+            }).catch(e2 => console.error('[STRIPE WEBHOOK] Non-active booking alert failed:', e2.message));
+          } catch (e) { console.error('[STRIPE WEBHOOK] Non-active booking alert failed:', e.message); }
+        }
+
         // Flip the existing Slack card(s) Payment Status in place (no new card).
         try {
           const notif = require('../services/notifications');

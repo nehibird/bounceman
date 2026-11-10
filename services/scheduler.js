@@ -156,6 +156,39 @@ async function sendReviewRequests() {
 }
 
 /**
+ * Hours of the hold clock that have actually run: wall-clock age minus every hour that
+ * fell inside quiet hours (sms.inQuietHours, the one definition of 9 PM-8 AM CT).
+ * Dale Evans booked at 11:11 PM, got "expires soon" at 11:23 and was cancelled at 11:41
+ * while asleep; he paid at 7:49 AM and the webhook only promotes pending -> confirmed,
+ * so a paid booking sat cancelled for two days. The clock now stops at quiet-start and
+ * resumes at quiet-end, so a 11:11 PM booking gets its full window from 8:00 AM (reminder
+ * ~8:10, release ~8:30) instead of being cancelled at 8:00:01 for having "aged" 9 hours.
+ * It pauses rather than restarts so an 8:50 PM booking keeps the 10 minutes it already used.
+ *
+ * Walks real hours and asks Intl for the Central hour of each one, never a fixed UTC
+ * offset: that is what keeps this right across the CST/CDT switch (a 23- or 25-hour day).
+ * CT offsets are whole hours, so UTC top-of-hour boundaries are also CT top-of-hour.
+ * created_at is SQLite datetime('now'), i.e. UTC with no zone marker.
+ */
+function activeHoldHours(createdAt, nowMs) {
+  const raw = String(createdAt);
+  const start = Date.parse(/Z|[+-]\d\d:?\d\d$/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z');
+  if (!Number.isFinite(start)) return 0;
+  const HOUR = 3600e3;
+  // Anything older than 2 days has had >13 waking hours per day; skip the walk.
+  if (nowMs - start >= 48 * HOUR) return (nowMs - start) / HOUR;
+  const ctHour = (ms) => Number(new Date(ms).toLocaleString('en-US', {
+    timeZone: 'America/Chicago', hour: '2-digit', hour12: false })) % 24;
+  let active = 0;
+  for (let t = start; t < nowMs; ) {
+    const next = Math.min((Math.floor(t / HOUR) + 1) * HOUR, nowMs);
+    if (!smsService.inQuietHours(ctHour(t))) active += next - t;
+    t = next;
+  }
+  return active / HOUR;
+}
+
+/**
  * Free inventory tied up by abandoned checkouts. A booking sitting in 'pending'
  * with nothing paid holds its equipment (the availability check counts any
  * non-cancelled booking). After HOLD_RELEASE_HOURS we cancel it so the unit
@@ -170,14 +203,20 @@ async function releaseExpiredHolds() {
   const baseUrl = process.env.BASE_URL || 'https://bouncemanrentals.com';
   let released = 0, reminded = 0;
 
+  // Nobody pays a deposit at 2 AM, so a sweep then can only cancel holds for sleepers and
+  // text them "expires soon" (the Dale Evans incident). Do neither; the hold clock
+  // (activeHoldHours) is stopped overnight and the first sweep after quiet-end picks up.
+  if (smsService.inQuietHours()) return { released, reminded };
+
   const candidates = db.prepare(`
-    SELECT b.*, c.first_name, c.last_name, c.phone, c.email,
-           (julianday('now') - julianday(b.created_at)) * 24.0 AS age_hours
+    SELECT b.*, c.first_name, c.last_name, c.phone, c.email
     FROM bookings b JOIN customers c ON c.id = b.customer_id
     WHERE b.status = 'pending' AND b.deposit_paid = 0 AND b.payment_status = 'unpaid'
   `).all();
 
+  const nowMs = Date.now();
   for (const b of candidates) {
+    b.age_hours = activeHoldHours(b.created_at, nowMs);
     const link = `${baseUrl}/booking/pay-deposit/${b.booking_number}`;
 
     if (b.age_hours >= HOLD_RELEASE_HOURS) {
@@ -202,8 +241,12 @@ async function releaseExpiredHolds() {
       if (b.phone) {
         try {
           await smsService.sendSms(b.phone, `Hi ${b.first_name}! Your Bounce Man hold expires soon — finish your $${deposit} deposit to keep your date: ${link}\n\nQuestions? (580) 308-9288`,
-            // Held until morning this would announce a hold that expired at 30
-            // minutes. A wrong text is worse than a late-night one.
+            // Bypassing the quiet-hours queue is still right, but for the opposite
+            // reason it used to be: the sweep returns early during quiet hours and the
+            // hold clock is stopped overnight, so this only fires in waking hours with
+            // the hold ~20 minutes from expiry. Queued, it would arrive late and stale.
+            // (It used to bypass because a queued copy would announce a hold already
+            // cancelled at 30 minutes; holds no longer expire overnight.)
             { skipQuietHours: true });
           console.log('[HOLD] Last-chance SMS sent', b.booking_number);
         } catch (e) { console.error('[HOLD] reminder SMS failed:', e.message); }

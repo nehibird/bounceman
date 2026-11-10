@@ -74,8 +74,21 @@ function buildBookingBlocks(booking, customer, items) {
   const address = [booking.delivery_address, booking.delivery_city, 'OK', booking.delivery_zip].filter(Boolean).join(', ');
   const durationTxt = (items[0]?.duration_type === '4hr' ? '4 Hours' : 'Full Day') + (days > 1 ? ' · ' + days + ' DAYS' + (booking.event_end_date && booking.event_end_date !== booking.event_date ? ' (' + fmtDate(booking.event_date) + ' – ' + fmtDate(booking.event_end_date) + ')' : '') : '');
 
+  // The card used to show only Payment Status, so a booking auto-released to `cancelled`
+  // that then took a late $50 (Dale Evans, BM-MW7DKI7K-17N) posted a card reading
+  // "deposit_paid" and looked like any other new booking for two days. A dead booking
+  // must be unmistakable in the title itself, not just one more grey field.
+  const DEAD_STATUSES = ['cancelled', 'declined', 'refunded'];
+  const bookingStatus = booking.status || 'unknown';
+  const isDead = DEAD_STATUSES.includes(bookingStatus);
+
   const blocks = [
-    { type: 'header', text: { type: 'plain_text', text: '🎉 New Booking: ' + booking.booking_number } },
+    { type: 'header', text: { type: 'plain_text', text: isDead
+      ? '🚨 ' + bookingStatus.toUpperCase() + ' Booking: ' + booking.booking_number
+      : '🎉 New Booking: ' + booking.booking_number } },
+
+    ...(isDead ? [{ type: 'section', text: { type: 'mrkdwn', text:
+      ':rotating_light: *This booking is ' + bookingStatus.toUpperCase() + ' — it is NOT active and the equipment is NOT held for this customer.* Any payment shown below does not make it a live booking.' } }] : []),
 
     { type: 'section', text: { type: 'mrkdwn', text: '*CUSTOMER*' } },
     { type: 'section', fields: [
@@ -118,7 +131,8 @@ function buildBookingBlocks(booking, customer, items) {
     { type: 'mrkdwn', text: '*TOTAL:*\n*$' + parseFloat(booking.total).toFixed(2) + '*' },
     { type: 'mrkdwn', text: '*Deposit:*\n$' + parseFloat(booking.deposit_amount).toFixed(2) },
     { type: 'mrkdwn', text: '*Balance Due:*\n$' + parseFloat(booking.balance_due || 0).toFixed(2) },
-    { type: 'mrkdwn', text: '*Payment Status:*\n' + (booking.payment_status || 'unpaid') }
+    { type: 'mrkdwn', text: '*Payment Status:*\n' + (booking.payment_status || 'unpaid') },
+    { type: 'mrkdwn', text: '*Booking Status:*\n' + (isDead ? ':rotating_light: *' + bookingStatus.toUpperCase() + '*' : bookingStatus) }
   ] });
 
   // Discount (only if present)

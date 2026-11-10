@@ -2203,7 +2203,18 @@ router.get('/banks', (req, res) => {
   res.render('admin/banks', { title: 'Connected Banks - Bounce Man Admin', user: req.user, settings: getSettings(), items, page: 'banks' });
 });
 router.post('/banks/link-token', async (req, res) => {
-  try { res.json({ link_token: await plaidSync.createLinkToken((req.user && req.user.id) || 'owner') }); }
+  // item_id present = update mode (repair that bank in place); absent = brand-new connection as before.
+  try { res.json({ link_token: await plaidSync.createLinkToken((req.user && req.user.id) || 'owner', (req.body && req.body.item_id) || null) }); }
+  catch (e) { res.json({ error: e.message }); }
+});
+// Update-mode Link completion. Link still fires onSuccess with a public_token, but in update mode it must NOT be
+// exchanged (the item and its access_token already exist); we just re-sync, and syncItem flips status back to 'ok'.
+router.post('/banks/resync', async (req, res) => {
+  try { res.json(await plaidSync.syncItem(req.body.item_id)); }
+  catch (e) { res.json({ error: e.message }); }
+});
+router.post('/banks/remove', async (req, res) => {
+  try { res.json(await plaidSync.removeItem(req.body.item_id)); }
   catch (e) { res.json({ error: e.message }); }
 });
 router.post('/banks/exchange', async (req, res) => {

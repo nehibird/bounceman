@@ -12,12 +12,13 @@
       ${items.length ? `
       <div class="table-responsive">
       <table class="table table-hover mb-0 rtable">
-        <thead><tr><th>Bank</th><th>Status</th><th>Last synced</th></tr></thead>
+        <thead><tr><th>Bank</th><th>Status</th><th>Last synced</th><th></th></tr></thead>
         <tbody>
           ${items.map(i => `<tr>
             <td class="rt-primary"><strong>${i.institution_name || i.institution_id}</strong></td>
             <td data-label="Status">${i.status === 'ok' ? '<span class="badge bg-success">ok</span>' : `<span class="badge bg-warning text-dark">${i.status}</span>`}</td>
             <td data-label="Last synced">${i.last_synced ? new Date(i.last_synced).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'never'}</td>
+            <td data-label="">${i.status === 'ok' ? '' : `<button class="btn btn-sm btn-bm me-1 reconnectBtn" data-item="${i.item_id}"><i class="fas fa-plug me-1"></i>Reconnect</button><button class="btn btn-sm btn-outline-danger removeBtn" data-item="${i.item_id}" data-name="${i.institution_name || i.institution_id}"><i class="fas fa-trash me-1"></i>Remove</button>`}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -45,6 +46,31 @@ document.getElementById('connectBtn').onclick=async()=>{
     },onExit:(err)=>{msg.textContent=err?'Cancelled / error':'Closed';}}).open();
   }catch(e){msg.textContent='Error: '+(e.message||'Plaid failed to open');}
 };
+// Update mode: repairs a broken item in place (ITEM_LOGIN_REQUIRED etc.) instead of minting a duplicate item_id.
+// onSuccess here hands back a public_token, but exchanging it would be wrong: the item/access_token already exist
+// and are now valid again. So we skip /exchange and just re-sync, which clears the stored error status.
+document.querySelectorAll('.reconnectBtn').forEach(b=>b.onclick=async()=>{
+  try{
+    const item=b.dataset.item;
+    msg.textContent='Opening Plaid…';
+    if(typeof Plaid==='undefined'){msg.textContent='Error: Plaid failed to load (check network / ad-blocker).';return;}
+    const r=await api('/admin/banks/link-token',{item_id:item});
+    if(!r.link_token){msg.textContent='Error: '+(r.error||'could not start');return;}
+    Plaid.create({token:r.link_token,onSuccess:async()=>{
+      msg.textContent='Reconnected — syncing…';
+      const s=await api('/admin/banks/resync',{item_id:item});
+      msg.textContent=s.error?('Error: '+s.error):'Reconnected and synced.';
+      setTimeout(()=>location.reload(),1800);
+    },onExit:(err)=>{msg.textContent=err?'Cancelled / error':'Closed';}}).open();
+  }catch(e){msg.textContent='Error: '+(e.message||'Plaid failed to open');}
+});
+// Removes only the plaid_items row (server refuses healthy items). bank_transactions history is kept on purpose.
+document.querySelectorAll('.removeBtn').forEach(b=>b.onclick=async()=>{
+  if(!confirm('Remove the broken connection for '+b.dataset.name+'?\\n\\nThis only disconnects the bank link. Your saved transactions and history are kept.'))return;
+  const r=await api('/admin/banks/remove',{item_id:b.dataset.item});
+  msg.textContent=r.error?('Error: '+r.error):'Removed.';
+  setTimeout(()=>location.reload(),1200);
+});
 document.getElementById('syncBtn').onclick=async()=>{msg.textContent='Syncing all banks…';const r=await api('/admin/banks/sync');msg.textContent='Done: '+JSON.stringify(r);setTimeout(()=>location.reload(),1800);};
 </script>
 ` }) %>
