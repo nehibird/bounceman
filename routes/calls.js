@@ -87,11 +87,45 @@ router.get('/voicemail-done', (req, res) => {
 });
 
 // POST /api/call/voicemail-callback — Twilio posts transcription + recording URL here
+// SECURITY: this handler used to be unsigned, so anyone could POST a forged From/TranscriptionText/
+// RecordingUrl and have a phishing link posted into the owner's trusted Slack channel.
+// TECH DEBT: guardTwilio in routes/webhooks.js is NOT exported (that file only exports the
+// router), so this is a deliberate line-for-line copy of it. Consolidate into a shared
+// lib/twilio-guard.js and import it from both files.
+const TWILIO_VALIDATE_ENFORCE = process.env.TWILIO_VALIDATE_ENFORCE !== 'false'; // fail closed
+function guardTwilio(req, res) {
+  let ok = false;
+  try {
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const sig = req.headers['x-twilio-signature'];
+    if (authToken && sig) {
+      const base = process.env.PUBLIC_BASE_URL || 'https://bouncemanrentals.com';
+      ok = require('twilio').validateRequest(authToken, sig, base + req.originalUrl, req.body || {});
+    }
+  } catch (e) { console.error('[TWILIO AUTH] validate error:', e.message); }
+  if (ok) {
+    console.log('[TWILIO AUTH] valid signature on ' + req.originalUrl);
+  } else {
+    console.warn('[TWILIO AUTH] INVALID signature on ' + req.originalUrl + ' (enforce=' + TWILIO_VALIDATE_ENFORCE + ')');
+    if (TWILIO_VALIDATE_ENFORCE) { res.status(403).type('text/xml').send('<Response><Reject/></Response>'); return false; }
+  }
+  return true;
+}
+
+// Escape Slack control chars (same approach as routes/public.js equipment/suggest) so
+// attacker-controlled text can't inject <url|label> links or <!channel>/<!here> pings.
+const slackEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 router.post('/voicemail-callback', async (req, res) => {
-  const caller = req.body.From || req.body.Caller || 'Unknown';
-  const transcription = req.body.TranscriptionText || '(transcription pending)';
-  const recordingUrl = req.body.RecordingUrl ? req.body.RecordingUrl + '.mp3' : null;
-  const duration = req.body.RecordingDuration || '?';
+  if (!guardTwilio(req, res)) return;
+  const caller = slackEsc(req.body.From || req.body.Caller || 'Unknown');
+  // Collapse newlines so a multi-line transcription can't break out of the "> " blockquote.
+  const transcription = slackEsc(req.body.TranscriptionText || '(transcription pending)').replace(/[\r\n]+/g, ' ');
+  // The URL sits inside <url|label>: escaping &<> is not enough, a '|' or whitespace would end
+  // the URL part, so only a plain https Twilio-style URL is accepted; anything else is dropped.
+  const rawRec = String(req.body.RecordingUrl || '');
+  const recordingUrl = /^https:\/\/[A-Za-z0-9.\-]+\/[A-Za-z0-9._~\/%:@!$&'()*+,;=\-]*$/.test(rawRec) ? slackEsc(rawRec) + '.mp3' : null;
+  const duration = slackEsc(req.body.RecordingDuration || '?');
 
   const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
   const channel = process.env.SLACK_CHANNEL_ID || 'C0AQ5LT666R';

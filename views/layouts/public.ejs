@@ -122,8 +122,13 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
   <style>
-    /* Prevent small (Bootstrap gutter) horizontal overflow on mobile — no page should scroll sideways. */
-    html, body { overflow-x: hidden; max-width: 100%; }
+    /* Prevent small (Bootstrap gutter) horizontal overflow on mobile — no page should scroll sideways.
+       "clip", NOT "hidden": overflow-x:hidden on html/body makes <body> a scroll container, and every
+       position:sticky descendant (site header, step-4 price card, step-1 summary) then sticks to that
+       never-scrolling box and silently scrolls away with the page. "clip" crops the same overflow
+       without creating a scroll container. (Nothing here relied on scrollability: no JS reads
+       body.scrollLeft and the only horizontal scrollers are their own overflow-x:auto strips.) */
+    html, body { overflow-x: clip; max-width: 100%; }
     :root {
       --bm-orange: <%= settings.primary_color || '#FF6B35' %>;
       --bm-blue: <%= settings.secondary_color || '#004E89' %>;
@@ -192,9 +197,14 @@
     /* Brand the outline buttons so they stop rendering Bootstrap default blue */
     .btn-outline-primary { color: var(--bm-blue); border-color: var(--bm-blue); }
     .btn-outline-primary:hover, .btn-outline-primary:focus { background: var(--bm-blue); border-color: var(--bm-blue); color: #fff; }
-    /* Deliberate on-brand keyboard focus signal (gold reads 8.8-12:1 on the indigo hero and on white) */
+    /* Keyboard focus ring. Gold (#FFD166) was only 1.44:1 on white and 2.1-2.4:1 on the orange gradient -
+       effectively invisible. No single colour reaches 3:1 on white, orange AND the dark indigo hero, so this
+       is a two-tone ring: ink outline (17.5:1 on white, 5.0-5.7:1 on the orange) separated from the element
+       by a white band + white outer halo (the white band is 12:1 vs the indigo hero), so it stays visible
+       on every background. outline paints above box-shadow, so the shadows form the white gap/halo. */
     a:focus-visible, button:focus-visible, .btn:focus-visible, .equipment-card-link:focus-visible {
-      outline: 3px solid var(--bm-yellow); outline-offset: 2px; box-shadow: none;
+      outline: 3px solid var(--bm-ink); outline-offset: 2px;
+      box-shadow: 0 0 0 2px #fff, 0 0 0 7px #fff;
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
@@ -361,7 +371,7 @@
 
     /* === CTA BANNER === */
     .cta-banner {
-      background: var(--bm-gradient); padding: 60px 0; color: white; text-align: center;
+      background: var(--bm-gradient); padding: 60px 0; color: var(--bm-ink); /* white was 3.07-3.50:1 on the orange; ink is 5.0-5.71:1 (WCAG AA body text needs 4.5) */ text-align: center;
     }
     .cta-banner h2 { font-size: 36px; font-weight: 700; margin-bottom: 15px; }
     .cta-banner .btn-cta {
@@ -565,7 +575,7 @@
   <section class="cta-banner">
     <div class="container">
       <h2>Ready to Bounce?</h2>
-      <p class="mb-4" style="font-size:18px;opacity:0.9">Book your party equipment today and make your event unforgettable!</p>
+      <p class="mb-4" style="font-size:18px">Book your party equipment today and make your event unforgettable!</p>
       <a href="/booking" class="btn btn-cta"><i class="fas fa-calendar-check me-2"></i>Book Your Rental</a>
     </div>
   </section>
@@ -600,10 +610,15 @@
         <div class="col-md-3 mb-4">
           <h5><a href="/service-areas" style="color:var(--bm-yellow);text-decoration:none">Service Areas</a></h5>
           <ul class="list-unstyled" style="opacity:0.7">
-            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Tonkawa (FREE)</a></li>
-            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Ponca City (FREE)</a></li>
-            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Blackwell (FREE)</a></li>
-            <li class="mb-1"><a href="/service-areas" style="color:inherit;text-decoration:none">Stillwater &amp; more</a></li>
+            <%# Each town links to its own city landing page (routes/public.js "City landing page routes"); /service-areas stays on the heading for the full list. %>
+            <li class="mb-1"><a href="/bounce-house-rental-tonkawa-ok" style="color:inherit;text-decoration:none">Tonkawa (FREE)</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-ponca-city-ok" style="color:inherit;text-decoration:none">Ponca City (FREE)</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-blackwell-ok" style="color:inherit;text-decoration:none">Blackwell (FREE)</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-newkirk-ok" style="color:inherit;text-decoration:none">Newkirk</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-stillwater-ok" style="color:inherit;text-decoration:none">Stillwater</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-enid-ok" style="color:inherit;text-decoration:none">Enid</a></li>
+            <li class="mb-1"><a href="/bounce-house-rental-perry-ok" style="color:inherit;text-decoration:none">Perry</a></li>
+            <li class="mb-1"><a href="/water-slide-rental-kay-county-ok" style="color:inherit;text-decoration:none">Water slides, Kay County</a></li>
           </ul>
         </div>
         <div class="col-md-3 mb-4">
@@ -614,7 +629,7 @@
             <% } %>
             <li class="mb-2"><i class="fas fa-envelope me-2"></i><%= settings.company_email %></li>
             <li class="mb-2"><i class="fas fa-map-marker-alt me-2"></i>Tonkawa, OK 74653</li>
-            <li class="mb-2"><i class="fas fa-clock me-2"></i>Season: April–November</li>
+            <li class="mb-2"><i class="fas fa-clock me-2"></i>Outdoor season April–November &middot; indoor rentals year-round</li>
             <li class="mb-2"><i class="fas fa-calendar-day me-2"></i>Open Sundays &mdash; full-day rentals only</li>
           </ul>
         </div>
@@ -640,7 +655,8 @@
 <div id="stickyCta" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:white;box-shadow:0 -4px 20px rgba(0,0,0,0.15);padding:10px 16px;border-radius:16px 16px 0 0">
   <div style="display:flex;gap:10px;align-items:center;max-width:600px;margin:0 auto">
     <a href="tel:5803089288" style="flex:0 0 auto;width:48px;height:48px;border-radius:50%;background:var(--bm-blue,#004E89);color:white;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px"><i class="fas fa-phone"></i></a>
-    <a href="/booking" style="flex:1;display:block;background:var(--bm-gradient,linear-gradient(135deg,#FF6B35,#FF8C42));color:white;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
+    <%# .btn-book-now supplies the gradient + ink text (white-on-orange was 3.07-3.50:1); only layout is inline so colour is styled centrally. %>
+    <a href="/booking" class="btn-book-now" style="flex:1;display:block;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
   </div>
 </div>
 <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
@@ -682,7 +698,9 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 </script>
 <!-- ===== Lead-capture coupon popup ($10 off -> text -> Sarah) ===== -->
 <% if (!(typeof isBookingFlow !== 'undefined' && isBookingFlow)) { %>
-<div id="bml-root" style="display:none">
+<!-- Backdrop: tap-outside-to-close. Before this the popup had none, so on a phone the only way out was a 26px X. -->
+<div id="bml-bd" style="display:none"></div>
+<div id="bml-root" style="display:none" role="dialog" aria-modal="true" aria-label="Get $10 off your rental">
   <button class="bml-x" id="bml-x" type="button" aria-label="Close">&times;</button>
   <div id="bml-teaser">
     <div class="bml-art">
@@ -699,9 +717,9 @@ document.getElementById("toast-container").addEventListener("click", function(e)
     <form id="bml-f" novalidate>
       <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="website_url" tabindex="-1" autocomplete="off"></div>
       <input type="hidden" name="_ts" id="bml-ts">
-      <input class="bml-in" type="text" name="name" required placeholder="Full name *">
-      <input class="bml-in" type="tel" name="phone" required placeholder="Phone *">
-      <input class="bml-in" type="email" name="email" required placeholder="Email *">
+      <input class="bml-in" type="text" name="name" required autocomplete="name" autocapitalize="words" enterkeyhint="next" placeholder="Full name *">
+      <input class="bml-in" type="tel" name="phone" required autocomplete="tel" inputmode="tel" enterkeyhint="next" placeholder="Phone *">
+      <input class="bml-in" type="email" name="email" required autocomplete="email" inputmode="email" autocapitalize="off" enterkeyhint="done" placeholder="Email *">
       <label class="bml-chk"><input type="checkbox" name="sms_optin" value="1" required> Text me my code &amp; occasional specials. Msg &amp; data rates may apply; reply STOP to opt out.</label>
       <div id="bml-turnstile" class="bml-ts"></div>
       <button class="bml-cta bml-go" type="submit">Get My $10 Code</button>
@@ -719,11 +737,13 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 /* The teaser IS the die-cut - no card behind it. Steps 2 and 3 are a form and a
    confirmation, which cannot live on a silhouette, so the shell becomes a real white
    card the moment the form opens (.bml-boxed, added in showForm). */
+#bml-bd{position:fixed;top:0;right:0;bottom:0;left:0;z-index:99998;background:rgba(10,20,40,.5)}
 #bml-root{position:fixed;left:20px;bottom:20px;z-index:99999;width:340px;max-width:calc(100vw - 32px);background:none;border-radius:0;box-shadow:none;overflow:visible;font-family:inherit;animation:bmlIn .4s cubic-bezier(.18,.89,.32,1.28)}
 #bml-root.bml-boxed{background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden}
 @keyframes bmlIn{from{transform:translateY(40px) scale(.9);opacity:0}to{transform:none;opacity:1}}
-.bml-x{position:absolute;top:5.5%;right:7%;z-index:3;background:rgba(15,30,60,.62);color:#fff;border:none;width:26px;height:26px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer}
-#bml-root.bml-boxed .bml-x{top:8px;right:10px;width:28px;height:28px;font-size:20px;background:rgba(0,0,0,.3)}
+.bml-x{position:absolute;top:5.5%;right:7%;z-index:3;background:rgba(15,30,60,.62);color:#fff;border:none;width:44px;height:44px;border-radius:50%;font-size:28px;line-height:1;cursor:pointer}
+/* 44x44 = minimum touch target. Measured 26x26 on a real phone: too small to hit reliably, and it was the only way out. */
+#bml-root.bml-boxed .bml-x{top:6px;right:6px;width:44px;height:44px;font-size:28px;background:rgba(0,0,0,.3)}
 .bml-x:hover{background:rgba(0,0,0,.35)}
 .bml-step{padding:26px 22px 22px;text-align:center}
 /* Artwork carries its own white copy panel, so the teaser itself is just the image. */
@@ -751,7 +771,8 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 /* Only step 3's confirmation copy uses this now - the teaser's sub is .bml-psub. */
 .bml-sub{font-size:13.5px;color:#4a5b6b;margin:10px 4px 4px;line-height:1.4}
 .bml-fh{font-weight:800;font-size:18px;color:#222;margin:2px 6px 14px}
-.bml-in{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:12px 14px;border:1.5px solid #e0e0e0;border-radius:12px;font-size:15px;background:#f7f7f8}
+.bml-in{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:12px 14px;border:1.5px solid #e0e0e0;border-radius:12px;font-size:16px;background:#f7f7f8}
+/* 16px: iOS Safari zooms the whole page on focus of any input below 16px (they were 15px). */
 .bml-in:focus{outline:none;border-color:var(--bm-orange,#f68b1e);background:#fff}
 .bml-chk{display:flex;gap:8px;text-align:left;font-size:11.5px;color:#666;line-height:1.35;margin:2px 2px 14px;cursor:pointer}
 .bml-chk input{margin-top:2px;flex:none}
@@ -768,6 +789,10 @@ document.getElementById("toast-container").addEventListener("click", function(e)
 <% } %>
 <script>
 (function(){
+  // Never on product pages: that is where someone is deciding to buy, and the popup (78% of an
+  // iPhone SE viewport) sat on top of the unit they were looking at. /booking* etc. are already
+  // excluded server-side via isBookingFlow.
+  if(/^\/equipment(\/|$)/.test(location.pathname)) return;
   var KEY='bml_seen_v1', DAYS=7;
   var TS_KEY='<%= typeof TURNSTILE_SITE_KEY !== "undefined" ? TURNSTILE_SITE_KEY : "" %>';
   var tsToken='', tsRendered=false;
@@ -775,7 +800,10 @@ document.getElementById("toast-container").addEventListener("click", function(e)
   function mark(){ try{ localStorage.setItem(KEY, Date.now()); }catch(e){} }
   var root=document.getElementById('bml-root'); if(!root) return;
   var opened=false;
-  function closePopup(){ root.style.display='none'; mark(); }
+  var bd=document.getElementById('bml-bd');
+  // Every dismissal path (X, backdrop, Escape) goes through here so all of them set the
+  // existing 7-day localStorage memory (bml_seen_v1) - nobody gets re-nagged.
+  function closePopup(){ root.style.display='none'; if(bd) bd.style.display='none'; mark(); }
   // Render Turnstile only once the form is actually visible — a widget rendered
   // inside a display:none container won't run its challenge.
   function renderTurnstile(tries){
@@ -790,10 +818,25 @@ document.getElementById("toast-container").addEventListener("click", function(e)
     });
   }
   function showForm(){ root.classList.add('bml-boxed'); document.getElementById('bml-teaser').style.display='none'; document.getElementById('bml-form').style.display='block'; document.getElementById('bml-ts').value=Date.now(); renderTurnstile(0); }
-  function open(){ if(opened||seen()) return; opened=true; root.style.display='block'; }
+  function open(){ if(opened||seen()) return; opened=true; if(bd) bd.style.display='block'; root.style.display='block'; }
   document.getElementById('bml-x').addEventListener('click', closePopup);
   document.getElementById('bml-open').addEventListener('click', showForm);
-  setTimeout(open, 8000);
+  if(bd) bd.addEventListener('click', closePopup);
+  document.addEventListener('keydown', function(e){ if((e.key==='Escape'||e.key==='Esc') && root.style.display!=='none') closePopup(); });
+  // Trigger = scroll depth (>=50% of the page) AND >=15s on the page, replacing a bare 8s timer.
+  // A bare timer fires at an arbitrary moment - measured: on top of the hero Book Now buttons on
+  // a phone. Scroll depth means they have actually read the page, and the 15s floor stops a
+  // fast flick to the bottom from popping it instantly. Desktop exit-intent (below) is unchanged.
+  var t0=Date.now();
+  function onScroll(){
+    if(opened) return;
+    var ae=document.activeElement;
+    if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return; // never interrupt typing
+    var max=(document.documentElement.scrollHeight-window.innerHeight)||1;
+    if(Date.now()-t0>=15000 && window.scrollY/max>=0.5){ window.removeEventListener('scroll', onScroll); open(); }
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  setTimeout(onScroll, 15500); // they may already be past 50% and not scrolling when the 15s floor passes
   document.addEventListener('mouseout', function(e){ if(e.clientY<=0) open(); });
   var f=document.getElementById('bml-f');
   f.addEventListener('submit', function(ev){

@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const { formatRentalPeriod, formatPhoneUS, shouldSendDepositNudge } = require('../lib/helpers');
+const { imgv, imgAttrs } = require('../lib/img-variants');
+
+// Responsive equipment photos (400w/800w WebP, falls back to the original): exposed to every public
+// view as locals instead of editing server.js. See lib/img-variants.js.
+router.use((req, res, next) => { res.locals.imgv = imgv; res.locals.imgAttrs = imgAttrs; next(); });
 
 // Helper: get settings as object
 function getSettings() {
@@ -454,6 +459,13 @@ router.get('/service-areas', renderDelivery);
 router.get('/privacy', (req, res) => {
   const settings = getSettings();
   res.render('public/privacy', { title: 'Privacy Policy - Bounce Man Rentals', canonicalPath: '/privacy', settings, page: 'privacy' });
+});
+
+// Statement of faith (Our Faith) - the page that sells church lock-ins / winter indoor rentals.
+// The view existed but had no route, so the URL 404'd. Same shape as the sibling static pages.
+router.get('/statement-of-faith', (req, res) => {
+  const settings = getSettings();
+  res.render('public/statement-of-faith', { title: 'Our Faith - Bounce Man Rentals | Tonkawa, OK', canonicalPath: '/statement-of-faith', settings, page: 'statement-of-faith' });
 });
 
 // Terms and Conditions

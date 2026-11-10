@@ -50,6 +50,20 @@
   .wd-btn.wd-disabled { opacity: .5; cursor: not-allowed; background: #f1f3f5; }
   .wd-btn.wd-disabled:hover { border-color: #e3e7ec; }
   .wd-why { font-size: 12px; color: #b9521f; margin-top: 8px; }
+
+  /* Order summary. A text scan of this page found no $, Subtotal, Total or Deposit across ~2,800px of form.
+     Native <details>: collapsed on phones (one 48px line that still shows the running figure), open on
+     desktop. Deliberately NOT sticky - the cart sheet on step 2 showed a pinned panel eats a 375px viewport. */
+  .order-sum { background: #fff; border: 2px solid #f0e3d8; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 16px; }
+  .order-sum > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; min-height: 48px; cursor: pointer; font-weight: 700; color: var(--bm-blue); }
+  .order-sum > summary::-webkit-details-marker { display: none; }
+  .order-sum .os-head { color: var(--bm-orange); white-space: nowrap; }
+  .order-sum .os-chev { font-size: 12px; margin-left: 6px; transition: transform .2s; }
+  .order-sum[open] .os-chev { transform: rotate(180deg); }
+  .order-sum .os-body { padding: 0 16px 14px; font-size: 14.5px; }
+  .order-sum .os-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+  .order-sum .os-tot { border-top: 2px solid #f0f0f0; margin-top: 6px; padding-top: 8px; font-weight: 700; color: var(--bm-blue); }
+  .order-sum .os-note { margin: 8px 0 0; font-size: 12px; color: #777; }
 </style>
 
 <section class="py-5">
@@ -96,6 +110,21 @@
 
       <div class="row justify-content-center">
         <div class="col-lg-8">
+
+          <!-- Order summary (filled by osRender() in the script below; hidden until it has items) -->
+          <details class="order-sum" id="orderSum" style="display:none" open>
+            <summary>
+              <span><i class="fas fa-receipt me-2"></i>Your order <span class="text-muted fw-normal" id="osCount"></span></span>
+              <span class="os-head"><span id="osHead"></span><i class="fas fa-chevron-down os-chev"></i></span>
+            </summary>
+            <div class="os-body">
+              <div id="osLines"></div>
+              <div class="os-row" id="osSubRow" style="display:none"><span>Subtotal</span><span id="osSub"></span></div>
+              <div class="os-row"><span>Delivery</span><span id="osDel"></span></div>
+              <div class="os-row os-tot" id="osTotRow" style="display:none"><span>Total before tax</span><span id="osTot"></span></div>
+              <p class="os-note">Tax and any discount code are added on the next step.</p>
+            </div>
+          </details>
 
           <!-- Wet or Dry. Built client-side from WD_UNITS below: this whole file is a
                single EJS tag wrapping a JS template literal, so EJS tags cannot be used
@@ -332,6 +361,26 @@
     document.getElementById('hiddenWetItems').value = wetIds.join(',');
     var wrap = document.getElementById('waterCheckWrap');
     if (wrap) { wrap.style.display = wetIds.length > 0 ? '' : 'none'; }
+    refreshBackHref(); // the Back link must carry the wet/dry answer as it stands NOW
+  }
+
+  // Back to step 2 = this page's own query string, minus nothing it needs. This used to be
+  // hand-listed as event_date + rental_duration + preselect only, so a customer who clicked
+  // Back silently lost rental_days / event_end_date / event_start_time / event_end_time /
+  // ready_by: a 3-day booking came back as 1 day and a 2 PM half-day as 09:00-19:00 (which
+  // also over-held inventory). Step 4 never shows the day count, so nobody noticed until
+  // delivery day. Cloning the URL means any param step 2 forwards to us survives by
+  // construction, and a param added to step 2 later cannot be forgotten here.
+  function buildBackHref() {
+    var back = new URLSearchParams(window.location.search);
+    back.delete('wd'); // step 2 re-asserts this itself on the way forward
+    var hw = document.getElementById('hiddenWetItems');
+    if (hw) back.set('wet_items', hw.value || ''); // the chooser on THIS page may have changed it
+    return '/booking/select?' + back.toString();
+  }
+  function refreshBackHref() {
+    var b = document.getElementById('backBtn');
+    if (b) b.href = buildBackHref();
   }
 
   function wdSet(unitId, isWet) {
@@ -354,6 +403,58 @@
     if (!btn || btn.classList.contains('wd-disabled')) return;
     wdSet(btn.getAttribute('data-unit'), btn.getAttribute('data-mode') === 'wet');
   });
+
+  // --- Order summary --------------------------------------------------------
+  // Where each number comes from (nothing is invented client-side):
+  //   item names      -> WD_UNITS (server cartUnits, already on this page)
+  //   per-line price  -> WD_UNITS[i].price     (OPTIONAL - needs route handoff, see report)
+  //   subtotal        -> CART_SUBTOTAL from the route (authoritative: addon rates, multi-day, free day),
+  //                      else the sum of line prices if every line has one, else not shown
+  //   delivery        -> /booking/check-zip response .fee, the same call checkZip() already makes
+  // Tax is resolved server-side at review and is NOT computed here.
+  var CART_SUBTOTAL = ${ typeof cartSubtotal !== 'undefined' && cartSubtotal !== null && isFinite(Number(cartSubtotal)) ? Number(cartSubtotal) : 'null' };
+  var osDelivery = null; // null = ZIP not entered / not valid yet
+
+  function osMoney(n) { return '$' + (Math.round(n * 100) % 100 ? n.toFixed(2) : n.toFixed(0)); }
+
+  function osRender() {
+    var box = document.getElementById('orderSum');
+    if (!box || !WD_UNITS.length) return; // no cart data: leave it hidden rather than show an empty box
+    box.style.display = '';
+
+    var allPriced = true, sum = 0, lines = '';
+    WD_UNITS.forEach(function(u) {
+      var p = Number(u.price);
+      var has = u.price !== undefined && u.price !== null && isFinite(p);
+      if (has) { sum += p; } else { allPriced = false; }
+      lines += '<div class="os-row"><span>' + wdEsc(u.name) + '</span><span>' + (has ? osMoney(p) : '') + '</span></div>';
+    });
+    document.getElementById('osLines').innerHTML = lines;
+    document.getElementById('osCount').textContent = '(' + WD_UNITS.length + ' item' + (WD_UNITS.length === 1 ? '' : 's') + ')';
+
+    var sub = (CART_SUBTOTAL !== null) ? CART_SUBTOTAL : (allPriced ? sum : null);
+    document.getElementById('osSubRow').style.display = sub === null ? 'none' : '';
+    if (sub !== null) document.getElementById('osSub').textContent = osMoney(sub);
+
+    document.getElementById('osDel').textContent = osDelivery === null ? 'Enter ZIP below' : (osDelivery === 0 ? 'FREE' : osMoney(osDelivery));
+
+    var totRow = document.getElementById('osTotRow');
+    var head = document.getElementById('osHead');
+    if (sub === null) {
+      totRow.style.display = 'none';
+      head.textContent = 'Price on next step';
+    } else if (osDelivery === null) {
+      totRow.style.display = 'none';
+      head.textContent = osMoney(sub) + ' + delivery';
+    } else {
+      totRow.style.display = '';
+      document.getElementById('osTot').textContent = osMoney(sub + osDelivery);
+      head.textContent = osMoney(sub + osDelivery) + ' before tax';
+    }
+  }
+  // Collapsed by default on phones so the form starts in the first screen; the head still shows the figure.
+  if (window.innerWidth < 768) { var osBox = document.getElementById('orderSum'); if (osBox) osBox.removeAttribute('open'); }
+  osRender();
 
   // Pull query params from previous step and populate hidden fields
   (function() {
@@ -398,8 +499,8 @@
       }
     }
 
-    // Build back link
-    document.getElementById('backBtn').href = '/booking/select?event_date=' + date + '&rental_duration=' + duration + '&preselect=' + items;
+    // Build back link (full param set — see buildBackHref)
+    refreshBackHref();
   })();
 
 
@@ -490,6 +591,7 @@
     if (val.length < 5) {
       document.getElementById('zipResult').style.display = 'none';
       zipValid = false;
+      osDelivery = null; osRender();
       return;
     }
     clearTimeout(zipTimer);
@@ -505,10 +607,12 @@
           var msg = document.createTextNode(data.message || '');
           if (data.valid) {
             zipValid = true;
+            osDelivery = Number(data.fee) || 0; osRender();
             span.style.color = '#2e7d32';
             icon.className = 'fas fa-check-circle me-1';
           } else {
             zipValid = false;
+            osDelivery = null; osRender();
             span.style.color = '#c62828';
             icon.className = 'fas fa-times-circle me-1';
           }

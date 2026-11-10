@@ -1,6 +1,32 @@
 node_modules
 data
-.env
+# `.env` alone matched ONLY that exact filename. `.env*` also catches .env.bak-*, .env.test,
+# .env.test.bak-keyrotate etc. - historical live credentials that were baked into the image.
+# (Runtime config still arrives via compose `env_file: .env`, which is read by the host, not COPY'd.)
+# Patterns use **/ because dockerignore globs without it match only the context ROOT
+# (routes/*.js.bak-* would otherwise slip through).
+**/.env*
+
+# SECURITY: customer data must never be baked into an image layer.
+# backups/ = 20 full production SQLite copies (~150MB, every customer + payment record).
+# uploads/ = signed rental agreements; it is a RUNTIME BIND MOUNT (./uploads:/app/uploads in
+#   docker-compose.yml), exactly like data/, so the mount supplies it - excluding it from the
+#   build context does not affect the running app.
+backups
+uploads
+**/*.db
+**/*.db-journal
+**/*.bak*
+**/*.backup*
+**/*.log
+**/*.patch
+
+# Not needed at runtime (nothing require()s or reads them; only comments mention docs/ and
+# tests/). Smaller image, smaller attack surface. NOTE: `docker run <image> node tests/...`
+# will no longer work - run tests from the source tree.
+tests
+test-results
+docs
 *.md
 
 # SECURITY: the deploy clone keeps a GitHub PAT in .git/config.

@@ -70,9 +70,53 @@
     pointer-events: none;
   }
 
+  /* Compact-sheet controls are phone-only; on desktop the summary is the normal in-page card. */
+  .sheet-toggle { display: none; }
+  /* The wet/dry warning is a <button> now (tap = scroll to the unit needing an answer); reset its UA look, keep the inline pill styling. */
+  #wetChoiceWarn { width: 100%; text-align: left; cursor: pointer; font-family: inherit; }
+
   @media (max-width: 991px) {
-    #selectionSummary.has-items { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001; margin: 0; border-radius: 16px 16px 0 0; max-height: 42vh; overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,.15); }
-    body.has-sticky-summary { padding-bottom: 40vh; }
+    /* COMPACT BY DEFAULT. Measured on a 375x667 phone: the open sheet took 38-52% of the screen and,
+       with six items, its list was a 76px nested scroller showing two of six lines while the subtotal
+       read $1,394 -- the customer could not see what they were buying. Now the sheet is ONE row
+       ("6 items - $1,394 [v]  [Continue]", ~76px, 11% of the screen); tapping the summary expands the
+       full list (.expanded), capped at 60dvh with the list itself scrolling, so Continue (flex 0 0 auto,
+       in the footer below the list) can never be pushed off-screen. */
+    #selectionSummary.has-items:not(.expanded) #selectionScroll { display: none; }
+    /* The subtotal row + count are redundant with the toggle label; the free-day nudge is expanded-only
+       (the wet/dry warning stays visible in both states because it blocks Continue). */
+    #selectionSummary.has-items #selectionFooter > hr,
+    #selectionSummary.has-items #selectionFooter > .d-flex,
+    #selectionSummary.has-items #itemCount { display: none !important; }
+    #selectionSummary.has-items:not(.expanded) #freeDayPromo { display: none !important; }
+    #selectionSummary.has-items.expanded { max-height: 60vh; max-height: 60dvh; }
+    #sheetBar { display: flex; align-items: center; gap: 10px; }
+    #selectionSummary.has-items .sheet-toggle {
+      display: flex; flex: 1 1 auto; min-width: 0; align-items: center; justify-content: space-between; gap: 8px;
+      min-height: 48px; padding: 0 4px; background: none; border: 0; text-align: left;
+      font-size: 16px; font-weight: 800; color: #1c2733; cursor: pointer;
+    }
+    .sheet-toggle .sheet-total { color: var(--bm-orange); }
+    .sheet-toggle .fa-chevron-up { transition: transform .2s; color: #6b7480; }
+    #selectionSummary.expanded .sheet-toggle .fa-chevron-up { transform: rotate(180deg); }
+    .sheet-toggle:focus-visible, #wetChoiceWarn:focus-visible { outline: 3px solid var(--bm-orange, #E8833A); outline-offset: 2px; }
+    #selectionSummary.has-items #continueBtn { width: auto !important; flex: 0 0 auto; white-space: nowrap; min-height: 48px; padding-left: 18px; padding-right: 18px; }
+    #selectionSummary.has-items #continueBtn .cont-more { display: none; }
+    /* The sheet used to be ONE scrolling box (max-height 42vh; overflow-y:auto) with Continue as
+       its last child, so on a 375x667 phone the button was already below the fold after a single
+       item and customers had to discover that the little sheet scrolls -- lost bookings. Now the
+       sheet is a flex column: #selectionScroll (heading + item list) takes the leftover height and
+       scrolls, #selectionFooter (subtotal + Continue) never shrinks, so Continue is always on
+       screen. The outer overflow-y:auto is only a last resort for very short landscape screens. */
+    #selectionSummary.has-items { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001; margin: 0; border-radius: 16px 16px 0 0; max-height: 52vh; max-height: 52dvh; overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,.15); display: flex; flex-direction: column; padding: 14px 18px !important; }
+    #selectionSummary.has-items #selectionScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    #selectionSummary.has-items #selectionFooter { flex: 0 0 auto; }
+    #selectionSummary.has-items h5 { font-size: 15px; margin-bottom: 0; }
+    #selectionSummary.has-items hr { margin: 6px 0; }
+    #selectionSummary.has-items #selectionFooter .mb-3 { margin-bottom: 8px !important; }
+    #selectionSummary.has-items #freeDayPromo, #selectionSummary.has-items #wetChoiceWarn { margin-bottom: 6px !important; padding: 6px 10px !important; }
+    /* compact sheet is ~76-120px tall, not half the screen: reserve just that so the last card is reachable */
+    body.has-sticky-summary { padding-bottom: 140px; }
   }
 </style>
 
@@ -114,7 +158,7 @@
           <i class="fas fa-calendar me-1"></i>
           ${eventDate ? (() => { var d = new Date(eventDate + 'T12:00:00'); return d.toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'}); })() : 'Your date'}
           &nbsp;&bull;&nbsp;
-          <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=readyBy.split(':'); var h=parseInt(p[0]); var m=p[1]||'00'; var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
+          <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=String(readyBy).split(':'); var h=parseInt(p[0],10)||0; var m=String(parseInt(p[1],10)||0).padStart(2,'0'); var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
           &nbsp;&bull;&nbsp;
           ${rentalDays > 1 ? 'Multi-Day' : (rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'Full Day (11 AM–7 PM)')}
           &nbsp;&bull;&nbsp;
@@ -174,7 +218,7 @@
             }
             var wetUp = 0;  // wet upcharge removed 2026-07 — wet and dry are the same price
             var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '');
-            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '" data-extra-day="' + (item.extraDayPrice !== null && item.extraDayPrice !== undefined ? item.extraDayPrice : '') + '" data-max-extra="' + (item.maxExtraDays || 0) + '">' +
+            return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-addon-rate="' + (item.addonPrice !== null && item.addonPrice !== undefined ? item.addonPrice : '') + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '" data-extra-day="' + (item.extraDayPrice !== null && item.extraDayPrice !== undefined ? item.extraDayPrice : '') + '" data-max-extra="' + (item.maxExtraDays || 0) + '">' +
             '<div class="equipment-card select-card">' +
               '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
@@ -202,7 +246,22 @@
 
         
         <!-- Add-Ons Section -->
-        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3">' + addons.map(function(addon) { var addonPrice = addon.computedPrice || (rentalDuration === '4hr' ? addon.price_4hr : addon.price_daily); return '<div class="col-md-6"><div class="equipment-card select-card" style="padding:0"><div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div></div></div>'; }).join('') + '</div></div>' : ''}
+        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3" id="addonGrid">' + addons.map(function(addon) {
+          var addonPrice = addon.computedPrice || (rentalDuration === '4hr' ? addon.price_4hr : addon.price_daily);
+          // These cards sat OUTSIDE #equipmentGrid with no data-id/name/price, and the click handler
+          // only listened on #equipmentGrid and bailed without data-id -- so cornhole/speaker/generator
+          // were unclickable for seven months. Same data-* contract as the equipment cards now;
+          // data-price is the STANDALONE price and data-addon-rate the ride-along rate, so the cart can
+          // mirror lib/helpers addonPricedIds. Deliberately NOT class equipment-item: the category
+          // filter pills hide every .equipment-item that does not match, which would hide the extras.
+          var standalone = (addon.standalonePrice !== undefined && addon.standalonePrice !== null) ? addon.standalonePrice : addonPrice;
+          var rate = (addon.addonPrice !== undefined && addon.addonPrice !== null) ? addon.addonPrice : '';
+          var inner = '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div>';
+          if (addon.booked) {
+            return '<div class="col-md-6"><div class="equipment-card" style="padding:0;opacity:0.45;pointer-events:none">' + inner + '</div></div>';
+          }
+          return '<div class="col-md-6 addon-item" data-category="' + (addon.category || '') + '" data-id="' + addon.id + '" data-name="' + addon.name + '" data-price="' + standalone + '" data-addon-rate="' + rate + '" data-has-wet="0"><div class="equipment-card select-card" style="padding:0">' + inner + '</div></div>';
+        }).join('') + '</div></div>' : ''}
 
 
         ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
@@ -217,11 +276,14 @@
     <div class="row mt-4">
       <div class="col-lg-6 mx-auto">
         <div class="selection-summary" id="selectionSummary" style="border-radius:16px;padding:24px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-          <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-shopping-cart me-2"></i>Your Selection</h5>
-          <hr>
-          <div id="selectedList">
-            <p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>
+          <div id="selectionScroll">
+            <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-shopping-cart me-2"></i>Your Selection</h5>
+            <hr>
+            <div id="selectedList">
+              <p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>
+            </div>
           </div>
+          <div id="selectionFooter">
           <hr>
           <div class="d-flex justify-content-between align-items-center mb-3">
             <span class="fw-bold">Subtotal:</span>
@@ -229,10 +291,16 @@
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
           <div id="freeDayPromo" style="display:none;margin-bottom:10px;background:#e9f7ef;border:1px solid #b7e4c7;border-radius:10px;padding:9px 12px;font-size:13px;color:#1e7e4f;font-weight:600;"></div>
-          <div id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><i class="fas fa-circle-info me-1"></i><span id="wetChoiceWarnText"></span></div>
-          <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
-            <i class="fas fa-arrow-right me-2"></i>Continue to Your Details
+          <button type="button" id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><i class="fas fa-circle-info me-1"></i><span id="wetChoiceWarnText"></span> <u>Tap to choose</u></button>
+          <div id="sheetBar">
+            <button type="button" class="sheet-toggle" id="sheetToggle" aria-expanded="false" aria-controls="selectionScroll">
+              <span id="sheetSummary">0 items &middot; $0</span><i class="fas fa-chevron-up" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
+            <i class="fas fa-arrow-right me-2"></i>Continue<span class="cont-more"> to Your Details</span>
           </button>
+          </div>
+          </div>
         </div>
       </div>
     </div>
@@ -244,8 +312,10 @@
 <script>
   var selectedItems = {};
   var wetItems = {}; // track wet/dry per item ID
-  var rentalDays = parseInt('${rentalDays}') || 1;
-  var rentalDurationParam = '${rentalDuration}';
+  var rentalDays = ${ parseInt(rentalDays, 10) || 1 };
+  // JSON-encode + escape '<' (same pattern as step3-details WD_UNITS) so no value can break out of
+  // this inline script. The route also allowlists rental_duration; this is the second lock.
+  var rentalDurationParam = ${ JSON.stringify(String(rentalDuration)).replace(/</g, '\\u003c') };
   var selectedDaysS2 = 1;
 
   function isFullDayBooking() { return rentalDurationParam !== '4hr'; }
@@ -345,8 +415,13 @@
     }
   }
 
-  // Event delegation: equipment card click (toggleItem)
-  document.getElementById('equipmentGrid').addEventListener('click', function(e) {
+  // Event delegation: equipment AND add-on card click (toggleItem). Registered on both grids
+  // below -- it used to be #equipmentGrid only, which is why add-ons were dead.
+  function readRate(el) {
+    var r = parseFloat(el.dataset.addonRate);
+    return isNaN(r) ? null : r;
+  }
+  function handleCardClick(e) {
     var wdBtn = e.target.closest('.wd-btn');
     if (wdBtn) {
       e.stopPropagation();
@@ -367,8 +442,11 @@
     var id = itemDiv.dataset.id;
     var name = itemDiv.dataset.name;
     var price = parseFloat(itemDiv.dataset.price);
-    if (id && name && !isNaN(price)) toggleItem(card, id, name, price);
-  });
+    if (id && name && !isNaN(price)) toggleItem(card, id, name, price, readRate(itemDiv));
+  }
+  document.getElementById('equipmentGrid').addEventListener('click', handleCardClick);
+  var addonGridEl = document.getElementById('addonGrid');
+  if (addonGridEl) addonGridEl.addEventListener('click', handleCardClick);
 
   document.getElementById('continueBtn').addEventListener('click', function(e) {
     goToStep2(e);
@@ -442,24 +520,42 @@
           if (!card) return;
           var name = el.dataset.name;
           var price = parseFloat(el.dataset.price);
-          toggleItem(card, id, name, price);
+          toggleItem(card, id, name, price, readRate(el));
         }
       });
     }
   })();
 
-  function toggleItem(card, id, name, price) {
+  function toggleItem(card, id, name, price, addonRate) {
     if (selectedItems[id]) {
       delete selectedItems[id];
       card.classList.remove('selected');
       card.querySelector('.fa-check').style.display = 'none';
     } else {
-      selectedItems[id] = { name: name, price: price };
+      selectedItems[id] = { name: name, price: price, addonRate: (typeof addonRate === 'number' && !isNaN(addonRate)) ? addonRate : null };
       card.classList.add('selected');
       card.querySelector('.fa-check').style.display = '';
     }
     showHideWetDry();
     updateSummary();
+  }
+
+  // Mirror of lib/helpers addonPricedIds so the cart total matches what /booking/review charges:
+  // the priciest item is the ANCHOR and pays full price (ties -> lowest id); every other item that
+  // has a ride-along rate pays that instead. Alone, an add-on is its own anchor (cornhole $75 alone,
+  // $20 beside a slide). Server stays authoritative; this is display only.
+  function getAddonPricedIds(keys) {
+    var out = {};
+    if (keys.length <= 1) return out;
+    var anchor = null;
+    keys.forEach(function(id) {
+      if (anchor === null || selectedItems[id].price > selectedItems[anchor].price ||
+          (selectedItems[id].price === selectedItems[anchor].price && String(id) < String(anchor))) anchor = id;
+    });
+    keys.forEach(function(id) {
+      if (id !== anchor && selectedItems[id].addonRate !== null) out[id] = true;
+    });
+    return out;
   }
 
   function updateSummary() {
@@ -484,6 +580,9 @@
       listEl.innerHTML = '<p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>';
       subtotalEl.textContent = '$0';
       countEl.textContent = '0 items selected';
+      var sheetSum0 = document.getElementById('sheetSummary');
+      if (sheetSum0) sheetSum0.innerHTML = '0 items &middot; $0';
+      setSheetExpanded(false); // an empty cart has nothing to expand; do not reopen expanded next time
       showHideWetDry();
       continueBtn.disabled = true;
       continueBtn.style.opacity = '0.5';
@@ -494,9 +593,10 @@
       return;
     }
 
+    var addonPriced = getAddonPricedIds(keys);
     keys.forEach(function(id) {
       var item = selectedItems[id];
-      var itemTotal = item.price;
+      var itemTotal = addonPriced[id] ? item.addonRate : item.price;
       var label = item.name;
       if (wetItems[id]) {
         label += ' (Wet)';  // wet is the same price — no upcharge added
@@ -510,6 +610,8 @@
 
     subtotalEl.textContent = '$' + subtotal.toFixed(0);
     countEl.textContent = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' selected';
+    var sheetSum = document.getElementById('sheetSummary');
+    if (sheetSum) sheetSum.innerHTML = keys.length + ' item' + (keys.length > 1 ? 's' : '') + ' &middot; <span class="sheet-total">$' + subtotal.toLocaleString('en-US', { maximumFractionDigits: 0 }) + '</span>';
 
     // Promo nudge: book 3+ items → one extra day free (applied at checkout).
     var promoEl = document.getElementById('freeDayPromo');
@@ -545,22 +647,44 @@
     refreshMultiDayBlock();
   }
 
+  // Flash the "Choose one" badge on every unit still missing a wet/dry answer and scroll to the
+  // first. Shared by Continue and the (now tappable) amber warning in the cart sheet, which used to
+  // be inert text. Collapses the sheet first so an expanded list never covers the unit being shown.
+  // Returns true when something needed an answer.
+  function nudgeUnchosenWetDry() {
+    var unchosen = getUnchosenWetItems();
+    if (unchosen.length === 0) return false;
+    setSheetExpanded(false);
+    unchosen.forEach(function(id) {
+      var req = document.getElementById('wdreq-' + id);
+      if (req) { req.classList.remove('wd-flash'); void req.offsetWidth; req.classList.add('wd-flash'); }
+    });
+    var firstEl = document.getElementById('wetdry-' + unchosen[0]);
+    if (firstEl) firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return true;
+  }
+  function setSheetExpanded(on) {
+    var sum = document.getElementById('selectionSummary');
+    var tg = document.getElementById('sheetToggle');
+    if (sum) sum.classList.toggle('expanded', !!on);
+    if (tg) tg.setAttribute('aria-expanded', on ? 'true' : 'false');
+  }
+  (function() {
+    var tg = document.getElementById('sheetToggle');
+    var warn = document.getElementById('wetChoiceWarn');
+    if (tg) tg.addEventListener('click', function() {
+      setSheetExpanded(!document.getElementById('selectionSummary').classList.contains('expanded'));
+    });
+    if (warn) warn.addEventListener('click', nudgeUnchosenWetDry);
+  })();
+
   function goToStep2(e) {
     e.preventDefault();
     var ids = Object.keys(selectedItems);
     if (ids.length === 0) return;
 
     // Block until every wet-capable item has a wet/dry choice; nudge toward it
-    var unchosen = getUnchosenWetItems();
-    if (unchosen.length > 0) {
-      unchosen.forEach(function(id) {
-        var req = document.getElementById('wdreq-' + id);
-        if (req) { req.classList.remove('wd-flash'); void req.offsetWidth; req.classList.add('wd-flash'); }
-      });
-      var firstEl = document.getElementById('wetdry-' + unchosen[0]);
-      if (firstEl) firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
+    if (nudgeUnchosenWetDry()) return;
 
     var params = new URLSearchParams(window.location.search);
     var wetIds = Object.keys(wetItems).filter(function(id) { return wetItems[id]; });

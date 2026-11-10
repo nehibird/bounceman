@@ -32,6 +32,10 @@ app.locals.esc = require('./lib/helpers').esc;
 // Live review aggregate for LocalBusiness JSON-LD (rich-result stars). Exposed
 // as a callable local so the shared layout can emit real, current numbers.
 app.locals.getReviewStats = require('./lib/helpers').getReviewStats;
+// Readable event dates in the public booking views. step4-review.ejs printed the raw
+// ISO value ("2026-11-28") to customers on the final review screen; fmtDate is what the
+// rest of the site already uses, so expose it rather than reformat in the template.
+app.locals.fmtDate = require('./lib/helpers').fmtDate;
 
 // Cloudflare Turnstile site key for the lead-capture popup. Empty (e.g. on the
 // sandbox) means the widget isn't rendered and /api/lead skips verification.

@@ -26,7 +26,25 @@ const bookingLimiter = rateLimit({
 // Step 1 — pick date & duration first
 router.get('/', (req, res) => {
   const settings = getSettings();
+  // /booking?preselect=<id> is how a unit page hands its unit to the funnel, but step 1 never
+  // said which unit was being carried: the customer saw the generic "Book Your Bounce House
+  // Rental" and could not tell if the big button had kept their pick (the sticky Book Now bar
+  // hardcodes /booking and drops it silently). Resolve it so step 1 can show a "Booking: X" chip.
+  // preselect is user input: equipment ids are UUIDs, so anything else (arrays from ?preselect=a&
+  // preselect=b, SQL/HTML fragments, 10 KB strings) is ignored before it touches the DB, the
+  // lookup is parameterised, and an unknown / unavailable / add-on id degrades silently to no chip.
+  let preselectItem = null;
+  const preId = req.query.preselect;
+  if (typeof preId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(preId)) {
+    try {
+      const row = getDb().prepare(
+        "SELECT name, price_daily FROM equipment WHERE id = ? AND status = 'available' AND category NOT IN ('add_ons','add-ons')"
+      ).get(preId);
+      if (row && row.name) preselectItem = { name: row.name, price: Number(row.price_daily) > 0 ? Number(row.price_daily) : null };
+    } catch (e) { /* chip is cosmetic: never fail step 1 over it */ }
+  }
   res.render('public/booking/step1-date', {
+    preselectItem,
     title: 'Book Your Rental Online | Bounce Man | Tonkawa OK',
     metaDescription: 'Book your bounce house or water slide rental online with Bounce Man. Easy 4-step process, instant confirmation, and free delivery to Tonkawa, Ponca City & Blackwell OK.',
     canonicalPath: '/booking',
@@ -39,13 +57,22 @@ router.get('/', (req, res) => {
 router.get('/select', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const eventDate = req.query.event_date || '';
-  const rentalDuration = req.query.rental_duration || 'daily';
-  const eventStartTime = req.query.event_start_time || '11:00';
-  const eventEndTime = req.query.event_end_time || '19:00';
-  const rentalDays = parseInt(req.query.rental_days) || 1;
-  const eventEndDate = req.query.event_end_date || isoOffset(eventDate, rentalDays - 1);
-  const readyBy = req.query.ready_by || eventStartTime;
+  // Every one of these comes straight off the query string and is echoed into the page --
+  // rental_duration into an INLINE <script> (`var rentalDurationParam = '...'`), ready_by
+  // split and printed raw into the summary bar. An unvalidated value there is reflected XSS
+  // on a page we text to customers. Validate by shape and fall back to the old defaults on
+  // anything else, so a bad value degrades to the default search instead of an error page.
+  const qDate = (v, dflt) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : dflt;
+  const qTime = (v, dflt) => (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)) ? v : dflt;
+  const eventDate = qDate(req.query.event_date, '');
+  // Allowlist = the durations lib/helpers.js priceForBooking/availabilityWindow understand.
+  const rentalDuration = ['4hr', 'daily', 'overnight'].includes(req.query.rental_duration) ? req.query.rental_duration : 'daily';
+  const eventStartTime = qTime(req.query.event_start_time, '11:00');
+  const eventEndTime = qTime(req.query.event_end_time, '19:00');
+  // Same 1..30 bound /booking/review applies; an unbounded value drove a per-day loop below.
+  const rentalDays = Math.min(30, Math.max(1, parseInt(req.query.rental_days, 10) || 1));
+  const eventEndDate = qDate(req.query.event_end_date, isoOffset(eventDate, rentalDays - 1));
+  const readyBy = qTime(req.query.ready_by, eventStartTime);
 
   const equipment = db.prepare(`
     SELECT e.*,
@@ -144,6 +171,10 @@ router.get('/select', (req, res) => {
     // rate when there is one -- it is what the customer pays in the normal case of adding it
     // to a unit -- and let the standalone price stand as the fallback.
     item.addonPrice = addonRate(item);
+    // Remember the standalone price BEFORE it is overwritten with the ride-along rate: the page
+    // needs both to mirror addonPricedIds (an add-on alone, or the priciest item in the cart,
+    // is the anchor and pays full price, so cornhole is $75 alone and $20 next to a slide).
+    item.standalonePrice = item.computedPrice;
     if (item.addonPrice !== null) item.computedPrice = item.addonPrice;
   });
 
@@ -956,13 +987,68 @@ router.get('/confirmation', async (req, res) => {
   if (sessionMatch && !booking.confirmation_email_sent) {
     try {
       const session = await stripeService.retrieveSession(sessionMatch[1]);
+      // `promoted` gates everything below that announces a NEW paid booking (email, Slack card,
+      // Meta/Google conversions). It is true only when THIS request moved the row to confirmed.
+      let promoted = false;
       if (session.payment_status === 'paid') {
-        // Set confirmation_email_sent=1 HERE (not only in the email callback below) so this
-        // block runs exactly ONCE per booking. Bug fix: bookings made WITHOUT an email never
-        // got this flag set, so re-opening their confirmation link re-fired the "New Booking"
-        // Slack alert (and conversion events) on every visit. This is the process-once guard.
-        db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, confirmation_email_sent = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ?")
-          .run(booking.deposit_amount, booking.id);
+        // Re-read the row: retrieveSession() above is a network round trip, and the hold sweep
+        // or the Stripe webhook may have changed the status while we waited.
+        const live = db.prepare('SELECT status, deposit_paid FROM bookings WHERE id = ?').get(booking.id) || booking;
+        if (live.status === 'pending' || live.status === 'confirmed') {
+          // Set confirmation_email_sent=1 HERE (not only in the email callback below) so this
+          // block runs exactly ONCE per booking. Bug fix: bookings made WITHOUT an email never
+          // got this flag set, so re-opening their confirmation link re-fired the "New Booking"
+          // Slack alert (and conversion events) on every visit. This is the process-once guard.
+          //
+          // Status guard mirrors routes/webhooks.js (M3): only a `pending` booking is PROMOTED.
+          // This UPDATE used to be unconditional, so a booking the hold sweep had auto-cancelled
+          // was silently resurrected, with no availability re-check, the moment its customer paid
+          // through the still-live Stripe link and landed here (same failure as Dale Evans,
+          // BM-MW7DKI7K-17N, which the webhook now alerts on). `confirmed` is allowed through
+          // only because the webhook may have confirmed it first and this page still owes the
+          // customer their email/Slack card (for it the status write is a no-op).
+          // The WHERE re-checks status atomically, so losing a race to the sweep matches 0 rows.
+          const upd = db.prepare("UPDATE bookings SET status = 'confirmed', payment_status = 'deposit_paid', deposit_paid = 1, confirmation_email_sent = 1, balance_due = total - ?, updated_at = datetime('now') WHERE id = ? AND status IN ('pending', 'confirmed')")
+            .run(booking.deposit_amount, booking.id);
+          promoted = upd.changes === 1;
+        }
+        if (!promoted) {
+          // Paid session on a cancelled/declined/completed booking (or we lost the race above).
+          // Do NOT touch status -- tell a human, once. Process-once cannot use
+          // confirmation_email_sent (it would be a lie on a booking that never got an email, and
+          // the webhook/email paths read it), so claim a marker in internal_notes with an atomic
+          // conditional UPDATE: only the request that actually appends it (changes === 1) alerts,
+          // so two tabs or a refresh cannot double-post. instr() not LIKE: session ids contain '_'.
+          const marker = 'late_payment_alerted:' + sessionMatch[1];
+          const claim = db.prepare("UPDATE bookings SET internal_notes = COALESCE(internal_notes, '') || ? WHERE id = ? AND instr(COALESCE(internal_notes, ''), ?) = 0")
+            .run('\n[' + new Date().toISOString() + '] ' + marker, booking.id, marker);
+          // deposit_paid already 1 means the webhook recorded this payment first, and it posts
+          // its own alert for a non-active booking -- claiming the marker is enough, stay quiet.
+          if (claim.changes === 1 && live.deposit_paid !== 1) {
+            console.warn('[STRIPE] Paid session on', live.status, 'booking', bookingNumber, '- status left unchanged, alerting staff');
+            // Fire-and-forget, same pattern as routes/webhooks.js: Slack trouble must never
+            // throw into the customer's confirmation page.
+            try {
+              const cust = db.prepare('SELECT first_name, last_name FROM customers WHERE id = ?').get(booking.customer_id);
+              const who = cust ? (cust.first_name + ' ' + (cust.last_name || '')).trim() : 'unknown customer';
+              const paid = ((session.amount_total || 0) / 100) || Number(booking.deposit_amount) || 0;
+              const alertText = ':rotating_light::rotating_light: *PAYMENT RECEIVED ON A NON-ACTIVE BOOKING — ACT NOW*\n' +
+                '*Booking:* `' + booking.booking_number + '`\n' +
+                '*Customer:* ' + who + '\n' +
+                '*Amount paid:* $' + paid.toFixed(2) + '\n' +
+                '*Event date:* ' + (booking.event_date || 'TBD') + '\n' +
+                '*Booking status:* *' + String(live.status).toUpperCase() + '* (left unchanged)\n' +
+                'Stripe money was ACCEPTED against a booking that is NOT active (seen on the customer\'s confirmation page). The equipment may have been released to someone else. ' +
+                'Check availability, then either reinstate the booking or refund the customer and tell them — they believe they are booked.';
+              require('../services/notifications').sendAlert({
+                text: ':rotating_light: Payment on ' + String(live.status) + ' booking ' + booking.booking_number + ' — $' + paid.toFixed(2),
+                blocks: [{ type: 'section', text: { type: 'mrkdwn', text: alertText } }]
+              }).catch(e2 => console.error('[CONFIRMATION] Non-active booking alert failed:', e2.message));
+            } catch (e) { console.error('[CONFIRMATION] Non-active booking alert failed:', e.message); }
+          }
+        }
+      }
+      if (promoted) {
         depositPaid = true;
         console.log('[STRIPE] Deposit confirmed for', bookingNumber);
 

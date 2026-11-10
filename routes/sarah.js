@@ -900,8 +900,14 @@ router.post('/delivery-zones', async (req, res) => {
   const zones = db.prepare('SELECT name, zip_codes, delivery_fee FROM delivery_zones WHERE active = 1 ORDER BY delivery_fee').all();
 
   if (zip) {
-    const match = db.prepare("SELECT * FROM delivery_zones WHERE active = 1 AND (',' || zip_codes || ',') LIKE ?")
-      .get(`%,${zip},%`);
+    // Same hole lib/helpers.js getDeliveryFee closed today: the ZIP was interpolated raw into a LIKE
+    // pattern, so a spoken/posted "%" or "_____" matched the first zone ("Kay County + Local", $0) and
+    // Sarah quoted free delivery where the real fee is $60/$95. Only an exact 5-digit ZIP may match, and
+    // the compare is done in JS (exact string equality on each comma-separated code), never via LIKE.
+    // Anything else skips the zone match and goes to resolveDeliveryFee, which also rejects bad ZIPs.
+    const zipStr = String(zip).trim();
+    const zoneRows = /^\d{5}$/.test(zipStr) ? db.prepare('SELECT * FROM delivery_zones WHERE active = 1').all() : [];
+    const match = zoneRows.find((dz) => String(dz.zip_codes || '').split(',').some((c) => c.trim() === zipStr));
     if (match) {
       const fee = match.delivery_fee === 0 ? 'free' : `$${match.delivery_fee.toFixed(2)}`;
       return res.json({

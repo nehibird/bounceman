@@ -6,7 +6,7 @@
     <!-- Header -->
     <div class="text-center mb-4">
       <h1 style="color:var(--bm-blue);font-weight:700"><i class="fas fa-file-contract me-2"></i>Rental Agreement</h1>
-      <p class="text-muted">Booking #<strong>${contract.booking_number}</strong></p>
+      <p class="text-muted">Booking #<strong>${esc(contract.booking_number)}</strong></p>
     </div>
 
     <!-- Customer Info -->
@@ -14,21 +14,21 @@
       <div class="row">
         <div class="col-sm-6">
           <div class="text-muted small">Customer</div>
-          <div style="font-weight:700;font-size:18px">${contract.first_name} ${contract.last_name}</div>
+          <div style="font-weight:700;font-size:18px">${esc(contract.first_name)} ${esc(contract.last_name)}</div>
         </div>
         <div class="col-sm-6 text-sm-end">
           <div class="text-muted small">Rental Period</div>
-          <div style="font-weight:700;font-size:18px">${contract.rental_period || contract.event_date}</div>
+          <div style="font-weight:700;font-size:18px">${esc(contract.rental_period || contract.event_date)}</div>
         </div>
       </div>
     </div>
 
-    <!-- Contract Content -->
+    <!-- Contract Content. Every customer-derived value in this file goes through esc(): the body embeds the typed name + delivery address, and admin "View contract" opens this page in the owner session (stored XSS -> admin takeover). white-space:pre-line keeps line breaks, esc() does not touch newlines. -->
     <div class="bg-white rounded-4 shadow-sm mb-4">
       <div class="p-4" style="border-bottom:1px solid #eee">
         <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><i class="fas fa-scroll me-2"></i>Terms & Conditions</h5>
       </div>
-      <div id="contractContent" class="p-4" style="max-height:400px;overflow-y:auto;line-height:1.7;color:#555;white-space:pre-line">${contract.content}</div>
+      <div id="contractContent" class="p-4" style="max-height:400px;overflow-y:auto;line-height:1.7;color:#555;white-space:pre-line">${esc(contract.content)}</div>
     </div>
 
     <!-- Signature Section -->
@@ -52,7 +52,7 @@
       <!-- Signer Name -->
       <div class="mb-3">
         <label for="signerName" class="form-label fw-bold">Print Name</label>
-        <input type="text" id="signerName" class="form-control" value="${contract.first_name} ${contract.last_name}" style="border-radius:12px">
+        <input type="text" id="signerName" class="form-control" value="${esc(contract.first_name)} ${esc(contract.last_name)}" style="border-radius:12px">
       </div>
 
       <!-- Agreement Checkbox -->
@@ -192,7 +192,7 @@
 
     var sigData = canvas.toDataURL('image/png');
 
-    fetch('/contract/${contract.id}/sign', {
+    fetch('/contract/${esc(contract.id)}/sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -206,7 +206,7 @@
     })
     .then(function(data) {
       if (data.success) {
-        window.location.href = data.redirect || '/contract/${contract.id}';
+        window.location.href = data.redirect || '/contract/${esc(contract.id)}';
       } else {
         throw new Error(data.message || 'Signing failed.');
       }

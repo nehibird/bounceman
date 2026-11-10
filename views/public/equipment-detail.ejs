@@ -99,7 +99,7 @@ ${(function() {
               return (a.sort_order || 0) - (b.sort_order || 0);
             });
             var media = ordered.map(function(img, i) {
-              return { type: 'image', src: img.image_path, alt: altFor(img, i) };
+              return { type: 'image', src: img.image_path, srcset: imgv(img.image_path).srcset, alt: altFor(img, i) };
             });
             if (item.video_path) {
               var base = item.video_path.replace(/\.mp4$/, '');
@@ -117,10 +117,17 @@ ${(function() {
               ? 'contain;background:#f8f9fa;padding:30px' : 'cover';
             var video = media.filter(function(m) { return m.type === 'video'; })[0];
 
+            // ONLY the first gallery image is eager (was all four); thumbs + related are lazy. width/height carry the real
+            // ratio; the wrapper below is already a fixed 66% box so nothing shifts.
+            // Preload must match the <img> srcset/sizes below byte for byte or the browser fetches twice.
+            var mainSizes = '(min-width:992px) 58vw, 100vw';
+            var mainSrc = firstImage ? firstImage.src : '/assets/images/placeholder-bounce.svg';
+            var mainV = imgv(mainSrc);
             return `
+          <link rel="preload" as="image" href="${mainV.src}" ${mainV.srcset ? 'imagesrcset="' + mainV.srcset + '" imagesizes="' + mainSizes + '"' : ''} fetchpriority="high">
           <div id="mainImageWrap" style="position:relative;width:100%;padding-top:66%;overflow:hidden;background:#f0f0f0">
             <img id="mainImage"
-              src="${firstImage ? firstImage.src : '/assets/images/placeholder-bounce.svg'}"
+              ${imgAttrs(mainSrc, { sizes: mainSizes, eager: true, high: true })}
               alt="${firstImage ? firstImage.alt : item.name}"
               data-fit="${objectFit === 'cover' ? 'cover' : 'contain'}"
               style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:${objectFit}">
@@ -144,8 +151,8 @@ ${(function() {
                 </span>
               </div>
             ` : `
-              <img src="${m.src}" alt="${m.alt}"
-                class="img-thumb" data-type="image" data-src="${m.src}"
+              <img ${imgAttrs(m.src, { sizes: '80px', thumb: true })} alt="${m.alt}"
+                class="img-thumb" data-type="image" data-src="${m.src}" data-srcset="${m.srcset || ''}"
                 style="width:80px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${i === 0 ? 'var(--bm-orange)' : 'transparent'};opacity:${i === 0 ? '1' : '0.6'};transition:all 0.2s">
             `).join('')}
           </div>
@@ -275,7 +282,7 @@ ${(function() {
         ${related.slice(0, 3).map(r => `
         <div class="col-md-4">
           <div class="equipment-card">
-            <img src="${r.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${r.name}">
+            <img ${imgAttrs(r.image || '/assets/images/placeholder-bounce.svg', { sizes: '(min-width:768px) 33vw, 100vw' })} class="card-img-top" alt="${r.name}">
             <div class="card-body">
               <span class="badge-category mb-2">${(r.category || '').replace(/[-_]/g, ' ')}</span>
               <h5 class="card-title mt-2">${r.name}</h5>
@@ -376,6 +383,8 @@ ${(function() {
       } else {
         if (mainVideo) { mainVideo.pause(); mainVideo.style.display = 'none'; }
         mainImage.style.display = 'block';
+        // srcset outranks src, so it must be swapped too or the old photo stays (and is empty for fallback images).
+        mainImage.srcset = thumb.getAttribute('data-srcset') || '';
         mainImage.src = thumb.getAttribute('data-src');
         mainImage.alt = thumb.getAttribute('alt') || '';
       }

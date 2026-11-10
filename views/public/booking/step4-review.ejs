@@ -30,6 +30,11 @@
   .price-line.deposit { color: var(--bm-orange); font-weight: 700; font-size: 16px; }
 
   .terms-check { background: #fff3cd; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+  /* The Bootstrap default checkbox is ~16px - a poor tap target on a phone. Enlarge the box and make the
+     label a full-width flex row (min 44px tall) so tapping anywhere on the sentence ticks it. */
+  .terms-check .form-check { display: flex; align-items: flex-start; gap: 12px; padding-left: 0; margin: 0; min-height: 44px; }
+  .terms-check .form-check-input { float: none; flex: none; width: 1.75rem; height: 1.75rem; margin: 2px 0 0; }
+  .terms-check .form-check-label { flex: 1; padding: 4px 0; cursor: pointer; }
 </style>
 
 <section class="py-5">
@@ -89,7 +94,7 @@
             <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
             <div class="review-row">
               <span class="label">Date</span>
-              <span class="value">${event.event_date}</span>
+              <span class="value">${typeof fmtDate === 'function' ? fmtDate(event.event_date) : event.event_date}</span>
             </div>
             <div class="review-row">
               <span class="label">Duration</span>
@@ -165,8 +170,9 @@
           </div>
         </div>
 
-        <!-- Right Column: Pricing -->
-        <div class="col-lg-5">
+        <!-- Right Column: Pricing. order-first on mobile: it stacked AFTER four content cards, so tax/total/deposit
+             were the last thing on a long page. order-lg-last restores the original right-hand column at >=992px. -->
+        <div class="col-lg-5 order-first order-lg-last">
           <div class="review-card" style="position:sticky;top:100px;">
             <h5><i class="fas fa-receipt me-2"></i>Pricing Summary</h5>
 
@@ -249,6 +255,10 @@
             <button type="submit" class="btn btn-book-now w-100 mt-3" id="submitBtn" disabled style="font-size:16px;padding:14px;">
               <i class="fas fa-signature me-2"></i>Sign Agreement &amp; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit
             </button>
+            <!-- The button is disabled until the box is ticked; tapping a disabled button gives no feedback, so say why. -->
+            <p id="submitHint" class="text-center small mt-2 mb-0" style="color:#856404;font-weight:600" aria-live="polite">
+              <i class="fas fa-hand-point-up me-1"></i>Tick the agreement box above to turn this button on.
+            </p>
 
             <p class="text-muted text-center small mt-2 mb-0">
               <i class="fas fa-shield-alt me-1"></i>Your information is secure and encrypted
@@ -274,6 +284,7 @@
   // Enable submit button only when terms are agreed
   document.getElementById('agreeTerms').addEventListener('change', function() {
     document.getElementById('submitBtn').disabled = !this.checked;
+    document.getElementById('submitHint').style.display = this.checked ? 'none' : '';
   });
 
   // Prevent double submission

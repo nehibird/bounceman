@@ -1,6 +1,8 @@
 <%- include('../layouts/public', { body: `
 
 <!-- Hero Section -->
+<!-- Homepage LCP = the hero video's poster; without this the browser finds it only after parsing <video>. rel=preload is legal in <body>; the layout has no head slot. -->
+<link rel="preload" as="image" href="/assets/video/hero-poster-wide.jpg" fetchpriority="high">
 <section class="hero-section">
   <video class="hero-bg-video" autoplay muted loop playsinline preload="metadata" poster="/assets/video/hero-poster-wide.jpg" aria-hidden="true">
     <source src="/assets/video/hero-setup-wide.mp4" type="video/mp4">
@@ -96,11 +98,11 @@
       <p>Our most popular rentals — book yours today!</p>
     </div>
     <div class="row g-4">
-${featured.length > 0 ? featured.map(item => `
+${featured.length > 0 ? featured.map((item, idx) => `
       <div class="col-md-6 col-lg-4">
         <a href="/equipment/${item.slug}" class="equipment-card-link" style="text-decoration:none;color:inherit;display:block">
           <div class="equipment-card">
-            <img src="${item.image || '/assets/images/placeholder-bounce.svg'}" class="card-img-top" alt="${item.name}" style="${(item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
+            <img ${imgAttrs(item.image || '/assets/images/placeholder-bounce.svg', { sizes: '(min-width:992px) 360px, (min-width:768px) 50vw, 100vw', eager: idx < 2 })} class="card-img-top" alt="${item.name}" style="${(item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? 'object-fit:contain;background:#f8f9fa;padding:20px' : ''}">
             <div class="card-body">
               <span class="badge-category mb-2">${item.category.replace(/[-_]/g, ' ')}</span>${(item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units' || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '')) ? ' <span style="background:var(--bm-blue);color:white;font-weight:600;padding:3px 10px;border-radius:20px;font-size:11px"><i class="fas fa-tint me-1"></i>Wet / Dry</span>' : ''}
               <h5 class="card-title mt-2">${item.name}${item.quantity > 1 ? ' <span style="background:#059669;color:white;font-weight:600;padding:2px 8px;border-radius:20px;font-size:11px;vertical-align:middle">x' + item.quantity + ' Available</span>' : ''}</h5>

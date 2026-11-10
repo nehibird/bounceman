@@ -10,7 +10,8 @@
   .booking-progress .step.completed .step-num { background: var(--bm-green); color: white; }
   .booking-progress .step-line { width: 40px; height: 2px; background: #e9ecef; align-self: center; }
   .date-card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
-  .date-card-calendar { width: fit-content; margin: 0 auto; }
+  /* was width:fit-content; the calendar now sizes itself to 100% (max 308px = 7 x 44px cells), which fit-content would make circular. */
+  .date-card-calendar { width: 100%; max-width: 308px; margin: 0 auto; }
   .dur-btn {
     padding: 16px 8px;
     border-radius: 12px;
@@ -24,6 +25,41 @@
   }
   .dur-btn .dur-label { font-weight: 700; font-size: 15px; line-height: 1.2; }
   .dur-btn .dur-sub { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  /* Duration controls are real <button>s now (they were <div>s: unreachable by Tab, no
+     Enter/Space, no pressed state for screen readers). Show where focus is. */
+  .dur-btn:focus-visible { outline: 3px solid var(--bm-orange, #E8833A); outline-offset: 2px; }
+  .dur-btn:disabled { cursor: not-allowed; }
+  #nativeDateInput:focus-visible { outline: 3px solid var(--bm-orange, #E8833A); outline-offset: 2px; }
+  /* The keyboard date field used to sit visibly under the calendar; on phones it read as a
+     confusing duplicate ("Or type / choose your date"). Visually-hidden (clip pattern), NOT
+     display:none / visibility:hidden -- those drop it from the accessibility tree AND tab order,
+     which would undo the WCAG 2.1.1 fix (flatpickr's inline days are tabindex=-1). It stays 1px,
+     focusable and announced; on :focus-within it springs into normal flow so a sighted keyboard
+     user can see what they are typing into. position:absolute needs the .date-card anchor below. */
+  .date-card { position: relative; }
+  .sr-date:not(:focus-within) {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  /* Calendar tap targets, measured on iPhone 14: day cells 39x42 (guideline 44x44) because
+     flatpickr caps .flatpickr-day at max-width:39px / height:39px (layout adds 42px height on
+     mobile). 7 x 44 = 308px, which is exactly the calendar's 307.875px, so the grid holds. The
+     card gutters shrink on narrow phones so the 308px calendar is not squeezed below 44px cells. */
+  .date-card-calendar .flatpickr-calendar.inline { width: 100%; max-width: 308px; }
+  .date-card-calendar .flatpickr-innerContainer, .date-card-calendar .flatpickr-rContainer,
+  .date-card-calendar .flatpickr-days, .date-card-calendar .dayContainer { width: 100%; min-width: 0; max-width: none; }
+  .date-card-calendar .flatpickr-day { max-width: none; flex-basis: 14.2857%; height: 44px; line-height: 44px; }
+  /* Month/year header: the layout gives the month select + year input min-height:44px inside
+     flatpickr's fixed 34px, line-height:1 header, so the descenders were cut off at the bottom.
+     Grow the header to fit and centre its contents; arrows follow so they stay mid-header. */
+  .date-card-calendar .flatpickr-months .flatpickr-month,
+  .date-card-calendar .flatpickr-current-month { height: 52px; }
+  .date-card-calendar .flatpickr-current-month { display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1.3; }
+  .date-card-calendar .flatpickr-months .flatpickr-prev-month,
+  .date-card-calendar .flatpickr-months .flatpickr-next-month { height: 52px; display: flex; align-items: center; justify-content: center; padding: 0 10px; }
+  @media (max-width: 420px) { .date-card { padding: 20px 8px; } }
+  /* Scroll target for the post-date-pick nudge; keeps the heading clear of the sticky header. */
+  #durationCard { scroll-margin-top: 80px; }
   .dur-btn.selected {
     background: var(--bm-blue, #004E89) !important;
     color: white !important;
@@ -104,6 +140,7 @@
     <div class="section-title">
       <h1>Book Your Bounce House Rental</h1>
       <p class="h5 fw-normal text-muted">When is your event? Pick a date and time to see what's available</p>
+      ${ typeof preselectItem !== 'undefined' && preselectItem ? '<div id="bookingChip" style="display:inline-flex;align-items:center;gap:8px;margin-top:6px;padding:8px 16px;border-radius:999px;background:#FFF3E8;border:1px solid #E8833A;color:#15263A;font-size:15px;font-weight:600"><i class="fas fa-check-circle" style="color:#E8833A"></i><span>Booking: ' + esc(preselectItem.name) + (preselectItem.price ? ' &mdash; Full Day $' + preselectItem.price.toFixed(0) : '') + '</span></div>' : '' }
     </div>
 
     <div class="row justify-content-center">
@@ -114,48 +151,56 @@
           <div class="date-card mb-4">
             <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
             <div class="date-card-calendar"><div id="datePicker"></div></div>
+            <!-- Keyboard / screen-reader path. Inline flatpickr days are tabindex=-1, so Tab never
+                 reached the calendar and the funnel was a WCAG 2.1.1 dead end without a mouse.
+                 This real date input stays in two-way sync with the calendar. -->
+            <div class="sr-date" style="max-width:260px;margin:16px auto 0;">
+              <label for="nativeDateInput" class="form-label fw-bold small mb-1">Or type / choose your date</label>
+              <input type="date" id="nativeDateInput" class="form-control" aria-describedby="nativeDateMsg">
+              <div id="nativeDateMsg" class="small mt-1" role="status" aria-live="polite" style="min-height:1.3em;color:#b02a37"></div>
+            </div>
             <input type="hidden" name="event_date" id="eventDateInput" required>
           </div>
 
           <!-- 2. Duration -->
-          <div class="date-card mb-4">
+          <div class="date-card mb-4" id="durationCard">
             <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
-            <div class="row g-3">
+            <div class="row g-3" role="group" aria-label="How long do you need it?">
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay">
+                <button type="button" class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay" aria-pressed="false">
                   <span class="dur-label">Half Day</span>
                   <span class="dur-sub">4 hours</span>
-                </div>
+                </button>
               </div>
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay">
+                <button type="button" class="btn btn-outline-primary w-100 text-center dur-btn selected" id="durFullDay" aria-pressed="true">
                   <span class="dur-label">Full Day</span>
                   <span class="dur-sub">11 AM – 7 PM</span>
-                </div>
+                </button>
               </div>
               <div class="col-4">
-                <div class="btn btn-outline-primary w-100 text-center dur-btn" id="durMultiDay">
+                <button type="button" class="btn btn-outline-primary w-100 text-center dur-btn" id="durMultiDay" aria-pressed="false">
                   <span class="dur-label">Multi Day</span>
                   <span class="dur-sub">2–7 days</span>
-                </div>
+                </button>
               </div>
             </div>
             <div id="fulldayNote" style="margin-top:12px;font-size:13px;color:#004E89;display:block;">
               <i class="fas fa-info-circle me-1"></i> 11 AM – 7 PM — we set up before 11.
             </div>
 
-            <div id="sundayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
+            <div id="sundayNote" aria-live="polite" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
               <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong>. We usually drop off
               <strong>Saturday evening</strong> and pick up <strong>Monday morning</strong>, so you get the overnight
               free. Because it stays out overnight, Sunday setups can't be at a park or other public space.
               <a href="#" id="sundayTermsLink" style="color:#004E89;text-decoration:underline">See the details</a>
             </div>
 
-            <div id="holidayNote" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
+            <div id="holidayNote" aria-live="polite" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
               <i class="fas fa-info-circle me-1"></i> Memorial Day and Labor Day are <strong>full-day only</strong> — no half-day or multi-day on these holidays.
             </div>
 
-            <div id="weekdaySpecialNote" style="display:none;margin-top:12px;background:#FFF3E8;border:1px solid #E8833A;border-radius:10px;padding:12px;font-size:14px;color:#15263A">
+            <div id="weekdaySpecialNote" aria-live="polite" style="display:none;margin-top:12px;background:#FFF3E8;border:1px solid #E8833A;border-radius:10px;padding:12px;font-size:14px;color:#15263A">
               <i class="fas fa-sun me-1" style="color:#E8833A"></i> <strong>${settings.weekday_special_label || 'Weekday Special'}!</strong> On this weekday you get a <strong>Full Day for the Half-Day price</strong> — see your deal on the next step. 🎉
             </div>
           </div>
@@ -420,6 +465,10 @@
     document.getElementById('durHalfDay').classList.toggle('selected', type === 'halfday');
     document.getElementById('durFullDay').classList.toggle('selected', type === 'allday');
     document.getElementById('durMultiDay').classList.toggle('selected', type === 'multiday');
+    // Screen readers get the choice from aria-pressed, not from the .selected colour.
+    document.getElementById('durHalfDay').setAttribute('aria-pressed', String(type === 'halfday'));
+    document.getElementById('durFullDay').setAttribute('aria-pressed', String(type === 'allday'));
+    document.getElementById('durMultiDay').setAttribute('aria-pressed', String(type === 'multiday'));
     var timeCard = document.getElementById('timeCard');
     var fulldayNote = document.getElementById('fulldayNote');
     var daysCard = document.getElementById('daysCard');
@@ -448,6 +497,9 @@
 
   function setDurDisabled(btn, off) {
     if (!btn) return;
+    // Real disabled attribute: pointer-events:none only stops the mouse, so a keyboard user
+    // could still Tab to and press a greyed-out Half Day on a Sunday.
+    btn.disabled = !!off;
     if (off) { btn.classList.add('disabled'); btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
     else { btn.classList.remove('disabled'); btn.style.opacity = ''; btn.style.pointerEvents = ''; }
   }
@@ -483,9 +535,9 @@
   // Shown once per visit so re-picking dates doesn't turn into whack-a-mole.
   var sundayModal = null, sundayTermsSeen = false;
   function showSundayTerms() {
-    if (sundayTermsSeen) return;
+    if (sundayTermsSeen) return false;
     var el = document.getElementById('sundayModal');
-    if (!el || typeof bootstrap === 'undefined' || !bootstrap.Modal) return; // never block booking
+    if (!el || typeof bootstrap === 'undefined' || !bootstrap.Modal) return false; // never block booking
     sundayTermsSeen = true;
     if (!sundayModal) {
       sundayModal = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
@@ -496,24 +548,102 @@
       });
       el.addEventListener('hidden.bs.modal', function() {
         document.body.classList.remove('sunday-terms-open');
+        // The scroll was held back while the terms were up. Only follow through if the customer
+        // kept the Sunday ("Got it"); "Pick a different day" clears eventDateInput, so no scroll.
+        if (scrollAfterSundayModal) {
+          scrollAfterSundayModal = false;
+          if (document.getElementById('eventDateInput').value) scrollToDuration();
+        }
       });
     }
     sundayModal.show();
+    return true;
+  }
+  // After a date is picked the duration cards + "See Available Equipment" were ~1.2 screens
+  // below on an iPhone 14 (CTA at y~1,100): the page just sat there and the next step was
+  // invisible. Glide to the duration card. Smooth, but 'auto' for prefers-reduced-motion; skipped
+  // when it is already well in view (desktop, re-picking a date), and delayed one frame-ish so the
+  // Sunday/holiday notes applyDayRules() just revealed have settled the layout.
+  var scrollAfterSundayModal = false;
+  function scrollToDuration() {
+    setTimeout(function() {
+      var el = document.getElementById('durationCard');
+      if (!el) return;
+      var r = el.getBoundingClientRect();
+      if (r.top >= 0 && r.top < window.innerHeight * 0.45) return;
+      var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' });
+    }, 150);
   }
 
-  flatpickr('#datePicker', {
+  // "Today" in the business's timezone, not the visitor's: at 9 PM Pacific it is already
+  // tomorrow in Chicago, and the native input and the calendar must agree on the first
+  // bookable day. '' (Intl unavailable) falls back to flatpickr's local 'today'.
+  var CHICAGO_TODAY = (function() {
+    try {
+      var p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(p) ? p : '';
+    } catch (err) { return ''; }
+  })();
+  var WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var nativeSyncing = false; // true while the native input is driving the calendar (stops echo loops)
+
+  var datePicker = flatpickr('#datePicker', {
     inline: true,
-    minDate: 'today',
+    minDate: CHICAGO_TODAY || 'today',
     dateFormat: 'Y-m-d',
     disable: [function(date) { return BLOCKED_WEEKDAYS.indexOf(date.getDay()) !== -1; }],
     onChange: function(sel, dateStr) {
+      // Mirror into the native input unless it is the one that started this change
+      // (rewriting it mid-typing would eat the keystrokes of a half-entered date).
+      var nd = document.getElementById('nativeDateInput');
+      if (nd && !nativeSyncing && nd.value !== dateStr) nd.value = dateStr;
       document.getElementById('eventDateInput').value = dateStr;
       document.getElementById('hiddenEndDate').value = isoOffset(dateStr, 0);
       applyDayRules();
       updateHiddenFields();
-      if (dateStr && new Date(dateStr + 'T12:00:00').getDay() === 0) showSundayTerms();
+      // Sunday terms modal first (it can open on this same interaction); scrolling underneath
+      // a modal would fight it, so defer the scroll until the modal closes. Never scroll while
+      // the native input is driving: a keyboard user mid-typing a date (Chrome fires change at
+      // year 0002...) must not have the page pulled out from under the field.
+      if (dateStr && !nativeSyncing) {
+        var opened = new Date(dateStr + 'T12:00:00').getDay() === 0 && showSundayTerms();
+        if (opened) scrollAfterSundayModal = true; else scrollToDuration();
+      } else if (dateStr && new Date(dateStr + 'T12:00:00').getDay() === 0) showSundayTerms();
     }
   });
+
+  // Native date input -> calendar. A date typed or picked here must hit EXACTLY the rules a
+  // calendar click does, so it is not written to the form directly: after screening out the
+  // dates flatpickr's min/disable would have refused (a native input can't grey out weekdays),
+  // it goes through datePicker.setDate(v, true), which runs the same onChange above —
+  // eventDateInput, hidden end date, applyDayRules() (Sunday/holiday/weekday-special lock to
+  // Full Day, disabling Half Day and Multi Day) and showSundayTerms(). A bad date clears
+  // the calendar + eventDateInput instead, so submit's "select a date" guard blocks it.
+  (function() {
+    var nd = document.getElementById('nativeDateInput');
+    var msg = document.getElementById('nativeDateMsg');
+    if (!nd) return;
+    if (CHICAGO_TODAY) nd.min = CHICAGO_TODAY;
+    function problemWith(v) {
+      if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(v)) return 'Please enter a full date.';
+      var d = new Date(v + 'T12:00:00');
+      if (isNaN(d.getTime())) return 'Please enter a valid date.';
+      if (CHICAGO_TODAY && v < CHICAGO_TODAY) return 'That date has already passed - please pick today or later.';
+      if (BLOCKED_WEEKDAYS.indexOf(d.getDay()) !== -1) return 'We are not available on ' + WEEKDAY_NAMES[d.getDay()] + 's - please pick another day.';
+      return '';
+    }
+    nd.addEventListener('change', function() {
+      var v = nd.value;
+      var problem = v ? problemWith(v) : '';
+      msg.textContent = problem;
+      nativeSyncing = true;
+      try {
+        if (!v || problem) datePicker.clear();
+        else datePicker.setDate(v, true);
+      } finally { nativeSyncing = false; }
+    });
+  })();
 
   // "Pick a different day" clears the selection and reopens the calendar, so declining
   // the terms doesn't leave a Sunday silently sitting in the form.

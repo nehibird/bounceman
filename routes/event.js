@@ -6,6 +6,7 @@ const { v4: uuid } = require('uuid');
 
 const fs = require('fs');
 const path = require('path');
+const { esc } = require('../lib/helpers');
 
 function saveSignedWaiver(reg, event) {
   const uploadDir = path.join(__dirname, '..', 'uploads', 'waivers');
@@ -14,9 +15,19 @@ function saveSignedWaiver(reg, event) {
   const signedAt = new Date(reg.waiver_signed_at || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' });
   const kidNames = (() => { try { return JSON.parse(reg.kid_names || '[]').join(', ') || 'Not specified'; } catch { return 'Not specified'; } })();
 
+  // /uploads is served by express.static as text/html and POST /event/pay is anonymous, so
+  // every value below is attacker-controlled HTML on our own origin (stored XSS). Escape all
+  // of it, cap lengths, and only let a strict png/jpeg data: URL into <img src>.
+  const cap = (v, n) => esc(String(v == null ? '' : v).slice(0, n));
+  const sigOk = typeof reg.waiver_signature === 'string' && reg.waiver_signature.length <= 1500000 &&
+    /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(reg.waiver_signature);
+  const sigHtml = sigOk
+    ? `<img class="sig-img" src="${reg.waiver_signature}" alt="Signature" />`
+    : `<p><em>[Signature image omitted: not a valid PNG/JPEG data URL]</em></p>`;
+  const pName = cap(reg.parent_name, 100);
   const html = `<!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Signed Waiver — ${reg.parent_name}</title>
+<head><meta charset="UTF-8"><title>Signed Waiver — ${pName}</title>
 <style>
   body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; color: #333; }
   h1 { color: #e74c3c; } h2 { color: #555; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
@@ -29,16 +40,16 @@ function saveSignedWaiver(reg, event) {
 <body>
 <h1>Bounce Man LLC — Signed Liability Waiver</h1>
 <div class="meta">
-  <p><strong>Event:</strong> ${event.name}</p>
-  <p><strong>Event Date:</strong> ${event.event_date}</p>
-  <p><strong>Location:</strong> ${event.location || 'Blinn Park, Tonkawa OK'}</p>
-  <p><strong>Parent/Guardian:</strong> ${reg.parent_name}</p>
-  <p><strong>Phone:</strong> ${reg.parent_phone || 'N/A'}</p>
-  <p><strong>Number of Children:</strong> ${reg.kid_count}</p>
-  <p><strong>Child Name(s):</strong> ${kidNames}</p>
-  <p><strong>Signed At:</strong> ${signedAt} CT</p>
-  <p><strong>IP Address:</strong> ${reg.signer_ip || 'N/A'}</p>
-  <p><strong>Registration ID:</strong> ${reg.id}</p>
+  <p><strong>Event:</strong> ${cap(event.name, 200)}</p>
+  <p><strong>Event Date:</strong> ${cap(event.event_date, 40)}</p>
+  <p><strong>Location:</strong> ${cap(event.location || 'Blinn Park, Tonkawa OK', 200)}</p>
+  <p><strong>Parent/Guardian:</strong> ${pName}</p>
+  <p><strong>Phone:</strong> ${cap(reg.parent_phone || 'N/A', 40)}</p>
+  <p><strong>Number of Children:</strong> ${cap(reg.kid_count, 10)}</p>
+  <p><strong>Child Name(s):</strong> ${cap(kidNames, 500)}</p>
+  <p><strong>Signed At:</strong> ${esc(signedAt)} CT</p>
+  <p><strong>IP Address:</strong> ${cap(reg.signer_ip || 'N/A', 64)}</p>
+  <p><strong>Registration ID:</strong> ${cap(reg.id, 64)}</p>
 </div>
 <h2>Liability Waiver Agreement</h2>
 <div class="waiver-text">
@@ -52,8 +63,8 @@ function saveSignedWaiver(reg, event) {
 </div>
 <div class="signature-section">
   <p><strong>Electronic Signature of Parent/Guardian:</strong></p>
-  <img class="sig-img" src="${reg.waiver_signature}" alt="Signature" />
-  <p style="margin-top:8px"><em>${reg.parent_name} — signed ${signedAt} CT</em></p>
+  ${sigHtml}
+  <p style="margin-top:8px"><em>${pName} — signed ${esc(signedAt)} CT</em></p>
 </div>
 <div class="footer">
   <p>This document was electronically signed and is legally binding. Bounce Man LLC · Tonkawa, OK · (580) 308-9288</p>

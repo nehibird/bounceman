@@ -26,6 +26,19 @@ const database = db.getDb();
 const { createApiKey } = require('../lib/api-keys');
 const officeRoutes = require('../routes/office');
 
+// DATES ARE DERIVED FROM TODAY (Chicago), never hardcoded. Hardcoded dates rot: a PATCH to a
+// date inside the 24h rush window (or in the past) makes validateBookingDate record a
+// calendar_rule conflict -> 409 instead of 200, which is exactly how this file died on
+// 2026-11-09/10. Pattern borrowed from tests/call-routing.test.js `day(n)`.
+// Every date is a TUESDAY-anchored offset >= 14 days out: clears the rush rule by a wide
+// margin, and Tue..Sat spans never touch a Sunday (Sundays are full-day/overnight only and
+// would trip an unrelated rule).
+const { todayCT, isoOffset } = require('../lib/helpers');
+const dow = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
+let T = isoOffset(todayCT(), 14);
+while (dow(T) !== 2) T = isoOffset(T, 1); // first Tuesday >= 14 days from today
+const D = (n) => isoOffset(T, n);          // D(7) = a week after T, still a Tuesday
+
 let pass = 0, fail = 0;
 function t(name, ok, detail) {
   ok ? pass++ : fail++;
@@ -47,7 +60,7 @@ async function main() {
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time,
      delivery_address, delivery_city, delivery_zip, surface_type,
      subtotal, total, deposit_amount, balance_due, payment_status, internal_notes)
-    VALUES (?, 'BM-TEST-A', ?, 'confirmed', '2026-10-10', '11:00', '19:00',
+    VALUES (?, 'BM-TEST-A', ?, 'confirmed', '${D(0)}', '11:00', '19:00',
      '123 Main St', 'Tonkawa', '74653', 'grass', 200, 200, 50, 150, 'deposit_paid', 'stripe_session:cs_test123')`)
     .run(bookingAId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
@@ -59,7 +72,7 @@ async function main() {
   const bookingBId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-B', ?, 'confirmed', '2026-10-11', '11:00', '19:00', 200, 200, 50, 150, 'unpaid')`)
+    VALUES (?, 'BM-TEST-B', ?, 'confirmed', '${D(1)}', '11:00', '19:00', 200, 200, 50, 150, 'unpaid')`)
     .run(bookingBId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Bounce House', 200, 200, 'daily')`).run(uuid(), bookingBId, equipmentId);
@@ -99,7 +112,7 @@ async function main() {
   t('whoami returns name/scopes/limits', body.name === 'test-full' && body.max_refund_cents === 5000 && body.scopes.includes('bookings:write'), body);
 
   // 3. GET /bookings by date
-  r = await get('/bookings?date=2026-10-10', fullKey);
+  r = await get(`/bookings?date=${D(0)}`, fullKey);
   body = await r.json();
   t('GET /bookings?date -> 200', r.status === 200, r.status);
   t('GET /bookings finds BM-TEST-A with items+customer', body.bookings.length === 1
@@ -148,8 +161,8 @@ async function main() {
   const stillUnchanged = database.prepare('SELECT delivery_notes FROM bookings WHERE id = ?').get(bookingAId);
   t('dry_run wrote nothing to the DB', stillUnchanged.delivery_notes !== 'ring the bell', stillUnchanged);
 
-  // 9. event_date change -> 409 conflict (booking B already fills the only unit on 2026-10-11)
-  r = await write('PATCH', '/bookings/BM-TEST-A', fullKey, { reason: 'reschedule', idempotencyKey: 'idem-conflict', event_date: '2026-10-11' });
+  // 9. event_date change -> 409 conflict (booking B already fills the only unit on D(1))
+  r = await write('PATCH', '/bookings/BM-TEST-A', fullKey, { reason: 'reschedule', idempotencyKey: 'idem-conflict', event_date: D(1) });
   body = await r.json();
   t('date change onto a full day -> 409', r.status === 409, r.status);
   t('409 body names the equipment conflict', Array.isArray(body.conflicts) && body.conflicts.some((c) => c.type === 'equipment_unavailable'), body);
@@ -177,7 +190,7 @@ async function main() {
   t('note was NOT appended twice', occurrences === 1, notesAfterReplay);
 
   // 13. GET /availability
-  r = await get('/availability?date=2026-10-10', fullKey);
+  r = await get(`/availability?date=${D(0)}`, fullKey);
   body = await r.json();
   const unit = (body.units || []).find((u) => u.equipment_id === equipmentId);
   t('GET /availability -> 200', r.status === 200, r.status);
@@ -305,21 +318,23 @@ async function main() {
   const multiDayId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-MULTI', ?, 'confirmed', '2026-11-01', '2026-11-03', '11:00', '19:00', 200, 200, 50, 150, 'unpaid')`)
+    VALUES (?, 'BM-TEST-MULTI', ?, 'confirmed', '${D(21)}', '${D(23)}', '11:00', '19:00', 200, 200, 50, 150, 'unpaid')`)
     .run(multiDayId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), multiDayId, equipmentId2);
 
-  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'move dates', idempotencyKey: 'idem-h5-shift', event_date: '2026-11-10' });
+  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'move dates', idempotencyKey: 'idem-h5-shift', event_date: D(28) });
   body = await r.json();
   t('multi-day move -> 200', r.status === 200, r.status);
-  t('multi-day move shifts event_end_date by the same 2-day offset', body.after.event_end_date === '2026-11-12', body.after);
+  // Guarded: if the 200 assertion above fails, `body.after` is undefined — a bare dereference
+  // threw a TypeError that killed the script and silenced every later assertion.
+  t('multi-day move shifts event_end_date by the same 2-day offset', !!(body && body.after) && body.after.event_end_date === D(30), body);
   t('multi-day move flags reprice_needed', body.reprice_needed === true, body);
   const multiNote = database.prepare('SELECT internal_notes FROM bookings WHERE id = ?').get(multiDayId).internal_notes;
   t('multi-day move leaves an internal note', /moved dates/.test(multiNote || ''), multiNote);
 
   // 18. end-before-start -> 400
-  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'bad range', idempotencyKey: 'idem-h5-badrange', event_end_date: '2026-11-01' });
+  r = await write('PATCH', '/bookings/BM-TEST-MULTI', fullKey, { reason: 'bad range', idempotencyKey: 'idem-h5-badrange', event_end_date: D(21) });
   body = await r.json();
   t('event_end_date before event_date -> 400', r.status === 400, body);
 
@@ -332,7 +347,7 @@ async function main() {
   const singleDayId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-TIMES', ?, 'confirmed', '2026-11-25', '09:00', '13:00', 150, 150, 50, 100, 'unpaid')`)
+    VALUES (?, 'BM-TEST-TIMES', ?, 'confirmed', '${D(35)}', '09:00', '13:00', 150, 150, 50, 100, 'unpaid')`)
     .run(singleDayId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Slide', 150, 150, '4hr')`).run(uuid(), singleDayId, equipmentId2);
@@ -344,7 +359,7 @@ async function main() {
   const afternoonId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-PM', ?, 'confirmed', '2026-11-25', '15:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
+    VALUES (?, 'BM-TEST-PM', ?, 'confirmed', '${D(35)}', '15:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
     .run(afternoonId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Slide', 150, 150, '4hr')`).run(uuid(), afternoonId, equipmentId2);
@@ -357,48 +372,48 @@ async function main() {
   const rangeAId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-RANGEA', ?, 'confirmed', '2026-12-01', '2026-12-02', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    VALUES (?, 'BM-TEST-RANGEA', ?, 'confirmed', '${D(7)}', '${D(8)}', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
     .run(rangeAId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), rangeAId, equipmentId2);
   const rangeBId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-RANGEB', ?, 'confirmed', '2026-12-05', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    VALUES (?, 'BM-TEST-RANGEB', ?, 'confirmed', '${D(11)}', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
     .run(rangeBId, customerId);
   database.prepare(`INSERT INTO booking_items (id, booking_id, equipment_id, item_name, unit_price, total_price, duration_type)
     VALUES (?, ?, ?, 'Test Slide', 300, 300, 'daily')`).run(uuid(), rangeBId, equipmentId2);
-  r = await write('PATCH', '/bookings/BM-TEST-RANGEA', fullKey, { reason: 'extend the range', idempotencyKey: 'idem-h5-rangeconflict', event_end_date: '2026-12-05' });
+  r = await write('PATCH', '/bookings/BM-TEST-RANGEA', fullKey, { reason: 'extend the range', idempotencyKey: 'idem-h5-rangeconflict', event_end_date: D(11) });
   body = await r.json();
   t('extending a multi-day range onto another booking\'s date -> 409', r.status === 409, body);
 
   // 23. R2-L6: the GLOBAL blocked-dates check must cover EVERY day in a multi-day range,
   // not just the new event_date — extending event_end_date onto a blocked day (with
   // event_date itself untouched) must still 409/400.
-  database.prepare("INSERT INTO blocked_dates (id, date, reason, equipment_id) VALUES (?, '2026-12-20', 'owner unavailable', NULL)").run(uuid());
+  database.prepare("INSERT INTO blocked_dates (id, date, reason, equipment_id) VALUES (?, ?, 'owner unavailable', NULL)").run(uuid(), D(16));
   const blockRangeId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_end_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-BLOCKRANGE', ?, 'confirmed', '2026-12-18', '2026-12-19', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
+    VALUES (?, 'BM-TEST-BLOCKRANGE', ?, 'confirmed', '${D(14)}', '${D(15)}', '11:00', '19:00', 300, 300, 50, 250, 'unpaid')`)
     .run(blockRangeId, customerId);
   r = await write('PATCH', '/bookings/BM-TEST-BLOCKRANGE', fullKey, {
-    reason: 'extend onto a blocked day', idempotencyKey: 'idem-l6-blockrange', event_end_date: '2026-12-20',
+    reason: 'extend onto a blocked day', idempotencyKey: 'idem-l6-blockrange', event_end_date: D(16),
   });
   body = await r.json();
   t('R2-L6: extending event_end_date onto a globally blocked day -> conflict', r.status === 409 || r.status === 400, body);
-  t('R2-L6: the conflict names the blocked calendar day', r.status !== 409 || (Array.isArray(body.conflicts) && body.conflicts.some((c) => c.type === 'calendar_rule' && c.date === '2026-12-20')), body);
+  t('R2-L6: the conflict names the blocked calendar day', r.status !== 409 || (Array.isArray(body.conflicts) && body.conflicts.some((c) => c.type === 'calendar_rule' && c.date === D(16))), body);
   const blockRangeAfter = database.prepare('SELECT event_end_date FROM bookings WHERE id = ?').get(blockRangeId);
-  t('R2-L6: the booking was NOT updated onto the blocked range', blockRangeAfter.event_end_date === '2026-12-19', blockRangeAfter);
+  t('R2-L6: the booking was NOT updated onto the blocked range', blockRangeAfter.event_end_date === D(15), blockRangeAfter);
 
   // A move whose new event_date itself changes onto (or through) a blocked day, with
   // event_end_date left implicit (single-day booking), must also be caught.
   const blockStartId = uuid();
   database.prepare(`INSERT INTO bookings
     (id, booking_number, customer_id, status, event_date, event_start_time, event_end_time, subtotal, total, deposit_amount, balance_due, payment_status)
-    VALUES (?, 'BM-TEST-BLOCKSTART', ?, 'confirmed', '2026-12-01', '11:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
+    VALUES (?, 'BM-TEST-BLOCKSTART', ?, 'confirmed', '${D(7)}', '11:00', '19:00', 150, 150, 50, 100, 'unpaid')`)
     .run(blockStartId, customerId);
   r = await write('PATCH', '/bookings/BM-TEST-BLOCKSTART', fullKey, {
-    reason: 'move onto a blocked day', idempotencyKey: 'idem-l6-blockstart', event_date: '2026-12-20',
+    reason: 'move onto a blocked day', idempotencyKey: 'idem-l6-blockstart', event_date: D(16),
   });
   body = await r.json();
   t('R2-L6: moving event_date directly onto a globally blocked day -> conflict', r.status === 409 || r.status === 400, body);

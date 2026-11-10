@@ -22,16 +22,32 @@
   <div class="container">
 
     <div class="confirm-hero">
+      <!-- The route (routes/booking.js) passes depositPaid = true only for a genuinely paid deposit.
+           This page used to say "Booking Confirmed!" unconditionally, so a customer who could not pay sat
+           for days believing she was booked. Unpaid => say plainly it is NOT confirmed and how to pay.
+           (Template-literal rules: no raw backticks or stray dollar-brace in this copy.) -->
+      ${locals.depositPaid ? `
       <div class="confirm-icon">
         <i class="fas fa-check"></i>
       </div>
       <h1 style="color:var(--bm-blue);font-size:42px;">Booking Confirmed!</h1>
       <p class="text-muted" style="font-size:18px;">Your bounce house rental has been booked successfully</p>
+      ` : `
+      <div class="confirm-icon" style="background:#fef3c7;color:#92400e;">
+        <i class="fas fa-exclamation"></i>
+      </div>
+      <h1 style="color:var(--bm-blue);font-size:42px;">Almost there &mdash; not booked yet</h1>
+      <p style="font-size:18px;color:var(--bm-ink);">Your booking is <strong>not confirmed</strong> until the deposit is paid. We are holding your date for now, but the hold expires and the equipment is released to the next customer if the deposit is not received.</p>
+      <p class="mt-3"><a href="/booking/pay-deposit/${bookingNumber}" class="btn btn-book-now btn-lg px-5"><i class="fas fa-lock me-2"></i>Pay Your Deposit Now</a></p>
+      <p class="text-muted">Trouble paying? Call or text us at <a href="tel:5803089288" style="color:var(--bm-blue);font-weight:700;">(580) 308-9288</a> and we will take the deposit for you.</p>
+      `}
 
       <div class="booking-number">${bookingNumber}</div>
 
       <p class="text-muted">Save this booking number for your records</p>
     </div>
+
+    ${locals.depositPaid ? `
 
     <!-- Next Steps -->
     <div class="next-steps">
@@ -48,8 +64,8 @@
       <div class="step-item">
         <div class="step-icon s2">2</div>
         <div>
-          <div class="fw-bold">Sign Rental Agreement</div>
-          <div class="text-muted small">You'll receive a rental agreement to review and sign electronically before your event date.</div>
+          <div class="fw-bold">Rental Agreement Signed</div>
+          <div class="text-muted small">You signed your rental agreement before paying, so there is nothing more to sign. If you need a copy, call or text us.</div>
         </div>
       </div>
 
@@ -69,6 +85,7 @@
         </div>
       </div>
     </div>
+    ` : ''}
 
     <!-- Action Buttons -->
     <div class="text-center mt-4">
@@ -95,6 +112,8 @@
   (function() {
     var colors = ['#FF6B35', '#004E89', '#FFD166', '#06D6A0', '#EF476F', '#7B2D8E'];
     var container = document.getElementById('confetti');
+    // Celebrate only a paid booking - confetti on an unpaid, unconfirmed page would repeat the original lie.
+    if (!${locals.depositPaid ? 'true' : 'false'}) { container.remove(); return; }
     for (var i = 0; i < 60; i++) {
       var piece = document.createElement('div');
       piece.className = 'confetti-piece';

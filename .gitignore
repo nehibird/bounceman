@@ -17,8 +17,14 @@ server.log
 logs/
 
 # Backup files
+# `*.bak` / `*.bak[0-9]*` did NOT match `.bak-<word>` or `.backup-<word>` (~85 such files
+# sat untracked in a PUBLIC repo, one `git add -A` from being published).
 *.bak
 *.bak[0-9]*
+*.bak*
+*.backup*
+*.patch
+backups/
 backups/backup.log
 
 # Uploads (customer files, not source code)
