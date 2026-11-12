@@ -25,10 +25,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // SECURITY: these values are customer-supplied (names, item names, block reasons). They used
   // to be concatenated into single-quoted JS literals with only apostrophes stripped, so a
-  // </script> in a booking name broke out of the script block -- stored XSS in the admin panel,
-  // which is one POST away from creating another admin user. Build real objects and let
-  // JSON.stringify do the escaping, then neutralise </script> for the HTML parser.
+  // closing script tag typed into a booking name broke out of this block -- stored XSS in the
+  // admin panel, which is one POST away from creating another admin user. Build real objects
+  // and let JSON.stringify do the escaping, then turn every '<' into its \u003c escape so the
+  // HTML parser can never see a closing tag inside the data.
   // Side benefit: names like O'Brien are no longer mangled.
+  //
+  // DO NOT write a closing script tag literally anywhere in this block, not even in a comment.
+  // The HTML parser does not know about JS comments: it ends the script at the first one it
+  // sees, and everything below here silently stops being JavaScript. That is exactly what
+  // happened on 2026-11-11 -- this comment described the bug and then caused it, and the
+  // calendar rendered as an empty card until it was found.
   var bookingEvents = ${JSON.stringify(bookings.map(function(b) {
     var STATUS_COLORS = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
     var name = (b.first_name || '') + ' ' + (b.last_name || '');
