@@ -14,6 +14,11 @@ module.exports = defineConfig({
     '**/office-refund-ambiguous.test.js', '**/office-live-check.test.js', '**/office-link-reservation.test.js',
     '**/office-multiproc.test.js', '**/stripe-errors-classify.test.js', '**/office-refund-realsdk.test.js',
     '**/quiet-hours.test.js',
+    // Added 2026-11-16: these four also run on import and three call process.exit(),
+    // so collecting them could end the run early WITH A GREEN EXIT CODE.
+    // They are standalone node suites - run them with the node runner, not Playwright.
+    '**/tax-jurisdiction.test.js', '**/script-breakout.test.js',
+    '**/security-review-2026-10.test.js', '**/booking-access.test.js',
   ],
   // NOTE: any new standalone node test added under tests/ must be listed above. Playwright's
   // default testMatch picks up *.test.js, and a script that calls process.exit(0) on import
