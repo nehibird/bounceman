@@ -26,12 +26,48 @@ async function fillDetailsForm(page, { firstName, lastName, email, phone }) {
   await page.selectOption('select[name="event_type"]', { index: 1 });
   await page.selectOption('select[name="venue_type"]', { index: 1 });
   await page.selectOption('select[name="surface_type"]', { index: 1 });
-  // JS blocks submit without power checkbox unless generator in cart
-  await page.locator('input[name="power_available"]').check();
+  // Power & water: step3 asks these as yes/no radios (power_choice / water_choice),
+  // and siteSync() shows each question only when the cart needs it. The hidden
+  // power_available / water_available inputs are enabled by the page for "yes" and are
+  // never clickable, so drive the radios the customer actually sees.
+  for (const [choice, legacy] of [
+    ['power_choice', 'power_available'],
+    ['water_choice', 'water_available'],
+  ]) {
+    // Newer step3: a yes/no radio pair, shown only when the cart needs that question.
+    const radio = page.locator(`input[name="${choice}"][value="yes"]`);
+    if ((await radio.count()) && (await radio.isVisible().catch(() => false))) {
+      const label = page.locator(`label:has(input[name="${choice}"][value="yes"])`).first();
+      if (await label.count()) await label.click();
+      else await radio.check();
+      continue;
+    }
+    // Older step3: a plain checkbox at the bottom of the Event Details card. Submit is
+    // blocked without it unless a generator is in the cart.
+    const box = page.locator(`input[name="${legacy}"][type="checkbox"]`);
+    if ((await box.count()) && (await box.isVisible().catch(() => false))) {
+      await box.check();
+    }
+  }
 }
 
 async function fillStripeCard(page, cardNumber) {
   // Card number / expiry / CVC live in Stripe Elements iframes
+  // Stripe's hosted Checkout shows a payment-method chooser (Card / Bank / Klarna) with
+  // nothing selected, and the card iframe is not mounted until Card is chosen. Older
+  // Checkout went straight to the card fields, which is why this used to work without it.
+  const cardOption = page.getByText('Card', { exact: true }).first();
+  if (await cardOption.isVisible().catch(() => false)) {
+    await cardOption.click();
+    await page.waitForTimeout(1500);
+  }
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('iframe')).some((f) => {
+    try {
+      return f.contentDocument &&
+        f.contentDocument.querySelector('input[placeholder="1234 1234 1234 1234"]');
+    } catch (e) { return false; }
+  }), null, { timeout: 20000 }).catch(() => {});
+
   for (const frame of page.frames()) {
     const cn = frame.locator('input[placeholder="1234 1234 1234 1234"]');
     if (await cn.count() > 0) {
@@ -145,7 +181,10 @@ test('Full booking flow — Stripe test card 4242', async ({ page }) => {
   await page.waitForTimeout(3000);
   await fillStripeCard(page, '4242424242424242');
 
-  const payBtn = page.locator('button[type="submit"]').last();
+  // Checkout's pay control is a plain <button>, not type="submit".
+  let payBtn = page.getByTestId('hosted-payment-submit-button');
+  if (!(await payBtn.count())) payBtn = page.getByRole('button', { name: /^Pay\b/ }).last();
+  if (!(await payBtn.count())) payBtn = page.locator('button[type="submit"]').last();
   await payBtn.scrollIntoViewIfNeeded();
   await Promise.all([
     page.waitForURL(/\/booking\/confirmation/, { timeout: 30000 }),
@@ -175,7 +214,10 @@ test('Stripe declined card 4000000000000002 shows error', async ({ page }) => {
   await page.waitForTimeout(3000);
   await fillStripeCard(page, '4000000000000002');
 
-  const payBtn = page.locator('button[type="submit"]').last();
+  // Checkout's pay control is a plain <button>, not type="submit".
+  let payBtn = page.getByTestId('hosted-payment-submit-button');
+  if (!(await payBtn.count())) payBtn = page.getByRole('button', { name: /^Pay\b/ }).last();
+  if (!(await payBtn.count())) payBtn = page.locator('button[type="submit"]').last();
   await payBtn.scrollIntoViewIfNeeded();
   await payBtn.click();
 
