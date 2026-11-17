@@ -331,6 +331,49 @@ Thanks for signing your rental agreement${customer && customer.first_name ? ', '
 </table>`;
 }
 
+function contractSignatureBody(booking, customer, contractId) {
+  return `
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="font-size:14px;color:#333;line-height:1.6;">Hi${customer.first_name ? ' ' + customer.first_name : ''},</td></tr>
+<tr><td style="font-size:14px;color:#333;line-height:1.6;padding-top:12px;">
+Your rental agreement for <strong>#${booking.booking_number}</strong> still needs a signature.
+It takes about a minute, and we need it before we can deliver.
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFF3E8" style="background-color:#FFF3E8;border-radius:8px;margin-top:20px;">
+<tr><td style="padding:20px;text-align:center;">
+<div style="font-size:12px;letter-spacing:1px;color:${ORANGE};font-weight:bold;">YOUR RENTAL</div>
+<div style="font-size:20px;font-weight:bold;color:${NAVY};padding:6px 0;">${booking.event_date || ''}</div>
+<div style="font-size:13px;color:#666;">${booking.delivery_address ? booking.delivery_address + (booking.delivery_city ? ', ' + booking.delivery_city : '') : ''}</div>
+</td></tr>
+</table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;"><tr><td align="center">
+<a href="https://bouncemanrentals.com/contract/${contractId}" style="display:inline-block;background-color:${ORANGE};color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 36px;border-radius:8px;">Sign Rental Agreement</a>
+</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+<tr><td style="font-size:14px;color:#333;">Questions? Call or text <strong>${PHONE}</strong></td></tr>
+</table>`;
+}
+
+/**
+ * Sends just the signing link, on demand from the admin. The contract link already
+ * rides along inside the booking confirmation and the delivery reminder, but there was
+ * no way to send ONLY this -- so chasing a signature meant re-sending a confirmation
+ * for a booking the customer already has.
+ */
+async function sendContractForSignature(booking, customer, contractId) {
+  await getTransporter().sendMail({
+    from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
+    to: customer.email,
+    subject: 'Please sign your rental agreement (#' + booking.booking_number + ')',
+    html: wrap('Sign Your Rental Agreement', contractSignatureBody(booking, customer, contractId)),
+  });
+  console.log('[EMAIL] Contract signature request sent to ' + customer.email);
+}
+
 async function sendDepositLink(booking, customer, link) {
   await getTransporter().sendMail({
     from: '"Bounce Man Rentals" <' + (process.env.SMTP_FROM || 'info@bouncemanrentals.com') + '>',
@@ -488,4 +531,4 @@ async function sendInvoice(booking, customer, items, opts) {
   return true;
 }
 
-module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendDepositLink, sendTestEmail, forwardContactForm, sendCouponCode, sendInvoice };
+module.exports = { sendBookingConfirmation, sendDeliveryReminder, sendReviewRequest, sendPaymentReceipt, sendDepositLink, sendContractForSignature, sendTestEmail, forwardContactForm, sendCouponCode, sendInvoice };

@@ -80,7 +80,15 @@ router.get('/', async (req, res) => {
     pendingBookings: db.prepare("SELECT COUNT(*) as c FROM bookings WHERE status = 'pending'").get().c,
     totalCustomers: db.prepare('SELECT COUNT(*) as c FROM customers').get().c,
     totalEquipment: db.prepare('SELECT COUNT(*) as c FROM equipment').get().c,
-    unsignedContracts: db.prepare('SELECT COUNT(*) as c FROM contracts WHERE signed = 0').get().c,
+    // Was COUNT(*) over every unsigned contract ever written, which on 2026-11-17 read
+    // 11: six belonged to CANCELLED bookings and four to events that had already
+    // happened. One was real. A number that is ten-elevenths noise teaches you to
+    // ignore it, so this counts only what can still be acted on -- a live booking whose
+    // event has not passed.
+    unsignedContracts: db.prepare(`SELECT COUNT(*) AS c FROM contracts ct
+      JOIN bookings b ON b.id = ct.booking_id
+      WHERE ct.signed = 0 AND b.event_date >= date('now')
+        AND b.status NOT IN ('cancelled', 'declined')`).get().c,
     pendingReviews: db.prepare('SELECT COUNT(*) as c FROM reviews WHERE approved = 0').get().c
   };
 
@@ -90,6 +98,23 @@ router.get('/', async (req, res) => {
     WHERE b.event_date >= ? AND b.status NOT IN ('cancelled', 'declined')
     ORDER BY b.event_date, b.event_start_time LIMIT 10
   `).all(today);
+
+  // The actual rows behind stats.unsignedContracts, so the alert can name the customer
+  // and link straight to the booking instead of just showing a number.
+  const unsignedContracts = db.prepare(`
+    SELECT ct.id AS contract_id, b.id AS booking_id, b.booking_number, b.event_date,
+      c.first_name, c.last_name, c.email
+    FROM contracts ct
+    JOIN bookings b ON b.id = ct.booking_id
+    LEFT JOIN customers c ON c.id = b.customer_id
+    WHERE ct.signed = 0 AND b.event_date >= date('now')
+      AND b.status NOT IN ('cancelled', 'declined')
+    ORDER BY b.event_date
+  `).all().map(r => Object.assign({}, r, {
+    name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'No name on file',
+    when: r.event_date ? dayjs(r.event_date).format('ddd, MMM D') : 'No date',
+    days: r.event_date ? dayjs(r.event_date).diff(dayjs(today), 'day') : null
+  }));
 
   const recentActivity = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 15').all();
 
@@ -259,7 +284,8 @@ router.get('/', async (req, res) => {
 
   res.render('admin/dashboard', {
     title: 'Dashboard - Bounce Man Admin',
-    user: req.user, settings, stats, upcoming, recentActivity, page: 'dashboard',
+    user: req.user, settings, stats, upcoming, recentActivity, unsignedContracts,
+    page: 'dashboard',
     analytics: {
       totalRevenue, earnedRevenue, earnedNetOfTax, cashCollected, balanceOwed,
       totalExpenses, operatingExpenses, netPosition, recoveryPct, avgTicket,
@@ -969,6 +995,40 @@ router.get('/calendar', (req, res) => {
   res.render('admin/calendar', {
     title: 'Calendar - Admin', user: req.user, settings, bookings, blocked, page: 'calendar'
   });
+});
+
+// Chasing a signature used to mean re-sending the whole booking confirmation to a
+// customer who already had it, because the contract link only ever travelled inside
+// that email and the delivery reminder. This sends only the signing link.
+router.post('/bookings/:id/contract/send', async (req, res) => {
+  const db = getDb();
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
+  if (!booking) return res.redirect('/admin/bookings');
+  const back = '/admin/bookings/' + booking.id;
+
+  const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(booking.id);
+  if (!contract) return res.redirect(back + '?sent=nocontract');
+  if (Number(contract.signed) === 1) return res.redirect(back + '?sent=already');
+
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(booking.customer_id);
+  if (!customer || !customer.email) return res.redirect(back + '?sent=noemail');
+
+  try {
+    await require('../services/email').sendContractForSignature(booking, customer, contract.id);
+  } catch (err) {
+    console.error('[CONTRACT SEND]', err.message);
+    return res.redirect(back + '?sent=failed');
+  }
+
+  // There is no contracts.sent_at column, so the record of having asked lives where the
+  // rest of a booking's history lives.
+  db.prepare('INSERT INTO activity_log (id, user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), req.user && req.user.id ? req.user.id : null, 'contract_signature_requested',
+      'booking', booking.id, 'Signing link emailed to ' + customer.email);
+  require('../lib/helpers').appendInternalNote(
+    db, booking.id, 'admin', 'Contract signing link emailed to ' + customer.email);
+
+  res.redirect(back + '?sent=ok');
 });
 
 // === GLOBAL SEARCH ===

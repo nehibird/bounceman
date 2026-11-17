@@ -1,5 +1,48 @@
 <%- include('../layouts/admin', { body: `
 
+${unsignedContracts.length ? `
+<div class="bm-alert" role="alert">
+  <div class="bm-alert-head">
+    <i class="fas fa-file-signature"></i>
+    <strong>${unsignedContracts.length === 1
+      ? 'One booking has no signed contract'
+      : unsignedContracts.length + ' bookings have no signed contract'}</strong>
+  </div>
+  <div class="bm-alert-rows">
+    ${unsignedContracts.map(u => `
+    <a class="bm-alert-row" href="/admin/bookings/${u.booking_id}">
+      <span class="bm-alert-when">${esc(u.when)}${u.days !== null && u.days <= 7
+        ? '<em>' + (u.days === 0 ? 'today' : u.days === 1 ? 'tomorrow' : 'in ' + u.days + ' days') + '</em>'
+        : ''}</span>
+      <span class="bm-alert-who">${esc(u.name)}</span>
+      <span class="bm-alert-no">${esc(u.booking_number)}</span>
+    </a>`).join('')}
+  </div>
+</div>
+<style>
+  .bm-alert { border:1px solid var(--bm-fb-bad); border-left-width:4px;
+    background:var(--bm-n-0); border-radius:var(--bm-radius-md);
+    box-shadow:var(--bm-shadow-1); margin-bottom:var(--bm-space-5); overflow:hidden; }
+  .bm-alert-head { display:flex; align-items:center; gap:10px;
+    padding:var(--bm-space-3) var(--bm-space-4); color:var(--bm-fb-bad);
+    font-size:15px; border-bottom:1px solid var(--bm-n-100); }
+  .bm-alert-row { display:flex; align-items:center; gap:var(--bm-space-4);
+    padding:10px var(--bm-space-4); text-decoration:none; color:var(--bm-n-800);
+    border-bottom:1px solid var(--bm-n-50); font-size:14px; }
+  .bm-alert-row:last-child { border-bottom:0; }
+  .bm-alert-row:hover { background:var(--bm-accent-tint); }
+  .bm-alert-when { font-weight:700; min-width:130px; }
+  .bm-alert-when em { font-style:normal; font-weight:700; color:var(--bm-fb-bad);
+    margin-left:6px; font-size:12px; }
+  .bm-alert-who { flex:1 1 auto; }
+  .bm-alert-no { color:var(--bm-n-500); font-size:12px; font-weight:600; }
+  @media (max-width:575px) {
+    .bm-alert-row { flex-wrap:wrap; gap:4px var(--bm-space-3); }
+    .bm-alert-when { min-width:0; }
+    .bm-alert-no { width:100%; }
+  }
+</style>` : ''}
+
 <!-- Stats Row -->
 <div class="row g-4 mb-4">
   <div class="col-6 col-md-3">
@@ -357,7 +400,8 @@
           <span>Total Equipment</span><strong>${stats.totalEquipment}</strong>
         </div>
         <div class="d-flex justify-content-between mb-2">
-          <span>Unsigned Contracts</span><strong class="text-warning">${stats.unsignedContracts}</strong>
+          <span>Contracts to chase</span>
+          <strong style="color:${stats.unsignedContracts > 0 ? 'var(--bm-fb-bad)' : 'var(--bm-n-400)'}">${stats.unsignedContracts}</strong>
         </div>
         <div class="d-flex justify-content-between">
           <span>Week Bookings</span><strong>${stats.weekBookings}</strong>

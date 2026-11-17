@@ -214,6 +214,13 @@
           <a href="/admin/bookings/${booking.id}/contract" class="btn btn-sm btn-outline-secondary w-100">
             <i class="fas fa-eye me-1"></i> View Contract
           </a>
+          ${contract.signed_at ? '' : `
+          <form method="POST" action="/admin/bookings/${booking.id}/contract/send" class="mt-2 mb-0">
+            <button type="submit" class="btn btn-sm btn-bm w-100">
+              <i class="fas fa-paper-plane me-1"></i> Send for signature
+            </button>
+          </form>
+          <small class="text-muted d-block mt-1">Emails just the signing link — not another booking confirmation.</small>`}
         ` : '<p class="text-muted mb-0">No contract generated</p>'}
       </div>
     </div>
@@ -305,6 +312,25 @@
       });
     });
   });
+})();
+
+/* Outcome of POST /contract/send, carried back on the redirect. Every branch of that
+   route sets one, so the button can never look like it silently did nothing. */
+(function () {
+  var MSG = {
+    ok:         ['success', 'Signing link emailed.'],
+    already:    ['info',    'That contract is already signed.'],
+    nocontract: ['warning', 'This booking has no contract to send.'],
+    noemail:    ['warning', 'No email address on this customer — text them the link instead.'],
+    failed:     ['error',   'The email did not go out. Check the mail settings and try again.']
+  };
+  var sent = new URLSearchParams(window.location.search).get('sent');
+  if (!sent || !MSG[sent]) return;
+  if (typeof showToast === 'function') showToast(MSG[sent][1], MSG[sent][0]);
+  /* Drop the parameter so a refresh does not re-announce it. */
+  var u = new URL(window.location.href);
+  u.searchParams.delete('sent');
+  window.history.replaceState({}, '', u.toString());
 })();
 </script>
 ` }) %>
