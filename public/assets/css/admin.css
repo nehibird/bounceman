@@ -552,8 +552,27 @@ a:hover { color: var(--bm-accent-hover); }
   }
 }
 
-@media (max-width: 768px) {
+/* 767.98px, not 768px. The toggle button is Bootstrap's .d-md-none, which hides it
+   from 768px UP, while this query applied AT 768px and below -- so at exactly 768px
+   wide the sidebar was translated off-screen and the only button that could bring it
+   back was hidden. The nav was unreachable in that one-pixel window. The file already
+   uses 767.98px elsewhere; this now matches. */
+@media (max-width: 767.98px) {
   .admin-sidebar { transform: translateX(-100%); }
-  .admin-sidebar.open { transform: translateX(0); }
+  .admin-sidebar.open { transform: translateX(0); box-shadow: var(--bm-shadow-3); }
   .admin-main { margin-left: 0; }
+
+  /* Something has to say "this panel is in front and the page is not". Without it the
+     sidebar simply appears over the content with no indication that a tap anywhere
+     else would be a tap on the page behind. */
+  .admin-backdrop {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(26, 33, 45, 0.5);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .admin-backdrop.is-on { opacity: 1; }
+  /* The page behind must not scroll under the open panel. */
+  body.bm-nav-open { overflow: hidden; }
 }
+/* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
+@media (min-width: 768px) { .admin-backdrop { display: none !important; } }

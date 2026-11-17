@@ -12,7 +12,7 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
-  <link href="/assets/css/admin.css?v=p25" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=p26" rel="stylesheet">
 <style>
   /* P0-3 global search. Tokens only -- literal colours live in admin.css (D0). */
   .bm-search { position: relative; width: 340px; max-width: 42vw; }
@@ -131,11 +131,13 @@
       <% }); %>
     </nav>
   </aside>
+  <div class="admin-backdrop" id="sidebarBackdrop" hidden></div>
 
   <main class="admin-main">
     <header class="admin-header">
       <div>
-        <button class="btn btn-sm btn-outline-secondary d-md-none" id="sidebarToggleBtn">
+        <button class="btn btn-sm btn-outline-secondary d-md-none" id="sidebarToggleBtn"
+                aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
           <i class="fas fa-bars"></i>
         </button>
         <%
@@ -342,12 +344,57 @@
 })();
 </script>
 <script>
-  var sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
-  if (sidebarToggleBtn) {
-    sidebarToggleBtn.addEventListener('click', function() {
-      document.getElementById('sidebar').classList.toggle('open');
+  // The mobile sidebar. It used to toggle a class and nothing else: no backdrop, no
+  // way to dismiss it except finding the same small button again, the page scrolling
+  // underneath it, and -- because nothing closed it on navigation -- it stayed open
+  // over the page you had just asked for.
+  (function () {
+    var btn = document.getElementById('sidebarToggleBtn');
+    var sidebar = document.getElementById('sidebar');
+    var backdrop = document.getElementById('sidebarBackdrop');
+    if (!btn || !sidebar || !backdrop) return;
+
+    function isOpen() { return sidebar.classList.contains('open'); }
+
+    function open() {
+      sidebar.classList.add('open');
+      backdrop.hidden = false;
+      /* A frame between unhide and the class, or the opacity transition never runs. */
+      requestAnimationFrame(function () { backdrop.classList.add('is-on'); });
+      document.body.classList.add('bm-nav-open');
+      btn.setAttribute('aria-expanded', 'true');
+      btn.setAttribute('aria-label', 'Close navigation');
+    }
+
+    function close() {
+      if (!isOpen()) return;
+      sidebar.classList.remove('open');
+      backdrop.classList.remove('is-on');
+      document.body.classList.remove('bm-nav-open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Open navigation');
+      /* Hide only once it has faded, or it vanishes instantly. */
+      setTimeout(function () { if (!isOpen()) backdrop.hidden = true; }, 300);
+    }
+
+    btn.addEventListener('click', function () { isOpen() ? close() : open(); });
+    backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    /* Tapping a destination should take you there AND put the panel away. Without
+       this it stays open on top of the page it just loaded. A group header is not a
+       destination, so it must not close anything. */
+    sidebar.addEventListener('click', function (e) {
+      if (e.target.closest('summary')) return;
+      if (e.target.closest('a')) close();
     });
-  }
+
+    /* Rotating to landscape can cross the breakpoint while it is open, which would
+       leave the body locked and a backdrop over a permanent sidebar. */
+    window.addEventListener('resize', function () {
+      if (window.innerWidth >= 768) close();
+    });
+  })();
   // Remember which sidebar groups are open. A group holding the current page is
   // rendered open server-side, so this only has to carry deliberate choices.
   (function () {
