@@ -78,7 +78,13 @@ ${tab === 'alerts' ? `
         <div>
           <strong>${esc(active.display)}</strong>
           ${active.sub ? '<small class="text-muted ms-1">' + esc(active.sub) + '</small>' : ''}
-          ${active.customerId ? '<a class="small ms-2" href="/admin/customers/' + active.customerId + '">customer</a>' : ''}
+          ${active.isAlert
+            /* The other party here is a staff member. Offering the customer link that
+               real threads use said something false about them -- and it worked, which
+               made it worse. "staff" rather than "you" because staff is every user, so
+               this thread may belong to a colleague. */
+            ? '<span class="badge bg-light text-body ms-2">staff</span>'
+            : (active.customerId ? '<a class="small ms-2" href="/admin/customers/' + active.customerId + '">customer</a>' : '')}
         </div>
         <div class="d-flex gap-2">
           ${active.smsTo && sarahEnabled ? `
