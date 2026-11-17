@@ -373,8 +373,9 @@ router.post('/bookings/quick', (req, res) => {
   let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(data.email);
   const customerId = customer?.id || uuid();
   if (!customer) {
+    const nm = require('../lib/helpers').normalizeCustomerName(data.first_name, data.last_name);
     db.prepare('INSERT INTO customers (id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?)')
-      .run(customerId, data.first_name, data.last_name, data.email, data.phone);
+      .run(customerId, nm.first_name, nm.last_name, data.email, data.phone);
   }
 
   const bookingId = uuid();

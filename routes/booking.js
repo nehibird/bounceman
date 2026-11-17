@@ -9,7 +9,7 @@ const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { isValidEmail } = require('../lib/validation');
-const { recordStripeSessionMarker } = require('../lib/helpers');
+const { recordStripeSessionMarker, normalizeCustomerName } = require('../lib/helpers');
 const { notifyNewBooking } = require('../services/notifications');
 const facebookAds = require('../services/facebook-ads');
 const { signBookingToken, verifyBookingToken, bookingLinkPath } = require('../lib/booking-links');
@@ -790,9 +790,11 @@ router.post('/submit', bookingLimiter, async (req, res) => {
       customerId = customer?.id || uuid();
 
       if (!customer) {
+        // This is the form that produced "Larry hutson Larry hutson".
+        const nm = normalizeCustomerName(data.first_name, data.last_name);
         db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, address, city, state, zip, source)
           VALUES (?, ?, ?, ?, ?, ?, ?, 'OK', ?, 'website')`).run(
-          customerId, data.first_name, data.last_name, data.email, data.phone,
+          customerId, nm.first_name, nm.last_name, data.email, data.phone,
           data.delivery_address, data.delivery_city, data.delivery_zip
         );
       }

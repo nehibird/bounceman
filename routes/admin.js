@@ -489,9 +489,10 @@ router.post('/bookings/create', async (req, res) => {
     }
     if (!customer) {
       const customerId = uuid();
+      const nm = require('../lib/helpers').normalizeCustomerName(data.first_name, data.last_name);
       db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, source)
         VALUES (?, ?, ?, ?, ?, 'admin')`).run(
-        customerId, data.first_name, data.last_name, data.email || null, adminHelpers.formatPhoneUS(data.phone) || null
+        customerId, nm.first_name, nm.last_name, data.email || null, adminHelpers.formatPhoneUS(data.phone) || null
       );
       customer = { id: customerId };
     }

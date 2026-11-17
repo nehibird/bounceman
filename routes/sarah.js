@@ -559,9 +559,10 @@ router.post('/create-and-send-link', async (req, res) => {
     const customerId = customer?.id || uuid();
 
     if (!customer) {
+      const nm = require('../lib/helpers').normalizeCustomerName(first_name, last_name);
       db.prepare(`INSERT INTO customers (id, first_name, last_name, email, phone, address, city, state, zip, source)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'OK', ?, 'phone')`).run(
-        customerId, first_name, last_name || '', email || null, normalizePhone(phone),
+        customerId, nm.first_name, nm.last_name, email || null, normalizePhone(phone),
         delivery_address || null, delivery_city || null, delivery_zip || null
       );
     }
