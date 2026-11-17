@@ -612,6 +612,78 @@ a:hover { color: var(--bm-accent-hover); }
 /* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
 @media (min-width: 768px) { .admin-backdrop { display: none !important; } }
 
+/* ==================== bootstrap colour utilities =========================
+   249 uses of .text-muted in the admin views, and not one of them went through a
+   token -- they carried Bootstrap's own greys, which is a second palette D0 never
+   knew about. Harmless while the admin was light and identical to ours; invisible
+   text the moment the surface went dark.
+
+   Mapped in BOTH themes, so there is no second palette left to drift. Bootstrap's
+   utilities are !important, so these are too. */
+
+.text-muted            { color: var(--bm-n-500) !important; }
+.text-body-secondary   { color: var(--bm-n-500) !important; }
+.text-dark             { color: var(--bm-n-900) !important; }
+.text-body             { color: var(--bm-n-800) !important; }
+.text-black            { color: var(--bm-n-900) !important; }
+.text-secondary        { color: var(--bm-n-500) !important; }
+.text-success          { color: var(--bm-fb-good) !important; }
+.text-danger           { color: var(--bm-fb-bad) !important; }
+.text-warning          { color: var(--bm-fb-warn) !important; }
+.text-primary          { color: var(--bm-accent-text) !important; }
+
+.bg-white              { background-color: var(--bm-n-0) !important; }
+.bg-light              { background-color: var(--bm-n-50) !important; }
+.bg-dark               { background-color: var(--bm-chrome-bg) !important; }
+.bg-secondary          { background-color: var(--bm-n-600) !important; color: var(--bm-on-fill) !important; }
+.bg-success            { background-color: var(--bm-fb-good) !important; color: var(--bm-on-fill) !important; }
+.bg-danger             { background-color: var(--bm-fb-bad) !important;  color: var(--bm-on-fill) !important; }
+.bg-warning            { background-color: var(--bm-fb-warn) !important; color: var(--bm-on-fill) !important; }
+.bg-info               { background-color: var(--bm-n-600) !important;   color: var(--bm-on-fill) !important; }
+.bg-primary            { background-color: var(--bm-accent) !important;  color: var(--bm-on-accent) !important; }
+.bg-success-subtle     { background-color: var(--bm-state-done-bg) !important; }
+.bg-warning-subtle     { background-color: var(--bm-state-pending-bg) !important; }
+
+.border-success        { border-color: var(--bm-fb-good) !important; }
+.border-warning        { border-color: var(--bm-fb-warn) !important; }
+
+/* .alert is a surface, and Bootstrap builds it from its own light-theme variables. */
+.alert-warning {
+  background-color: var(--bm-state-pending-bg); border-color: var(--bm-fb-warn);
+  color: var(--bm-n-800);
+}
+.alert-danger {
+  background-color: var(--bm-state-void-bg); border-color: var(--bm-fb-bad);
+  color: var(--bm-n-800);
+}
+.alert-success {
+  background-color: var(--bm-state-done-bg); border-color: var(--bm-fb-good);
+  color: var(--bm-n-800);
+}
+
+/* Bootstrap paints cells through `.table > :not(caption) > * > *`, which beats any
+   plain `.table { color }` rule. Set its variables and there is no fight. */
+.table {
+  --bs-table-color: var(--bm-n-800);
+  --bs-table-bg: transparent;
+  --bs-table-border-color: var(--bm-n-100);
+  --bs-table-hover-color: var(--bm-n-900);
+  --bs-table-hover-bg: var(--bm-n-50);
+  --bs-table-striped-color: var(--bm-n-800);
+  --bs-table-striped-bg: var(--bm-n-25);
+  --bs-table-active-color: var(--bm-n-900);
+  --bs-table-active-bg: var(--bm-n-50);
+  color: var(--bm-n-800);
+  border-color: var(--bm-n-100);
+}
+.table > thead { color: var(--bm-n-600); }
+
+/* The card and its header are surfaces too. */
+.card { background-color: var(--bm-n-0); border-color: var(--bm-n-100); }
+.card-header { background-color: var(--bm-n-0); border-bottom-color: var(--bm-n-100); color: var(--bm-n-800); }
+.list-group-item { background-color: var(--bm-n-0); border-color: var(--bm-n-100); color: var(--bm-n-800); }
+hr { border-color: var(--bm-n-100); }
+
 /* ============================ dark theme =================================
    P2-7. Not a second stylesheet -- the same tokens with different values.
 
@@ -718,10 +790,6 @@ a:hover { color: var(--bm-accent-hover); }
 /* A handful of things are not reachable through a token because the markup or
    Bootstrap sets them. Scoped to dark so light is untouched. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .table { --bs-table-bg: transparent; color: var(--bm-n-800); }
-  :root:not([data-theme="light"]) .table-hover > tbody > tr:hover > * {
-    --bs-table-accent-bg: var(--bm-n-50); color: var(--bm-n-900);
-  }
   :root:not([data-theme="light"]) .form-control,
   :root:not([data-theme="light"]) .form-select {
     background-color: var(--bm-n-0); border-color: var(--bm-n-200); color: var(--bm-n-900);
@@ -732,10 +800,6 @@ a:hover { color: var(--bm-accent-hover); }
     filter: invert(1) opacity(0.6);
   }
   :root:not([data-theme="light"]) .bm-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
-}
-:root[data-theme="dark"] .table { --bs-table-bg: transparent; color: var(--bm-n-800); }
-:root[data-theme="dark"] .table-hover > tbody > tr:hover > * {
-  --bs-table-accent-bg: var(--bm-n-50); color: var(--bm-n-900);
 }
 :root[data-theme="dark"] .form-control,
 :root[data-theme="dark"] .form-select {

@@ -81,10 +81,10 @@ ${unsignedContracts.length ? `
     color:var(--bm-n-900); }
   .bm-act i { font-size:12px; color:var(--bm-n-400); }
   .bm-act-primary { background:var(--bm-accent); border-color:var(--bm-accent);
-    color:var(--bm-n-0); }
+    color:var(--bm-on-accent); }
   .bm-act-primary:hover { background:var(--bm-accent-hover);
-    border-color:var(--bm-accent-hover); color:var(--bm-n-0); }
-  .bm-act-primary i { color:var(--bm-n-0); }
+    border-color:var(--bm-accent-fill-hover); color:var(--bm-on-accent); }
+  .bm-act-primary i { color:var(--bm-on-accent); }
   .bm-act-attn { border-color:var(--bm-fb-warn); color:var(--bm-fb-warn); }
   .bm-act-attn:hover { background:var(--bm-n-25); color:var(--bm-fb-warn); }
   .bm-act-attn i { color:var(--bm-fb-warn); }
@@ -251,7 +251,7 @@ ${unsignedContracts.length ? `
             <div class="border rounded p-3 h-100" style="border-color:#635bff !important">
               <div class="d-flex justify-content-between align-items-start mb-1">
                 <span class="fw-semibold"><i class="fab fa-stripe-s me-1" style="color:#635bff"></i> Stripe Payouts</span>
-                ${stripePayouts.interval ? '<span class="badge bg-light text-muted text-capitalize">' + stripePayouts.interval + '</span>' : ''}
+                ${stripePayouts.interval ? '<span class="badge bg-light text-body text-capitalize">' + stripePayouts.interval + '</span>' : ''}
               </div>
               <div class="fs-4 fw-bold text-success">$${(stripePayouts.pendingCents / 100).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">Incoming${(stripePayouts.pendingCents > 0 && stripePayouts.nextPayoutDate) ? ' • arrives ~' + new Date(stripePayouts.nextPayoutDate).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) : ''}</div>
