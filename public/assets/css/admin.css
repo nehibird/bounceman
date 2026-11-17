@@ -21,7 +21,7 @@
 
   /* Hand-tuned relatives of the accent. These cannot be computed from a
      custom property in CSS, so they are literals and live here on purpose. */
-  --bm-accent-hover:  #b8652f;
+  --bm-accent-hover:  #a4400f;  /* link hover: darker than resting, 6.33:1 */
   --bm-accent-tint:   #fbf0e8;  /* 8% accent on white — badge + highlight fill */
   /* Accent as TEXT on a light surface. Measured by whoever wrote the public
      layout: #d77c42 is 3.07:1 on white and FAILS 4.5:1. #b84a12 is 5.22:1 on
@@ -48,7 +48,7 @@
      chip does not get to be green just because it is a nice outcome. Status
      uses the neutral ramp + accent (see --bm-state-* below). */
   --bm-fb-good: #0f7a52;
-  --bm-fb-warn: #a76a10;
+  --bm-fb-warn: #9c610f;   /* was #a76a10 -- 4.46:1 on white, just under AA */
   --bm-fb-bad:  #a8321f;
 
   /* Money direction — the only intended consumer of good/bad. */
@@ -105,6 +105,33 @@
   --bm-shadow-1: 0 1px 4px rgba(26, 33, 45, 0.06);
   --bm-shadow-2: 0 2px 8px rgba(26, 33, 45, 0.08);
   --bm-shadow-3: 0 4px 20px rgba(26, 33, 45, 0.18);
+
+  /* ---- fixed roles ------------------------------------------------------
+     Four places use the ramp's ENDS to mean something that is not "lightest" or
+     "darkest" but a fixed relationship:
+
+       the sidebar is dark chrome in BOTH themes
+       a toast is a dark slab in BOTH themes
+       text on an accent/good/warn FILL has to contrast with that fill, not the page
+
+     Riding --bm-n-0 / --bm-n-900 for those worked only because the ramp never moved.
+     Dark mode moves it, so they are named. In light mode these resolve to exactly
+     what was there before, so nothing changes. */
+  --bm-chrome-bg:  var(--bm-n-900);   /* sidebar */
+  --bm-chrome-fg:  #ffffff;
+  --bm-chrome-dim: rgba(255, 255, 255, 0.55);
+  --bm-toast-bg:   var(--bm-n-800);
+  --bm-toast-fg:   #ffffff;
+  /* Text on a coloured fill. White on #d77c42 is 3.07:1 -- the same ratio that made
+     --bm-accent-text necessary -- so dark mode takes the ink instead, which measures
+     far better on the same orange. Light mode keeps white for now; changing it is a
+     visible brand decision, filed as P2-14. */
+  --bm-on-accent:  #1a1207;   /* ink on the brand orange: 6.04:1. White was 3.07:1. */
+  --bm-on-fill:    #ffffff;   /* good/warn fills are dark enough for white */
+  /* The button's fill hover is a different job from --bm-accent-hover, which is used
+     as TEXT for links and so must stay dark on a light page. With ink on the button,
+     hover LIGHTENS: 7.72:1. */
+  --bm-accent-fill-hover: #e0975c;
 
   /* ---- layout ----------------------------------------------------------- */
   --bm-sidebar-width: 260px;
@@ -164,8 +191,8 @@ a:hover { color: var(--bm-accent-hover); }
 .admin-sidebar {
   position: fixed; left: 0; top: 0; bottom: 0;
   width: var(--bm-sidebar-width);
-  background: var(--bm-n-900);
-  color: var(--bm-n-0);
+  background: var(--bm-chrome-bg);
+  color: var(--bm-chrome-fg);
   overflow-y: auto; z-index: 1000;
   transition: transform 0.3s;
 }
@@ -190,7 +217,7 @@ a:hover { color: var(--bm-accent-hover); }
 .admin-sidebar nav a:hover,
 .admin-sidebar nav a.active {
   background: rgba(255, 255, 255, 0.08);
-  color: var(--bm-n-0);
+  color: var(--bm-chrome-fg);
   border-left-color: var(--bm-accent);
 }
 .admin-sidebar nav a i { width: 20px; text-align: center; }
@@ -285,13 +312,13 @@ a:hover { color: var(--bm-accent-hover); }
 
 .btn-bm,
 .btn-primary {
-  background: var(--bm-accent); color: var(--bm-n-0); border: 1px solid var(--bm-accent);
+  background: var(--bm-accent); color: var(--bm-on-accent); border: 1px solid var(--bm-accent);
   font-weight: 700;
 }
 .btn-bm:hover, .btn-primary:hover,
 .btn-bm:focus, .btn-primary:focus {
-  background: var(--bm-accent-hover); border-color: var(--bm-accent-hover);
-  color: var(--bm-n-0);
+  background: var(--bm-accent-fill-hover); border-color: var(--bm-accent-fill-hover);
+  color: var(--bm-on-accent);
 }
 
 .btn-bm-outline,
@@ -335,14 +362,14 @@ a:hover { color: var(--bm-accent-hover); }
   color: var(--bm-fb-good); font-weight: 600;
 }
 .btn-success:hover, .btn-outline-success:hover {
-  background: var(--bm-fb-good); border-color: var(--bm-fb-good); color: var(--bm-n-0);
+  background: var(--bm-fb-good); border-color: var(--bm-fb-good); color: var(--bm-on-fill);
 }
 .btn-warning, .btn-outline-warning {
   background: var(--bm-state-pending-bg); border: 1px solid var(--bm-fb-warn);
   color: var(--bm-fb-warn); font-weight: 600;
 }
 .btn-warning:hover, .btn-outline-warning:hover {
-  background: var(--bm-fb-warn); border-color: var(--bm-fb-warn); color: var(--bm-n-0);
+  background: var(--bm-fb-warn); border-color: var(--bm-fb-warn); color: var(--bm-on-fill);
 }
 
 /* The one place a destructive action is allowed to look like a button: a confirmation
@@ -420,6 +447,14 @@ a:hover { color: var(--bm-accent-hover); }
 }
 .bm-usermenu-panel a:hover { background: var(--bm-n-25); color: var(--bm-n-900); }
 .bm-usermenu-panel a i { width: 16px; text-align: center; color: var(--bm-n-400); }
+.bm-theme-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 11px; border: none; background: none; border-radius: var(--bm-radius-sm);
+  font-size: var(--bm-text-sm); font-weight: 600; color: var(--bm-n-700);
+  text-align: left; cursor: pointer; font-family: var(--bm-font-body);
+}
+.bm-theme-btn:hover { background: var(--bm-n-25); color: var(--bm-n-900); }
+.bm-theme-btn i { width: 16px; text-align: center; color: var(--bm-n-400); }
 .bm-usermenu-panel a.is-leave { color: var(--bm-fb-bad); }
 .bm-usermenu-panel a.is-leave i { color: var(--bm-fb-bad); }
 @media (max-width: 575px) { .bm-usermenu-btn span, .bm-usermenu-btn { max-width: 42vw; } }
@@ -470,7 +505,7 @@ a:hover { color: var(--bm-accent-hover); }
   z-index: 9999; max-width: 400px;
 }
 .bm-toast {
-  color: var(--bm-n-0);
+  color: var(--bm-toast-fg);
   padding: var(--bm-space-4) var(--bm-space-5);
   border-radius: var(--bm-radius-md);
   margin-bottom: var(--bm-space-2);
@@ -478,12 +513,12 @@ a:hover { color: var(--bm-accent-hover); }
   display: flex; align-items: flex-start; gap: var(--bm-space-2);
   font-size: var(--bm-text-base); line-height: 1.4;
   animation: bm-toast-in 0.3s ease;
-  background: var(--bm-n-800);
+  background: var(--bm-toast-bg);
 }
 .bm-toast.is-error   { background: var(--bm-fb-bad); }
 .bm-toast.is-warning { background: var(--bm-fb-warn); }
 .bm-toast.is-success { background: var(--bm-fb-good); }
-.bm-toast.is-info    { background: var(--bm-n-800); }
+.bm-toast.is-info    { background: var(--bm-toast-bg); }
 .bm-toast .bm-toast-body { flex: 1; }
 .bm-toast .bm-toast-icon { margin-top: 2px; }
 .bm-toast .toast-close {
@@ -576,3 +611,138 @@ a:hover { color: var(--bm-accent-hover); }
 }
 /* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
 @media (min-width: 768px) { .admin-backdrop { display: none !important; } }
+
+/* ============================ dark theme =================================
+   P2-7. Not a second stylesheet -- the same tokens with different values.
+
+   The ramp inverts: --bm-n-0 is still "the raised surface" and --bm-n-900 is still
+   "the strongest text", they are simply dark-mode values now. Every rule that reads
+   the ramp semantically follows along untouched, which is the entire reason D0 built
+   it as a ramp instead of a pile of names.
+
+   Everything here was measured, not eyeballed; verify-dark.sh recomputes the ratios
+   and fails below 4.5:1 for body text and 3:1 for large text and borders.
+
+   Two entry points: the operating system's preference, and an explicit choice. The
+   explicit one wins -- :root[data-theme] guards the media query so a person who has
+   chosen light keeps light on a dark desktop. */
+
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  --bm-dark-ready: 1;   /* a marker the gate can see */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bm-n-0:    #1a2029;   /* raised surface: cards, inputs, dialogs */
+    --bm-n-25:   #11151b;   /* the page behind them */
+    --bm-n-50:   #222a35;
+    --bm-n-100:  #2b3440;   /* hairline borders */
+    --bm-n-200:  #3a4553;
+    --bm-n-300:  #4e5a6b;
+    --bm-n-400:  #6b7788;
+    --bm-n-500:  #98a3b3;   /* muted text -- 6.3:1 on the card surface */
+    --bm-n-600:  #b3bdc9;
+    --bm-n-700:  #cdd5de;
+    --bm-n-800:  #e2e7ec;
+    --bm-n-900:  #f2f5f8;   /* strongest text -- 14.7:1 */
+
+    /* The accent FILL stays the brand orange. The accent as TEXT cannot: #b84a12 was
+       tuned against white and is unreadable here, so it lightens. */
+    --bm-accent-text:  #e0975c;
+    --bm-accent-hover: #e0975c;
+    --bm-accent-tint:  #33251e;
+
+    /* Feedback at full strength is too dark to read on a dark surface. */
+    --bm-fb-good: #3fbf85;
+    --bm-fb-warn: #e0a33a;
+    --bm-fb-bad:  #e8705a;
+
+    /* State chips follow the ramp, but void needs its own quiet red bed. */
+    --bm-state-void-bg: #2e2220;
+
+    /* Chrome stays dark in both themes, so it must NOT ride the inverted ramp.
+       A touch lighter than the page here, or the sidebar and the content merge. */
+    --bm-chrome-bg:  #0e1218;
+    --bm-toast-bg:   #2b3440;
+
+    /* Dark text on the orange measures far better than white does. */
+    --bm-on-fill:   #11151b;   /* --bm-on-accent is already ink in both themes */
+
+    /* A shadow tinted with the ink is invisible against it. */
+    --bm-shadow-1: 0 1px 4px rgba(0, 0, 0, 0.40);
+    --bm-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.50);
+    --bm-shadow-3: 0 4px 20px rgba(0, 0, 0, 0.65);
+
+    /* Bootstrap reads these directly. */
+    --bs-body-bg: var(--bm-n-25);
+    --bs-body-color: var(--bm-n-800);
+    --bs-border-color: var(--bm-n-100);
+  }
+}
+
+/* The same values again for an explicit choice, so the toggle works on a light
+   desktop. Duplicated rather than shared because a media query cannot be re-entered
+   from a selector, and a preprocessor is not worth introducing for one block. */
+:root[data-theme="dark"] {
+  --bm-n-0:    #1a2029;
+  --bm-n-25:   #11151b;
+  --bm-n-50:   #222a35;
+  --bm-n-100:  #2b3440;
+  --bm-n-200:  #3a4553;
+  --bm-n-300:  #4e5a6b;
+  --bm-n-400:  #6b7788;
+  --bm-n-500:  #98a3b3;
+  --bm-n-600:  #b3bdc9;
+  --bm-n-700:  #cdd5de;
+  --bm-n-800:  #e2e7ec;
+  --bm-n-900:  #f2f5f8;
+  --bm-accent-text:  #e0975c;
+  --bm-accent-hover: #e0975c;
+  --bm-accent-tint:  #33251e;
+  --bm-fb-good: #3fbf85;
+  --bm-fb-warn: #e0a33a;
+  --bm-fb-bad:  #e8705a;
+  --bm-state-void-bg: #2e2220;
+  --bm-chrome-bg:  #0e1218;
+  --bm-toast-bg:   #2b3440;
+  --bm-on-fill:   #11151b;
+  --bm-shadow-1: 0 1px 4px rgba(0, 0, 0, 0.40);
+  --bm-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.50);
+  --bm-shadow-3: 0 4px 20px rgba(0, 0, 0, 0.65);
+  --bs-body-bg: var(--bm-n-25);
+  --bs-body-color: var(--bm-n-800);
+  --bs-border-color: var(--bm-n-100);
+}
+
+/* A handful of things are not reachable through a token because the markup or
+   Bootstrap sets them. Scoped to dark so light is untouched. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .table { --bs-table-bg: transparent; color: var(--bm-n-800); }
+  :root:not([data-theme="light"]) .table-hover > tbody > tr:hover > * {
+    --bs-table-accent-bg: var(--bm-n-50); color: var(--bm-n-900);
+  }
+  :root:not([data-theme="light"]) .form-control,
+  :root:not([data-theme="light"]) .form-select {
+    background-color: var(--bm-n-0); border-color: var(--bm-n-200); color: var(--bm-n-900);
+  }
+  :root:not([data-theme="light"]) .form-control::placeholder { color: var(--bm-n-400); }
+  /* A native date picker's indicator is black-on-black otherwise. */
+  :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.6);
+  }
+  :root:not([data-theme="light"]) .bm-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+}
+:root[data-theme="dark"] .table { --bs-table-bg: transparent; color: var(--bm-n-800); }
+:root[data-theme="dark"] .table-hover > tbody > tr:hover > * {
+  --bs-table-accent-bg: var(--bm-n-50); color: var(--bm-n-900);
+}
+:root[data-theme="dark"] .form-control,
+:root[data-theme="dark"] .form-select {
+  background-color: var(--bm-n-0); border-color: var(--bm-n-200); color: var(--bm-n-900);
+}
+:root[data-theme="dark"] .form-control::placeholder { color: var(--bm-n-400); }
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.6);
+}
+:root[data-theme="dark"] .bm-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }

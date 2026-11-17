@@ -12,7 +12,19 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
-  <link href="/assets/css/admin.css?v=p26" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=p27" rel="stylesheet">
+<script>
+  /* Inline and synchronous, before the first paint. A stored choice applied from a
+     deferred script would show the light page first and then repaint dark, which is
+     worse than not offering the choice. Wrapped because localStorage throws in a
+     private window rather than returning null. */
+  (function () {
+    try {
+      var t = localStorage.getItem('bm_theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* no stored preference available; the OS setting still applies */ }
+  })();
+</script>
 <style>
   /* P0-3 global search. Tokens only -- literal colours live in admin.css (D0). */
   .bm-search { position: relative; width: 340px; max-width: 42vw; }
@@ -191,6 +203,9 @@
             <i class="fas fa-chevron-down"></i>
           </button>
           <div class="bm-usermenu-panel" id="bmUserPanel" role="menu" hidden>
+            <button type="button" class="bm-theme-btn" id="bmThemeBtn" role="menuitem">
+              <i class="fas fa-circle-half-stroke"></i> <span id="bmThemeLabel">Theme: system</span>
+            </button>
             <a href="/admin/settings" role="menuitem"><i class="fas fa-cog"></i> Settings</a>
             <a href="/" target="_blank" rel="noopener" role="menuitem"><i class="fas fa-external-link-alt"></i> View website</a>
             <a href="/auth/logout" role="menuitem" class="is-leave"><i class="fas fa-sign-out-alt"></i> Log out</a>
@@ -409,6 +424,39 @@
         try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private window */ }
       });
     });
+  })();
+
+  // Theme: system -> light -> dark -> system. Three states, because "follow the
+  // operating system" is a real answer and not having it means a person who changes
+  // their desktop at sunset has to change this too.
+  (function () {
+    var btn = document.getElementById('bmThemeBtn');
+    var label = document.getElementById('bmThemeLabel');
+    if (!btn || !label) return;
+    var ORDER = ['system', 'light', 'dark'];
+
+    function current() {
+      var t = document.documentElement.getAttribute('data-theme');
+      return (t === 'light' || t === 'dark') ? t : 'system';
+    }
+    function paint() { label.textContent = 'Theme: ' + current(); }
+
+    function apply(next) {
+      if (next === 'system') {
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.removeItem('bm_theme'); } catch (e) { /* private window */ }
+      } else {
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('bm_theme', next); } catch (e) { /* private window */ }
+      }
+      paint();
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();   /* choosing a theme should not close the menu */
+      apply(ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]);
+    });
+    paint();
   })();
 
   // The account menu in the header.
