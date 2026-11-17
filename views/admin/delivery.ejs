@@ -93,7 +93,7 @@ ${stops.length ? stops.map(s => `
         <div class="stop-when">${esc(s.window)}</div>
         <div class="stop-who">
           <strong>${esc(s.name)}</strong>
-          ${s.phone ? '<a href="tel:' + esc(s.phoneHref) + '" class="ms-2 text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(s.phone) + '</a>' : ''}
+          ${s.phone ? '<a href="tel:' + esc(s.phoneHref) + '" class="ms-2 text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(fmtPhone(s.phone)) + '</a>' : ''}
         </div>
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">

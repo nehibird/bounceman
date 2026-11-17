@@ -55,7 +55,7 @@
             <td class="rt-hide"><input type="checkbox" class="form-check-input rowCb" value="${c.id}" data-name="${esc(c.first_name)} ${esc(c.last_name)}" data-bookings="${c.total_bookings || 0}"></td>
             <td class="rt-primary"><strong>${esc(c.first_name)} ${esc(c.last_name)}</strong></td>
             <td data-label="Email">${esc(c.email)}</td>
-            <td data-label="Phone">${esc(c.phone)}</td>
+            <td data-label="Phone">${esc(fmtPhone(c.phone))}</td>
             <td data-label="Bookings"><span class="badge bg-primary">${c.booking_count || 0}</span></td>
             <td data-label="Total Revenue">$${parseFloat(c.revenue_total || 0).toFixed(2)}</td>
             <td data-label="Joined">${fmtStamp(c.created_at, false)}</td>

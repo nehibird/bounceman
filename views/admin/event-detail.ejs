@@ -108,7 +108,7 @@
             '<td class="rt-hide" style="padding:12px 20px"><input type="checkbox" name="ids" value="' + r.id + '" class="reg-checkbox"></td>' +
             '<td data-label="Wristband"><strong style="color:var(--bm-secondary)">' + wristband + '</strong></td>' +
             '<td class="rt-primary">' + esc(r.parent_name) + '</td>' +
-            '<td data-label="Phone">' + esc(r.parent_phone || '-') + '</td>' +
+            '<td data-label="Phone">' + esc(fmtPhone(r.parent_phone) || '-') + '</td>' +
             '<td data-label="Kids">' + r.kid_count + ' <span class="text-muted small">(' + esc(kids.join(', ')) + ')</span></td>' +
             '<td data-label="Paid"><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
             '<td data-label="Method" class="d-none d-md-table-cell">' + (r.payment_method === 'cash' ? '💵 Cash' : r.payment_method === 'google_review' ? '⭐ Review' : r.payment_method === 'card' ? '💳 Card' : '—') + '</td>' +

@@ -36,6 +36,16 @@ app.locals.fmtDayDate = require('./lib/helpers').fmtDayDate;
 app.locals.fmtDateShort = require('./lib/helpers').fmtDateShort;
 app.locals.fmtTime12 = require('./lib/helpers').fmtTime12;
 app.locals.fmtStamp = require('./lib/helpers').fmtStamp;
+// Same story as the date formatters: 28 of 89 stored phone numbers are not in the
+// canonical shape, and every view that printed one printed whatever was in the column.
+// One formatter, reachable everywhere. It leaves anything that is not a plain ten-digit
+// US number alone, so applying it is always safe.
+app.locals.fmtPhone = require('./lib/helpers').formatPhoneUS;
+// Same story as the date formatters: 28 of 89 stored phone numbers are not in the
+// canonical shape, and every view that printed one printed whatever was in the column.
+// One formatter, reachable everywhere. It leaves anything that is not a plain ten-digit
+// US number alone, so applying it is always safe.
+app.locals.fmtPhone = require('./lib/helpers').formatPhoneUS;
 // Live review aggregate for LocalBusiness JSON-LD (rich-result stars). Exposed
 // as a callable local so the shared layout can emit real, current numbers.
 app.locals.getReviewStats = require('./lib/helpers').getReviewStats;

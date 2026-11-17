@@ -989,7 +989,8 @@ router.get('/customers', (req, res) => {
   const CUSTOMER_COLS = {
     name: 'last_name COLLATE NOCASE, first_name COLLATE NOCASE',
     email: 'email COLLATE NOCASE',
-    phone: 'phone',
+    // Sort by the number, not by how it happens to be punctuated in the column.
+    phone: "REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),'(',''),')',''),'-',''),' ','')",
     // Sorting on the computed aliases, not on the stored columns -- P2-9 made these two
     // sortable while they were still wrong for a quarter of the list.
     bookings: 'booking_count',
