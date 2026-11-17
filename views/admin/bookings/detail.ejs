@@ -224,10 +224,29 @@ ${(function () {
     <div class="card mb-4">
       <div class="card-header"><i class="fas fa-hard-hat me-2"></i>Crew Assignment</div>
       <div class="card-body">
-        <form method="POST" action="/admin/bookings/${booking.id}/crew">
-          <input type="text" name="crew_assigned" class="form-control mb-2" placeholder="Crew member names" value="${esc(booking.crew_assigned)}">
-          <button type="submit" class="btn btn-sm btn-bm-outline w-100"><i class="fas fa-save me-1"></i> Assign Crew</button>
-        </form>
+        ${(function () {
+          /* booking.crew_assigned does not exist -- the column is assigned_crew. The box
+             has therefore always rendered empty even when a value was stored. */
+          var current = booking.assigned_crew || '';
+          var list = (typeof roster !== 'undefined' && roster) ? roster : [];
+          var onRoster = list.some(function (u) { return u.name === current; });
+          var opts = '<option value="">Nobody assigned</option>' +
+            list.map(function (u) {
+              return '<option value="' + esc(u.name) + '"' +
+                     (u.name === current ? ' selected' : '') + '>' + esc(u.name) + '</option>';
+            }).join('') +
+            '<option value="__other__"' + (current && !onRoster ? ' selected' : '') +
+            '>Someone not on the roster\u2026</option>';
+          return '<form method="POST" action="/admin/bookings/' + booking.id + '/crew">' +
+            '<select name="crew" id="crewSelect" class="form-select form-select-sm mb-2">' + opts + '</select>' +
+            '<input type="text" name="crew_other" id="crewOther" class="form-control form-control-sm mb-2"' +
+              ' placeholder="Who is running this one?" value="' +
+              (current && !onRoster ? esc(current) : '') + '"' +
+              (current && !onRoster ? '' : ' hidden') + '>' +
+            '<button type="submit" class="btn btn-sm btn-bm-outline w-100">' +
+              '<i class="fas fa-save me-1"></i> Assign crew</button>' +
+          '</form>';
+        })()}
       </div>
     </div>
 
@@ -390,6 +409,22 @@ ${(function () {
       showToast('Copying is not available in this browser.', 'warning');
     }
   });
+})();
+
+/* The roster is the users table, which has one person in it. A dropdown of one would
+   make it impossible to record that a friend or a day-hire ran a delivery, so there is
+   an escape hatch -- and it is a real input, not a prompt(), because what gets typed
+   there is data. */
+(function () {
+  var sel = document.getElementById('crewSelect');
+  var other = document.getElementById('crewOther');
+  if (!sel || !other) return;
+  function sync() {
+    var isOther = sel.value === '__other__';
+    other.hidden = !isOther;
+    if (isOther) other.focus();
+  }
+  sel.addEventListener('change', sync);
 })();
 </script>
 ` }) %>

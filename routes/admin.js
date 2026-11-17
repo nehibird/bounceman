@@ -587,6 +587,11 @@ router.get('/bookings/:id', (req, res) => {
   const amountPaid = payments.reduce((sum, p) => sum + (p.status === 'completed' ? p.amount : 0), 0);
   booking.amount_paid = amountPaid;
   const contract = db.prepare('SELECT * FROM contracts WHERE booking_id = ?').get(req.params.id);
+  // The roster is the users table -- the same source P0-1 uses to tell staff from
+  // customers. One person today; it grows when he adds somebody.
+  const roster = db.prepare(
+    "SELECT name, email FROM users WHERE active = 1 AND name IS NOT NULL AND name <> '' ORDER BY name"
+  ).all();
   const comms = db.prepare('SELECT * FROM communications WHERE booking_id = ? ORDER BY sent_at DESC').all(req.params.id);
 
   res.render('admin/bookings/detail', {
@@ -596,7 +601,7 @@ router.get('/bookings/:id', (req, res) => {
       (booking.event_date ? ' \u00b7 ' + dayjs(booking.event_date).format('ddd, MMM D') : '') +
       ' - Admin',
     user: req.user, settings,
-    booking, items, payments, contract, comms, page: 'bookings'
+    booking, items, payments, contract, comms, roster, page: 'bookings'
   });
 });
 
@@ -624,7 +629,15 @@ router.post('/bookings/:id/notes', (req, res) => {
 
 router.post('/bookings/:id/crew', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE bookings SET assigned_crew = ?, updated_at = datetime('now') WHERE id = ?").run(req.body.crew, req.params.id);
+  // The form has always posted crew_assigned while this read req.body.crew, so every
+  // assignment silently stored NULL. Accept the roster pick, the free-text fallback, and
+  // the old field name, so nothing that already points here breaks.
+  const picked = String(req.body.crew || req.body.crew_assigned || '').trim();
+  const crew = picked === '__other__'
+    ? String(req.body.crew_other || '').trim()
+    : picked;
+  db.prepare("UPDATE bookings SET assigned_crew = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(crew || null, req.params.id);
   res.redirect(`/admin/bookings/${req.params.id}`);
 });
 
