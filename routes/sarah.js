@@ -7,7 +7,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
-const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, resolveTaxCity, peekTaxJurisdiction, taxBreakdown, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount } = require('../lib/helpers');
+const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, resolveTaxCity, peekTaxJurisdiction, taxBreakdown, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, recordStripeSessionMarker } = require('../lib/helpers');
 
 // Sales tax is owed by the real municipal boundary of the delivery point, not the postal city
 // (see resolveTaxCity). Two flavours, chosen per call site by latency tolerance:
@@ -615,9 +615,13 @@ router.post('/create-and-send-link', async (req, res) => {
       cancelUrl: `${baseUrl.replace('/event', '')}/booking/lookup?booking_number=${bookingNumber}`
     });
 
-    // Store Stripe session ID on booking
-    db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
-      .run(`stripe_session:${session.id}`, bookingId);
+    // Store Stripe session ID on booking.
+    // Was `SET internal_notes = ?`, which ERASED the field -- on this path that meant
+    // losing the scheduler's auto-release breadcrumb and any operator note, every time
+    // Sarah sent a payment link. booking.js's pay-deposit site had already been fixed
+    // and commented; this one was missed. Both now share recordStripeSessionMarker.
+    db.prepare("UPDATE bookings SET payment_method = 'stripe' WHERE id = ?").run(bookingId);
+    recordStripeSessionMarker(db, bookingId, session.id, 'sarah');
 
     // Create contract from default template
     let contractId = null;

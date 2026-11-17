@@ -9,7 +9,7 @@ const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { isValidEmail } = require('../lib/validation');
-const { appendInternalNote } = require('../lib/helpers');
+const { recordStripeSessionMarker } = require('../lib/helpers');
 const { notifyNewBooking } = require('../services/notifications');
 const facebookAds = require('../services/facebook-ads');
 const { signBookingToken, verifyBookingToken, bookingLinkPath } = require('../lib/booking-links');
@@ -975,8 +975,11 @@ router.post('/submit', bookingLimiter, async (req, res) => {
         cancelUrl: `${baseUrl}/booking/lookup?booking_number=${bookingNumber}`
       });
 
-      db.prepare("UPDATE bookings SET payment_method = 'stripe', internal_notes = ? WHERE id = ?")
-        .run(`stripe_session:${session.id}`, bookingId);
+      // Was `SET internal_notes = ?` -- a destructive overwrite. Nothing should be in
+      // the field this early, but "should be" is not a guarantee and the same statement
+      // on the Sarah path was demonstrably eating notes.
+      db.prepare("UPDATE bookings SET payment_method = 'stripe' WHERE id = ?").run(bookingId);
+      recordStripeSessionMarker(db, bookingId, session.id, 'booking-create');
 
       console.log('[BOOKING] Created', bookingNumber, '-> Stripe session', session.id);
       return res.redirect(303, session.url);
@@ -1372,14 +1375,11 @@ router.get('/pay-deposit/:bookingNumber', async (req, res) => {
     // `superseded_stripe_session:` -- the unanchored regex would match inside that), then
     // append the fresh one so it is the only live `stripe_session:cs_...` in the field.
     db.prepare("UPDATE bookings SET payment_method = 'stripe' WHERE id = ?").run(booking.id);
-    const priorNotes = db.prepare('SELECT internal_notes FROM bookings WHERE id = ?').get(booking.id).internal_notes || '';
-    if (/stripe_session:cs_/.test(priorNotes)) {
-      db.prepare('UPDATE bookings SET internal_notes = ? WHERE id = ?')
-        .run(priorNotes.replace(/stripe_session:(cs_)/g, 'superseded_checkout_session:$1'), booking.id);
-    }
     // The text after the actor tag is the exact deposit marker; office.js payment-link
-    // notes are worded differently on purpose so they never match this regex.
-    appendInternalNote(db, booking.id, 'pay-deposit', `stripe_session:${session.id}`);
+    // notes are worded differently on purpose so they never match this regex. The
+    // supersede-then-append dance this site used to open-code now lives in
+    // recordStripeSessionMarker, shared with the two sites that had it wrong.
+    recordStripeSessionMarker(db, booking.id, session.id, 'pay-deposit');
     return res.redirect(303, session.url);
   } catch (err) {
     console.error('[PAY DEPOSIT] Stripe error:', err.message);
