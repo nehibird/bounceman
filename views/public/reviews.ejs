@@ -72,7 +72,7 @@ ${(function() {
             for (var s = 0; s < fullStars; s++) stars += '<i class="fas fa-star" style="color:var(--bm-yellow);font-size:32px"></i>';
             if (halfStar) stars += '<i class="fas fa-star-half-stroke" style="color:var(--bm-yellow);font-size:32px"></i>';
             for (var e = 0; e < emptyStars; e++) stars += '<i class="far fa-star" style="color:var(--bm-yellow);font-size:32px"></i>';
-            return '<div style="font-size:64px;font-weight:700;color:var(--bm-blue);font-family:Fredoka,sans-serif;line-height:1">' + avg + '</div><div style="margin:10px 0">' + stars + '</div><p style="color:#666;margin:0">Based on <strong>' + reviews.length + '</strong> review' + (reviews.length !== 1 ? 's' : '') + '</p>';
+            return '<div style="font-size:64px;font-weight:700;color:var(--bm-blue);font-family:Poppins,sans-serif;line-height:1">' + avg + '</div><div style="margin:10px 0">' + stars + '</div><p style="color:#666;margin:0">Based on <strong>' + reviews.length + '</strong> review' + (reviews.length !== 1 ? 's' : '') + '</p>';
           })() : '<div style="font-size:48px;opacity:0.3;margin-bottom:10px"><i class="far fa-star"></i></div><h4 style="color:var(--bm-blue)">No Reviews Yet</h4><p style="color:#666;margin:0">Be the first to share your experience!</p>'}
         </div>
       </div>
