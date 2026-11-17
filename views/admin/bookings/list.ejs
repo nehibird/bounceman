@@ -216,14 +216,18 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Delete selected
-  delBtn.addEventListener('click', function() {
+  delBtn.addEventListener('click', async function() {
     var checked = getChecked();
     var ids = [], nums = [];
     checked.forEach(function(cb) {
       ids.push(cb.value);
       nums.push(cb.dataset.num);
     });
-    if (!confirm('Delete ' + ids.length + ' booking(s)?\\n\\n' + nums.join(', ') + '\\n\\nThis cannot be undone.')) return;
+    if (!await bmConfirm({
+      title: 'Delete ' + ids.length + ' booking' + (ids.length === 1 ? '' : 's') + '?',
+      message: nums.join(', ') + '\n\nThis cannot be undone.',
+      confirmLabel: 'Delete', danger: true
+    })) return;
     
     fetch('/admin/api/bookings/bulk-delete', {
       method: 'POST',

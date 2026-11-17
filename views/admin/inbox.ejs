@@ -152,21 +152,9 @@ ${tab === 'alerts' ? `
 <script>
   var c = document.getElementById('convo');
   if (c) c.scrollTop = c.scrollHeight;
-  var MY_PHONE_KEY = 'bm_my_phone';
   document.querySelectorAll('.call-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
-      var customerPhone = btn.getAttribute('data-phone');
-      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
-      myPhone = prompt('Your cell number to call from:', myPhone);
-      if (!myPhone) return;
-      localStorage.setItem(MY_PHONE_KEY, myPhone);
-      var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-      fetch('/api/call/dial', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to: customerPhone, your_phone: myPhone }) })
-        .then(function(r){return r.json();}).then(function(d){
-          showToast(d.success ? 'Ringing your phone now.' : ('Could not place the call: ' + (d.error||'failed')), d.success ? 'success' : 'error');
-          btn.disabled=false; btn.innerHTML=orig;
-        })
-        .catch(function(){ showToast('Request failed.', 'error'); btn.disabled=false; btn.innerHTML=orig; });
+      bmCall(btn.getAttribute('data-phone'), btn, btn.innerHTML);
     });
   });
 </script>

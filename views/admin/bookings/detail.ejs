@@ -339,34 +339,9 @@ ${(function () {
 `, scripts: `
 <script>
 (function() {
-  var MY_PHONE_KEY = 'bm_my_phone';
   document.querySelectorAll('.call-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var customerPhone = btn.getAttribute('data-phone');
-      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
-      myPhone = prompt('Your cell number to call from:', myPhone);
-      if (!myPhone) return;
-      localStorage.setItem(MY_PHONE_KEY, myPhone);
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...';
-      fetch('/api/call/dial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: customerPhone, your_phone: myPhone })
-      }).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.success) {
-          btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing!';
-          setTimeout(function() { btn.disabled = false; btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call'; }, 5000);
-        } else {
-          alert('Error: ' + (d.error || 'Unknown error'));
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call';
-        }
-      }).catch(function() {
-        alert('Request failed');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-phone-alt me-1"></i>Call';
-      });
+      bmCall(btn.getAttribute('data-phone'), btn, '<i class="fas fa-phone-alt me-1"></i>Call');
     });
   });
 })();

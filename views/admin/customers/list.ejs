@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Delete selected
-  delBtn.addEventListener('click', function() {
+  delBtn.addEventListener('click', async function() {
     var checked = getChecked();
     var ids = [], names = [], hasBookings = [];
     checked.forEach(function(cb) {
@@ -131,11 +131,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     if (hasBookings.length > 0) {
-      alert('Cannot delete customers with bookings:\\n\\n' + hasBookings.join('\\n') + '\\n\\nDelete their bookings first.');
+      // Was an alert(). This is information, not a decision, so it is a toast.
+      showToast('Cannot delete customers who have bookings: ' + hasBookings.join(', ') +
+                '. Delete their bookings first.', 'warning');
       return;
     }
-    
-    if (!confirm('Delete ' + ids.length + ' customer(s)?\\n\\n' + names.join(', ') + '\\n\\nThis cannot be undone.')) return;
+
+    if (!await bmConfirm({
+      title: 'Delete ' + ids.length + ' customer' + (ids.length === 1 ? '' : 's') + '?',
+      message: names.join(', ') + '\n\nThis cannot be undone.',
+      confirmLabel: 'Delete', danger: true
+    })) return;
     
     fetch('/admin/api/customers/bulk-delete', {
       method: 'POST',

@@ -213,9 +213,12 @@ function saveCampaign() {
   });
 }
 function deleteCampaign(id) {
-  if (!confirm('Delete this local record?')) return;
-  fetch('/admin/api/ads/campaigns/' + id, { method: 'DELETE' })
-    .then(() => location.reload());
+  bmConfirm({ message: 'Delete this local record?', confirmLabel: 'Delete', danger: true })
+    .then(function (ok) {
+      if (!ok) return;
+      fetch('/admin/api/ads/campaigns/' + id, { method: 'DELETE' })
+        .then(() => location.reload());
+    });
 }
 
 checkGoogleStatus();

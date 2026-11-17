@@ -12,7 +12,7 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
-  <link href="/assets/css/admin.css?v=v5" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=p22" rel="stylesheet">
 <style>
   /* P0-3 global search. Tokens only -- literal colours live in admin.css (D0). */
   .bm-search { position: relative; width: 340px; max-width: 42vw; }
@@ -306,13 +306,21 @@
       document.getElementById('sidebar').classList.toggle('open');
     });
   }
-  // Global confirm-delete handler (CSP-safe replacement for onsubmit="return confirm()")
+  // Global confirm-delete handler. Always cancels the native submit, asks in our own
+  // dialog, and resubmits only on a yes -- a <dialog> cannot block a synchronous event
+  // the way window.confirm could, so the flow has to be async.
   document.addEventListener("submit", function(e) {
     var form = e.target;
-    if (form.classList && form.classList.contains("confirm-delete")) {
-      var msg = form.dataset.confirm || "Are you sure?";
-      if (!confirm(msg)) { e.preventDefault(); }
-    }
+    if (!form.classList || !form.classList.contains("confirm-delete")) return;
+    if (form.dataset.bmConfirmed === "1") { delete form.dataset.bmConfirmed; return; }
+    e.preventDefault();
+    var msg = form.dataset.confirm || "Are you sure?";
+    bmConfirm({ message: msg, confirmLabel: "Delete", danger: true }).then(function (ok) {
+      if (!ok) return;
+      form.dataset.bmConfirmed = "1";
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.submit();
+    });
   });
   // Global clickable rows handler - any table row with data-row-href becomes clickable
   document.addEventListener("click", function(e) {
@@ -324,6 +332,133 @@
     var bookingRow = e.target.closest("[data-booking-href]");
     if (bookingRow) window.location.href = bookingRow.dataset.bookingHref;
   });
+</script>
+<dialog id="bmDialog" class="bm-dialog" aria-labelledby="bmDialogTitle">
+  <form method="dialog" id="bmDialogForm">
+    <div class="bm-dialog-body">
+      <h2 class="bm-dialog-title" id="bmDialogTitle"></h2>
+      <p class="bm-dialog-msg" id="bmDialogMsg"></p>
+      <input type="text" id="bmDialogInput" hidden>
+    </div>
+    <div class="bm-dialog-foot">
+      <button type="button" class="btn btn-sm btn-bm-outline" id="bmDialogCancel">Cancel</button>
+      <button type="submit" class="btn btn-sm btn-bm" id="bmDialogOk">OK</button>
+    </div>
+  </form>
+</dialog>
+<script>
+/* window.confirm / prompt / alert, replaced.
+   The native ones are unstyleable, truncated on phones, prefixed with
+   "bouncemanrentals.com says", and they freeze the entire page while open -- including
+   any request already in flight. Both of these resolve a promise instead. */
+(function () {
+  var dlg = document.getElementById("bmDialog");
+  var form = document.getElementById("bmDialogForm");
+  var titleEl = document.getElementById("bmDialogTitle");
+  var msgEl = document.getElementById("bmDialogMsg");
+  var input = document.getElementById("bmDialogInput");
+  var okBtn = document.getElementById("bmDialogOk");
+  var cancelBtn = document.getElementById("bmDialogCancel");
+  var settle = null;
+
+  function finish(value) {
+    var fn = settle; settle = null;
+    if (dlg.open) dlg.close();
+    if (fn) fn(value);
+  }
+
+  function open(opts) {
+    opts = opts || {};
+    /* textContent, never innerHTML: these messages carry customer names and
+       addresses. */
+    titleEl.textContent = opts.title || "";
+    titleEl.hidden = !opts.title;
+    msgEl.textContent = opts.message || "";
+    okBtn.textContent = opts.confirmLabel || "OK";
+    cancelBtn.textContent = opts.cancelLabel || "Cancel";
+    okBtn.className = "btn btn-sm " + (opts.danger ? "btn-outline-danger" : "btn-bm");
+
+    if (opts.withInput) {
+      input.hidden = false;
+      input.value = opts.value || "";
+      input.placeholder = opts.placeholder || "";
+      input.type = opts.inputType || "text";
+    } else {
+      input.hidden = true;
+      input.value = "";
+    }
+
+    if (typeof dlg.showModal === "function") dlg.showModal();
+    else dlg.setAttribute("open", "");          /* ancient browser: still usable */
+    setTimeout(function () { (opts.withInput ? input : okBtn).focus(); }, 0);
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    finish(input.hidden ? true : input.value);
+  });
+  cancelBtn.addEventListener("click", function () { finish(input.hidden ? false : null); });
+  /* Escape and the backdrop both mean no. */
+  dlg.addEventListener("cancel", function (e) { e.preventDefault(); finish(input.hidden ? false : null); });
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) finish(input.hidden ? false : null); });
+
+  window.bmConfirm = function (opts) {
+    return new Promise(function (resolve) {
+      if (settle) { resolve(false); return; }   /* never stack dialogs */
+      settle = resolve;
+      open(Object.assign({}, opts, { withInput: false }));
+    });
+  };
+
+  /* Click-to-call, which existed three times over -- inbox.ejs, call-detail.ejs and
+     bookings/detail.ejs each had their own copy of this, and each copy carried its own
+     prompt() and alert(). One implementation, used by all three.
+
+     The cell number is remembered in localStorage, so after the first call the dialog
+     opens pre-filled and it is one keystroke. */
+  var BM_PHONE_KEY = 'bm_my_phone';
+  window.bmCall = function (customerPhone, btn, restoreHtml) {
+    if (!customerPhone) { showToast('No number on this record to call.', 'warning'); return; }
+    var remembered = '';
+    try { remembered = localStorage.getItem(BM_PHONE_KEY) || ''; } catch (e) { remembered = ''; }
+    return bmPrompt({
+      title: 'Call this number',
+      message: 'We ring your phone first, then connect them.',
+      value: remembered, placeholder: '(580) 555-0123', inputType: 'tel',
+      confirmLabel: 'Call'
+    }).then(function (mine) {
+      if (!mine) return;
+      try { localStorage.setItem(BM_PHONE_KEY, mine); } catch (e) { /* private window */ }
+      var original = restoreHtml || (btn ? btn.innerHTML : '');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...'; }
+      function reset() { if (btn) { btn.disabled = false; btn.innerHTML = original; } }
+      return fetch('/api/call/dial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: customerPhone, your_phone: mine })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.success) {
+          showToast('Ringing your phone now.', 'success');
+          if (btn) { btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing'; setTimeout(reset, 5000); }
+        } else {
+          showToast('Could not place the call: ' + ((d && d.error) || 'unknown error'), 'error');
+          reset();
+        }
+      }).catch(function () {
+        showToast('Could not reach the calling service.', 'error');
+        reset();
+      });
+    });
+  };
+
+  window.bmPrompt = function (opts) {
+    return new Promise(function (resolve) {
+      if (settle) { resolve(null); return; }
+      settle = resolve;
+      open(Object.assign({}, opts, { withInput: true }));
+    });
+  };
+})();
 </script>
 <div id="toast-container"></div>
 <script>
@@ -338,7 +473,8 @@ function showToast(message, type) {
   icon.className = "bm-toast-icon fas " + (icons[type] || icons.error);
   var body = document.createElement("div");
   body.className = "bm-toast-body";
-  body.innerHTML = message;
+  // textContent, not innerHTML -- toast messages carry customer names and addresses.
+  body.textContent = message;
   var closeBtn = document.createElement("span");
   closeBtn.className = "toast-close";
   closeBtn.textContent = "\u00d7";

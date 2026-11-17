@@ -261,11 +261,12 @@
   // Event delegation: delete image links require confirmation
   document.addEventListener('click', function(e) {
     var link = e.target.closest('.delete-image-link');
-    if (link) {
-      if (!confirm('Delete this image?')) {
-        e.preventDefault();
-      }
-    }
+    if (!link) return;
+    // Always cancel, ask, then follow the link on a yes -- a dialog cannot hold up a
+    // synchronous event the way confirm() did.
+    e.preventDefault();
+    bmConfirm({ message: 'Delete this image?', confirmLabel: 'Delete', danger: true })
+      .then(function (ok) { if (ok) window.location = link.href; });
   });
 </script>
 ` }) %>

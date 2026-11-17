@@ -66,7 +66,7 @@ document.querySelectorAll('.reconnectBtn').forEach(b=>b.onclick=async()=>{
 });
 // Removes only the plaid_items row (server refuses healthy items). bank_transactions history is kept on purpose.
 document.querySelectorAll('.removeBtn').forEach(b=>b.onclick=async()=>{
-  if(!confirm('Remove the broken connection for '+b.dataset.name+'?\\n\\nThis only disconnects the bank link. Your saved transactions and history are kept.'))return;
+  if(!await bmConfirm({title:'Remove the connection for '+b.dataset.name+'?',message:'This only disconnects the bank link. Your saved transactions and history are kept.',confirmLabel:'Remove',danger:true}))return;
   const r=await api('/admin/banks/remove',{item_id:b.dataset.item});
   msg.textContent=r.error?('Error: '+r.error):'Removed.';
   setTimeout(()=>location.reload(),1200);

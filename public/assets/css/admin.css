@@ -355,6 +355,44 @@ a:hover { color: var(--bm-accent-hover); }
 }
 .bm-danger-zone p { margin: 0; font-size: 13px; color: var(--bm-n-500); }
 
+/* ============================ dialog =====================================
+   Replaces window.confirm / prompt / alert. Those are not just ugly: they are
+   unstyleable, they are truncated on mobile, they say "bouncemanrentals.com says",
+   and they block the whole page -- including anything mid-flight. A <dialog> is used
+   rather than a hand-rolled overlay because it gives focus trapping, Escape-to-close
+   and inertness for free, and getting those wrong by hand is how modals become traps. */
+
+.bm-dialog {
+  border: none; padding: 0; max-width: 440px; width: calc(100vw - 32px);
+  border-radius: var(--bm-radius-md); box-shadow: var(--bm-shadow-3);
+  color: var(--bm-n-800); background: var(--bm-n-0);
+  font-family: var(--bm-font-body);
+}
+.bm-dialog::backdrop { background: rgba(26, 33, 45, 0.45); }
+.bm-dialog-body { padding: var(--bm-space-5); }
+.bm-dialog-title {
+  margin: 0 0 var(--bm-space-2); font-size: 17px; font-weight: 800;
+  color: var(--bm-n-900); letter-spacing: -0.01em;
+}
+.bm-dialog-msg {
+  margin: 0; font-size: 14px; line-height: 1.5; color: var(--bm-n-600);
+  white-space: pre-line;   /* the old dialogs used \n for line breaks; keep them */
+}
+.bm-dialog input {
+  width: 100%; margin-top: var(--bm-space-4); padding: 8px 11px; font-size: 14px;
+  border: 1px solid var(--bm-n-200); border-radius: var(--bm-radius-sm);
+  color: var(--bm-n-900); background: var(--bm-n-0);
+}
+.bm-dialog input:focus {
+  outline: none; border-color: var(--bm-accent);
+  box-shadow: 0 0 0 3px var(--bm-accent-tint);
+}
+.bm-dialog-foot {
+  display: flex; justify-content: flex-end; gap: var(--bm-space-2);
+  padding: var(--bm-space-3) var(--bm-space-5) var(--bm-space-5);
+}
+.bm-dialog-foot button { font-size: 14px; padding: 7px 16px; border-radius: var(--bm-radius-sm); }
+
 /* ============================ toasts =====================================
    Colour lives here, not in the inline script. showToast() adds a class. */
 
