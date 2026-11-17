@@ -58,6 +58,18 @@ router.get('/', async (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const today = dayjs().format('YYYY-MM-DD');
+
+  // Saturday carries 47 of the 71 live bookings -- 66% of the year happens on one
+  // weekday -- so on a Saturday with work on the books the question is "what am I doing
+  // today", not "how was the month". Land on Today instead. ?home=1 opts out, and the
+  // sidebar's Dashboard link carries it on Saturdays so this is never a trap. Days with
+  // nothing booked are left alone: bouncing him to an empty screen helps nobody.
+  if (dayjs().day() === 6 && req.query.home === undefined) {
+    const todayCount = db.prepare(
+      "SELECT COUNT(*) AS c FROM bookings WHERE event_date = ? AND status NOT IN ('cancelled', 'declined')"
+    ).get(today).c;
+    if (todayCount > 0) return res.redirect('/admin/delivery');
+  }
   const weekAgo = dayjs().subtract(7, 'day').format('YYYY-MM-DD');
   const monthStart = dayjs().startOf('month').format('YYYY-MM-DD');
 
@@ -960,11 +972,38 @@ router.get('/calendar', (req, res) => {
 });
 
 // === DELIVERY ROUTES ===
+
+// Nehemiah never wants a 24-hour clock on screen. The bookings table stores times as
+// "HH:MM" strings, so every one of them has to come through here before it is rendered.
+// (V7 "human dates everywhere" should reuse this rather than growing a second copy.)
+function clock12(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t == null ? '' : t).trim());
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  if (isNaN(h) || h > 23) return '';
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return h + ':' + m[2] + ' ' + suffix;
+}
+
+function money2(n) {
+  const v = Number(n);
+  return (isFinite(v) ? v : 0).toFixed(2);
+}
+
 router.get('/delivery', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const date = req.query.date || dayjs().format('YYYY-MM-DD');
+  const raw = String(req.query.date || '').trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) && dayjs(raw).isValid()
+    ? raw
+    : dayjs().format('YYYY-MM-DD');
 
+  // delivery_route_order is the operator's hand-set run order. It is null on every
+  // booking today and delivery_route_stops is empty, so in practice this sorts by the
+  // time the truck has to be there -- but when he does start ordering a run, that order
+  // wins. NULLs sort last rather than first, which SQLite would otherwise do.
   const deliveries = db.prepare(`
     SELECT b.*, c.first_name, c.last_name, c.phone,
       GROUP_CONCAT(bi.item_name, ', ') as items
@@ -973,11 +1012,91 @@ router.get('/delivery', (req, res) => {
     LEFT JOIN booking_items bi ON bi.booking_id = b.id
     WHERE b.event_date = ? AND b.status NOT IN ('cancelled', 'declined')
     GROUP BY b.id
-    ORDER BY b.setup_time, b.event_start_time
+    ORDER BY
+      CASE WHEN b.delivery_route_order IS NULL THEN 1 ELSE 0 END,
+      b.delivery_route_order,
+      COALESCE(NULLIF(b.setup_time, ''), NULLIF(b.event_start_time, ''), '99:99'),
+      b.booking_number
   `).all(date);
 
+  const stops = deliveries.map((d, i) => {
+    const start = clock12(d.event_start_time);
+    const end = clock12(d.event_end_time);
+    const cityBits = [d.delivery_city, d.delivery_state].filter(Boolean).join(', ');
+    const cityLine = [cityBits, d.delivery_zip].filter(Boolean).join(' ');
+    const name = [d.first_name, d.last_name].filter(Boolean).join(' ') || 'No name on file';
+    // The balance is what he collects at the door -- the standing rule is that the
+    // balance is always taken at delivery, never earlier -- so it is the one figure on
+    // this screen that costs money if it is wrong.
+    const balance = Number(d.balance_due) > 0 ? Number(d.balance_due) : 0;
+    return {
+      n: i + 1,
+      id: d.id,
+      booking_number: d.booking_number || '',
+      name,
+      phone: d.phone || '',
+      phoneHref: String(d.phone || '').replace(/[^0-9+]/g, ''),
+      window: start && end ? start + ' \u2013 ' + end : (start || end || 'No time set'),
+      setupLabel: clock12(d.setup_time),
+      pickupLabel: clock12(d.pickup_time),
+      address: d.delivery_address || '',
+      cityLine,
+      mapsUrl: 'https://www.google.com/maps/search/?api=1&query=' +
+        encodeURIComponent([d.delivery_address, cityLine].filter(Boolean).join(', ')),
+      balance,
+      balanceLabel: money2(balance),
+      signed: Number(d.contract_signed) === 1,
+      crew: d.assigned_crew || '',
+      items: d.items ? String(d.items).split(', ').filter(Boolean) : [],
+      notes: d.delivery_notes || ''
+    };
+  });
+
+  const toCollect = stops.reduce((sum, s) => sum + s.balance, 0);
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const isToday = date === todayStr;
+  const d = dayjs(date);
+
+  // Only looked up for the empty state, so the question "then when?" has an answer
+  // instead of a dead end.
+  let nextBooked = null;
+  if (!stops.length) {
+    const nb = db.prepare(`
+      SELECT event_date, COUNT(*) AS c FROM bookings
+      WHERE event_date > ? AND status NOT IN ('cancelled', 'declined')
+      GROUP BY event_date ORDER BY event_date LIMIT 1
+    `).get(date);
+    if (nb) {
+      nextBooked = {
+        date: nb.event_date,
+        count: nb.c,
+        label: dayjs(nb.event_date).format('dddd, MMMM D')
+      };
+    }
+  }
+
+  const day = {
+    date,
+    isToday,
+    prev: d.subtract(1, 'day').format('YYYY-MM-DD'),
+    next: d.add(1, 'day').format('YYYY-MM-DD'),
+    plainDate: d.format('dddd, MMMM D'),
+    heading: isToday ? 'Today' : d.format('dddd, MMMM D'),
+    subheading: isToday
+      ? d.format('dddd, MMMM D') + ' \u2014 every stop, in the order you drive it'
+      : (d.isBefore(dayjs(todayStr)) ? 'A past day' : 'An upcoming day') +
+        ' \u2014 every stop, in the order you drive it',
+    toCollect,
+    toCollectLabel: money2(toCollect),
+    unsigned: stops.filter(s => !s.signed).length,
+    ordered: deliveries.some(x => x.delivery_route_order !== null),
+    saturdayLanding: isToday && dayjs().day() === 6,
+    nextBooked
+  };
+
   res.render('admin/delivery', {
-    title: 'Delivery Schedule - Admin', user: req.user, settings, deliveries, date, page: 'delivery'
+    title: (isToday ? 'Today' : 'Delivery Schedule') + ' - Admin',
+    user: req.user, settings, stops, day, date, page: 'delivery'
   });
 });
 

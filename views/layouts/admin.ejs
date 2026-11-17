@@ -33,7 +33,13 @@
       <small>Admin Dashboard</small>
     </div>
     <nav>
-      <a href="/admin" class="<%= page === 'dashboard' ? 'active' : '' %>">
+      <%
+         /* On Saturdays GET /admin redirects to the Today screen (P0-2). Without
+            ?home=1 this link would bounce straight back there and the dashboard would
+            be unreachable on the one day of the week that matters most. */
+         var _satHome = (new Date()).getDay() === 6 ? '/admin?home=1' : '/admin';
+      %>
+      <a href="<%= _satHome %>" class="<%= page === 'dashboard' ? 'active' : '' %>">
         <i class="fas fa-tachometer-alt"></i> Dashboard
       </a>
       <div class="section-label">Management</div>

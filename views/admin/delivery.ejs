@@ -1,64 +1,164 @@
 <%- include('../layouts/admin', { body: `
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<style>
+  .today-head { display:flex; justify-content:space-between; align-items:flex-start;
+    flex-wrap:wrap; gap:var(--bm-space-4); margin-bottom:var(--bm-space-5); }
+  .today-figs { display:flex; gap:var(--bm-space-6); flex-wrap:wrap; margin-top:var(--bm-space-3); }
+  .today-fig { line-height:1.1; }
+  .today-fig b { display:block; font-size:28px; font-weight:800; letter-spacing:-.02em; }
+  .today-fig span { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--bm-n-500); }
+  .stop { display:flex; gap:var(--bm-space-4); background:var(--bm-n-0);
+    border:1px solid var(--bm-n-100); border-radius:var(--bm-radius-md);
+    box-shadow:var(--bm-shadow-1); margin-bottom:var(--bm-space-4); overflow:hidden; }
+  .stop-n { flex:0 0 64px; background:var(--bm-n-50); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; font-weight:800; font-size:24px;
+    color:var(--bm-n-600); }
+  .stop-n small { font-size:10px; font-weight:600; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--bm-n-400); }
+  .stop-body { flex:1 1 auto; padding:var(--bm-space-4); min-width:0; }
+  .stop-top { display:flex; justify-content:space-between; align-items:flex-start;
+    flex-wrap:wrap; gap:var(--bm-space-3); margin-bottom:var(--bm-space-3); }
+  .stop-when { font-size:19px; font-weight:800; letter-spacing:-.01em; }
+  .stop-who { color:var(--bm-n-600); }
+  .stop-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:var(--bm-space-4); }
+  .stop-grid dt { font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--bm-n-500); font-weight:600; margin-bottom:2px; }
+  .stop-grid dd { margin:0; font-weight:600; color:var(--bm-n-800); }
+  .collect { font-size:21px; font-weight:800; color:var(--bm-money-in); letter-spacing:-.01em; }
+  .settled { font-weight:600; color:var(--bm-n-500); }
+  .flag { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700;
+    padding:3px 10px; border-radius:var(--bm-radius-pill); }
+  .flag-bad  { background:var(--bm-state-void-bg); color:var(--bm-fb-bad); }
+  .flag-ok   { background:var(--bm-state-done-bg); color:var(--bm-n-500); }
+  .flag-warn { background:var(--bm-state-pending-bg); color:var(--bm-fb-warn); }
+  .stop-item { display:inline-block; background:var(--bm-n-50); border:1px solid var(--bm-n-100);
+    color:var(--bm-n-700); font-size:12px; font-weight:600; padding:3px 10px;
+    border-radius:var(--bm-radius-pill); margin:2px 4px 2px 0; }
+  .stop-note { margin-top:var(--bm-space-3); padding:var(--bm-space-3);
+    background:var(--bm-accent-tint); border-left:3px solid var(--bm-accent);
+    border-radius:var(--bm-radius-sm); color:var(--bm-n-800); font-size:14px; }
+  .stop-label { font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--bm-n-500); font-weight:600; margin-bottom:4px; }
+  .daynav { display:flex; align-items:center; gap:var(--bm-space-2); }
+  .daynav input { width:165px; }
+  @media (max-width: 575px) {
+    .stop-n { flex-basis:46px; font-size:19px; }
+    .today-figs { gap:var(--bm-space-4); }
+    .today-fig b { font-size:23px; }
+  }
+</style>
+
+<div class="today-head">
   <div>
-    <h4 class="mb-1">Delivery Schedule</h4>
-    <p class="text-muted mb-0">${deliveries.length} deliver${deliveries.length !== 1 ? 'ies' : 'y'} scheduled for ${date || 'today'}</p>
+    <h4 class="mb-1">${esc(day.heading)}</h4>
+    <p class="text-muted mb-0">${esc(day.subheading)}</p>
+    ${stops.length ? `
+    <div class="today-figs">
+      <div class="today-fig">
+        <b>${stops.length}</b>
+        <span>${stops.length === 1 ? 'delivery' : 'deliveries'}</span>
+      </div>
+      <div class="today-fig">
+        <b style="color:${day.toCollect > 0 ? 'var(--bm-money-in)' : 'var(--bm-n-400)'}">$${day.toCollectLabel}</b>
+        <span>to collect at delivery</span>
+      </div>
+      <div class="today-fig">
+        <b style="color:${day.unsigned > 0 ? 'var(--bm-fb-bad)' : 'var(--bm-n-400)'}">${day.unsigned}</b>
+        <span>${day.unsigned === 1 ? 'contract unsigned' : 'contracts unsigned'}</span>
+      </div>
+    </div>` : ''}
   </div>
-  <div>
-    <input type="date" class="form-control" value="${date || new Date().toISOString().split('T')[0]}" id="deliveryDateFilter">
+  <div class="daynav">
+    <a href="/admin/delivery?date=${day.prev}" class="btn btn-sm btn-outline-secondary"
+       title="Previous day"><i class="fas fa-chevron-left"></i></a>
+    <input type="date" class="form-control form-control-sm" value="${day.date}" id="deliveryDateFilter">
+    <a href="/admin/delivery?date=${day.next}" class="btn btn-sm btn-outline-secondary"
+       title="Next day"><i class="fas fa-chevron-right"></i></a>
+    ${day.isToday ? '' : '<a href="/admin/delivery" class="btn btn-sm btn-outline-secondary">Today</a>'}
+    ${day.saturdayLanding ? '<a href="/admin?home=1" class="btn btn-sm btn-outline-secondary" title="Go to the dashboard"><i class="fas fa-tachometer-alt me-1"></i>Dashboard</a>' : ''}
   </div>
 </div>
 
-${deliveries.length > 0 ? deliveries.map((d, i) => `
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span>
-      <i class="fas fa-truck me-2 text-primary"></i>
-      <strong>Delivery ${i + 1} of ${deliveries.length}</strong>
-      <span class="text-muted ms-2">${d.event_start_time || ''}</span>
-    </span>
-    <a href="/admin/bookings/${d.id}" class="btn btn-sm btn-outline-secondary">
-      <i class="fas fa-eye me-1"></i> Booking #${d.booking_number}
-    </a>
+${stops.length ? stops.map(s => `
+<div class="stop">
+  <div class="stop-n">
+    ${s.n}
+    <small>${day.ordered ? 'stop' : 'of ' + stops.length}</small>
   </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-md-4">
-        <small class="text-muted d-block"><i class="fas fa-user me-1"></i> Customer</small>
-        <strong>${esc(d.first_name)} ${esc(d.last_name)}</strong>
-        ${d.phone ? '<br><a href="tel:' + d.phone + '" class="text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(d.phone) + '</a>' : ''}
-      </div>
-      <div class="col-md-4">
-        <small class="text-muted d-block"><i class="fas fa-map-marker-alt me-1"></i> Address</small>
-        <strong>${esc(d.delivery_address) || 'No address'}</strong>
-        ${d.delivery_city ? '<br>' + esc(d.delivery_city) : ''}${d.delivery_zip ? ', ' + esc(d.delivery_zip) : ''}
-      </div>
-      <div class="col-md-4">
-        <small class="text-muted d-block"><i class="fas fa-clock me-1"></i> Setup Time</small>
-        <strong>${d.setup_time ? d.setup_time + ' min' : 'N/A'}</strong>
-      </div>
-      <div class="col-12">
-        <small class="text-muted d-block"><i class="fas fa-castle me-1"></i> Items</small>
-        <div class="d-flex flex-wrap gap-2 mt-1">
-          ${d.items ? d.items.split(', ').map(function(name) { return '<span class="badge bg-light text-dark border">' + esc(name) + '</span>'; }).join('') : '<span class="text-muted">No items listed</span>'}
+  <div class="stop-body">
+    <div class="stop-top">
+      <div>
+        <div class="stop-when">${esc(s.window)}</div>
+        <div class="stop-who">
+          <strong>${esc(s.name)}</strong>
+          ${s.phone ? '<a href="tel:' + esc(s.phoneHref) + '" class="ms-2 text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(s.phone) + '</a>' : ''}
         </div>
       </div>
-      ${d.delivery_notes ? `
-      <div class="col-12">
-        <small class="text-muted d-block"><i class="fas fa-sticky-note me-1"></i> Delivery Notes</small>
-        <div class="alert alert-warning py-2 mb-0 mt-1">${esc(d.delivery_notes)}</div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        ${s.signed
+          ? '<span class="flag flag-ok"><i class="fas fa-file-signature"></i>Contract signed</span>'
+          : '<span class="flag flag-bad"><i class="fas fa-triangle-exclamation"></i>Contract NOT signed</span>'}
+        <a href="/admin/bookings/${s.id}" class="btn btn-sm btn-outline-secondary">
+          ${esc(s.booking_number)}
+        </a>
       </div>
-      ` : ''}
     </div>
+
+    <dl class="stop-grid mb-0">
+      <div>
+        <dt>Address</dt>
+        <dd>
+          ${s.address
+            ? '<a href="' + esc(s.mapsUrl) + '" target="_blank" rel="noopener" class="text-decoration-none">' + esc(s.address) + '</a>' + (s.cityLine ? '<div class="fw-normal text-muted">' + esc(s.cityLine) + '</div>' : '')
+            : '<span class="text-muted fw-normal">No address on the booking</span>'}
+        </dd>
+      </div>
+      <div>
+        <dt>Collect at delivery</dt>
+        <dd>${s.balance > 0
+          ? '<span class="collect">$' + esc(s.balanceLabel) + '</span>'
+          : '<span class="settled">Paid in full</span>'}</dd>
+      </div>
+      <div>
+        <dt>Crew</dt>
+        <dd>${s.crew
+          ? esc(s.crew)
+          : '<span class="flag flag-warn"><i class="fas fa-user-slash"></i>Nobody assigned</span>'}</dd>
+      </div>
+      ${s.setupLabel ? `
+      <div>
+        <dt>Set up by</dt>
+        <dd>${esc(s.setupLabel)}</dd>
+      </div>` : ''}
+      ${s.pickupLabel ? `
+      <div>
+        <dt>Pick up</dt>
+        <dd>${esc(s.pickupLabel)}</dd>
+      </div>` : ''}
+    </dl>
+
+    <div class="mt-3">
+      <div class="stop-label">Loading</div>
+      ${s.items.length
+        ? s.items.map(function(name) { return '<span class="stop-item">' + esc(name) + '</span>'; }).join('')
+        : '<span class="text-muted">No items on this booking</span>'}
+    </div>
+
+    ${s.notes ? '<div class="stop-note"><i class="fas fa-note-sticky me-2"></i>' + esc(s.notes) + '</div>' : ''}
   </div>
-</div>
-`).join('') : `
+</div>`).join('') : `
 <div class="card">
   <div class="card-body text-center py-5">
-    <i class="fas fa-truck fa-3x text-muted mb-3"></i>
-    <h5 class="text-muted">No deliveries scheduled for this date</h5>
-    <p class="text-muted">Select a different date to view deliveries.</p>
+    <i class="fas fa-truck fa-2x mb-3 d-block" style="color:var(--bm-n-300)"></i>
+    <h5 class="mb-1">Nothing booked for ${esc(day.plainDate)}.</h5>
+    ${day.nextBooked
+      ? '<p class="text-muted mb-3">Next delivery is <a href="/admin/delivery?date=' + day.nextBooked.date + '">' + esc(day.nextBooked.label) + '</a> — ' + day.nextBooked.count + (day.nextBooked.count === 1 ? ' delivery.' : ' deliveries.') + '</p>'
+      : '<p class="text-muted mb-3">Nothing on the books ahead of this date either.</p>'}
+    <a href="/admin/bookings/new" class="btn btn-primary btn-sm">
+      <i class="fas fa-plus me-1"></i>New booking
+    </a>
   </div>
 </div>
 `}
@@ -69,7 +169,7 @@ ${deliveries.length > 0 ? deliveries.map((d, i) => `
   var df = document.getElementById('deliveryDateFilter');
   if (df) {
     df.addEventListener('change', function() {
-      window.location='/admin/delivery?date='+this.value;
+      window.location = '/admin/delivery?date=' + this.value;
     });
   }
 })();
