@@ -303,21 +303,63 @@ router.get('/bookings', (req, res) => {
   const status = req.query.status;
   const date = req.query.date;
 
+  // 75 of the 78 bookings have already happened. Reverse-chronological "everything"
+  // means the screen is 96% history, and the three jobs that have not happened yet --
+  // the only ones anything can still be done about -- are three rows in a wall of 78.
+  // Default to those. The scope is explicit, counted and one click wide, so nothing is
+  // hidden, it is just not first.
+  //
+  // When a status or a date IS specified, default to 'all' instead: "Completed" and
+  // "upcoming" together is an empty screen, and an empty screen reads as breakage.
+  const WHENS = ['upcoming', 'past', 'all'];
+  const when = WHENS.indexOf(String(req.query.when || '')) >= 0
+    ? String(req.query.when)
+    : ((status || date) ? 'all' : 'upcoming');
+
+  const baseConditions = [];
+  const baseParams = [];
+  if (status) { baseConditions.push('b.status = ?'); baseParams.push(status); }
+  if (date) { baseConditions.push('b.event_date = ?'); baseParams.push(date); }
+
+  const scopeSql = {
+    upcoming: "b.event_date >= date('now')",
+    past: "b.event_date < date('now')",
+    all: null
+  };
+
+  const conditions = baseConditions.slice();
+  if (scopeSql[when]) conditions.push(scopeSql[when]);
+
   let query = `SELECT b.*, c.first_name, c.last_name, c.email, c.phone
     FROM bookings b JOIN customers c ON c.id = b.customer_id`;
-  const params = [];
-  const conditions = [];
-
-  if (status) { conditions.push('b.status = ?'); params.push(status); }
-  if (date) { conditions.push('b.event_date = ?'); params.push(date); }
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-  query += ' ORDER BY b.event_date DESC, b.created_at DESC';
+  // Soonest first when looking forward -- the next job is the one that matters. Most
+  // recent first when looking back.
+  query += when === 'upcoming'
+    ? ' ORDER BY b.event_date ASC, b.event_start_time ASC, b.created_at ASC'
+    : ' ORDER BY b.event_date DESC, b.created_at DESC';
 
-  const bookings = db.prepare(query).all(...params);
+  const bookings = db.prepare(query).all(...baseParams);
+
+  // Counts carry whatever other filters are active, so the tabs never promise rows the
+  // filter would exclude.
+  const countFor = (scope) => {
+    const c = baseConditions.slice();
+    if (scopeSql[scope]) c.push(scopeSql[scope]);
+    let q = 'SELECT COUNT(*) AS n FROM bookings b JOIN customers c ON c.id = b.customer_id';
+    if (c.length) q += ' WHERE ' + c.join(' AND ');
+    return db.prepare(q).get(...baseParams).n;
+  };
+  const scopeCounts = {
+    upcoming: countFor('upcoming'),
+    past: countFor('past'),
+    all: countFor('all')
+  };
 
   res.render('admin/bookings/list', {
     title: 'Bookings - Admin', user: req.user, settings, bookings,
-    activeStatus: status || 'all', activeDate: date || '', page: 'bookings'
+    activeStatus: status || 'all', activeDate: date || '',
+    activeWhen: when, scopeCounts, page: 'bookings'
   });
 });
 

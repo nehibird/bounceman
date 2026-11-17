@@ -1,5 +1,16 @@
 <%- include('../../layouts/admin', { body: `
 <style>
+  .bk-scope { display: inline-flex; background: var(--bm-n-50); border-radius: var(--bm-radius-pill);
+    padding: 3px; gap: 2px; }
+  .bk-scope-tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 14px;
+    border-radius: var(--bm-radius-pill); font-size: 14px; font-weight: 700;
+    color: var(--bm-n-600); text-decoration: none; white-space: nowrap; }
+  .bk-scope-tab:hover { color: var(--bm-n-900); }
+  .bk-scope-tab span { font-size: 12px; font-weight: 700; color: var(--bm-n-500);
+    background: var(--bm-n-100); border-radius: var(--bm-radius-pill); padding: 0 7px; }
+  .bk-scope-tab.is-on { background: var(--bm-accent); color: var(--bm-n-0);
+    box-shadow: var(--bm-shadow-1); }
+  .bk-scope-tab.is-on span { background: rgba(255, 255, 255, 0.25); color: var(--bm-n-0); }
   .bk-name { font-weight: 700; color: var(--bm-n-900); }
   .bk-when { font-weight: 600; color: var(--bm-n-800); }
   .bk-span { font-size: 11px; font-weight: 700; color: var(--bm-n-600);
@@ -22,7 +33,13 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h4 class="mb-1">Bookings</h4>
-    <p class="text-muted mb-0">${bookings.length} booking${bookings.length !== 1 ? 's' : ''} found</p>
+    <p class="text-muted mb-0">${
+      activeWhen === 'upcoming'
+        ? (bookings.length === 1 ? '1 booking still ahead' : bookings.length + ' bookings still ahead')
+        : activeWhen === 'past'
+          ? bookings.length + ' in the past'
+          : bookings.length + ' booking' + (bookings.length !== 1 ? 's' : '') + ' in total'
+    }</p>
   </div>
   <a href="/admin/bookings/new" class="btn btn-bm"><i class="fas fa-plus me-1"></i> New Booking</a>
 </div>
@@ -41,12 +58,34 @@
 <!-- Filter Bar -->
 <div class="card mb-4">
   <div class="card-body d-flex flex-wrap align-items-center gap-3">
+    <div class="bk-scope">
+      ${['upcoming', 'past', 'all'].map(function (w) {
+        var label = w === 'upcoming' ? 'Upcoming' : w === 'past' ? 'Past' : 'All';
+        var qs = [];
+        if (w !== 'upcoming' || activeStatus !== 'all' || activeDate) qs.push('when=' + w);
+        if (activeStatus && activeStatus !== 'all') qs.push('status=' + activeStatus);
+        if (activeDate) qs.push('date=' + activeDate);
+        return '<a href="/admin/bookings' + (qs.length ? '?' + qs.join('&') : '') + '"' +
+               ' class="bk-scope-tab' + (activeWhen === w ? ' is-on' : '') + '">' +
+               label + '<span>' + scopeCounts[w] + '</span></a>';
+      }).join('')}
+    </div>
     <div class="d-flex flex-wrap gap-2">
-      <a href="/admin/bookings" class="btn btn-sm ${!activeStatus ? 'btn-bm' : 'btn-bm-outline'}">All</a>
-      <a href="/admin/bookings?status=pending${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'pending' ? 'btn-bm' : 'btn-bm-outline'}">Pending</a>
-      <a href="/admin/bookings?status=confirmed${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'confirmed' ? 'btn-bm' : 'btn-bm-outline'}">Confirmed</a>
-      <a href="/admin/bookings?status=completed${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'completed' ? 'btn-bm' : 'btn-bm-outline'}">Completed</a>
-      <a href="/admin/bookings?status=cancelled${activeDate ? '&date=' + activeDate : ''}" class="btn btn-sm ${activeStatus === 'cancelled' ? 'btn-bm' : 'btn-bm-outline'}">Cancelled</a>
+      ${
+        /* activeStatus is 'all' when nothing is filtered -- the route sets it that way --
+           so the old test (!activeStatus) was never true and the All button could never
+           light up. Compare to the value the route actually sends. */
+        ['all', 'pending', 'confirmed', 'completed', 'cancelled'].map(function (st) {
+          var label = st === 'all' ? 'All' : st.charAt(0).toUpperCase() + st.slice(1);
+          var qs = [];
+          if (st !== 'all') qs.push('status=' + st);
+          if (activeWhen && activeWhen !== 'upcoming') qs.push('when=' + activeWhen);
+          if (activeDate) qs.push('date=' + activeDate);
+          return '<a href="/admin/bookings' + (qs.length ? '?' + qs.join('&') : '') + '"' +
+                 ' class="btn btn-sm ' + (activeStatus === st ? 'btn-bm' : 'btn-bm-outline') + '">' +
+                 label + '</a>';
+        }).join('')
+      }
     </div>
     <div class="ms-auto">
       <input type="date" class="form-control form-control-sm" value="${esc(activeDate)}" id="dateFilter" data-status="${esc(activeStatus)}">
