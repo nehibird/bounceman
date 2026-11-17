@@ -29,6 +29,13 @@ const PORT = process.env.PORT || 3200;
 // (customer fields, inbound SMS bodies, review comments) via `<%- %>` + template
 // literals, which do not auto-escape.
 app.locals.esc = require('./lib/helpers').esc;
+// Same reasoning as esc(): every admin view renders dates, and they were each doing it
+// their own way -- raw ISO in six places and two copies of an inline time formatter.
+// One implementation, reachable from every template.
+app.locals.fmtDayDate = require('./lib/helpers').fmtDayDate;
+app.locals.fmtDateShort = require('./lib/helpers').fmtDateShort;
+app.locals.fmtTime12 = require('./lib/helpers').fmtTime12;
+app.locals.fmtStamp = require('./lib/helpers').fmtStamp;
 // Live review aggregate for LocalBusiness JSON-LD (rich-result stars). Exposed
 // as a callable local so the shared layout can emit real, current numbers.
 app.locals.getReviewStats = require('./lib/helpers').getReviewStats;

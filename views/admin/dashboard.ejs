@@ -326,7 +326,7 @@ ${unsignedContracts.length ? `
         <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mt-2"
              title="Estimate: ~${analytics.breakEven.bookingsNeeded} more bookings to cover the remaining deficit, at your recent booking pace, stretched for the OK off-season (season modelled as ~6.5 active months). Updates live as bookings come in.">
           <span class="small"><i class="fas fa-flag-checkered me-1 text-primary"></i>Est. break-even</span>
-          <span><strong>${analytics.breakEven.date}</strong> <span class="text-muted small">~${analytics.breakEven.bookingsNeeded} bookings</span></span>
+          <span><strong>${fmtDateShort(analytics.breakEven.date)}</strong> <span class="text-muted small">~${analytics.breakEven.bookingsNeeded} bookings</span></span>
         </div>` : analytics.breakEven && analytics.breakEven.status === 'reached' ? `
         <div class="d-flex justify-content-between align-items-center border border-success rounded px-3 py-2 mt-2">
           <span class="small text-success"><i class="fas fa-flag-checkered me-1"></i>Broke even</span>
@@ -425,9 +425,9 @@ ${unsignedContracts.length ? `
             <tbody>
               ${upcoming.length > 0 ? upcoming.map(b => `
               <tr style="cursor:pointer" data-booking-href="/admin/bookings/${b.id}">
-                <td data-label="Date"><strong>${b.event_date}</strong>${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
+                <td data-label="Date"><strong>${fmtDayDate(b.event_date)}</strong>${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
                 <td class="rt-primary">${esc(b.first_name)} ${esc(b.last_name)}</td>
-                <td data-label="Time">${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>
+                <td data-label="Time">${fmtTime12(b.event_start_time)} - ${fmtTime12(b.event_end_time)}</td>
                 <td data-label="Status"><span class="badge-status badge-${b.status}">${b.status}</span></td>
                 <td class="rt-actions"><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
               </tr>

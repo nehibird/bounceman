@@ -5,7 +5,7 @@
   <div>
     <a href="/admin/events" class="text-muted small text-decoration-none"><i class="fas fa-arrow-left me-1"></i>Back to Events</a>
     <h3 class="mt-2 mb-0" style="font-weight:700;color:var(--bm-dark)">${esc(event.name)}</h3>
-    <span class="text-muted">${event.event_date} ${event.location ? '&bull; ' + esc(event.location) : ''}</span>
+    <span class="text-muted">${fmtDayDate(event.event_date)} ${event.location ? '&bull; ' + esc(event.location) : ''}</span>
   </div>
   <div>
     <span class="badge-status ${event.active ? 'badge-confirmed' : 'badge-cancelled'} me-2">${event.active ? 'Active' : 'Inactive'}</span>

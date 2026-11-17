@@ -110,28 +110,10 @@
         </thead>
         <tbody id="bookingsBody">
           ${(function () {
-            /* One local formatter instead of the same IIFE pasted twice per row.
-               V7 consolidates these into the shared helper. */
-            function t12(t) {
-              if (!t) return '';
-              var p = String(t).split(':');
-              var h = parseInt(p[0], 10);
-              if (isNaN(h)) return '';
-              var m = p[1] || '00';
-              var a = h >= 12 ? 'PM' : 'AM';
-              h = h % 12; if (h === 0) h = 12;
-              return h + ':' + m + ' ' + a;
-            }
-            var THIS_YEAR = new Date().getFullYear();
-            function humanDate(iso) {
-              if (!iso) return 'No date';
-              var d = new Date(iso + 'T12:00:00');
-              if (isNaN(d)) return iso;
-              var out = d.toLocaleDateString('en-US', { weekday: 'short' }) + ' \u00b7 ' +
-                        d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              if (d.getFullYear() !== THIS_YEAR) out += ', ' + d.getFullYear();
-              return out;
-            }
+            /* V3 wrote local copies of these; V7 folded them into lib/helpers so the
+               admin has exactly one date formatter and one time formatter. */
+            var t12 = fmtTime12;
+            var humanDate = function (iso) { return fmtDayDate(iso) || 'No date'; };
             /* status and payment_status were two columns, and across all 78 bookings they
                only ever form five combinations. One chip says the same thing, and says
                the part that matters -- whether money is still owed. */

@@ -46,7 +46,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
         </div>
         <div class="d-flex justify-content-between">
           <span>Member Since</span>
-          <strong>${customer.created_at || 'N/A'}</strong>
+          <strong>${customer.created_at ? fmtStamp(customer.created_at, false) : 'N/A'}</strong>
         </div>
       </div>
     </div>
@@ -105,7 +105,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
               ${bookings.length > 0 ? bookings.map(b => `
               <tr>
                 <td class="rt-primary"><strong>${b.booking_number}</strong></td>
-                <td data-label="Date">${b.event_date}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
+                <td data-label="Date">${fmtDayDate(b.event_date)}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
                 <td data-label="Status"><span class="badge-status badge-${b.status}">${b.status}</span></td>
                 <td data-label="Total">$${parseFloat(b.total || 0).toFixed(2)}</td>
                 <td class="rt-actions"><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
@@ -130,7 +130,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
             <tbody>
               ${payments.length > 0 ? payments.map(p => `
               <tr>
-                <td class="rt-primary">${p.paid_at || p.created_at || ''}</td>
+                <td class="rt-primary">${fmtStamp(p.paid_at || p.created_at)}</td>
                 <td data-label="Amount"><strong>$${parseFloat(p.amount || 0).toFixed(2)}</strong></td>
                 <td data-label="Method">${p.method || ''}</td>
                 <td data-label="Booking">${p.booking_number ? '<a href="/admin/bookings/' + p.booking_id + '">' + p.booking_number + '</a>' : ''}</td>

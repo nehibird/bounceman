@@ -15,7 +15,7 @@ const multer = require('multer');
 const path = require('path');
 const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
-const { taxBreakdown, STATE_RATE: OK_STATE_RATE } = require('../lib/helpers');
+const { taxBreakdown, STATE_RATE: OK_STATE_RATE, fmtTime12 } = require('../lib/helpers');
 const { recordManualPayment } = require('../lib/payments');
 const bcrypt = require('bcryptjs');
 const vapiSvc = require('../services/vapi');
@@ -1200,19 +1200,9 @@ router.get('/search.json', (req, res) => {
 
 // === DELIVERY ROUTES ===
 
-// Nehemiah never wants a 24-hour clock on screen. The bookings table stores times as
-// "HH:MM" strings, so every one of them has to come through here before it is rendered.
-// (V7 "human dates everywhere" should reuse this rather than growing a second copy.)
-function clock12(t) {
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(t == null ? '' : t).trim());
-  if (!m) return '';
-  let h = parseInt(m[1], 10);
-  if (isNaN(h) || h > 23) return '';
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  if (h === 0) h = 12;
-  return h + ':' + m[2] + ' ' + suffix;
-}
+// fmtTime12() lived here until V7. It was a second copy of lib/helpers' fmtTime12, added
+// by P0-2 without noticing that one existed. Deleted; its stricter hour check was folded
+// into fmtTime12, which is now the only time formatter in the codebase.
 
 function money2(n) {
   const v = Number(n);
@@ -1247,8 +1237,8 @@ router.get('/delivery', (req, res) => {
   `).all(date);
 
   const stops = deliveries.map((d, i) => {
-    const start = clock12(d.event_start_time);
-    const end = clock12(d.event_end_time);
+    const start = fmtTime12(d.event_start_time);
+    const end = fmtTime12(d.event_end_time);
     const cityBits = [d.delivery_city, d.delivery_state].filter(Boolean).join(', ');
     const cityLine = [cityBits, d.delivery_zip].filter(Boolean).join(' ');
     const name = [d.first_name, d.last_name].filter(Boolean).join(' ') || 'No name on file';
@@ -1264,8 +1254,8 @@ router.get('/delivery', (req, res) => {
       phone: d.phone || '',
       phoneHref: String(d.phone || '').replace(/[^0-9+]/g, ''),
       window: start && end ? start + ' \u2013 ' + end : (start || end || 'No time set'),
-      setupLabel: clock12(d.setup_time),
-      pickupLabel: clock12(d.pickup_time),
+      setupLabel: fmtTime12(d.setup_time),
+      pickupLabel: fmtTime12(d.pickup_time),
       address: d.delivery_address || '',
       cityLine,
       mapsUrl: 'https://www.google.com/maps/search/?api=1&query=' +

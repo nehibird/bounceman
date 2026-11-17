@@ -18,17 +18,8 @@
 </a>
 
 ${(function () {
-  /* V7 folds this into the shared date helper. */
   var name = [booking.first_name, booking.last_name].filter(Boolean).join(' ') || 'No name on file';
-  var when = '';
-  if (booking.event_date) {
-    var d = new Date(booking.event_date + 'T12:00:00');
-    if (!isNaN(d)) {
-      when = d.toLocaleDateString('en-US', { weekday: 'short' }) + ', ' +
-             d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (d.getFullYear() !== new Date().getFullYear()) when += ' ' + d.getFullYear();
-    }
-  }
+  var when = fmtDayDate(booking.event_date);
   return '<div class="bk-head">' +
     '<h4 class="bk-head-title">' + esc(name) +
       (when ? '<span class="bk-head-sep">\u00b7</span>' + when : '') + '</h4>' +
@@ -63,11 +54,11 @@ ${(function () {
         <div class="row g-3">
           <div class="col-sm-4">
             <small class="text-muted d-block">Event Date</small>
-            <strong>${booking.event_date}${booking.event_end_date && booking.event_end_date !== booking.event_date ? ' – ' + booking.event_end_date : ''}</strong>
+            <strong>${fmtDayDate(booking.event_date)}${booking.event_end_date && booking.event_end_date !== booking.event_date ? ' – ' + fmtDayDate(booking.event_end_date) : ''}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Time</small>
-            <strong>${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(booking.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(booking.event_end_time)}</strong>
+            <strong>${fmtTime12(booking.event_start_time)} - ${fmtTime12(booking.event_end_time)}</strong>
           </div>
           <div class="col-sm-4">
             <small class="text-muted d-block">Duration</small>
@@ -156,7 +147,7 @@ ${(function () {
                 <i class="fas fa-${c.direction === 'outbound' ? 'paper-plane text-primary' : 'inbox text-success'} me-1"></i>
                 ${esc(c.subject || c.type || 'Message')}
               </strong>
-              <small class="text-muted">${c.sent_at || c.created_at || ''}</small>
+              <small class="text-muted">${fmtStamp(c.sent_at || c.created_at)}</small>
             </div>
             <p class="mb-0 mt-1 small">${esc((c.body || '').substring(0, 200))}${(c.body || '').length > 200 ? '...' : ''}</p>
           </div>
@@ -247,7 +238,7 @@ ${(function () {
         ${contract ? `
           <div class="d-flex align-items-center mb-2">
             <i class="fas fa-${contract.signed_at ? 'check-circle text-success' : 'times-circle text-warning'} me-2 fa-lg"></i>
-            <span>${contract.signed_at ? 'Signed on ' + contract.signed_at : 'Unsigned'}</span>
+            <span>${contract.signed_at ? 'Signed ' + fmtStamp(contract.signed_at) : 'Unsigned'}</span>
           </div>
           <a href="/admin/bookings/${booking.id}/contract" class="btn btn-sm btn-outline-secondary w-100">
             <i class="fas fa-eye me-1"></i> View Contract
@@ -308,7 +299,7 @@ ${(function () {
               <strong>$${parseFloat(p.amount || 0).toFixed(2)}</strong>
               <small class="text-muted d-block">${esc(p.payment_method)} ${p.stripe_payment_id ? '(' + esc(p.stripe_payment_id) + ')' : ''}</small>
             </div>
-            <small class="text-muted">${p.created_at || ''}</small>
+            <small class="text-muted">${fmtStamp(p.created_at)}</small>
           </div>
         `).join('') + '</div>' : '<div class="text-center text-muted py-3">No payments recorded</div>'}
       </div>

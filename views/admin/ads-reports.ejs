@@ -83,7 +83,7 @@ ${rows.length === 0 ? `
         <tbody>
           ${rows.map(r => `
           <tr class="channel-row" data-channel="${r.platform || 'unknown'}">
-            <td class="rt-primary">${r.date}</td>
+            <td class="rt-primary">${fmtDateShort(r.date)}</td>
             <td data-label="Channel">
               ${r.platform === 'google'
                 ? '<i class="fab fa-google text-primary me-1"></i>Google'
