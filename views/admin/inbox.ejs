@@ -1,0 +1,173 @@
+<%
+  // One conversation per person, every channel in one timeline. P0-1.
+  const ICON = {
+    sms: 'fas fa-comment-dots', email: 'fas fa-envelope',
+    contact_form: 'fas fa-file-lines', messenger: 'fab fa-facebook-messenger',
+    call: 'fas fa-phone'
+  };
+  const LABEL = {
+    sms: 'Text', email: 'Email', contact_form: 'Contact form',
+    messenger: 'Messenger', call: 'Phone call'
+  };
+%>
+<%- include('../layouts/admin', { body: `
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="fas fa-inbox me-2"></i>Inbox</h4>
+    <p class="text-muted mb-0">Every text, email, contact form and phone call, one thread per person.</p>
+  </div>
+  <form method="POST" action="/admin/sarah-sms/toggle" class="m-0">
+    <button class="btn btn-sm ${sarahEnabled ? 'btn-bm' : 'btn-outline-secondary'}" type="submit"
+      title="Master switch for Sarah auto-replying to all texts">
+      <i class="fas fa-robot me-1"></i>Sarah auto-reply: ${sarahEnabled ? 'ON' : 'OFF'}
+    </button>
+  </form>
+</div>
+
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item">
+    <a class="nav-link ${tab === 'conversations' ? 'active' : ''}" href="/admin/inbox">
+      Conversations <span class="badge bg-light text-dark ms-1">${counts.conversations}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link ${tab === 'alerts' ? 'active' : ''}" href="/admin/inbox?tab=alerts">
+      Alerts to you <span class="badge bg-light text-dark ms-1">${counts.alerts}</span>
+    </a>
+  </li>
+</ul>
+
+${tab === 'alerts' ? `
+<div class="alert alert-light border mb-3 py-2 px-3 small text-muted">
+  Texts the system sent <strong>to your own number</strong> — booking notices, daily
+  summaries, "customer sent a text" relays. Kept out of Conversations so they don't
+  bury real customers.
+</div>` : ''}
+
+<div class="row g-3">
+  <div class="col-md-4 ${explicitSelection ? 'd-none d-md-block' : ''}">
+    <div class="card">
+      <div class="list-group list-group-flush" style="max-height:72vh;overflow:auto">
+        ${threads.length ? threads.map(t => `
+        <a href="/admin/inbox?${tab === 'alerts' ? 'tab=alerts&' : ''}t=${encodeURIComponent(t.key)}"
+           class="list-group-item list-group-item-action ${active && t.key === active.key ? 'active' : ''}">
+          <div class="d-flex justify-content-between align-items-center gap-2">
+            <strong class="text-truncate">${esc(t.display)}</strong>
+            <span class="flex-shrink-0" style="opacity:.75;font-size:11px">
+              ${t.channelList.map(c => '<i class="' + (ICON[c] || 'fas fa-circle') + ' ms-1" title="' + (LABEL[c] || c) + '"></i>').join('')}
+            </span>
+          </div>
+          <small class="${active && t.key === active.key ? '' : 'text-muted'} d-block text-truncate">
+            ${t.sub ? esc(t.sub) + ' · ' : ''}${esc(t.preview)}
+          </small>
+        </a>`).join('') : '<div class="p-4 text-muted text-center">Nothing here yet.</div>'}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8 ${explicitSelection ? '' : 'd-none d-md-block'}">
+    ${active ? `
+    <a href="/admin/inbox${tab === 'alerts' ? '?tab=alerts' : ''}" class="btn btn-sm btn-outline-secondary d-md-none mb-2">
+      <i class="fas fa-arrow-left me-1"></i>Back
+    </a>
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <strong>${esc(active.display)}</strong>
+          ${active.sub ? '<small class="text-muted ms-1">' + esc(active.sub) + '</small>' : ''}
+          ${active.customerId ? '<a class="small ms-2" href="/admin/customers/' + active.customerId + '">customer</a>' : ''}
+        </div>
+        <div class="d-flex gap-2">
+          ${active.smsTo && sarahEnabled ? `
+          <form method="POST" action="/admin/messages/${active.paused ? 'resume' : 'pause'}" class="m-0">
+            <input type="hidden" name="to" value="${esc(active.smsTo)}">
+            <button class="btn btn-sm ${active.paused ? 'btn-outline-secondary' : 'btn-bm'}" type="submit"
+              title="${active.paused ? 'Sarah is paused here — click to let her reply' : 'Sarah is auto-replying — click to take over'}">
+              <i class="fas fa-robot me-1"></i>${active.paused ? 'Sarah off' : 'Sarah on'}
+            </button>
+          </form>` : ''}
+          ${active.phone ? `<button class="btn btn-sm btn-bm-outline call-btn" data-phone="${esc(active.phone)}"><i class="fas fa-phone-alt me-1"></i>Call</button>` : ''}
+          ${active.smsTo ? `
+          <form method="POST" action="/admin/messages/delete" class="m-0 confirm-delete"
+                data-confirm="Delete the text messages in this conversation? This cannot be undone. Calls, emails and contact forms are not affected.">
+            <input type="hidden" name="to" value="${esc(active.smsTo)}">
+            <button class="btn btn-sm btn-link text-danger p-1" type="submit" title="Delete the texts in this conversation">
+              <i class="fas fa-trash"></i>
+            </button>
+          </form>` : ''}
+        </div>
+      </div>
+
+      <div class="card-body" id="convo" style="max-height:56vh;overflow:auto;background:var(--bm-n-25)">
+        ${active.items.map(m => m.kind === 'call' ? `
+        <div class="d-flex justify-content-center my-3">
+          <div class="text-center small" style="max-width:85%">
+            <span class="badge" style="background:var(--bm-n-100);color:var(--bm-n-700)">
+              <i class="fas fa-phone me-1"></i>Phone call${m.duration ? ' · ' + esc(m.duration) : ''}${m.status && m.status !== 'allowed' ? ' · ' + esc(m.status) : ''}
+            </span>
+            <div class="text-muted mt-1" style="font-size:11px">${esc(m.when)}</div>
+            ${m.body ? '<div class="mt-1 text-start p-2 rounded-3" style="background:var(--bm-n-0);border:1px solid var(--bm-n-100);white-space:pre-wrap">' + esc(m.body) + '</div>' : ''}
+            ${m.callId ? '<a class="small" href="/admin/calls/' + encodeURIComponent(m.callId) + '">recording &amp; transcript</a>' : ''}
+          </div>
+        </div>` : `
+        <div class="d-flex mb-2 ${m.direction === 'outbound' ? 'justify-content-end' : 'justify-content-start'}">
+          <div class="p-2 px-3 rounded-3 shadow-sm bm-bubble ${m.direction === 'outbound' ? 'bm-bubble-out' : 'bm-bubble-in'}" style="max-width:75%">
+            <div class="bm-bubble-meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.3px;opacity:.7">
+              <i class="${ICON[m.kind] || 'fas fa-circle'} me-1"></i>${esc(LABEL[m.kind] || m.kind)}
+            </div>
+            ${m.subject ? '<div class="fw-bold" style="font-size:13px">' + esc(m.subject) + '</div>' : ''}
+            <div style="white-space:pre-wrap;word-break:break-word">${esc(m.body || '')}</div>
+            <small class="bm-bubble-meta d-block mt-1" style="font-size:11px">${esc(m.when)}</small>
+          </div>
+        </div>`).join('')}
+      </div>
+
+      ${active.smsTo ? `
+      <div class="card-footer" style="position:sticky;bottom:0;z-index:5;background:var(--bm-n-0)">
+        <form method="POST" action="/admin/messages/send" class="d-flex gap-2">
+          <input type="hidden" name="to" value="${esc(active.smsTo)}">
+          <input type="text" name="body" class="form-control" placeholder="Reply by text…"
+                 autocomplete="off" maxlength="1000" required>
+          <button class="btn btn-bm" type="submit"><i class="fas fa-paper-plane me-1"></i>Send</button>
+        </form>
+      </div>` : `
+      <div class="card-footer text-muted small">
+        No mobile number on this thread, so there is nothing to reply to by text.
+        ${active.email ? 'Reply by email to <strong>' + esc(active.email) + '</strong>.' : ''}
+      </div>`}
+    </div>` : '<div class="card"><div class="card-body text-muted text-center py-5"><i class="fas fa-comment-dots fa-2x mb-2 d-block opacity-50"></i>Pick a conversation to read and reply.</div></div>'}
+  </div>
+</div>
+
+`, scripts: `
+<style>
+  .bm-bubble-in  { background: var(--bm-n-0); border: 1px solid var(--bm-n-100); color: var(--bm-n-800); }
+  .bm-bubble-out { background: var(--bm-accent); color: #fff; }
+  .bm-bubble-out .bm-bubble-meta { color: rgba(255,255,255,.75); }
+  .bm-bubble-in  .bm-bubble-meta { color: var(--bm-n-500); }
+  .nav-pills .nav-link.active { background: var(--bm-accent); }
+  .nav-pills .nav-link { color: var(--bm-accent-text); }
+</style>
+<script>
+  var c = document.getElementById('convo');
+  if (c) c.scrollTop = c.scrollHeight;
+  var MY_PHONE_KEY = 'bm_my_phone';
+  document.querySelectorAll('.call-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var customerPhone = btn.getAttribute('data-phone');
+      var myPhone = localStorage.getItem(MY_PHONE_KEY) || '';
+      myPhone = prompt('Your cell number to call from:', myPhone);
+      if (!myPhone) return;
+      localStorage.setItem(MY_PHONE_KEY, myPhone);
+      var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      fetch('/api/call/dial', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to: customerPhone, your_phone: myPhone }) })
+        .then(function(r){return r.json();}).then(function(d){
+          showToast(d.success ? 'Ringing your phone now.' : ('Could not place the call: ' + (d.error||'failed')), d.success ? 'success' : 'error');
+          btn.disabled=false; btn.innerHTML=orig;
+        })
+        .catch(function(){ showToast('Request failed.', 'error'); btn.disabled=false; btn.innerHTML=orig; });
+    });
+  });
+</script>
+` }) %>
