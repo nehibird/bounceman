@@ -94,7 +94,11 @@
               ` : '-'}
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">No maintenance records</td></tr>'}
+          `).join('') : '<tr><td colspan="7"><div class="bm-empty">' +
+  '<i class="fas fa-wrench bm-empty-icon"></i>' +
+  '<p class="bm-empty-title">No maintenance logged</p>' +
+  '<p class="bm-empty-line">Log a repair or a clean against a unit and it stays on that unit&rsquo;s history.</p>' +
+'</div></td></tr>'}
         </tbody>
       </table>
     </div>

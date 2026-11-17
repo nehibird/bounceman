@@ -612,6 +612,34 @@ a:hover { color: var(--bm-accent-hover); }
 /* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
 @media (min-width: 768px) { .admin-backdrop { display: none !important; } }
 
+/* ============================ empty states ===============================
+   An empty table said "No bookings found" in grey and stopped. That answers the
+   wrong question: a person looking at an empty screen wants to know whether
+   something is broken, whether they filtered everything away, or whether this is
+   simply the start.
+
+   So an empty state here says what belongs in the space, why it is not there, and
+   offers the one action that would fill it -- and crucially distinguishes "nothing
+   exists yet" from "nothing matches what you asked for", because the right answer to
+   the second is a way back, not an invitation to create. */
+
+.bm-empty { text-align: center; padding: var(--bm-space-8) var(--bm-space-5); }
+.bm-empty-icon {
+  font-size: 26px; color: var(--bm-n-300); display: block;
+  margin-bottom: var(--bm-space-3);
+}
+.bm-empty-title {
+  font-size: var(--bm-text-md); font-weight: 700; color: var(--bm-n-800);
+  margin: 0 0 var(--bm-space-2);
+}
+.bm-empty-line {
+  font-size: var(--bm-text-base); color: var(--bm-n-500);
+  margin: 0 auto var(--bm-space-4); max-width: 46ch; line-height: 1.5;
+}
+.bm-empty .btn { margin: 0 4px; }
+/* Inside a table the cell already supplies the row, so drop the doubled padding. */
+td > .bm-empty { padding-top: var(--bm-space-6); padding-bottom: var(--bm-space-6); }
+
 /* ==================== bootstrap colour utilities =========================
    249 uses of .text-muted in the admin views, and not one of them went through a
    token -- they carried Bootstrap's own greys, which is a second palette D0 never

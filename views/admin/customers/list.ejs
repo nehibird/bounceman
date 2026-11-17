@@ -65,7 +65,19 @@
               </a>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No customers found</td></tr>'}
+          `).join('') : (search
+  ? '<tr><td colspan="8"><div class="bm-empty">' +
+      '<i class="fas fa-magnifying-glass bm-empty-icon"></i>' +
+      '<p class="bm-empty-title">Nobody matches &ldquo;' + esc(search) + '&rdquo;</p>' +
+      '<p class="bm-empty-line">Try part of a surname, or a phone number.</p>' +
+      '<a href="/admin/customers" class="btn btn-sm btn-bm">Show everyone</a>' +
+    '</div></td></tr>'
+  : '<tr><td colspan="8"><div class="bm-empty">' +
+      '<i class="fas fa-users bm-empty-icon"></i>' +
+      '<p class="bm-empty-title">No customers yet</p>' +
+      '<p class="bm-empty-line">A customer record is created automatically the first time somebody books.</p>' +
+      '<a href="/admin/bookings/new" class="btn btn-sm btn-bm">New booking</a>' +
+    '</div></td></tr>')}
         </tbody>
       </table>
     </div>

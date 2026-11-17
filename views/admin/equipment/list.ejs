@@ -57,7 +57,13 @@
               </form>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">No equipment added yet</td></tr>'}
+          `).join('') : '<tr><td colspan="8"><div class="bm-empty">' +
+  '<i class="fas fa-chess-rook bm-empty-icon"></i>' +
+  '<p class="bm-empty-title">No equipment yet</p>' +
+  '<p class="bm-empty-line">Add each unit once and it becomes bookable on the website, with its own ' +
+  'photos, price and availability.</p>' +
+  '<a href="/admin/equipment/new" class="btn btn-sm btn-bm">Add equipment</a>' +
+'</div></td></tr>'}
         </tbody>
       </table>
     </div>

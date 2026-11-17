@@ -252,7 +252,13 @@ ${totals.length > 0 ? `
               </form>
             </td>
           </tr>
-          `).join('') : '<tr><td colspan="9" class="text-center text-muted py-4">No expenses yet. Add your first one above.</td></tr>'}
+          `).join('') : '<tr><td colspan="9"><div class="bm-empty">' +
+  '<i class="fas fa-receipt bm-empty-icon"></i>' +
+  '<p class="bm-empty-title">No expenses recorded</p>' +
+  '<p class="bm-empty-line">Expenses come in automatically from a connected bank, and can be added by ' +
+  'hand for anything paid another way.</p>' +
+  '<a href="/admin/banks" class="btn btn-sm btn-bm-outline">Connect a bank</a>' +
+'</div></td></tr>'}
         </tbody>
       </table>
     </div>

@@ -131,7 +131,23 @@
             }
 
             if (!bookings.length) {
-              return '<tr><td colspan="6" class="text-center text-muted py-4">No bookings found</td></tr>';
+              /* Filtered to nothing, or genuinely none? The answers are opposite. */
+              var filtered = (activeStatus && activeStatus !== 'all') || activeDate ||
+                             (activeWhen && activeWhen !== 'all');
+              if (filtered) {
+                return '<tr><td colspan="6"><div class="bm-empty">' +
+                  '<i class="fas fa-filter bm-empty-icon"></i>' +
+                  '<p class="bm-empty-title">Nothing matches this filter</p>' +
+                  '<p class="bm-empty-line">There are bookings here, just none that fit what you have asked for.</p>' +
+                  '<a href="/admin/bookings?when=all" class="btn btn-sm btn-bm">Show all bookings</a>' +
+                  '</div></td></tr>';
+              }
+              return '<tr><td colspan="6"><div class="bm-empty">' +
+                '<i class="fas fa-calendar-check bm-empty-icon"></i>' +
+                '<p class="bm-empty-title">No bookings yet</p>' +
+                '<p class="bm-empty-line">Every booking taken on the website or over the phone lands here.</p>' +
+                '<a href="/admin/bookings/new" class="btn btn-sm btn-bm">New booking</a>' +
+                '</div></td></tr>';
             }
 
             return bookings.map(function (b) {
