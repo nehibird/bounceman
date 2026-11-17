@@ -971,6 +971,125 @@ router.get('/calendar', (req, res) => {
   });
 });
 
+// === GLOBAL SEARCH ===
+
+// 78 bookings, 91 customers, 19 pieces of equipment -- 188 rows in all. At that size
+// the honest implementation is to read them and filter in JS: it is one query per
+// search, it handles the things SQL here cannot (phone numbers are stored both as
+// "5806280870" and as "(580) 763-0516", so matching a typed number means normalising
+// BOTH sides to digits), and it is sub-millisecond. If this ever grows past a few
+// thousand rows it wants a real index instead -- that is the line to watch, not the
+// query shape.
+function searchDigits(v) {
+  return String(v == null ? '' : v).replace(/\D/g, '');
+}
+
+// Exact beats prefix beats substring, so typing a full surname puts that person above
+// everyone who merely contains those letters.
+function searchScore(hay, needle) {
+  const h = String(hay == null ? '' : hay).toLowerCase();
+  if (!h) return 0;
+  if (h === needle) return 100;
+  if (h.startsWith(needle)) return 60;
+  const at = h.indexOf(needle);
+  if (at === 0) return 60;
+  if (at > 0) return 25;
+  return 0;
+}
+
+router.get('/search.json', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  // One character matches most of the database, which is noise, not a search.
+  if (q.length < 2) return res.json({ q, results: [] });
+
+  const db = getDb();
+  const needle = q.toLowerCase();
+  const digits = searchDigits(q);
+  const byDigits = digits.length >= 3;
+  const results = [];
+
+  const customers = db.prepare(`
+    SELECT c.id, c.first_name, c.last_name, c.email, c.phone, c.city,
+      (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = c.id) AS bookings
+    FROM customers c
+  `).all();
+
+  for (const c of customers) {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ');
+    let score = Math.max(
+      searchScore(name, needle),
+      searchScore(c.last_name, needle),
+      searchScore(c.first_name, needle),
+      searchScore(c.email, needle)
+    );
+    if (byDigits && searchDigits(c.phone).indexOf(digits) >= 0) score = Math.max(score, 70);
+    if (!score) continue;
+    const bits = [];
+    if (c.phone) bits.push(c.phone);
+    if (c.city) bits.push(c.city);
+    bits.push(c.bookings === 1 ? '1 booking' : c.bookings + ' bookings');
+    results.push({
+      kind: 'Customer',
+      title: name || c.email || 'Unnamed customer',
+      subtitle: bits.join(' · '),
+      url: '/admin/customers/' + c.id,
+      score: score + (c.bookings > 0 ? 5 : 0)
+    });
+  }
+
+  const bookings = db.prepare(`
+    SELECT b.id, b.booking_number, b.event_date, b.status, b.balance_due,
+      b.delivery_address, b.delivery_city, c.first_name, c.last_name, c.phone
+    FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+  `).all();
+
+  for (const b of bookings) {
+    const name = [b.first_name, b.last_name].filter(Boolean).join(' ');
+    let score = Math.max(
+      searchScore(b.booking_number, needle),
+      searchScore(name, needle),
+      searchScore(b.last_name, needle),
+      searchScore(b.delivery_address, needle),
+      searchScore(b.delivery_city, needle)
+    );
+    if (byDigits) {
+      if (searchDigits(b.phone).indexOf(digits) >= 0) score = Math.max(score, 70);
+      if (searchDigits(b.booking_number).indexOf(digits) >= 0) score = Math.max(score, 65);
+    }
+    if (!score) continue;
+    const when = b.event_date ? dayjs(b.event_date).format('ddd, MMM D YYYY') : 'No date';
+    const bits = [when];
+    if (name) bits.push(name);
+    if (b.delivery_city) bits.push(b.delivery_city);
+    if (Number(b.balance_due) > 0) bits.push('$' + money2(b.balance_due) + ' due');
+    results.push({
+      kind: 'Booking',
+      title: b.booking_number || 'Booking',
+      subtitle: bits.join(' · '),
+      url: '/admin/bookings/' + b.id,
+      status: b.status || '',
+      // A booking that has already happened is rarely what he is looking for.
+      score: score + (b.event_date >= dayjs().format('YYYY-MM-DD') ? 8 : 0)
+    });
+  }
+
+  const equipment = db.prepare('SELECT id, name, status FROM equipment').all();
+  for (const e of equipment) {
+    const score = searchScore(e.name, needle);
+    if (!score) continue;
+    results.push({
+      kind: 'Equipment',
+      title: e.name || 'Equipment',
+      subtitle: e.status || '',
+      url: '/admin/equipment',
+      score
+    });
+  }
+
+  results.sort((a, b) => (b.score - a.score) || a.title.localeCompare(b.title));
+  res.json({ q, results: results.slice(0, 12) });
+});
+
 // === DELIVERY ROUTES ===
 
 // Nehemiah never wants a 24-hour clock on screen. The bookings table stores times as

@@ -13,6 +13,38 @@
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
   <link href="/assets/css/admin.css?v=d0" rel="stylesheet">
+<style>
+  /* P0-3 global search. Tokens only -- literal colours live in admin.css (D0). */
+  .bm-search { position: relative; width: 340px; max-width: 42vw; }
+  .bm-search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    color: var(--bm-n-400); font-size: 13px; pointer-events: none; }
+  .bm-search input { width: 100%; padding: 7px 34px 7px 32px; font-size: 14px;
+    border: 1px solid var(--bm-n-200); border-radius: var(--bm-radius-pill);
+    background: var(--bm-n-25); color: var(--bm-n-900); outline: none; }
+  .bm-search input:focus { background: var(--bm-n-0); border-color: var(--bm-accent);
+    box-shadow: 0 0 0 3px var(--bm-accent-tint); }
+  .bm-search input::-webkit-search-cancel-button { display: none; }
+  .bm-search-kbd { position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+    font-size: 11px; font-weight: 700; color: var(--bm-n-400); background: var(--bm-n-100);
+    border-radius: var(--bm-radius-sm); padding: 1px 6px; pointer-events: none; }
+  .bm-search input:focus ~ .bm-search-kbd { display: none; }
+  .bm-search-panel { position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+    background: var(--bm-n-0); border: 1px solid var(--bm-n-100);
+    border-radius: var(--bm-radius-md); box-shadow: var(--bm-shadow-3);
+    max-height: 70vh; overflow: auto; z-index: 1080; padding: 4px; }
+  .bm-hit { display: block; padding: 7px 10px; border-radius: var(--bm-radius-sm);
+    text-decoration: none; color: var(--bm-n-900); }
+  .bm-hit:hover, .bm-hit.is-active { background: var(--bm-accent-tint); }
+  .bm-hit-top { display: flex; align-items: center; gap: 8px; }
+  .bm-hit-title { font-weight: 700; font-size: 14px; }
+  .bm-hit-kind { font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--bm-n-500); background: var(--bm-n-50);
+    border-radius: var(--bm-radius-pill); padding: 1px 7px; }
+  .bm-hit-sub { font-size: 12px; color: var(--bm-n-500); margin-top: 1px; }
+  .bm-search-msg { padding: 14px 12px; font-size: 13px; color: var(--bm-n-500);
+    text-align: center; }
+  @media (max-width: 767px) { .bm-search { width: 190px; } .bm-search-kbd { display: none; } }
+</style>
   <%
      /* Brand colours come from the settings table — the same two values the
         customer site reads. admin.css consumes these with the live values as
@@ -110,6 +142,15 @@
         <strong><%= title.replace(' - Bounce Man Admin', '').replace(' - Admin', '') %></strong>
       </div>
       <div class="d-flex align-items-center gap-3">
+        <div class="bm-search" id="bmSearch">
+          <i class="fas fa-magnifying-glass bm-search-icon"></i>
+          <input type="search" id="bmSearchInput" autocomplete="off" spellcheck="false"
+                 placeholder="Search bookings, customers, phone numbers"
+                 aria-label="Search" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="bmSearchResults" role="combobox">
+          <kbd class="bm-search-kbd">/</kbd>
+          <div class="bm-search-panel" id="bmSearchResults" role="listbox" hidden></div>
+        </div>
         <span class="text-muted small"><i class="fas fa-user"></i> <%= user.name %></span>
       </div>
     </header>
@@ -126,6 +167,131 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
   <% } %>
   <%- typeof scripts !== 'undefined' ? scripts : '' %>
+<script>
+/* P0-3 global search. scriptSrcAttr is 'none' in the CSP, so every handler is bound
+   with addEventListener and every result is built with textContent -- never innerHTML
+   with a customer's name in it. */
+(function () {
+  var box   = document.getElementById('bmSearch');
+  var input = document.getElementById('bmSearchInput');
+  var panel = document.getElementById('bmSearchResults');
+  if (!box || !input || !panel) return;
+
+  var items = [];
+  var active = -1;
+  var timer = null;
+  var seq = 0;
+
+  function close() {
+    panel.hidden = true;
+    panel.textContent = '';
+    input.setAttribute('aria-expanded', 'false');
+    items = [];
+    active = -1;
+  }
+
+  function msg(text) {
+    panel.textContent = '';
+    var d = document.createElement('div');
+    d.className = 'bm-search-msg';
+    d.textContent = text;
+    panel.appendChild(d);
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    items = [];
+    active = -1;
+  }
+
+  function mark(i) {
+    for (var k = 0; k < items.length; k++) items[k].classList.remove('is-active');
+    active = i;
+    if (i >= 0 && items[i]) {
+      items[i].classList.add('is-active');
+      items[i].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function render(results, q) {
+    if (!results.length) { msg('Nothing matches \u201c' + q + '\u201d'); return; }
+    panel.textContent = '';
+    items = [];
+    results.forEach(function (r) {
+      var a = document.createElement('a');
+      a.className = 'bm-hit';
+      a.href = r.url;
+      a.setAttribute('role', 'option');
+
+      var top = document.createElement('div');
+      top.className = 'bm-hit-top';
+      var t = document.createElement('span');
+      t.className = 'bm-hit-title';
+      t.textContent = r.title;
+      var k = document.createElement('span');
+      k.className = 'bm-hit-kind';
+      k.textContent = r.kind;
+      top.appendChild(t);
+      top.appendChild(k);
+
+      var sub = document.createElement('div');
+      sub.className = 'bm-hit-sub';
+      sub.textContent = r.subtitle || '';
+
+      a.appendChild(top);
+      a.appendChild(sub);
+      panel.appendChild(a);
+      items.push(a);
+    });
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    mark(0);
+  }
+
+  function run() {
+    var q = input.value.trim();
+    if (q.length < 2) { close(); return; }
+    var mine = ++seq;
+    fetch('/admin/search.json?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+      .then(function (d) {
+        /* An earlier keystroke's response must never overwrite a later one's. */
+        if (mine !== seq) return;
+        render(d.results || [], q);
+      })
+      .catch(function () { if (mine === seq) msg('Search is not responding.'); });
+  }
+
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    timer = setTimeout(run, 140);
+  });
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { close(); input.blur(); return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); mark((active + 1) % items.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); mark((active - 1 + items.length) % items.length); }
+    else if (e.key === 'Enter') {
+      if (active >= 0 && items[active]) { e.preventDefault(); window.location = items[active].href; }
+    }
+  });
+
+  input.addEventListener('focus', function () { if (input.value.trim().length >= 2) run(); });
+
+  document.addEventListener('click', function (e) { if (!box.contains(e.target)) close(); });
+
+  /* "/" focuses search, the way it does everywhere else -- but never while the
+     operator is typing into something. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  });
+})();
+</script>
 <script>
   var sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
   if (sidebarToggleBtn) {
