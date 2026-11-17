@@ -22,7 +22,8 @@
   .bk-void    { background: var(--bm-state-void-bg);    color: var(--bm-state-void-fg); }
   .bk-pending { background: var(--bm-state-pending-bg); color: var(--bm-state-pending-fg); }
   .bk-owed { color: var(--bm-money-out); font-weight: 700; }
-  .bk-no { font-size: 11px; color: var(--bm-n-500); background: var(--bm-n-50);
+  /* n-500 on n-50 is 4.23:1, and this is 11px. One step down the ramp clears it. */
+  .bk-no { font-size: 11px; color: var(--bm-n-700); background: var(--bm-n-50);
     border: 1px solid var(--bm-n-100); border-radius: var(--bm-radius-sm);
     padding: 2px 6px; }
   /* A cancelled booking is history. It should not compete with the 42 live ones. */

@@ -121,7 +121,7 @@ ${tab === 'alerts' ? `
         </div>` : `
         <div class="d-flex mb-2 ${m.direction === 'outbound' ? 'justify-content-end' : 'justify-content-start'}">
           <div class="p-2 px-3 rounded-3 shadow-sm bm-bubble ${m.direction === 'outbound' ? 'bm-bubble-out' : 'bm-bubble-in'}" style="max-width:75%">
-            <div class="bm-bubble-meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.3px;opacity:.7">
+            <div class="bm-bubble-meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.3px">
               <svg class="bm-i me-1" aria-hidden="true"><use href="#i-${ICON[m.kind] || 'circle'}"/></svg>${esc(LABEL[m.kind] || m.kind)}
             </div>
             ${m.subject ? '<div class="fw-bold" style="font-size:13px">' + esc(m.subject) + '</div>' : ''}
@@ -151,8 +151,11 @@ ${tab === 'alerts' ? `
 `, scripts: `
 <style>
   .bm-bubble-in  { background: var(--bm-n-0); border: 1px solid var(--bm-n-100); color: var(--bm-n-800); }
-  .bm-bubble-out { background: var(--bm-accent); color: #fff; }
-  .bm-bubble-out .bm-bubble-meta { color: rgba(255,255,255,.75); }
+  /* White on the brand orange is 3.06:1, and the timestamp on top of it was 2.37:1.
+     Same fix as the primary button: ink on the accent, not white. The timestamp
+     stays secondary by being smaller and uppercase rather than by being faint. */
+  .bm-bubble-out { background: var(--bm-accent); color: var(--bm-on-accent); }
+  .bm-bubble-out .bm-bubble-meta { color: var(--bm-on-accent); }
   .bm-bubble-in  .bm-bubble-meta { color: var(--bm-n-500); }
   .nav-pills .nav-link.active { background: var(--bm-accent); }
   .nav-pills .nav-link { color: var(--bm-accent-text); }

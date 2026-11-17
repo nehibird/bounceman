@@ -692,6 +692,57 @@ a:focus-visible .stat-card {
 .bm-pager-nav .is-off { color: var(--bm-n-300); }
 .bm-pager-page { color: var(--bm-n-500); }
 
+/* ===================== contrast fixes, P2-15 ============================
+   Found by axe-core rather than by eye or by my own probe. Grouped by cause,
+   because 26 failures were five mistakes. */
+
+/* FullCalendar ships its own stylesheet and knows nothing about D0. Its day
+   numbers and column headers are <a> elements, so they inherited the accent
+   link colour, and nothing ever gave its surfaces a dark value -- in dark mode
+   it kept painting white. That single omission was half of every contrast
+   failure in the admin. */
+.fc {
+  --fc-page-bg-color: var(--bm-n-0);
+  --fc-border-color: var(--bm-n-100);
+  --fc-neutral-bg-color: var(--bm-n-50);
+  --fc-neutral-text-color: var(--bm-n-700);
+  --fc-today-bg-color: var(--bm-n-50);
+  --fc-list-event-hover-bg-color: var(--bm-n-50);
+  color: var(--bm-n-800);
+}
+.fc .fc-col-header-cell { background: var(--bm-n-50); }
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number,
+.fc .fc-list-day-text,
+.fc .fc-list-day-side-text {
+  color: var(--bm-n-800);
+  text-decoration: none;
+}
+.fc .fc-col-header-cell-cushion:hover,
+.fc .fc-daygrid-day-number:hover { color: var(--bm-accent-hover); }
+/* Days outside the month are dimmed by FC with opacity, which took them to 1.55:1.
+   Dim them with a colour instead, so "quieter" does not mean "unreadable". */
+.fc .fc-day-other .fc-daygrid-day-top { opacity: 1; }
+.fc .fc-day-other .fc-daygrid-day-number { color: var(--bm-n-500); }
+.fc .fc-daygrid-day.fc-day-today { background: var(--bm-n-50); }
+
+/* Text on the accent fill. Same mistake as the primary button in P2-7: white on
+   the brand orange is 3.06:1, and it had got into two more places. */
+.nav-pills .nav-link.active { color: var(--bm-on-accent); }
+
+/* Bootstrap's own nav and form defaults never got a dark value, and in dark mode
+   they landed at 1.04:1 and 1.14:1 on the settings page -- not "low contrast",
+   invisible. */
+.nav-tabs {
+  --bs-nav-tabs-link-active-color: var(--bm-n-900);
+  --bs-nav-tabs-link-active-bg: var(--bm-n-0);
+  --bs-nav-tabs-link-active-border-color: var(--bm-n-100) var(--bm-n-100) var(--bm-n-0);
+  --bs-nav-tabs-border-color: var(--bm-n-100);
+}
+.nav-tabs .nav-link { color: var(--bm-n-700); }
+.nav-tabs .nav-link:hover { color: var(--bm-n-900); }
+.form-text { color: var(--bm-n-600); }
+
 /* ============================ empty states ===============================
    An empty table said "No bookings found" in grey and stopped. That answers the
    wrong question: a person looking at an empty screen wants to know whether
