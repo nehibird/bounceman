@@ -590,7 +590,12 @@ router.get('/bookings/:id', (req, res) => {
   const comms = db.prepare('SELECT * FROM communications WHERE booking_id = ? ORDER BY sent_at DESC').all(req.params.id);
 
   res.render('admin/bookings/detail', {
-    title: `Booking ${booking.booking_number} - Admin`, user: req.user, settings,
+    // The browser tab and the admin header strip said "Booking BM-MW7DKI7K-17N",
+    // which is the one thing on the page nobody is looking for. Name the human.
+    title: [booking.first_name, booking.last_name].filter(Boolean).join(' ') +
+      (booking.event_date ? ' \u00b7 ' + dayjs(booking.event_date).format('ddd, MMM D') : '') +
+      ' - Admin',
+    user: req.user, settings,
     booking, items, payments, contract, comms, page: 'bookings'
   });
 });

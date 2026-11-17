@@ -1,19 +1,60 @@
 <%- include('../../layouts/admin', { body: `
+<style>
+  .bk-head { margin-bottom: var(--bm-space-5); }
+  .bk-head-title { margin: 0; font-size: 26px; letter-spacing: -0.02em; color: var(--bm-n-900); }
+  .bk-head-sep { color: var(--bm-n-300); margin: 0 10px; font-weight: 400; }
+  .bk-head-meta { display: flex; align-items: center; gap: var(--bm-space-3);
+    margin-top: var(--bm-space-2); flex-wrap: wrap; }
+  .bk-copy { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--bm-n-100);
+    background: var(--bm-n-50); color: var(--bm-n-500); border-radius: var(--bm-radius-sm);
+    font-size: 11px; font-weight: 600; padding: 3px 8px; cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .bk-copy:hover { background: var(--bm-n-100); color: var(--bm-n-700); }
+  .bk-copy i { font-size: 10px; opacity: 0.6; }
+</style>
 
 <a href="/admin/bookings" class="text-decoration-none mb-3 d-inline-block">
   <i class="fas fa-arrow-left me-1"></i> Back to Bookings
 </a>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0">
-    Booking #${booking.booking_number}
-    <span class="badge-status badge-${booking.status} ms-2">${booking.status}</span>
-  </h4>
-</div>
+${(function () {
+  /* V7 folds this into the shared date helper. */
+  var name = [booking.first_name, booking.last_name].filter(Boolean).join(' ') || 'No name on file';
+  var when = '';
+  if (booking.event_date) {
+    var d = new Date(booking.event_date + 'T12:00:00');
+    if (!isNaN(d)) {
+      when = d.toLocaleDateString('en-US', { weekday: 'short' }) + ', ' +
+             d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (d.getFullYear() !== new Date().getFullYear()) when += ' ' + d.getFullYear();
+    }
+  }
+  return '<div class="bk-head">' +
+    '<h4 class="bk-head-title">' + esc(name) +
+      (when ? '<span class="bk-head-sep">\u00b7</span>' + when : '') + '</h4>' +
+    '<div class="bk-head-meta">' +
+      '<span class="badge-status badge-' + booking.status + '">' + booking.status + '</span>' +
+      '<button type="button" class="bk-copy" data-copy="' + esc(booking.booking_number || '') + '" ' +
+        'title="Copy booking number">' + esc(booking.booking_number || '') +
+        '<i class="fas fa-copy"></i></button>' +
+    '</div>' +
+  '</div>';
+})()}
 
+${(function () {
+  /* V5 gave the admin four button ROLES; this page still rendered three filled
+     primaries at once (Update Status, Send for signature, Save Notes), which is the
+     same problem one level down -- if everything is primary, nothing is. Pick the one
+     thing this particular booking needs next, and demote the rest to secondary. */
+  var unsigned = (typeof contract !== 'undefined' && contract) && Number(contract.signed) !== 1;
+  var owes = Number(booking.balance_due) > 0;
+  var live = booking.status !== 'cancelled' && booking.status !== 'completed';
+  globalThis.__bmPrimary = !live ? 'none' : unsigned ? 'contract' : owes ? 'payment' : 'status';
+  return '';
+})()}
 <div class="row g-4">
   <!-- Left Column -->
-  <div class="col-lg-8">
+  <div class="col-lg-7">
 
     <!-- Event Details -->
     <div class="card mb-4">
@@ -99,7 +140,7 @@
       <div class="card-body">
         <form method="POST" action="/admin/bookings/${booking.id}/notes">
           <textarea name="internal_notes" class="form-control mb-2" rows="3" placeholder="Add internal notes...">${esc(booking.internal_notes)}</textarea>
-          <button type="submit" class="btn btn-sm btn-bm"><i class="fas fa-save me-1"></i> Save Notes</button>
+          <button type="submit" class="btn btn-sm btn-bm-outline"><i class="fas fa-save me-1"></i> Save Notes</button>
         </form>
       </div>
     </div>
@@ -126,7 +167,7 @@
   </div>
 
   <!-- Right Column -->
-  <div class="col-lg-4">
+  <div class="col-lg-5">
 
     <!-- Customer Card -->
     <div class="card mb-4">
@@ -183,7 +224,7 @@
             <option value="completed" ${booking.status === 'completed' ? 'selected' : ''}>Completed</option>
             <option value="cancelled" ${booking.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
           </select>
-          <button type="submit" class="btn btn-sm btn-bm w-100"><i class="fas fa-check me-1"></i> Update Status</button>
+          <button type="submit" class="btn btn-sm ${globalThis.__bmPrimary === 'status' ? 'btn-bm' : 'btn-bm-outline'} w-100"><i class="fas fa-check me-1"></i> Update Status</button>
         </form>
       </div>
     </div>
@@ -213,7 +254,7 @@
           </a>
           ${contract.signed_at ? '' : `
           <form method="POST" action="/admin/bookings/${booking.id}/contract/send" class="mt-2 mb-0">
-            <button type="submit" class="btn btn-sm btn-bm w-100">
+            <button type="submit" class="btn btn-sm ${globalThis.__bmPrimary === 'contract' ? 'btn-bm' : 'btn-bm-outline'} w-100">
               <i class="fas fa-paper-plane me-1"></i> Send for signature
             </button>
           </form>
@@ -226,7 +267,7 @@
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fas fa-credit-card me-2"></i>Payment History</span>
-        <button class="btn btn-sm btn-success" type="button" data-bs-toggle="collapse" data-bs-target="#recordPaymentForm">
+        <button class="btn btn-sm ${globalThis.__bmPrimary === 'payment' ? 'btn-bm' : 'btn-bm-outline'}" type="button" data-bs-toggle="collapse" data-bs-target="#recordPaymentForm">
           <i class="fas fa-plus me-1"></i>Record Payment
         </button>
       </div>
@@ -337,6 +378,27 @@
   var u = new URL(window.location.href);
   u.searchParams.delete('sent');
   window.history.replaceState({}, '', u.toString());
+})();
+
+/* Copy the booking number. It is the one thing on this page worth copying and the one
+   thing nobody wants to retype off a screen. */
+(function () {
+  var btn = document.querySelector('.bk-copy');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var value = btn.getAttribute('data-copy') || '';
+    if (!value) return;
+    var done = function () {
+      if (typeof showToast === 'function') showToast('Copied ' + value, 'success');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(done).catch(function () {
+        if (typeof showToast === 'function') showToast('Could not copy — select it by hand.', 'warning');
+      });
+    } else if (typeof showToast === 'function') {
+      showToast('Copying is not available in this browser.', 'warning');
+    }
+  });
 })();
 </script>
 ` }) %>
