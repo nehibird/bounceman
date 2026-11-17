@@ -25,7 +25,7 @@ ${reviews.length > 0 ? reviews.map(r => `
         ${r.booking_number ? '<small class="text-muted">Booking #' + r.booking_number + '</small>' : ''}
       </div>
       <div class="text-end">
-        <small class="text-muted d-block">${r.created_at || ''}</small>
+        <small class="text-muted d-block">${fmtStamp(r.created_at, false)}</small>
         <span class="badge bg-${r.approved ? 'success' : 'warning text-dark'} mt-1">
           ${r.approved ? 'Approved' : 'Pending'}
         </span>

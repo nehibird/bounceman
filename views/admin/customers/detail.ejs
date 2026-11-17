@@ -156,7 +156,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
                 <i class="fas fa-${c.direction === 'outbound' ? 'paper-plane text-primary' : 'inbox text-success'} me-1"></i>
                 ${esc(c.subject || c.type || 'Message')}
               </strong>
-              <small class="text-muted">${c.sent_at || c.created_at || ''}</small>
+              <small class="text-muted">${fmtStamp(c.sent_at || c.created_at)}</small>
             </div>
             <p class="mb-0 mt-1 small text-muted">${esc((c.body || '').substring(0, 200))}${(c.body || '').length > 200 ? '...' : ''}</p>
           </div>

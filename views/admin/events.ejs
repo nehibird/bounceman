@@ -81,7 +81,7 @@
         ${events.map(function(e) {
           return '<tr style="cursor:pointer" data-row-href="/admin/events/' + e.id + '">' +
             '<td class="rt-primary" style="padding:14px 20px"><a href="/admin/events/' + e.id + '" style="font-weight:600;color:var(--bm-secondary);text-decoration:none">' + esc(e.name) + '</a></td>' +
-            '<td data-label="Date">' + e.event_date + '</td>' +
+            '<td data-label="Date">' + fmtDayDate(e.event_date) + '</td>' +
             '<td data-label="Location">' + esc(e.location || '-') + '</td>' +
             '<td data-label="Price/Kid"><strong>$' + parseFloat(e.price_per_kid).toFixed(0) + '</strong></td>' +
             '<td data-label="Kids">' + (e.total_kids || 0) + '</td>' +
