@@ -533,6 +533,27 @@ const CUSTOMER_RESPONSE_FIELDS = [
   'total_bookings', 'created_at', 'updated_at',
 ];
 
+// P2-19: customers.total_bookings is a stored column that only routes/sarah.js and
+// routes/booking.js increment, so a booking created in the admin never counts -- it is
+// wrong for 12 of 91 customers today. The admin stopped reading it in P2-17; this is the
+// other reader. Field name and response shape are unchanged, only the value is correct.
+//
+// One grouped query, not one per customer: the listing returns up to 100 rows.
+function withLiveBookingCount(db, customers) {
+  const many = Array.isArray(customers);
+  const list = many ? customers : [customers];
+  if (!list.length) return customers;
+  const placeholders = list.map(() => '?').join(',');
+  const counts = new Map(
+    db.prepare(
+      `SELECT customer_id, COUNT(*) AS n FROM bookings
+         WHERE customer_id IN (${placeholders}) GROUP BY customer_id`
+    ).all(...list.map((c) => c.id)).map((r) => [r.customer_id, r.n])
+  );
+  const mapped = list.map((c) => ({ ...c, total_bookings: counts.get(c.id) || 0 }));
+  return many ? mapped : mapped[0];
+}
+
 router.get('/customers', requireScope('customers:read'), (req, res) => {
   const db = getDb();
   const q = String(req.query.q || '').trim();
@@ -548,7 +569,10 @@ router.get('/customers', requireScope('customers:read'), (req, res) => {
       `).all(...Array(5).fill(`%${q}%`), limit)
     : db.prepare('SELECT * FROM customers ORDER BY created_at DESC LIMIT ?').all(limit);
 
-  res.json({ customers: rows.map((c) => pick(c, CUSTOMER_RESPONSE_FIELDS)), count: rows.length });
+  res.json({
+    customers: withLiveBookingCount(db, rows).map((c) => pick(c, CUSTOMER_RESPONSE_FIELDS)),
+    count: rows.length,
+  });
 });
 
 router.get('/customers/:id', requireScope('customers:read'), (req, res) => {
@@ -561,7 +585,7 @@ router.get('/customers/:id', requireScope('customers:read'), (req, res) => {
     FROM bookings WHERE customer_id = ? ORDER BY event_date DESC
   `).all(customer.id);
 
-  res.json({ ...pick(customer, CUSTOMER_RESPONSE_FIELDS), bookings });
+  res.json({ ...pick(withLiveBookingCount(db, customer), CUSTOMER_RESPONSE_FIELDS), bookings });
 });
 
 const CUSTOMER_ALLOWED_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'address', 'city', 'state', 'zip', 'notes', 'tax_exempt'];
@@ -605,7 +629,7 @@ router.patch('/customers/:id', requireScope('customers:write'), (req, res) => {
   const after = pick(freshCustomer, CUSTOMER_ALLOWED_FIELDS);
 
   res.locals.audit = { entity_type: 'customer', entity_id: customer.id, action: 'office_api_customer_update', before, after };
-  res.json(pick(freshCustomer, CUSTOMER_RESPONSE_FIELDS));
+  res.json(pick(withLiveBookingCount(db, freshCustomer), CUSTOMER_RESPONSE_FIELDS));
 });
 
 // ---------------------------------------------------------------------------
