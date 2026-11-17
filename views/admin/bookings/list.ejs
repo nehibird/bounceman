@@ -1,4 +1,23 @@
 <%- include('../../layouts/admin', { body: `
+<style>
+  .bk-name { font-weight: 700; color: var(--bm-n-900); }
+  .bk-when { font-weight: 600; color: var(--bm-n-800); }
+  .bk-span { font-size: 11px; font-weight: 700; color: var(--bm-n-600);
+    background: var(--bm-n-100); border-radius: var(--bm-radius-pill); padding: 1px 7px; }
+  .bk-chip { display: inline-block; font-size: 12px; font-weight: 700;
+    padding: 3px 11px; border-radius: var(--bm-radius-pill); white-space: nowrap; }
+  .bk-active  { background: var(--bm-state-active-bg);  color: var(--bm-state-active-fg); }
+  .bk-done    { background: var(--bm-state-done-bg);    color: var(--bm-state-done-fg); }
+  .bk-void    { background: var(--bm-state-void-bg);    color: var(--bm-state-void-fg); }
+  .bk-pending { background: var(--bm-state-pending-bg); color: var(--bm-state-pending-fg); }
+  .bk-owed { color: var(--bm-money-out); font-weight: 700; }
+  .bk-no { font-size: 11px; color: var(--bm-n-500); background: var(--bm-n-50);
+    border: 1px solid var(--bm-n-100); border-radius: var(--bm-radius-sm);
+    padding: 2px 6px; }
+  /* A cancelled booking is history. It should not compete with the 42 live ones. */
+  .bk-dim td { opacity: 0.55; }
+  .bk-dim:hover td { opacity: 1; }
+</style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
@@ -43,44 +62,85 @@
         <thead>
           <tr>
             <th style="width:40px"><input type="checkbox" class="form-check-input" id="selAll"></th>
-            <th>Booking #</th>
             <th>Customer</th>
-            <th>Event Date</th>
-            <th>Time</th>
+            <th>When</th>
             <th>Status</th>
             <th>Total</th>
-            <th>Payment</th>
-            <th></th>
+            <th>Booking</th>
           </tr>
         </thead>
         <tbody id="bookingsBody">
-          ${bookings.length > 0 ? bookings.map(b => `
-          <tr data-href="/admin/bookings/${b.id}">
-            <td class="rt-hide"><input type="checkbox" class="form-check-input rowCb" value="${b.id}" data-num="${b.booking_number}"></td>
-            <td class="rt-primary"><strong>${b.booking_number}</strong></td>
-            <td data-label="Customer">
-              <div>${esc(b.first_name)} ${esc(b.last_name)}</div>
-              <small class="text-muted">${esc(b.email)}</small>
-            </td>
-            <td data-label="Date">${b.event_date}${(function(s,e){if(!e||e===s)return'';try{var d=Math.round((new Date(e+'T12:00:00')-new Date(s+'T12:00:00'))/86400000)+1;return ' <span class="badge bg-secondary" title="'+s+' to '+e+'">'+d+'d</span>';}catch(_){return''}})(b.event_date,b.event_end_date)}</td>
-            <td data-label="Time">${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_start_time)} - ${(function(t){if(!t)return'';var p=t.split(':');var h=parseInt(p[0]);var m=p[1]||'00';var a=h>=12?'PM':'AM';h=h>12?h-12:(h==0?12:h);return h+':'+m+' '+a})(b.event_end_time)}</td>
-            <td data-label="Status"><span class="badge-status badge-${b.status}">${b.status}</span></td>
-            <td data-label="Total">
-              <div><strong>$${parseFloat(b.total || 0).toFixed(2)}</strong></div>
-              <small class="text-muted">Deposit: $${parseFloat(b.deposit_amount || 0).toFixed(2)}</small>
-            </td>
-            <td data-label="Payment">
-              <span class="badge bg-${b.payment_status === 'paid' ? 'success' : b.payment_status === 'deposit_paid' ? 'info' : b.payment_status === 'partial' ? 'warning' : 'secondary'}">
-                ${b.payment_status || 'unpaid'}
-              </span>
-            </td>
-            <td class="rt-actions rt-hide">
-              <a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-eye"></i> View
-              </a>
-            </td>
-          </tr>
-          `).join('') : '<tr><td colspan="9" class="text-center text-muted py-4">No bookings found</td></tr>'}
+          ${(function () {
+            /* One local formatter instead of the same IIFE pasted twice per row.
+               V7 consolidates these into the shared helper. */
+            function t12(t) {
+              if (!t) return '';
+              var p = String(t).split(':');
+              var h = parseInt(p[0], 10);
+              if (isNaN(h)) return '';
+              var m = p[1] || '00';
+              var a = h >= 12 ? 'PM' : 'AM';
+              h = h % 12; if (h === 0) h = 12;
+              return h + ':' + m + ' ' + a;
+            }
+            var THIS_YEAR = new Date().getFullYear();
+            function humanDate(iso) {
+              if (!iso) return 'No date';
+              var d = new Date(iso + 'T12:00:00');
+              if (isNaN(d)) return iso;
+              var out = d.toLocaleDateString('en-US', { weekday: 'short' }) + ' \u00b7 ' +
+                        d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              if (d.getFullYear() !== THIS_YEAR) out += ', ' + d.getFullYear();
+              return out;
+            }
+            /* status and payment_status were two columns, and across all 78 bookings they
+               only ever form five combinations. One chip says the same thing, and says
+               the part that matters -- whether money is still owed. */
+            function state(b) {
+              var owed = Number(b.balance_due) > 0;
+              if (b.status === 'cancelled') {
+                return b.payment_status === 'refunded'
+                  ? { text: 'Cancelled, refunded', cls: 'void' }
+                  : { text: 'Cancelled', cls: 'void' };
+              }
+              if (b.status === 'completed') return { text: 'Completed', cls: 'done' };
+              if (owed) return { text: 'Balance due', cls: 'active' };
+              if (b.status === 'confirmed') return { text: 'Confirmed', cls: 'active' };
+              return { text: b.status || 'unknown', cls: 'pending' };
+            }
+
+            if (!bookings.length) {
+              return '<tr><td colspan="6" class="text-center text-muted py-4">No bookings found</td></tr>';
+            }
+
+            return bookings.map(function (b) {
+              var st = state(b);
+              var owed = Number(b.balance_due) > 0 ? Number(b.balance_due) : 0;
+              var span = '';
+              if (b.event_end_date && b.event_end_date !== b.event_date) {
+                try {
+                  var days = Math.round((new Date(b.event_end_date + 'T12:00:00') -
+                                         new Date(b.event_date + 'T12:00:00')) / 86400000) + 1;
+                  span = ' <span class="bk-span" title="' + b.event_date + ' to ' + b.event_end_date + '">' + days + 'd</span>';
+                } catch (_) { span = ''; }
+              }
+              var times = [t12(b.event_start_time), t12(b.event_end_time)].filter(Boolean).join(' \u2013 ');
+              var name = [b.first_name, b.last_name].filter(Boolean).join(' ') || 'No name on file';
+
+              return '<tr data-href="/admin/bookings/' + b.id + '"' +
+                     (b.status === 'cancelled' ? ' class="bk-dim"' : '') + '>' +
+                '<td class="rt-hide"><input type="checkbox" class="form-check-input rowCb" value="' + b.id + '" data-num="' + b.booking_number + '"></td>' +
+                '<td class="rt-primary"><div class="bk-name">' + esc(name) + '</div>' +
+                  (b.email ? '<small class="text-muted">' + esc(b.email) + '</small>' : '') + '</td>' +
+                '<td data-label="When"><div class="bk-when">' + humanDate(b.event_date) + span + '</div>' +
+                  (times ? '<small class="text-muted">' + times + '</small>' : '') + '</td>' +
+                '<td data-label="Status"><span class="bk-chip bk-' + st.cls + '">' + st.text + '</span></td>' +
+                '<td data-label="Total"><div><strong>$' + parseFloat(b.total || 0).toFixed(2) + '</strong></div>' +
+                  (owed ? '<small class="bk-owed">$' + owed.toFixed(2) + ' due</small>' : '') + '</td>' +
+                '<td data-label="Booking"><code class="bk-no">' + esc(b.booking_number || '') + '</code></td>' +
+                '</tr>';
+            }).join('');
+          })()}
         </tbody>
       </table>
     </div>
