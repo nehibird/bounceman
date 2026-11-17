@@ -1331,23 +1331,226 @@ router.post('/reviews/:id/delete', (req, res) => {
 });
 
 // === COMMUNICATIONS ===
-router.get('/communications', (req, res) => {
+// === INBOX (P0-1) =========================================================
+// One timeline per person across every channel.
+//
+// Before this there were three destinations for one conversation --
+// Communications, Calls and Messages -- and Messages was a strict SUBSET of
+// Communications: the same `communications` table filtered to type='sms'.
+// Calls lived in a different table entirely (`call_log`).
+//
+// Threads key on the CUSTOMER where we know them, so a text, an email, a
+// contact form and a phone call from the same person land in one place. Rows
+// with no customer fall back to a phone-digit key, then an email key.
+//
+// Staff's own numbers are split into a separate "Alerts" tab. That is not
+// cosmetic: 324 of the 1,020 SMS rows are outbound operator notices to
+// Nehemiah's own cell ("nothing booked tomorrow", "customer sent a text"),
+// 32% of all traffic and 10x the largest real conversation. Threaded in with
+// customers it would be the top thread permanently and bury all of them.
+// Staff are identified from the `users` table (email or phone), not hardcoded.
+
+const inboxDigits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+
+function inboxStamp(t) {
+  try {
+    return new Date(String(t).replace(' ', 'T') + 'Z').toLocaleString('en-US', {
+      timeZone: 'America/Chicago', weekday: 'short', month: 'short',
+      day: 'numeric', hour: 'numeric', minute: '2-digit'
+    }) + ' CT';
+  } catch { return String(t || ''); }
+}
+
+function inboxPrettyPhone(n) {
+  const d = inboxDigits(n);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(n || '');
+}
+
+// call_log is the inbound spam-gate log (number, status, time). The substance of
+// a call -- Vapi id, duration, summary -- is only in activity_log as
+// 'sarah_call_completed', and the two tables share no key (call_log.vapi_call_id
+// holds a Twilio CallSid). So detail is matched on caller number within a time
+// window, each completed record consumed at most once so redials don't all
+// inherit the same conversation. Lifted verbatim from the old /calls handler.
+function attachCallDetail(db, calls) {
+  const completed = db.prepare(
+    "SELECT entity_id, details, created_at FROM activity_log WHERE action = 'sarah_call_completed' ORDER BY created_at DESC LIMIT 400"
+  ).all().map(r => {
+    let d = {};
+    try { d = JSON.parse(r.details || '{}'); } catch { d = {}; }
+    return {
+      vapiCallId: r.entity_id, at: r.created_at,
+      digits: inboxDigits(d.caller), durationSec: d.duration_sec,
+      endedReason: d.ended_reason, summary: d.summary, used: false
+    };
+  });
+  const WINDOW_MS = 2 * 60 * 60 * 1000;
+  const ts = (v) => { const t = Date.parse(String(v).replace(' ', 'T') + 'Z'); return Number.isNaN(t) ? null : t; };
+
+  for (const cl of calls) {
+    const d = inboxDigits(cl.caller_number);
+    const start = ts(cl.called_at);
+    if (start == null || d.length !== 10) continue;
+    let best = null;
+    for (const c of completed) {
+      if (c.used || c.digits !== d) continue;
+      const end = ts(c.at);
+      if (end == null || end < start || end - start > WINDOW_MS) continue;
+      if (!best || ts(c.at) < ts(best.at)) best = c;
+    }
+    if (best) {
+      best.used = true;
+      cl.vapi_call_id_real = best.vapiCallId;
+      cl.duration = vapiSvc.formatDuration(best.durationSec != null ? best.durationSec : null);
+      cl.ended_reason = best.endedReason || '';
+      cl.summary = best.summary || '';
+    }
+  }
+}
+
+router.get('/inbox', (req, res) => {
   const db = getDb();
   const settings = getSettings();
-  const activeType = req.query.type || '';
-  const sql = `
-    SELECT cm.*, c.first_name, c.last_name
-    FROM communications cm
-    LEFT JOIN customers c ON c.id = cm.customer_id
-    ${activeType ? 'WHERE cm.type = ?' : ''}
-    ORDER BY cm.sent_at DESC LIMIT 100
-  `;
-  const comms = activeType ? db.prepare(sql).all(activeType) : db.prepare(sql).all();
+  const sarahSms = require('../services/sarah-sms');
 
-  res.render('admin/communications', {
-    title: 'Communications - Admin', user: req.user, settings, comms, activeType, page: 'communications'
+  // --- who is who ----------------------------------------------------------
+  const custById = new Map(), custByDigits = new Map(), custByEmail = new Map();
+  for (const c of db.prepare('SELECT id, first_name, last_name, phone, email FROM customers').all()) {
+    const rec = {
+      id: c.id,
+      name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+      phone: c.phone || '', email: c.email || ''
+    };
+    custById.set(c.id, rec);
+    const d = inboxDigits(c.phone);
+    if (d.length === 10 && !custByDigits.has(d)) custByDigits.set(d, rec);
+    const e = String(c.email || '').toLowerCase();
+    if (e && !custByEmail.has(e)) custByEmail.set(e, rec);
+  }
+
+  const staff = db.prepare('SELECT email, phone FROM users').all();
+  const staffEmails = new Set(staff.map(u => String(u.email || '').toLowerCase()).filter(Boolean));
+  const staffDigits = new Set(staff.map(u => inboxDigits(u.phone)).filter(d => d.length === 10));
+
+  const threads = new Map();
+
+  // Resolve a row to a thread: customer first, then phone, then email.
+  function locate(customerId, phone, email) {
+    let rec = custById.get(customerId) || null;
+    if (!rec) {
+      const d = inboxDigits(phone);
+      if (d.length === 10) rec = custByDigits.get(d) || null;
+    }
+    if (!rec) {
+      const e = String(email || '').toLowerCase();
+      if (e) rec = custByEmail.get(e) || null;
+    }
+    let key, seed;
+    if (rec) {
+      key = `c:${rec.id}`;
+      seed = { customerId: rec.id, name: rec.name, phone: rec.phone, email: rec.email };
+    } else {
+      const d = inboxDigits(phone);
+      const e = String(email || '').toLowerCase();
+      if (d.length === 10) { key = `p:${d}`; seed = { phone: String(phone || '') }; }
+      else if (e) { key = `e:${e}`; seed = { email: e }; }
+      else { key = 'x:unknown'; seed = {}; }
+    }
+    if (!threads.has(key)) {
+      threads.set(key, Object.assign({
+        key, customerId: null, name: '', phone: '', email: '', smsTo: '',
+        items: [], last: '', channels: new Set()
+      }, seed));
+    }
+    return threads.get(key);
+  }
+
+  // --- messages, emails, contact forms, messenger --------------------------
+  for (const m of db.prepare(
+    'SELECT id, customer_id, type, direction, subject, body, recipient, sent_at FROM communications ORDER BY sent_at ASC'
+  ).all()) {
+    const r = String(m.recipient || '');
+    const isEmail = r.includes('@');
+    const t = locate(m.customer_id, isEmail ? '' : r, isEmail ? r : '');
+    if (!t.phone && !isEmail && r) t.phone = r;
+    if (!t.email && isEmail) t.email = r;
+    // the EXACT recipient string the /admin/messages/* POST endpoints key on
+    if (m.type === 'sms' && r) t.smsTo = r;
+    t.items.push({
+      kind: m.type || 'sms', direction: m.direction || 'outbound',
+      body: m.body || '', subject: m.subject || '',
+      at: m.sent_at, when: inboxStamp(m.sent_at)
+    });
+    t.channels.add(m.type || 'sms');
+    if (String(m.sent_at || '') > String(t.last)) t.last = m.sent_at;
+  }
+
+  // --- phone calls ---------------------------------------------------------
+  const calls = db.prepare('SELECT * FROM call_log ORDER BY called_at DESC LIMIT 400').all();
+  attachCallDetail(db, calls);
+  for (const cl of calls) {
+    const t = locate(null, cl.caller_number, '');
+    if (!t.phone) t.phone = cl.caller_number || '';
+    t.items.push({
+      kind: 'call', direction: 'inbound', body: cl.summary || '', subject: '',
+      at: cl.called_at, when: inboxStamp(cl.called_at),
+      callId: cl.vapi_call_id_real || '', duration: cl.duration || '',
+      status: cl.status || '', blockReason: cl.block_reason || ''
+    });
+    t.channels.add('call');
+    if (String(cl.called_at || '') > String(t.last)) t.last = cl.called_at;
+  }
+
+  // --- finish --------------------------------------------------------------
+  const all = [...threads.values()];
+  for (const t of all) {
+    t.items.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    t.display = t.name || inboxPrettyPhone(t.phone) || t.email || 'Unknown';
+    t.sub = t.name ? (inboxPrettyPhone(t.phone) || t.email) : (t.phone && t.email ? t.email : '');
+    t.channelList = [...t.channels];
+    const lastItem = t.items[t.items.length - 1] || {};
+    t.preview = lastItem.kind === 'call'
+      ? `Phone call${lastItem.duration ? ' · ' + lastItem.duration : ''}`
+      : String(lastItem.body || lastItem.subject || '').replace(/\s+/g, ' ').trim();
+    t.isAlert = (!!t.email && staffEmails.has(String(t.email).toLowerCase()))
+      || (inboxDigits(t.phone).length === 10 && staffDigits.has(inboxDigits(t.phone)));
+    t.paused = false;
+    if (t.smsTo) { try { t.paused = sarahSms.isThreadPaused(t.smsTo); } catch { t.paused = false; } }
+  }
+  all.sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
+
+  const convos = all.filter(t => !t.isAlert);
+  const alerts = all.filter(t => t.isAlert);
+  const tab = req.query.tab === 'alerts' ? 'alerts' : 'conversations';
+  const list = tab === 'alerts' ? alerts : convos;
+
+  // ?t=<key> selects. ?to=<raw number> is kept so the old /admin/messages links
+  // and the existing POST redirects still land on the right thread.
+  let activeKey = req.query.t || '';
+  if (!activeKey && req.query.to) {
+    const d = inboxDigits(req.query.to);
+    const hit = all.find(t => inboxDigits(t.smsTo || t.phone) === d);
+    if (hit) activeKey = hit.key;
+  }
+  const explicitSelection = !!(req.query.t || req.query.to);
+  let active = all.find(t => t.key === activeKey) || null;
+  if (!active && !explicitSelection) active = list[0] || null;
+
+  res.render('admin/inbox', {
+    title: 'Inbox - Bounce Man Admin', user: req.user, settings, page: 'inbox',
+    threads: list, active, tab, explicitSelection,
+    counts: { conversations: convos.length, alerts: alerts.length },
+    sarahEnabled: sarahSms.isEnabled()
   });
 });
+
+// The three pages the inbox replaced. Kept as redirects so bookmarks, and the
+// existing /admin/messages/* POST handlers' own redirects, keep working.
+router.get('/communications', (req, res) => res.redirect('/admin/inbox'));
+router.get('/messages', (req, res) => res.redirect(
+  '/admin/inbox' + (req.query.to ? '?to=' + encodeURIComponent(req.query.to) : '')));
+router.get('/calls', (req, res) => res.redirect('/admin/inbox'));
+
 
 router.post('/communications/:id/delete', (req, res) => {
   getDb().prepare('DELETE FROM communications WHERE id = ?').run(req.params.id);
@@ -1372,46 +1575,7 @@ router.post('/communications/:id/bot-resume', (req, res) => {
 // (call_log.vapi_call_id actually holds a Twilio CallSid), so completed-call detail is
 // attached here by matching on caller number within a time window; each completed
 // record is consumed at most once so redials don't all inherit the same conversation.
-router.get('/calls', (req, res) => {
-  const db = getDb();
-  const settings = getSettings();
-  const calls = db.prepare("SELECT * FROM call_log ORDER BY called_at DESC LIMIT 200").all();
-  const customers = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
-  const byPhone = {};
-  customers.forEach(c => { const d = String(c.phone).replace(/\D/g, '').slice(-10); if (d.length === 10) byPhone[d] = ((c.first_name || '') + ' ' + (c.last_name || '')).trim(); });
 
-  const completed = db.prepare("SELECT entity_id, details, created_at FROM activity_log WHERE action = 'sarah_call_completed' ORDER BY created_at DESC LIMIT 400").all()
-    .map(r => { let d = {}; try { d = JSON.parse(r.details || '{}'); } catch { d = {}; } return { vapiCallId: r.entity_id, at: r.created_at, digits: String(d.caller || '').replace(/\D/g, '').slice(-10), durationSec: d.duration_sec, endedReason: d.ended_reason, summary: d.summary, used: false }; });
-
-  const MATCH_WINDOW_MS = 2 * 60 * 60 * 1000; // a report lands within ~2h of the gate row
-  const ts = (v) => { const t = Date.parse(String(v).replace(' ', 'T') + 'Z'); return Number.isNaN(t) ? null : t; };
-
-  calls.forEach(cl => {
-    const d = String(cl.caller_number || '').replace(/\D/g, '').slice(-10);
-    cl.customer_name = byPhone[d] || '';
-    try { cl.when = new Date(String(cl.called_at).replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch { cl.when = cl.called_at; }
-
-    const start = ts(cl.called_at);
-    if (start != null && d.length === 10) {
-      // Nearest unused report for this number that ended after the call started.
-      let best = null;
-      for (const c of completed) {
-        if (c.used || c.digits !== d) continue;
-        const end = ts(c.at);
-        if (end == null || end < start || end - start > MATCH_WINDOW_MS) continue;
-        if (!best || ts(c.at) < ts(best.at)) best = c;
-      }
-      if (best) {
-        best.used = true;
-        cl.vapi_call_id_real = best.vapiCallId;
-        cl.duration = vapiSvc.formatDuration(best.durationSec != null ? best.durationSec : null);
-        cl.ended_reason = best.endedReason || '';
-        cl.summary = best.summary || '';
-      }
-    }
-  });
-  res.render('admin/calls', { title: 'Calls - Admin', user: req.user, settings, calls, page: 'calls' });
-});
 
 // Call detail — audio player + transcript + summary + call back.
 // :id is the Vapi call id (the 019f… uuid stored in activity_log.entity_id).
@@ -1435,7 +1599,7 @@ router.get('/calls/:id', async (req, res) => {
   }
 
   if (!call && !row) return res.status(404).render('admin/call-detail', {
-    title: 'Call - Admin', user: req.user, settings, page: 'calls',
+    title: 'Call - Admin', user: req.user, settings, page: 'inbox',
     vapiCallId, call: null, vapiError, customerName: '', when: '', notFound: true
   });
 
@@ -1466,7 +1630,7 @@ router.get('/calls/:id', async (req, res) => {
 
   res.render('admin/call-detail', {
     title: 'Call ' + (merged.caller || vapiCallId) + ' - Admin',
-    user: req.user, settings, page: 'calls',
+    user: req.user, settings, page: 'inbox',
     vapiCallId, call: merged, vapiError, customerName, when, notFound: false
   });
 });
@@ -1486,30 +1650,7 @@ router.get('/calls/:id/recording', async (req, res) => {
 });
 
 // SMS chat — threads grouped by number
-router.get('/messages', (req, res) => {
-  const db = getDb();
-  const settings = getSettings();
-  const msgs = db.prepare("SELECT * FROM communications WHERE type='sms' ORDER BY sent_at ASC").all();
-  const customers = db.prepare("SELECT first_name, last_name, phone FROM customers WHERE phone IS NOT NULL AND phone != ''").all();
-  const nameByDigits = {};
-  customers.forEach(c => { const d = String(c.phone).replace(/\D/g, '').slice(-10); if (d.length === 10) nameByDigits[d] = ((c.first_name || '') + ' ' + (c.last_name || '')).trim(); });
-  const fmtCT = (t) => { try { return new Date(String(t).replace(' ', 'T') + 'Z').toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch { return t; } };
-  const tmap = {};
-  msgs.forEach(m => {
-    const num = m.recipient || 'unknown';
-    if (!tmap[num]) tmap[num] = { number: num, name: nameByDigits[num.replace(/\D/g, '').slice(-10)] || '', messages: [], last: m.sent_at };
-    tmap[num].messages.push({ direction: m.direction, body: m.body, when: fmtCT(m.sent_at) });
-    tmap[num].last = m.sent_at;
-  });
-  const threads = Object.values(tmap).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
-  const fmtPhone = (n) => { const d = String(n || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : (n || ''); };
-  threads.forEach(t => { t.display = fmtPhone(t.number); });
-  const active = req.query.to || (threads[0] && threads[0].number) || '';
-  const activeThread = threads.find(t => t.number === active) || null;
-  if (activeThread) activeThread.display = fmtPhone(activeThread.number);
-  const sarahSms = require('../services/sarah-sms');
-  res.render('admin/messages', { title: 'Messages - Admin', user: req.user, settings, threads, activeThread, active, explicitSelection: !!req.query.to, page: 'messages', sarahEnabled: sarahSms.isEnabled(), threadPaused: activeThread ? sarahSms.isThreadPaused(activeThread.number) : false });
-});
+
 
 router.post('/messages/send', async (req, res) => {
   const { to, body } = req.body;
