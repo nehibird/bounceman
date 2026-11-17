@@ -7,6 +7,7 @@ const stripeService = require('../services/stripe');
 const smsService = require('../services/sms');
 const emailService = require('../services/email');
 const notificationsService = require('../services/notifications');
+const { stripeSessionIdFor } = require('../lib/helpers');
 const { getSettings, generateBookingNumber, getPrice, getWetUpcharge, getBookedEquipmentIds, getDeliveryFee, resolveDeliveryFee, calcPricing, resolveTaxCity, peekTaxJurisdiction, taxBreakdown, fmtDate, normalizePhone, resolveDate, overnightExtraHoldDate, getSaturdayOvernightSpillover, priceForBooking, addonPricedIds, addonRate, weekdaySpecialApplies, isBlockedByWetDryRule, isoOffset, todayCT, validateBookingDate, dowOf, lookupDiscount, isCompCode, discountAmountFor, redeemDiscount, recordStripeSessionMarker } = require('../lib/helpers');
 
 // Sales tax is owed by the real municipal boundary of the delivery point, not the postal city
@@ -882,11 +883,10 @@ router.post('/check-payment', async (req, res) => {
   }
 
   // Try to check Stripe if we have a session ID
-  const notes = booking.internal_notes || '';
-  const sessionMatch = notes.match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
-  if (sessionMatch) {
+  const sessionId = stripeSessionIdFor(booking);
+  if (sessionId) {
     try {
-      const session = await stripeService.retrieveSession(sessionMatch[1]);
+      const session = await stripeService.retrieveSession(sessionId);
       if (session.payment_status === 'paid') {
         // Update booking
         db.prepare(`UPDATE bookings SET

@@ -812,6 +812,41 @@ function initialize() {
     d.prepare("UPDATE bookings SET source = 'unknown_pre_tracking' WHERE (source IS NULL OR source = '') AND created_at < '2026-08-03'").run();
   } catch {}
 
+  // P0-5b: the Stripe checkout session was only ever recorded as a text marker inside
+  // internal_notes, and two code paths parsed it back out with a regex. A free-text
+  // field that decides whether a deposit counts as paid is one careless edit away from
+  // losing a payment. This is the real column.
+  try {
+    d.prepare('ALTER TABLE bookings ADD COLUMN stripe_session_id TEXT').run();
+  } catch {} // column already exists
+
+  // Backfill from the markers, in JavaScript and with the SAME regex the readers use,
+  // so the column and the fallback can never disagree about what the id is.
+  //
+  // The first version of this did it in SQL -- substr() from the marker to the end of
+  // the string, then trim at the first newline. The gate caught what that actually
+  // produced: ids with " | 2026-..." still attached, because internal_notes separates
+  // entries with " | " as well as newlines. SQL string surgery has to assume a shape
+  // for a free-text field, and a free-text field is exactly the thing that has no shape.
+  //
+  // Idempotent: it only ever fills a NULL, and it never touches internal_notes, so the
+  // marker stays where it is and an older image rolled back onto this database works.
+  try {
+    const pending = d.prepare(`SELECT id, internal_notes FROM bookings
+        WHERE stripe_session_id IS NULL
+          AND instr(COALESCE(internal_notes, ''), 'stripe_session:cs_') > 0`).all();
+    const setId = d.prepare(
+      'UPDATE bookings SET stripe_session_id = ? WHERE id = ? AND stripe_session_id IS NULL');
+    let filled = 0;
+    for (const row of pending) {
+      const m = String(row.internal_notes || '').match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
+      if (m) { setId.run(m[1], row.id); filled++; }
+    }
+    if (filled) console.log('[DB] stripe_session_id backfilled for ' + filled + ' booking(s)');
+  } catch (e) {
+    console.error('[DB] stripe_session_id backfill failed:', e.message);
+  }
+
   // Migration: add slack_reminder_sent_date to bookings (dedup delivery reminders)
   try {
     d.prepare('ALTER TABLE bookings ADD COLUMN slack_reminder_sent_date TEXT').run();

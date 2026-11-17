@@ -9,7 +9,7 @@ const { readAttribution, attribValues } = require('../middleware/attribution');
 const emailService = require('../services/email');
 const stripeService = require('../services/stripe');
 const { isValidEmail } = require('../lib/validation');
-const { recordStripeSessionMarker, normalizeCustomerName } = require('../lib/helpers');
+const { recordStripeSessionMarker, normalizeCustomerName, stripeSessionIdFor } = require('../lib/helpers');
 const { notifyNewBooking } = require('../services/notifications');
 const facebookAds = require('../services/facebook-ads');
 const { signBookingToken, verifyBookingToken, bookingLinkPath } = require('../lib/booking-links');
@@ -1032,11 +1032,10 @@ router.get('/confirmation', async (req, res) => {
   let depositPaid = booking.deposit_paid === 1 || booking.payment_status === 'deposit_paid';
 
   // Mark deposit as paid if Stripe session completed
-  const notes = booking.internal_notes || '';
-  const sessionMatch = notes.match(/stripe_session:(cs_[a-zA-Z0-9_]+)/);
-  if (sessionMatch && !booking.confirmation_email_sent) {
+  const sessionId = stripeSessionIdFor(booking);
+  if (sessionId && !booking.confirmation_email_sent) {
     try {
-      const session = await stripeService.retrieveSession(sessionMatch[1]);
+      const session = await stripeService.retrieveSession(sessionId);
       // `promoted` gates everything below that announces a NEW paid booking (email, Slack card,
       // Meta/Google conversions). It is true only when THIS request moved the row to confirmed.
       let promoted = false;
@@ -1069,7 +1068,7 @@ router.get('/confirmation', async (req, res) => {
           // the webhook/email paths read it), so claim a marker in internal_notes with an atomic
           // conditional UPDATE: only the request that actually appends it (changes === 1) alerts,
           // so two tabs or a refresh cannot double-post. instr() not LIKE: session ids contain '_'.
-          const marker = 'late_payment_alerted:' + sessionMatch[1];
+          const marker = 'late_payment_alerted:' + sessionId;
           const claim = db.prepare("UPDATE bookings SET internal_notes = COALESCE(internal_notes, '') || ? WHERE id = ? AND instr(COALESCE(internal_notes, ''), ?) = 0")
             .run('\n[' + new Date().toISOString() + '] ' + marker, booking.id, marker);
           // deposit_paid already 1 means the webhook recorded this payment first, and it posts
