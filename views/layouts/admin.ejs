@@ -163,8 +163,15 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
   <% } %>
-  <% if (typeof page !== 'undefined' && page === 'reports') { %>
+  <% if (typeof page !== 'undefined' && (page === 'reports' || page === 'dashboard')) { %>
+  <%
+     /* The dashboard used to pull its own copy from a FLOATING major (chart.js@4) while
+        this one is pinned to 4.4.1 -- two versions of the same library on one admin,
+        one of which could change under us without a deploy. One pinned load, both
+        pages, and the theme right behind it. */
+  %>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script src="/assets/js/chart-theme.js?v=p21"></script>
   <% } %>
   <%- typeof scripts !== 'undefined' ? scripts : '' %>
 <script>
