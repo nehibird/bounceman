@@ -56,8 +56,8 @@
             <td class="rt-primary"><strong>${esc(c.first_name)} ${esc(c.last_name)}</strong></td>
             <td data-label="Email">${esc(c.email)}</td>
             <td data-label="Phone">${esc(c.phone)}</td>
-            <td data-label="Bookings"><span class="badge bg-primary">${c.total_bookings || 0}</span></td>
-            <td data-label="Total Revenue">$${parseFloat(c.total_revenue || 0).toFixed(2)}</td>
+            <td data-label="Bookings"><span class="badge bg-primary">${c.booking_count || 0}</span></td>
+            <td data-label="Total Revenue">$${parseFloat(c.revenue_total || 0).toFixed(2)}</td>
             <td data-label="Joined">${fmtStamp(c.created_at, false)}</td>
             <td class="rt-actions rt-hide">
               <a href="/admin/customers/${c.id}" class="btn btn-sm btn-outline-secondary">

@@ -990,8 +990,10 @@ router.get('/customers', (req, res) => {
     name: 'last_name COLLATE NOCASE, first_name COLLATE NOCASE',
     email: 'email COLLATE NOCASE',
     phone: 'phone',
-    bookings: 'CAST(COALESCE(total_bookings, 0) AS INTEGER)',
-    revenue: 'CAST(COALESCE(total_revenue, 0) AS REAL)',
+    // Sorting on the computed aliases, not on the stored columns -- P2-9 made these two
+    // sortable while they were still wrong for a quarter of the list.
+    bookings: 'booking_count',
+    revenue: 'revenue_total',
     joined: 'created_at'
   };
   const sort = listing.parseSort(req.query, CUSTOMER_COLS, { key: 'joined', dir: 'DESC' });
@@ -1005,8 +1007,15 @@ router.get('/customers', (req, res) => {
   const pageInfo = listing.parsePage(req.query, matching);
   const link = listing.linker('/admin/customers', req.query);
 
+  // These two were read from stored columns that only some write paths maintain, so
+  // they were wrong for 12 and 24 customers respectively. Computed here they cannot drift.
+  const CUSTOMER_SELECT = `SELECT c.*,
+      (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = c.id) AS booking_count,
+      (SELECT COALESCE(SUM(p.amount - COALESCE(p.refund_amount, 0)), 0) FROM payments p
+         WHERE p.customer_id = c.id AND p.status = 'completed') AS revenue_total
+    FROM customers c`;
   const customers = db.prepare(
-    'SELECT * FROM customers' + where + ' ORDER BY ' + sort.sql + ', id DESC LIMIT ? OFFSET ?'
+    CUSTOMER_SELECT + where + ' ORDER BY ' + sort.sql + ', c.id DESC LIMIT ? OFFSET ?'
   ).all(...params, pageInfo.perPage, pageInfo.offset);
 
   res.render('admin/customers/list', {
