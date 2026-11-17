@@ -12,7 +12,7 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
-  <link href="/assets/css/admin.css?v=p22" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=p23" rel="stylesheet">
 <style>
   /* P0-3 global search. Tokens only -- literal colours live in admin.css (D0). */
   .bm-search { position: relative; width: 340px; max-width: 42vw; }
@@ -64,72 +64,71 @@
       <img src="/assets/images/logo-full.png" alt="Bounce Man" style="height:56px;">
       <small>Admin Dashboard</small>
     </div>
+    <%
+       /* On Saturdays GET /admin redirects to the Today screen (P0-2). Without
+          ?home=1 this link would bounce straight back there and the dashboard would
+          be unreachable on the one day of the week that matters most. */
+       var _satHome = (new Date()).getDay() === 6 ? '/admin?home=1' : '/admin';
+
+       /* P2-3. Was 18 links under four headings named after nouns -- Management,
+          Operations, Advertising, Insights -- which put Expenses, Recurring Costs and
+          Connected Banks (money) in the same bucket as Reviews (reputation) and Reports
+          (both). Grouped by WHEN instead: what he opens most days stays at the top
+          level; the rest collapses behind three groups. Ten items at rest.
+
+          <details> rather than a hand-rolled accordion: it expands on click and on
+          Enter, it is announced correctly, and it works with JavaScript off. A group
+          containing the current page is open on arrival. */
+       var _nav = {
+         daily: [
+           { href: _satHome,          key: 'dashboard',  icon: 'fa-gauge-high',      label: 'Dashboard' },
+           { href: '/admin/delivery', key: 'delivery',   icon: 'fa-truck',           label: 'Today' },
+           { href: '/admin/inbox',    key: 'inbox',      icon: 'fa-inbox',           label: 'Inbox' },
+           { href: '/admin/bookings', key: 'bookings',   icon: 'fa-calendar-check',  label: 'Bookings' },
+           { href: '/admin/calendar', key: 'calendar',   icon: 'fa-calendar-alt',    label: 'Calendar' },
+           { href: '/admin/customers',key: 'customers',  icon: 'fa-users',           label: 'Customers' },
+           { href: '/admin/equipment',key: 'equipment',  icon: 'fa-chess-rook',      label: 'Equipment' }
+         ],
+         groups: [
+           { id: 'money', icon: 'fa-sack-dollar', label: 'Money', items: [
+             { href: '/admin/reports',     key: 'reports',     icon: 'fa-chart-bar', label: 'Reports' },
+             { href: '/admin/expenses',    key: 'expenses',    icon: 'fa-receipt',   label: 'Expenses' },
+             { href: '/admin/obligations', key: 'obligations', icon: 'fa-rotate',    label: 'Recurring costs' },
+             { href: '/admin/banks',       key: 'banks',       icon: 'fa-university',label: 'Connected banks' }
+           ]},
+           { id: 'growth', icon: 'fa-bullhorn', label: 'Marketing', items: [
+             { href: '/admin/ads',     key: 'ads',     icon: 'fa-ad',   label: 'Ad dashboard' },
+             { href: '/admin/reviews', key: 'reviews', icon: 'fa-star', label: 'Reviews' }
+           ]},
+           { id: 'yard', icon: 'fa-screwdriver-wrench', label: 'Yard & events', items: [
+             { href: '/admin/events',      key: 'events',      icon: 'fa-ticket-alt', label: 'Walk-up events' },
+             { href: '/admin/maintenance', key: 'maintenance', icon: 'fa-wrench',     label: 'Maintenance' }
+           ]}
+         ]
+       };
+       function _isOn(k) { return typeof page !== 'undefined' && page === k; }
+    %>
     <nav>
-      <%
-         /* On Saturdays GET /admin redirects to the Today screen (P0-2). Without
-            ?home=1 this link would bounce straight back there and the dashboard would
-            be unreachable on the one day of the week that matters most. */
-         var _satHome = (new Date()).getDay() === 6 ? '/admin?home=1' : '/admin';
-      %>
-      <a href="<%= _satHome %>" class="<%= page === 'dashboard' ? 'active' : '' %>">
-        <i class="fas fa-tachometer-alt"></i> Dashboard
+      <% _nav.daily.forEach(function (it) { %>
+      <a href="<%= it.href %>" class="<%= _isOn(it.key) ? 'active' : '' %>">
+        <i class="fas <%= it.icon %>"></i> <%= it.label %>
       </a>
-      <div class="section-label">Management</div>
-      <a href="/admin/bookings" class="<%= page === 'bookings' ? 'active' : '' %>">
-        <i class="fas fa-calendar-check"></i> Bookings
-      </a>
-      <a href="/admin/calendar" class="<%= page === 'calendar' ? 'active' : '' %>">
-        <i class="fas fa-calendar-alt"></i> Calendar
-      </a>
-      <a href="/admin/equipment" class="<%= page === 'equipment' ? 'active' : '' %>">
-        <i class="fas fa-chess-rook"></i> Equipment
-      </a>
-      <a href="/admin/customers" class="<%= page === 'customers' ? 'active' : '' %>">
-        <i class="fas fa-users"></i> Customers
-      </a>
-      <div class="section-label">Operations</div>
-      <a href="/admin/events" class="<%= page === 'events' ? 'active' : '' %>">
-        <i class="fas fa-ticket-alt"></i> Walk-Up Events
-      </a>
-      <a href="/admin/delivery" class="<%= page === 'delivery' ? 'active' : '' %>">
-        <i class="fas fa-truck"></i> Delivery
-      </a>
-      <a href="/admin/maintenance" class="<%= page === 'maintenance' ? 'active' : '' %>">
-        <i class="fas fa-wrench"></i> Maintenance
-      </a>
-      <a href="/admin/inbox" class="<%= page === 'inbox' ? 'active' : '' %>">
-        <i class="fas fa-inbox"></i> Inbox
-      </a>
-      <div class="section-label">Advertising</div>
-      <a href="/admin/ads" class="<%= page === 'ads' ? 'active' : '' %>">
-        <i class="fas fa-ad"></i> Ad Dashboard
-      </a>
-      <div class="section-label">Insights</div>
-      <a href="/admin/expenses" class="<%= page === 'expenses' ? 'active' : '' %>">
-        <i class="fas fa-receipt"></i> Expenses
-      </a>
-      <a href="/admin/obligations" class="<%= page === 'obligations' ? 'active' : '' %>">
-        <i class="fas fa-rotate"></i> Recurring Costs
-      </a>
-      <a href="/admin/banks" class="<%= page === 'banks' ? 'active' : '' %>">
-        <i class="fas fa-university"></i> Connected Banks
-      </a>
-      <a href="/admin/reports" class="<%= page === 'reports' ? 'active' : '' %>">
-        <i class="fas fa-chart-bar"></i> Reports
-      </a>
-      <a href="/admin/reviews" class="<%= page === 'reviews' ? 'active' : '' %>">
-        <i class="fas fa-star"></i> Reviews
-      </a>
-      <div class="divider"></div>
-      <a href="/admin/settings" class="<%= page === 'settings' ? 'active' : '' %>">
-        <i class="fas fa-cog"></i> Settings
-      </a>
-      <a href="/" target="_blank">
-        <i class="fas fa-external-link-alt"></i> View Website
-      </a>
-      <a href="/auth/logout">
-        <i class="fas fa-sign-out-alt"></i> Logout
-      </a>
+      <% }); %>
+
+      <% _nav.groups.forEach(function (g) {
+           var openHere = g.items.some(function (it) { return _isOn(it.key); }); %>
+      <details class="nav-group" data-nav-group="<%= g.id %>" <%= openHere ? 'open' : '' %>>
+        <summary>
+          <i class="fas <%= g.icon %>"></i> <%= g.label %>
+          <i class="fas fa-chevron-down nav-caret"></i>
+        </summary>
+        <% g.items.forEach(function (it) { %>
+        <a href="<%= it.href %>" class="<%= _isOn(it.key) ? 'active' : '' %>">
+          <i class="fas <%= it.icon %>"></i> <%= it.label %>
+        </a>
+        <% }); %>
+      </details>
+      <% }); %>
     </nav>
   </aside>
 
@@ -151,7 +150,24 @@
           <kbd class="bm-search-kbd">/</kbd>
           <div class="bm-search-panel" id="bmSearchResults" role="listbox" hidden></div>
         </div>
-        <span class="text-muted small"><i class="fas fa-user"></i> <%= user.name %></span>
+        <%
+           /* Settings, View Website and Logout were sidebar links. None of them is
+              navigation around the business -- they are things you do to the account,
+              a handful of times a year. The header already showed a name and did
+              nothing; now it is the menu that holds them. */
+        %>
+        <div class="bm-usermenu" id="bmUserMenu">
+          <button type="button" class="bm-usermenu-btn" id="bmUserBtn"
+                  aria-haspopup="true" aria-expanded="false">
+            <i class="fas fa-user"></i> <%= user.name %>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="bm-usermenu-panel" id="bmUserPanel" role="menu" hidden>
+            <a href="/admin/settings" role="menuitem"><i class="fas fa-cog"></i> Settings</a>
+            <a href="/" target="_blank" rel="noopener" role="menuitem"><i class="fas fa-external-link-alt"></i> View website</a>
+            <a href="/auth/logout" role="menuitem" class="is-leave"><i class="fas fa-sign-out-alt"></i> Log out</a>
+          </div>
+        </div>
       </div>
     </header>
     <div class="admin-content">
@@ -306,6 +322,39 @@
       document.getElementById('sidebar').classList.toggle('open');
     });
   }
+  // Remember which sidebar groups are open. A group holding the current page is
+  // rendered open server-side, so this only has to carry deliberate choices.
+  (function () {
+    var KEY = 'bm_nav_open';
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+    document.querySelectorAll('[data-nav-group]').forEach(function (d) {
+      var id = d.getAttribute('data-nav-group');
+      if (!d.open && saved[id]) d.open = true;
+      d.addEventListener('toggle', function () {
+        saved[id] = d.open;
+        try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private window */ }
+      });
+    });
+  })();
+
+  // The account menu in the header.
+  (function () {
+    var wrap = document.getElementById('bmUserMenu');
+    var btn = document.getElementById('bmUserBtn');
+    var panel = document.getElementById('bmUserPanel');
+    if (!wrap || !btn || !panel) return;
+    function close() { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var opening = panel.hidden;
+      panel.hidden = !opening;
+      btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  })();
+
   // Global confirm-delete handler. Always cancels the native submit, asks in our own
   // dialog, and resubmits only on a yes -- a <dialog> cannot block a synchronous event
   // the way window.confirm could, so the flow has to be async.

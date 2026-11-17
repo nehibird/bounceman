@@ -355,6 +355,56 @@ a:hover { color: var(--bm-accent-hover); }
 }
 .bm-danger-zone p { margin: 0; font-size: 13px; color: var(--bm-n-500); }
 
+/* ====================== nav groups + account menu =========================
+   P2-3. The sidebar's four noun headings became three collapsible groups, and the
+   header's inert name became the menu holding Settings / View website / Log out. */
+
+.admin-sidebar .nav-group { border: none; }
+.admin-sidebar .nav-group > summary {
+  display: flex; align-items: center;
+  padding: var(--bm-space-3) var(--bm-space-5);
+  font-size: var(--bm-text-base); gap: var(--bm-space-3);
+  color: rgba(255, 255, 255, 0.55); cursor: pointer; list-style: none;
+  user-select: none;
+}
+.admin-sidebar .nav-group > summary::-webkit-details-marker { display: none; }
+.admin-sidebar .nav-group > summary:hover { color: rgba(255, 255, 255, 0.9); }
+.admin-sidebar .nav-group > summary > i:first-child { width: 20px; text-align: center; }
+.admin-sidebar .nav-group .nav-caret {
+  margin-left: auto; font-size: 10px; opacity: 0.5;
+  transition: transform 0.15s ease;
+}
+.admin-sidebar .nav-group[open] > summary .nav-caret { transform: rotate(180deg); }
+/* Children sit in from their group so the hierarchy is visible without a rule. */
+.admin-sidebar .nav-group > a { padding-left: calc(var(--bm-space-5) + 22px); }
+
+.bm-usermenu { position: relative; }
+.bm-usermenu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: 1px solid transparent; border-radius: var(--bm-radius-pill);
+  padding: 5px 12px; font-size: var(--bm-text-sm); font-weight: 600;
+  color: var(--bm-n-600); cursor: pointer;
+}
+.bm-usermenu-btn:hover { background: var(--bm-n-50); color: var(--bm-n-900); }
+.bm-usermenu-btn i:last-child { font-size: 10px; opacity: 0.6; }
+.bm-usermenu-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); min-width: 190px;
+  background: var(--bm-n-0); border: 1px solid var(--bm-n-100);
+  border-radius: var(--bm-radius-md); box-shadow: var(--bm-shadow-3);
+  padding: 4px; z-index: 1080;
+}
+.bm-usermenu-panel a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 11px; border-radius: var(--bm-radius-sm);
+  font-size: var(--bm-text-sm); font-weight: 600;
+  color: var(--bm-n-700); text-decoration: none;
+}
+.bm-usermenu-panel a:hover { background: var(--bm-n-25); color: var(--bm-n-900); }
+.bm-usermenu-panel a i { width: 16px; text-align: center; color: var(--bm-n-400); }
+.bm-usermenu-panel a.is-leave { color: var(--bm-fb-bad); }
+.bm-usermenu-panel a.is-leave i { color: var(--bm-fb-bad); }
+@media (max-width: 575px) { .bm-usermenu-btn span, .bm-usermenu-btn { max-width: 42vw; } }
+
 /* ============================ dialog =====================================
    Replaces window.confirm / prompt / alert. Those are not just ugly: they are
    unstyleable, they are truncated on mobile, they say "bouncemanrentals.com says",
