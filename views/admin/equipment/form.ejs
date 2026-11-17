@@ -1,18 +1,18 @@
 <%- include('../../layouts/admin', { body: `
 
 <a href="/admin/equipment" class="text-decoration-none mb-3 d-inline-block">
-  <i class="fas fa-arrow-left me-1"></i> Back to Equipment
+  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg> Back to Equipment
 </a>
 
 <h4 class="mb-4">${item ? 'Edit Equipment' : 'Add New Equipment'}</h4>
 
 <form method="POST" action="${item ? '/admin/equipment/' + item.id : '/admin/equipment'}" enctype="multipart/form-data">
 
-  ${typeof formError !== 'undefined' && formError ? '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + formError + '</div>' : ''}
+  ${typeof formError !== 'undefined' && formError ? '<div class="alert alert-danger"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-exclamation-triangle"/></svg>' + formError + '</div>' : ''}
 
   <!-- Basic Info -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-info-circle me-2"></i>Basic Information</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>Basic Information</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
@@ -40,7 +40,7 @@
 
   <!-- Specifications -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-ruler-combined me-2"></i>Specifications</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-ruler-combined"/></svg>Specifications</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
@@ -73,7 +73,7 @@
 
   <!-- Pricing -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-dollar-sign me-2"></i>Pricing</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-dollar-sign"/></svg>Pricing</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-3">
@@ -154,7 +154,7 @@
 
   <!-- Equipment Details -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-cog me-2"></i>Equipment Details</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-cog"/></svg>Equipment Details</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
@@ -196,14 +196,14 @@
 
   <!-- Options -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-sliders-h me-2"></i>Options</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-sliders-h"/></svg>Options</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
           <div class="form-check">
             <input type="checkbox" name="featured" class="form-check-input" id="featured" value="1" ${item && item.featured ? 'checked' : ''}>
             <label class="form-check-label" for="featured">
-              <i class="fas fa-star text-warning me-1"></i> Featured Item
+              <svg class="bm-i text-warning me-1" aria-hidden="true"><use href="#i-star"/></svg> Featured Item
             </label>
           </div>
         </div>
@@ -217,7 +217,7 @@
 
   <!-- Images -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-images me-2"></i>Images</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-images"/></svg>Images</div>
     <div class="card-body">
       ${item && images && images.length > 0 ? `
         <div class="mb-3">
@@ -228,9 +228,9 @@
                 '<img src="' + img.image_path + '" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:3px solid ' + (img.is_primary ? 'var(--bm-orange,#FF6B35)' : '#eee') + '">' +
                 '<div style="margin-top:6px;display:flex;gap:4px;justify-content:center">' +
                   (img.is_primary
-                    ? '<span class="badge bg-warning text-dark" style="font-size:10px"><i class="fas fa-star me-1"></i>Featured</span>'
-                    : '<a href="/admin/equipment/image/' + img.id + '/set-primary" class="btn btn-sm btn-outline-warning" style="font-size:10px;padding:2px 6px" title="Set as featured"><i class="fas fa-star"></i></a>') +
-                  '<a href="/admin/equipment/image/' + img.id + '/delete" class="btn btn-sm btn-outline-danger delete-image-link" style="font-size:10px;padding:2px 6px" title="Delete"><i class="fas fa-trash"></i></a>' +
+                    ? '<span class="badge bg-warning text-dark" style="font-size:10px"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-star"/></svg>Featured</span>'
+                    : '<a href="/admin/equipment/image/' + img.id + '/set-primary" class="btn btn-sm btn-outline-warning" style="font-size:10px;padding:2px 6px" title="Set as featured"><svg class="bm-i" aria-hidden="true"><use href="#i-star"/></svg></a>') +
+                  '<a href="/admin/equipment/image/' + img.id + '/delete" class="btn btn-sm btn-outline-danger delete-image-link" style="font-size:10px;padding:2px 6px" title="Delete"><svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg></a>' +
                 '</div>' +
               '</div>';
             }).join('')}
@@ -248,7 +248,7 @@
   <!-- Submit -->
   <div class="d-grid gap-2 d-sm-flex mb-4">
     <button type="submit" class="btn btn-bm btn-lg">
-      <i class="fas fa-${item ? 'save' : 'plus'} me-1"></i>
+      <svg class="bm-i me-1" aria-hidden="true"><use href="#i-${item ? 'save' : 'plus'}"/></svg>
       ${item ? 'Update Equipment' : 'Add Equipment'}
     </button>
     <a href="/admin/equipment" class="btn btn-outline-secondary btn-lg">Cancel</a>

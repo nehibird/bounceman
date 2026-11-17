@@ -6,14 +6,14 @@
     <p class="text-muted mb-0">${logs.length} record${logs.length !== 1 ? 's' : ''}</p>
   </div>
   <button class="btn btn-bm" type="button" data-bs-toggle="collapse" data-bs-target="#addMaintenanceForm">
-    <i class="fas fa-plus me-1"></i> Add Record
+    <svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg> Add Record
   </button>
 </div>
 
 <!-- Add Maintenance Form (Collapsible) -->
 <div class="collapse mb-4" id="addMaintenanceForm">
   <div class="card">
-    <div class="card-header"><i class="fas fa-plus-circle me-2"></i>New Maintenance Record</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-plus-circle"/></svg>New Maintenance Record</div>
     <div class="card-body">
       <form method="POST" action="/admin/maintenance">
         <div class="row g-3">
@@ -48,7 +48,7 @@
             <input type="date" name="next_due" class="form-control">
           </div>
           <div class="col-md-4 d-flex align-items-end">
-            <button type="submit" class="btn btn-bm w-100"><i class="fas fa-save me-1"></i> Save Record</button>
+            <button type="submit" class="btn btn-bm w-100"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg> Save Record</button>
           </div>
         </div>
       </form>
@@ -89,13 +89,13 @@
               ${log.next_due ? `
                 <span class="${new Date(log.next_due) < new Date() ? 'text-danger fw-bold' : ''}">
                   ${log.next_due}
-                  ${new Date(log.next_due) < new Date() ? ' <i class="fas fa-exclamation-triangle"></i>' : ''}
+                  ${new Date(log.next_due) < new Date() ? ' <svg class="bm-i" aria-hidden="true"><use href="#i-exclamation-triangle"/></svg>' : ''}
                 </span>
               ` : '-'}
             </td>
           </tr>
           `).join('') : '<tr><td colspan="7"><div class="bm-empty">' +
-  '<i class="fas fa-wrench bm-empty-icon"></i>' +
+  '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-wrench"/></svg>' +
   '<p class="bm-empty-title">No maintenance logged</p>' +
   '<p class="bm-empty-line">Log a repair or a clean against a unit and it stays on that unit&rsquo;s history.</p>' +
 '</div></td></tr>'}

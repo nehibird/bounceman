@@ -1,10 +1,10 @@
 <%- include('../layouts/admin', { body: `
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0"><i class="fas fa-ad me-2"></i>Ad Management</h4>
+  <h4 class="mb-0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-ad"/></svg>Ad Management</h4>
   <div>
-    <a href="/admin/ads/reports" class="btn btn-sm btn-outline-secondary me-2"><i class="fas fa-chart-line me-1"></i>Reports</a>
-    <a href="/admin/ads/rules" class="btn btn-sm btn-outline-secondary"><i class="fas fa-robot me-1"></i>Rules</a>
+    <a href="/admin/ads/reports" class="btn btn-sm btn-outline-secondary me-2"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-chart-line"/></svg>Reports</a>
+    <a href="/admin/ads/rules" class="btn btn-sm btn-outline-secondary"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-robot"/></svg>Rules</a>
   </div>
 </div>
 
@@ -16,9 +16,9 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="stat-label">Ad Spend (${win.clamped ? 'since ' + win.since : days + 'd'})</div>
-          <div class="stat-value" id="statSpend"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
+          <div class="stat-value" id="statSpend"><span class="text-muted"><svg class="bm-i bm-i-spin" aria-hidden="true"><use href="#i-spinner"/></svg></span></div>
         </div>
-        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-dollar-sign"></i></div>
+        <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><svg class="bm-i" aria-hidden="true"><use href="#i-dollar-sign"/></svg></div>
       </div>
     </div>
   </div>
@@ -30,7 +30,7 @@
           <div class="stat-value">${stats.paidBookings}</div>
           <div class="text-muted small">of ${stats.totalBookings} total</div>
         </div>
-        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-calendar-check"></i></div>
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><svg class="bm-i" aria-hidden="true"><use href="#i-calendar-check"/></svg></div>
       </div>
     </div>
   </div>
@@ -39,9 +39,9 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="stat-label">Cost per Booking</div>
-          <div class="stat-value" id="statCpb"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
+          <div class="stat-value" id="statCpb"><span class="text-muted"><svg class="bm-i bm-i-spin" aria-hidden="true"><use href="#i-spinner"/></svg></span></div>
         </div>
-        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-tag"></i></div>
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><svg class="bm-i" aria-hidden="true"><use href="#i-tag"/></svg></div>
       </div>
     </div>
   </div>
@@ -50,10 +50,10 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="stat-label">ROAS</div>
-          <div class="stat-value" id="statRoas"><span class="text-muted"><i class="fas fa-spinner fa-spin"></i></span></div>
+          <div class="stat-value" id="statRoas"><span class="text-muted"><svg class="bm-i bm-i-spin" aria-hidden="true"><use href="#i-spinner"/></svg></span></div>
           <div class="text-muted small">$${parseFloat(stats.paidRevenue).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} attributed revenue</div>
         </div>
-        <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-chart-line"></i></div>
+        <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><svg class="bm-i" aria-hidden="true"><use href="#i-chart-line"/></svg></div>
       </div>
     </div>
   </div>
@@ -62,7 +62,7 @@
 <!-- Attribution: spend vs. bookings actually produced -->
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span><i class="fas fa-crosshairs me-2"></i>Attribution — what the spend actually produced</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-crosshairs"/></svg>Attribution — what the spend actually produced</span>
     <div class="btn-group btn-group-sm">
       ${[7, 30, 90].map(d => `<a href="/admin/ads?days=${d}" class="btn btn-outline-secondary ${d === days ? 'active' : ''}">${d}d</a>`).join('')}
     </div>
@@ -72,14 +72,14 @@
       <table class="table table-hover mb-0 rtable">
         <thead><tr><th>Channel</th><th class="text-end">Spend</th><th class="text-end">Clicks</th><th class="text-end">Bookings</th><th class="text-end">Revenue</th><th class="text-end">Cost / Booking</th><th class="text-end">ROAS</th></tr></thead>
         <tbody id="attribBody">
-          <tr><td colspan="7" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-1"></i>Pulling live spend from Google and Meta...</td></tr>
+          <tr><td colspan="7" class="text-center text-muted py-3"><svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-spinner"/></svg>Pulling live spend from Google and Meta...</td></tr>
         </tbody>
       </table>
     </div>
   </div>
   ${win.clamped ? `
   <div class="alert alert-warning mb-0 rounded-0 small">
-    <i class="fas fa-circle-info me-1"></i>
+    <svg class="bm-i me-1" aria-hidden="true"><use href="#i-circle-info"/></svg>
     Showing <strong>${win.since} to ${win.until}</strong>, not the full ${days} days.
     Attribution only started ${attributionStart}, and spend is clamped to match — otherwise
     ${days} days of spend would be compared against a few days of tracked bookings and every
@@ -93,7 +93,7 @@
 
 <!-- Every channel, paid or not -->
 <div class="card mb-4">
-  <div class="card-header"><i class="fas fa-signs-post me-2"></i>All booking sources — ${win.since} to ${win.until}</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-signs-post"/></svg>All booking sources — ${win.since} to ${win.until}</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0 rtable">
@@ -117,14 +117,14 @@
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fab fa-google me-2" style="color:#4285F4"></i>Google Ads</span>
+        <span><svg class="bm-i me-2" style="color:#4285F4" aria-hidden="true"><use href="#i-google"/></svg>Google Ads</span>
         <span class="badge bg-success">Active</span>
       </div>
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <div class="text-muted small">Status</div>
-            <span id="dashGoogleStatus"><span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Checking...</span></span>
+            <span id="dashGoogleStatus"><span class="text-muted"><svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-spinner"/></svg>Checking...</span></span>
           </div>
         </div>
         <div class="d-flex justify-content-between mb-3">
@@ -138,7 +138,7 @@
           </div>
         </div>
         <a href="/admin/ads/google" class="btn btn-sm btn-outline-primary w-100">
-          <i class="fas fa-cog me-1"></i>Manage Google Ads
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-cog"/></svg>Manage Google Ads
         </a>
       </div>
     </div>
@@ -148,14 +148,14 @@
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fab fa-facebook me-2" style="color:#1877F2"></i>Facebook / Instagram Ads</span>
+        <span><svg class="bm-i me-2" style="color:#1877F2" aria-hidden="true"><use href="#i-facebook"/></svg>Facebook / Instagram Ads</span>
         <span class="badge bg-success">Active</span>
       </div>
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <div class="text-muted small">Status</div>
-            <span id="dashFbStatus"><span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Checking...</span></span>
+            <span id="dashFbStatus"><span class="text-muted"><svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-spinner"/></svg>Checking...</span></span>
           </div>
         </div>
         <div class="d-flex justify-content-between mb-3">
@@ -169,7 +169,7 @@
           </div>
         </div>
         <a href="/admin/ads/facebook" class="btn btn-sm btn-outline-primary w-100">
-          <i class="fas fa-cog me-1"></i>Manage Facebook Ads
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-cog"/></svg>Manage Facebook Ads
         </a>
       </div>
     </div>
@@ -180,7 +180,7 @@
 <div class="row g-4">
   <div class="col-md-8">
     <div class="card">
-      <div class="card-header"><i class="fas fa-robot me-2"></i>Smart Rules
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-robot"/></svg>Smart Rules
         <span class="badge bg-secondary ms-2">${rules.filter(r => r.enabled).length} active</span>
       </div>
       <div class="card-body p-0">
@@ -213,26 +213,26 @@
   </div>
   <div class="col-md-4">
     <div class="card">
-      <div class="card-header"><i class="fas fa-bolt me-2"></i>Quick Links</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-bolt"/></svg>Quick Links</div>
       <div class="card-body d-grid gap-2">
         <a href="/admin/ads/google" class="btn btn-outline-primary btn-sm">
-          <i class="fab fa-google me-2"></i>Google Ads Manager
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-google"/></svg>Google Ads Manager
         </a>
         <a href="/admin/ads/facebook" class="btn btn-outline-primary btn-sm">
-          <i class="fab fa-facebook me-2"></i>Facebook Ads Manager
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-facebook"/></svg>Facebook Ads Manager
         </a>
         <a href="/admin/ads/rules" class="btn btn-outline-secondary btn-sm">
-          <i class="fas fa-robot me-2"></i>Smart Rules
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-robot"/></svg>Smart Rules
         </a>
         <a href="/admin/ads/reports" class="btn btn-outline-secondary btn-sm">
-          <i class="fas fa-chart-bar me-2"></i>Reports
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-bar"/></svg>Reports
         </a>
       </div>
     </div>
     <div class="card mt-3">
-      <div class="card-header"><i class="fas fa-chart-area me-2"></i>Performance Chart</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-area"/></svg>Performance Chart</div>
       <div class="card-body text-center text-muted py-4">
-        <i class="fas fa-chart-line fa-3x mb-3" style="opacity:0.2"></i>
+        <svg class="bm-i bm-i-3x mb-3" style="opacity:0.2" aria-hidden="true"><use href="#i-chart-line"/></svg>
         <p class="mb-0">Chart will appear once campaigns are active and syncing data.</p>
       </div>
     </div>
@@ -249,11 +249,11 @@ async function loadDashboardStatus() {
     const gEl = document.getElementById('dashGoogleStatus');
     const fEl = document.getElementById('dashFbStatus');
     if (gEl) gEl.innerHTML = gr.connected
-      ? '<strong class="text-success"><i class="fas fa-check-circle me-1"></i>Connected</strong>'
-      : '<strong class="text-warning"><i class="fas fa-unlink me-1"></i>Not Connected</strong>';
+      ? '<strong class="text-success"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>Connected</strong>'
+      : '<strong class="text-warning"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-unlink"/></svg>Not Connected</strong>';
     if (fEl) fEl.innerHTML = fr.connected
-      ? '<strong class="text-success"><i class="fas fa-check-circle me-1"></i>Connected</strong>'
-      : '<strong class="text-warning"><i class="fas fa-unlink me-1"></i>Not Connected</strong>';
+      ? '<strong class="text-success"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>Connected</strong>'
+      : '<strong class="text-warning"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-unlink"/></svg>Not Connected</strong>';
   } catch(e) { console.error('Dashboard status check failed', e); }
 }
 loadDashboardStatus();
@@ -288,7 +288,7 @@ async function loadAttribution() {
       totalRevenue += c.revenue;
       rows += '<tr>' +
         '<td class="rt-primary"><strong>' + esc(c.channel) + '</strong>' +
-          (c.error ? '<div class="text-danger small"><i class="fas fa-triangle-exclamation me-1"></i>' + esc(c.error) + '</div>'
+          (c.error ? '<div class="text-danger small"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg>' + esc(c.error) + '</div>'
                    : '<div class="text-muted small"><code>' + esc(c.source) + '</code></div>') + '</td>' +
         '<td class="text-end" data-label="Spend">' + (c.spend === null ? '<span class="text-muted">—</span>' : money(c.spend)) + '</td>' +
         '<td class="text-end" data-label="Clicks">' + (c.clicks === null ? '<span class="text-muted">—</span>' : c.clicks) + '</td>' +

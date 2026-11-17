@@ -1,13 +1,13 @@
 <%- include('../../layouts/admin', { body: `
 
-${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert alert-danger mb-3"><i class="fas fa-exclamation-triangle me-2"></i>Cannot delete this customer because they have active bookings. Delete the bookings first.</div>' : ""}
+${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert alert-danger mb-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-exclamation-triangle"/></svg>Cannot delete this customer because they have active bookings. Delete the bookings first.</div>' : ""}
 <a href="/admin/customers" class="text-decoration-none mb-3 d-inline-block">
-  <i class="fas fa-arrow-left me-1"></i> Back to Customers
+  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg> Back to Customers
 </a>
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0">${esc(customer.first_name)} ${esc(customer.last_name)}</h4>
   <form method="POST" action="/admin/customers/${customer.id}/delete" class="confirm-delete" data-confirm="Delete this customer? This will only work if they have no bookings? This cannot be undone.">
-    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i> Delete Customer</button>
+    <button type="submit" class="btn btn-sm btn-outline-danger"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg> Delete Customer</button>
   </form>
 </div>
 
@@ -17,12 +17,12 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
 
     <!-- Contact Info -->
     <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-user me-2"></i>Contact Information</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-user"/></svg>Contact Information</div>
       <div class="card-body">
-        <div class="mb-2"><i class="fas fa-envelope text-muted me-2"></i>${esc(customer.email) || 'No email'}</div>
-        <div class="mb-2"><i class="fas fa-phone text-muted me-2"></i>${esc(fmtPhone(customer.phone)) || 'No phone'}</div>
+        <div class="mb-2"><svg class="bm-i text-muted me-2" aria-hidden="true"><use href="#i-envelope"/></svg>${esc(customer.email) || 'No email'}</div>
+        <div class="mb-2"><svg class="bm-i text-muted me-2" aria-hidden="true"><use href="#i-phone"/></svg>${esc(fmtPhone(customer.phone)) || 'No phone'}</div>
         <div class="mb-2">
-          <i class="fas fa-map-marker-alt text-muted me-2"></i>
+          <svg class="bm-i text-muted me-2" aria-hidden="true"><use href="#i-map-marker-alt"/></svg>
           ${esc(customer.address)}
           ${customer.city ? ', ' + esc(customer.city) : ''}
           ${customer.state ? ', ' + esc(customer.state) : ''}
@@ -34,7 +34,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
 
     <!-- Stats -->
     <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Customer Stats</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-pie"/></svg>Customer Stats</div>
       <div class="card-body">
         <div class="d-flex justify-content-between mb-2">
           <span>Total Bookings</span>
@@ -53,7 +53,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
 
     <!-- Tax Exempt -->
     <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-file-invoice-dollar me-2"></i>Tax Exempt Status</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-file-invoice-dollar"/></svg>Tax Exempt Status</div>
       <div class="card-body">
         <form method="POST" action="/admin/customers/${customer.id}/tax-exempt">
           <div class="mb-3">
@@ -69,19 +69,19 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
             <label class="form-label small text-muted">Exemption Certificate #</label>
             <input type="text" name="tax_exempt_cert" class="form-control form-control-sm" placeholder="OK exemption cert number" value="${esc(customer.tax_exempt_cert)}">
           </div>
-          <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><i class="fas fa-save me-1"></i> Save</button>
+          <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg> Save</button>
         </form>
       </div>
     </div>
 
     <!-- Add Note -->
     <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Notes</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-sticky-note"/></svg>Notes</div>
       <div class="card-body">
         ${customer.notes ? `<div class="small text-muted mb-3 p-2 rounded" style="white-space:pre-wrap;background:#f8f9fa">${esc(customer.notes)}</div>` : ''}
         <form method="POST" action="/admin/customers/${customer.id}/notes">
           <textarea name="note" class="form-control mb-2" rows="3" placeholder="Add a note about this customer..."></textarea>
-          <button type="submit" class="btn btn-sm btn-bm w-100"><i class="fas fa-save me-1"></i> Save Note</button>
+          <button type="submit" class="btn btn-sm btn-bm w-100"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg> Save Note</button>
         </form>
       </div>
     </div>
@@ -94,7 +94,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
     <!-- Bookings -->
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-calendar-check me-2"></i>Bookings</span>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Bookings</span>
         <span class="badge bg-primary">${bookings.length}</span>
       </div>
       <div class="card-body p-0">
@@ -120,7 +120,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
     <!-- Payments -->
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-credit-card me-2"></i>Payments</span>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-credit-card"/></svg>Payments</span>
         <span class="badge bg-success">${payments.length}</span>
       </div>
       <div class="card-body p-0">
@@ -145,7 +145,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
     <!-- Communications -->
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-envelope me-2"></i>Communications</span>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-envelope"/></svg>Communications</span>
         <span class="badge bg-secondary">${comms.length}</span>
       </div>
       <div class="card-body p-0">
@@ -153,7 +153,7 @@ ${typeof error !== "undefined" && error === "has_bookings" ? '<div class="alert 
           <div class="list-group-item">
             <div class="d-flex justify-content-between">
               <strong>
-                <i class="fas fa-${c.direction === 'outbound' ? 'paper-plane text-primary' : 'inbox text-success'} me-1"></i>
+                <svg class="bm-i me-1 ${c.direction === 'outbound' ? 'text-primary' : 'text-success'}" aria-hidden="true"><use href="#i-${c.direction === 'outbound' ? 'paper-plane' : 'inbox'}"/></svg>
                 ${esc(c.subject || c.type || 'Message')}
               </strong>
               <small class="text-muted">${fmtStamp(c.sent_at || c.created_at)}</small>

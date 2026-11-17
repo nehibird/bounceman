@@ -72,12 +72,12 @@
   </div>
   <div class="daynav">
     <a href="/admin/delivery?date=${day.prev}" class="btn btn-sm btn-outline-secondary"
-       title="Previous day"><i class="fas fa-chevron-left"></i></a>
+       title="Previous day"><svg class="bm-i" aria-hidden="true"><use href="#i-chevron-left"/></svg></a>
     <input type="date" class="form-control form-control-sm" value="${day.date}" id="deliveryDateFilter">
     <a href="/admin/delivery?date=${day.next}" class="btn btn-sm btn-outline-secondary"
-       title="Next day"><i class="fas fa-chevron-right"></i></a>
+       title="Next day"><svg class="bm-i" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
     ${day.isToday ? '' : '<a href="/admin/delivery" class="btn btn-sm btn-outline-secondary">Today</a>'}
-    ${day.saturdayLanding ? '<a href="/admin?home=1" class="btn btn-sm btn-outline-secondary" title="Go to the dashboard"><i class="fas fa-tachometer-alt me-1"></i>Dashboard</a>' : ''}
+    ${day.saturdayLanding ? '<a href="/admin?home=1" class="btn btn-sm btn-outline-secondary" title="Go to the dashboard"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-tachometer-alt"/></svg>Dashboard</a>' : ''}
   </div>
 </div>
 
@@ -93,13 +93,13 @@ ${stops.length ? stops.map(s => `
         <div class="stop-when">${esc(s.window)}</div>
         <div class="stop-who">
           <strong>${esc(s.name)}</strong>
-          ${s.phone ? '<a href="tel:' + esc(s.phoneHref) + '" class="ms-2 text-decoration-none"><i class="fas fa-phone me-1"></i>' + esc(fmtPhone(s.phone)) + '</a>' : ''}
+          ${s.phone ? '<a href="tel:' + esc(s.phoneHref) + '" class="ms-2 text-decoration-none"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-phone"/></svg>' + esc(fmtPhone(s.phone)) + '</a>' : ''}
         </div>
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         ${s.signed
-          ? '<span class="flag flag-ok"><i class="fas fa-file-signature"></i>Contract signed</span>'
-          : '<span class="flag flag-bad"><i class="fas fa-triangle-exclamation"></i>Contract NOT signed</span>'}
+          ? '<span class="flag flag-ok"><svg class="bm-i" aria-hidden="true"><use href="#i-file-signature"/></svg>Contract signed</span>'
+          : '<span class="flag flag-bad"><svg class="bm-i" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg>Contract NOT signed</span>'}
         <a href="/admin/bookings/${s.id}" class="btn btn-sm btn-outline-secondary">
           ${esc(s.booking_number)}
         </a>
@@ -125,7 +125,7 @@ ${stops.length ? stops.map(s => `
         <dt>Crew</dt>
         <dd>${s.crew
           ? esc(s.crew)
-          : '<span class="flag flag-warn"><i class="fas fa-user-slash"></i>Nobody assigned</span>'}</dd>
+          : '<span class="flag flag-warn"><svg class="bm-i" aria-hidden="true"><use href="#i-user-slash"/></svg>Nobody assigned</span>'}</dd>
       </div>
       ${s.setupLabel ? `
       <div>
@@ -146,18 +146,18 @@ ${stops.length ? stops.map(s => `
         : '<span class="text-muted">No items on this booking</span>'}
     </div>
 
-    ${s.notes ? '<div class="stop-note"><i class="fas fa-note-sticky me-2"></i>' + esc(s.notes) + '</div>' : ''}
+    ${s.notes ? '<div class="stop-note"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-note-sticky"/></svg>' + esc(s.notes) + '</div>' : ''}
   </div>
 </div>`).join('') : `
 <div class="card">
   <div class="card-body text-center py-5">
-    <i class="fas fa-truck fa-2x mb-3 d-block" style="color:var(--bm-n-300)"></i>
+    <svg class="bm-i bm-i-2x mb-3 d-block" style="color:var(--bm-n-300)" aria-hidden="true"><use href="#i-truck"/></svg>
     <h5 class="mb-1">Nothing booked for ${esc(day.plainDate)}.</h5>
     ${day.nextBooked
       ? '<p class="text-muted mb-3">Next delivery is <a href="/admin/delivery?date=' + day.nextBooked.date + '">' + esc(day.nextBooked.label) + '</a> — ' + day.nextBooked.count + (day.nextBooked.count === 1 ? ' delivery.' : ' deliveries.') + '</p>'
       : '<p class="text-muted mb-3">Nothing on the books ahead of this date either.</p>'}
     <a href="/admin/bookings/new" class="btn btn-primary btn-sm">
-      <i class="fas fa-plus me-1"></i>New booking
+      <svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg>New booking
     </a>
   </div>
 </div>

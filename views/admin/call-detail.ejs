@@ -2,22 +2,22 @@
 
 <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
   <div>
-    <h4 class="mb-1"><i class="fas fa-phone me-2"></i>Call${call && call.caller ? ' from ' + esc(fmtPhone(call.caller)) : ''}</h4>
+    <h4 class="mb-1"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-phone"/></svg>Call${call && call.caller ? ' from ' + esc(fmtPhone(call.caller)) : ''}</h4>
     <p class="text-muted mb-0">${customerName ? '<strong>' + esc(customerName) + '</strong> &middot; ' : ''}${when ? esc(when) : ''}</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="/admin/calls" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>All Calls</a>
-    ${call && call.caller ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + esc(call.caller) + '"><i class="fas fa-phone-alt me-1"></i>Call Back</button>' : ''}
+    <a href="/admin/calls" class="btn btn-sm btn-outline-secondary"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg>All Calls</a>
+    ${call && call.caller ? '<button class="btn btn-sm btn-success call-btn" data-phone="' + esc(call.caller) + '"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-phone-alt"/></svg>Call Back</button>' : ''}
   </div>
 </div>
 
 ${notFound ? `
 <div class="alert alert-warning">
-  <i class="fas fa-triangle-exclamation me-2"></i>No record of call <code>${esc(vapiCallId)}</code>${vapiError ? ' (Vapi lookup: ' + esc(vapiError) + ')' : ''}.
+  <svg class="bm-i me-2" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg>No record of call <code>${esc(vapiCallId)}</code>${vapiError ? ' (Vapi lookup: ' + esc(vapiError) + ')' : ''}.
 </div>
 ` : `
 
-${vapiError ? `<div class="alert alert-warning py-2"><i class="fas fa-triangle-exclamation me-2"></i>Live Vapi lookup failed (${esc(vapiError)}) — showing the details saved when the call ended. The recording and transcript may be unavailable.</div>` : ''}
+${vapiError ? `<div class="alert alert-warning py-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg>Live Vapi lookup failed (${esc(vapiError)}) — showing the details saved when the call ended. The recording and transcript may be unavailable.</div>` : ''}
 
 <div class="row g-3 mb-3">
   <div class="col-6 col-md-3">
@@ -47,24 +47,24 @@ ${vapiError ? `<div class="alert alert-warning py-2"><i class="fas fa-triangle-e
 </div>
 
 <div class="card mb-3">
-  <div class="card-header bg-white"><i class="fas fa-headphones me-2"></i>Recording</div>
+  <div class="card-header bg-white"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-headphones"/></svg>Recording</div>
   <div class="card-body">
     ${call.hasRecording && !vapiError ? `
       <audio controls preload="none" class="w-100" src="/admin/calls/${encodeURIComponent(vapiCallId)}/recording"></audio>
-      <div class="mt-2"><a href="/admin/calls/${encodeURIComponent(vapiCallId)}/recording" class="small text-decoration-none"><i class="fas fa-download me-1"></i>Download / open in a new tab</a></div>
-    ` : (call.hasRecording ? '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>Recording unavailable — it may have expired or the live Vapi lookup failed.</p>' : '<p class="text-muted mb-0"><i class="fas fa-volume-xmark me-2"></i>No recording available for this call.</p>')}
+      <div class="mt-2"><a href="/admin/calls/${encodeURIComponent(vapiCallId)}/recording" class="small text-decoration-none"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-download"/></svg>Download / open in a new tab</a></div>
+    ` : (call.hasRecording ? '<p class="text-muted mb-0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-volume-xmark"/></svg>Recording unavailable — it may have expired or the live Vapi lookup failed.</p>' : '<p class="text-muted mb-0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-volume-xmark"/></svg>No recording available for this call.</p>')}
   </div>
 </div>
 
 <div class="card mb-3">
-  <div class="card-header bg-white"><i class="fas fa-file-lines me-2"></i>Summary</div>
+  <div class="card-header bg-white"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-file-lines"/></svg>Summary</div>
   <div class="card-body">
     ${call.summary ? '<p class="mb-0" style="white-space:pre-wrap">' + esc(call.summary) + '</p>' : '<p class="text-muted mb-0">No summary available.</p>'}
   </div>
 </div>
 
 <div class="card">
-  <div class="card-header bg-white"><i class="fas fa-comments me-2"></i>Transcript</div>
+  <div class="card-header bg-white"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-comments"/></svg>Transcript</div>
   <div class="card-body">
     ${call.transcript ? '<pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word">' + esc(call.transcript) + '</pre>' : '<p class="text-muted mb-0">No transcript available.</p>'}
   </div>

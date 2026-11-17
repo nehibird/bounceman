@@ -1,17 +1,17 @@
 <%- include('../layouts/admin', { body: `
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0"><i class="fas fa-robot me-2"></i>Smart Ad Rules</h4>
-  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+  <h4 class="mb-0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-robot"/></svg>Smart Ad Rules</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Ad Dashboard</a>
 </div>
 
 <div class="alert alert-info mb-4" style="border-radius:10px">
-  <i class="fas fa-info-circle me-2"></i>
+  <svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>
   Smart rules automate your ad campaigns based on inventory, schedule, and performance. All rules are <strong>disabled by default</strong> until you're ready to activate.
 </div>
 
 <div class="card">
-  <div class="card-header"><i class="fas fa-list-alt me-2"></i>Automation Rules</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-list-alt"/></svg>Automation Rules</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0 rtable">
@@ -30,10 +30,10 @@
           <tr id="rule-row-${r.id}">
             <td class="rt-hide">
               ${r.rule_type === 'availability'
-                ? '<i class="fas fa-chess-rook text-warning"></i>'
+                ? '<svg class="bm-i text-warning" aria-hidden="true"><use href="#i-chess-rook"/></svg>'
                 : r.rule_type === 'schedule'
-                ? '<i class="fas fa-calendar-alt text-primary"></i>'
-                : '<i class="fas fa-boxes text-danger"></i>'
+                ? '<svg class="bm-i text-primary" aria-hidden="true"><use href="#i-calendar-alt"/></svg>'
+                : '<svg class="bm-i text-danger" aria-hidden="true"><use href="#i-boxes"/></svg>'
               }
             </td>
             <td class="rt-primary">
@@ -64,7 +64,7 @@
 <div class="row g-4 mt-2">
   <div class="col-md-6">
     <div class="card border-warning">
-      <div class="card-header bg-warning bg-opacity-10"><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Before Enabling Rules</div>
+      <div class="card-header bg-warning bg-opacity-10"><svg class="bm-i me-2 text-warning" aria-hidden="true"><use href="#i-exclamation-triangle"/></svg>Before Enabling Rules</div>
       <div class="card-body">
         <ul class="mb-0 text-muted small">
           <li class="mb-1">Ensure insurance verification is complete</li>
@@ -78,7 +78,7 @@
   </div>
   <div class="col-md-6">
     <div class="card">
-      <div class="card-header"><i class="fas fa-question-circle me-2"></i>How Rules Work</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-question-circle"/></svg>How Rules Work</div>
       <div class="card-body text-muted small">
         <p><strong>Availability rules</strong> check your booking calendar — when equipment is fully booked, ads pause automatically to avoid taking unbookable requests.</p>
         <p><strong>Schedule rules</strong> run on a timer — boosting budgets before your busy weekend period.</p>

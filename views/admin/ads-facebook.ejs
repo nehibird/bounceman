@@ -1,8 +1,8 @@
 <%- include('../layouts/admin', { body: `
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0"><i class="fab fa-facebook me-2" style="color:#1877F2"></i>Facebook / Instagram Ads Manager</h4>
-  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+  <h4 class="mb-0"><svg class="bm-i me-2" style="color:#1877F2" aria-hidden="true"><use href="#i-facebook"/></svg>Facebook / Instagram Ads Manager</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Ad Dashboard</a>
 </div>
 
 <!-- Connection Status -->
@@ -11,7 +11,7 @@
     <div class="row align-items-center">
       <div class="col-md-6">
         <h6 class="mb-1">Connection Status</h6>
-        <div id="fbStatusBadge"><span class="badge bg-secondary fs-6 px-3 py-2"><i class="fas fa-spinner fa-spin me-2"></i>Checking...</span></div>
+        <div id="fbStatusBadge"><span class="badge bg-secondary fs-6 px-3 py-2"><svg class="bm-i bm-i-spin me-2" aria-hidden="true"><use href="#i-spinner"/></svg>Checking...</span></div>
         <p class="text-muted small mt-2 mb-0" id="fbTokenExpiry"></p>
       </div>
       <div class="col-md-6">
@@ -32,19 +32,19 @@
 
 <!-- Facebook Pixel Status -->
 <div class="card mb-4">
-  <div class="card-header"><i class="fas fa-dot-circle me-2"></i>Facebook Pixel</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-dot-circle"/></svg>Facebook Pixel</div>
   <div class="card-body">
     <div class="row align-items-center">
       <div class="col-md-6">
         ${process.env.FB_PIXEL_ID ? `
         <div class="d-flex align-items-center gap-2">
           <span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724">
-            <i class="fas fa-check-circle me-1"></i>Pixel Active
+            <svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>Pixel Active
           </span>
           <code class="text-muted">${process.env.FB_PIXEL_ID}</code>
         </div>
         ` : `
-        <span class="badge bg-secondary fs-6 px-3 py-2"><i class="fas fa-pause-circle me-1"></i>No Pixel Configured</span>
+        <span class="badge bg-secondary fs-6 px-3 py-2"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-pause-circle"/></svg>No Pixel Configured</span>
         `}
       </div>
       <div class="col-md-6">
@@ -59,23 +59,23 @@
 <!-- Live Campaigns from API -->
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span><i class="fas fa-bullhorn me-2"></i>Campaigns</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-bullhorn"/></svg>Campaigns</span>
     <div>
       <span class="badge bg-success me-2">Live Data</span>
       <button class="btn btn-sm btn-bm" data-bs-toggle="modal" data-bs-target="#newFbCampaignModal">
-        <i class="fas fa-plus me-1"></i>Create Campaign
+        <svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg>Create Campaign
       </button>
     </div>
   </div>
   <div class="card-body p-0" id="fbCampaignsList">
-    <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading campaigns...</div>
+    <div class="text-center py-4 text-muted"><svg class="bm-i bm-i-spin me-2" aria-hidden="true"><use href="#i-spinner"/></svg>Loading campaigns...</div>
   </div>
 </div>
 
 <!-- Local DB Campaigns -->
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span><i class="fas fa-database me-2"></i>Local Campaign Records</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-database"/></svg>Local Campaign Records</span>
   </div>
   <div class="card-body p-0">
     ${campaigns.length > 0 ? `
@@ -91,7 +91,7 @@
           <td class="text-muted small d-none d-md-table-cell">${c.target_audience ? c.target_audience.substring(0,60) : '—'}</td>
           <td class="rt-actions">
             <button class="btn btn-sm btn-outline-danger" data-delete-fb-campaign="${c.id}">
-              <i class="fas fa-trash"></i>
+              <svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg>
             </button>
           </td>
         </tr>
@@ -101,7 +101,7 @@
     </div>
     ` : `
     <div class="text-center py-4 text-muted">
-      <i class="fab fa-facebook fa-3x mb-3" style="opacity:0.2"></i>
+      <svg class="bm-i bm-i-3x mb-3" style="opacity:0.2" aria-hidden="true"><use href="#i-facebook"/></svg>
       <p>No local Facebook campaign records yet.</p>
     </div>
     `}
@@ -113,11 +113,11 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fab fa-facebook me-2"></i>New Facebook/Instagram Campaign</h5>
+        <h5 class="modal-title"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-facebook"/></svg>New Facebook/Instagram Campaign</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-info small"><i class="fas fa-info-circle me-2"></i>Campaign will be created via Facebook Marketing API and saved as PAUSED.</div>
+        <div class="alert alert-info small"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>Campaign will be created via Facebook Marketing API and saved as PAUSED.</div>
         <form id="fbCampaignForm">
           <div class="row g-3">
             <div class="col-md-8">
@@ -154,7 +154,7 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-bm" id="saveFbCampaignBtn">
-          <i class="fas fa-save me-1"></i>Create Campaign (Paused)
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg>Create Campaign (Paused)
         </button>
       </div>
     </div>
@@ -189,10 +189,10 @@ async function checkFbStatus() {
       } else if (info.valid) {
         expiryText = '<span class="text-success">Long-lived token (no expiry)</span>';
       }
-      badge.innerHTML = '<span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724"><i class="fas fa-check-circle me-2"></i>Connected</span>';
+      badge.innerHTML = '<span class="badge fs-6 px-3 py-2" style="background:#d4edda;color:#155724"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-check-circle"/></svg>Connected</span>';
       expiry.innerHTML = expiryText;
     } else {
-      badge.innerHTML = '<span class="badge bg-danger fs-6 px-3 py-2"><i class="fas fa-times-circle me-2"></i>Disconnected — token invalid or expired</span>';
+      badge.innerHTML = '<span class="badge bg-danger fs-6 px-3 py-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-times-circle"/></svg>Disconnected — token invalid or expired</span>';
       expiry.innerHTML = '<span class="text-danger small">Update FB_ACCESS_TOKEN in .env with a new long-lived token.</span>';
     }
   } catch(e) { console.error('FB status check failed', e); }
@@ -203,7 +203,7 @@ async function loadFbCampaigns() {
     const r = await fetch('/admin/api/ads/facebook/campaigns');
     const d = await r.json();
     const el = document.getElementById('fbCampaignsList');
-    if (d.error) { el.innerHTML = '<div class="p-3 text-danger"><i class="fas fa-exclamation-circle me-2"></i>' + d.error + '</div>'; return; }
+    if (d.error) { el.innerHTML = '<div class="p-3 text-danger"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-exclamation-circle"/></svg>' + d.error + '</div>'; return; }
     if (!d.campaigns || d.campaigns.length === 0) {
       el.innerHTML = '<div class="text-center py-4 text-muted">No campaigns in Facebook ad account.</div>';
       return;

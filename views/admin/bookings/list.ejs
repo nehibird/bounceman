@@ -41,15 +41,15 @@
           : pageInfo.total + ' booking' + (pageInfo.total !== 1 ? 's' : '') + ' in total'
     }</p>
   </div>
-  <a href="/admin/bookings/new" class="btn btn-bm"><i class="fas fa-plus me-1"></i> New Booking</a>
+  <a href="/admin/bookings/new" class="btn btn-bm"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg> New Booking</a>
 </div>
 
 <!-- Bulk Actions Bar - hidden by default -->
 <div id="bulkBar" class="alert alert-warning d-none mb-3">
   <div class="d-flex align-items-center justify-content-between">
-    <span><i class="fas fa-check-square me-2"></i><span id="selCount">0</span> booking(s) selected</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-check-square"/></svg><span id="selCount">0</span> booking(s) selected</span>
     <div>
-      <button type="button" id="delBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+      <button type="button" id="delBtn" class="btn btn-sm btn-danger"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg>Delete Selected</button>
       <button type="button" id="clearBtn" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
     </div>
   </div>
@@ -136,14 +136,14 @@
                              (activeWhen && activeWhen !== 'all');
               if (filtered) {
                 return '<tr><td colspan="6"><div class="bm-empty">' +
-                  '<i class="fas fa-filter bm-empty-icon"></i>' +
+                  '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-filter"/></svg>' +
                   '<p class="bm-empty-title">Nothing matches this filter</p>' +
                   '<p class="bm-empty-line">There are bookings here, just none that fit what you have asked for.</p>' +
                   '<a href="/admin/bookings?when=all" class="btn btn-sm btn-bm">Show all bookings</a>' +
                   '</div></td></tr>';
               }
               return '<tr><td colspan="6"><div class="bm-empty">' +
-                '<i class="fas fa-calendar-check bm-empty-icon"></i>' +
+                '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-calendar-check"/></svg>' +
                 '<p class="bm-empty-title">No bookings yet</p>' +
                 '<p class="bm-empty-line">Every booking taken on the website or over the phone lands here.</p>' +
                 '<a href="/admin/bookings/new" class="btn btn-sm btn-bm">New booking</a>' +

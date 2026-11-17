@@ -1,8 +1,8 @@
 <%- include('../layouts/admin', { body: `
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Ad Reports</h4>
-  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back to Ad Dashboard</a>
+  <h4 class="mb-0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-bar"/></svg>Ad Reports</h4>
+  <a href="/admin/ads" class="btn btn-sm btn-outline-secondary"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Ad Dashboard</a>
 </div>
 
 <!-- Date Range & Filters -->
@@ -27,7 +27,7 @@
       </div>
       <div class="col-6 col-md-3">
         <button class="btn btn-sm btn-bm w-100" id="applyFiltersBtn">
-          <i class="fas fa-filter me-1"></i>Apply Filters
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-filter"/></svg>Apply Filters
         </button>
       </div>
     </div>
@@ -37,15 +37,15 @@
 <!-- Channel Tabs -->
 <ul class="nav nav-tabs mb-4" id="channelTabs">
   <li class="nav-item"><button class="nav-link active" data-channel="all">All</button></li>
-  <li class="nav-item"><button class="nav-link" data-channel="google"><i class="fab fa-google me-1"></i>Google</button></li>
-  <li class="nav-item"><button class="nav-link" data-channel="facebook"><i class="fab fa-facebook me-1"></i>Facebook</button></li>
+  <li class="nav-item"><button class="nav-link" data-channel="google"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-google"/></svg>Google</button></li>
+  <li class="nav-item"><button class="nav-link" data-channel="facebook"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-facebook"/></svg>Facebook</button></li>
 </ul>
 
 ${rows.length === 0 ? `
 <!-- Empty State -->
 <div class="card">
   <div class="card-body text-center py-5 text-muted">
-    <i class="fas fa-chart-line fa-4x mb-4" style="opacity:0.15"></i>
+    <svg class="bm-i bm-i-4x mb-4" style="opacity:0.15" aria-hidden="true"><use href="#i-chart-line"/></svg>
     <h5>No Ad Data Yet</h5>
     <p>Reports will appear once campaigns are active and syncing data.</p>
     <a href="/admin/ads" class="btn btn-bm btn-sm mt-2">Set Up Campaigns</a>
@@ -54,16 +54,16 @@ ${rows.length === 0 ? `
 ` : `
 <!-- Chart Placeholder -->
 <div class="card mb-4">
-  <div class="card-header"><i class="fas fa-chart-area me-2"></i>Spend Over Time</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-area"/></svg>Spend Over Time</div>
   <div class="card-body text-center text-muted py-4">
-    <i class="fas fa-chart-area fa-3x mb-3" style="opacity:0.2"></i>
+    <svg class="bm-i bm-i-3x mb-3" style="opacity:0.2" aria-hidden="true"><use href="#i-chart-area"/></svg>
     <p class="mb-0">Chart visualization coming soon.</p>
   </div>
 </div>
 
 <!-- Data Table -->
 <div class="card">
-  <div class="card-header"><i class="fas fa-table me-2"></i>Performance Data</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-table"/></svg>Performance Data</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0 rtable" id="perfTable">
@@ -86,9 +86,9 @@ ${rows.length === 0 ? `
             <td class="rt-primary">${fmtDateShort(r.date)}</td>
             <td data-label="Channel">
               ${r.platform === 'google'
-                ? '<i class="fab fa-google text-primary me-1"></i>Google'
+                ? '<svg class="bm-i text-primary me-1" aria-hidden="true"><use href="#i-google"/></svg>Google'
                 : r.platform === 'facebook'
-                ? '<i class="fab fa-facebook" style="color:#1877F2"></i> Facebook'
+                ? '<svg class="bm-i" style="color:#1877F2" aria-hidden="true"><use href="#i-facebook"/></svg> Facebook'
                 : r.platform || '—'
               }
             </td>

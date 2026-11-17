@@ -2,10 +2,10 @@
 <div class="row g-4 mb-4"><div class="col-12">
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span><i class="fas fa-university me-2"></i>Connected Banks</span>
+      <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-university"/></svg>Connected Banks</span>
       <div>
-        <button id="syncBtn" class="btn btn-sm btn-outline-secondary me-2"><i class="fas fa-rotate me-1"></i>Sync now</button>
-        <button id="connectBtn" class="btn btn-sm btn-bm"><i class="fas fa-plus me-1"></i>Connect a bank</button>
+        <button id="syncBtn" class="btn btn-sm btn-outline-secondary me-2"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-rotate"/></svg>Sync now</button>
+        <button id="connectBtn" class="btn btn-sm btn-bm"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</button>
       </div>
     </div>
     <div class="card-body">
@@ -18,7 +18,7 @@
             <td class="rt-primary"><strong>${i.institution_name || i.institution_id}</strong></td>
             <td data-label="Status">${i.status === 'ok' ? '<span class="badge bg-success">ok</span>' : `<span class="badge bg-warning text-dark">${i.status}</span>`}</td>
             <td data-label="Last synced">${i.last_synced ? new Date(i.last_synced).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'never'}</td>
-            <td data-label="">${i.status === 'ok' ? '' : `<button class="btn btn-sm btn-bm me-1 reconnectBtn" data-item="${i.item_id}"><i class="fas fa-plug me-1"></i>Reconnect</button><button class="btn btn-sm btn-outline-danger removeBtn" data-item="${i.item_id}" data-name="${i.institution_name || i.institution_id}"><i class="fas fa-trash me-1"></i>Remove</button>`}</td>
+            <td data-label="">${i.status === 'ok' ? '' : `<button class="btn btn-sm btn-bm me-1 reconnectBtn" data-item="${i.item_id}"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-plug"/></svg>Reconnect</button><button class="btn btn-sm btn-outline-danger removeBtn" data-item="${i.item_id}" data-name="${i.institution_name || i.institution_id}"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>`}</td>
           </tr>`).join('')}
         </tbody>
       </table>

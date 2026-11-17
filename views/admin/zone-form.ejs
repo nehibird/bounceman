@@ -1,7 +1,7 @@
 <%- include('../layouts/admin', { body: `
 
 <a href="/admin/settings" class="text-decoration-none mb-3 d-inline-block">
-  <i class="fas fa-arrow-left me-1"></i> Back to Settings
+  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg> Back to Settings
 </a>
 
 <h4 class="mb-4">${zone ? 'Edit Delivery Zone' : 'New Delivery Zone'}</h4>
@@ -32,7 +32,7 @@
       </div>
       <div class="mt-4">
         <button type="submit" class="btn btn-primary">
-          <i class="fas fa-save me-1"></i> ${zone ? 'Update Zone' : 'Create Zone'}
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg> ${zone ? 'Update Zone' : 'Create Zone'}
         </button>
         <a href="/admin/settings" class="btn btn-outline-secondary ms-2">Cancel</a>
       </div>

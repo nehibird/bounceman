@@ -3,7 +3,7 @@
 <!-- Event Header -->
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div>
-    <a href="/admin/events" class="text-muted small text-decoration-none"><i class="fas fa-arrow-left me-1"></i>Back to Events</a>
+    <a href="/admin/events" class="text-muted small text-decoration-none"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Events</a>
     <h3 class="mt-2 mb-0" style="font-weight:700;color:var(--bm-dark)">${esc(event.name)}</h3>
     <span class="text-muted">${fmtDayDate(event.event_date)} ${event.location ? '&bull; ' + esc(event.location) : ''}</span>
   </div>
@@ -18,7 +18,7 @@
   <div class="col-md-4">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
-        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-child"></i></div>
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><svg class="bm-i" aria-hidden="true"><use href="#i-child"/></svg></div>
         <div>
           <div class="stat-value">${stats.kids}</div>
           <div class="stat-label">Kids Registered</div>
@@ -29,7 +29,7 @@
   <div class="col-md-4">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
-        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:var(--bm-secondary)"><i class="fas fa-users"></i></div>
+        <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:var(--bm-secondary)"><svg class="bm-i" aria-hidden="true"><use href="#i-users"/></svg></div>
         <div>
           <div class="stat-value">${stats.registrations}</div>
           <div class="stat-label">Families</div>
@@ -40,7 +40,7 @@
   <div class="col-md-4">
     <div class="stat-card">
       <div class="d-flex align-items-center gap-3">
-        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><i class="fas fa-dollar-sign"></i></div>
+        <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:var(--bm-success)"><svg class="bm-i" aria-hidden="true"><use href="#i-dollar-sign"/></svg></div>
         <div>
           <div class="stat-value">$${stats.revenue.toFixed(2)}</div>
           <div class="stat-label">Revenue</div>
@@ -55,15 +55,15 @@
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
-        <strong><i class="fas fa-link me-2" style="color:var(--bm-primary)"></i>Walk-Up Link</strong>
+        <strong><svg class="bm-i me-2" style="color:var(--bm-primary)" aria-hidden="true"><use href="#i-link"/></svg>Walk-Up Link</strong>
         <div class="text-muted small text-break mt-1" id="eventLink">${settings.event_base_url || '/event'}?event=${event.id}</div>
       </div>
       <div>
         <button class="btn btn-sm btn-outline-primary rounded-pill me-2" id="copyLinkBtn">
-          <i class="fas fa-copy me-1"></i>Copy
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-copy"/></svg>Copy
         </button>
         <a href="${settings.event_base_url || '/event'}?event=${event.id}&kiosk=1" target="_blank" class="btn btn-sm btn-bm rounded-pill">
-          <i class="fas fa-tablet-alt me-1"></i>Kiosk Mode
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-tablet-alt"/></svg>Kiosk Mode
         </a>
       </div>
     </div>
@@ -74,11 +74,11 @@
 <form method="POST" action="/admin/events/${event.id}/registrations/delete" id="deleteRegsForm">
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span><i class="fas fa-list me-2"></i>Registrations (${registrations.length})</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-list"/></svg>Registrations (${registrations.length})</span>
     <div class="d-flex align-items-center gap-2">
       <span class="text-muted small me-2">Wristbands issued: ${event.wristband_counter}</span>
       <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill" id="deleteRegsBtn" style="display:none">
-        <i class="fas fa-trash me-1"></i>Delete Selected
+        <svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg>Delete Selected
       </button>
     </div>
   </div>
@@ -112,7 +112,7 @@
             '<td data-label="Kids">' + r.kid_count + ' <span class="text-muted small">(' + esc(kids.join(', ')) + ')</span></td>' +
             '<td data-label="Paid"><strong>$' + (r.amount_paid ? parseFloat(r.amount_paid).toFixed(2) : '0.00') + '</strong></td>' +
             '<td data-label="Method" class="d-none d-md-table-cell">' + (r.payment_method === 'cash' ? '💵 Cash' : r.payment_method === 'google_review' ? '⭐ Review' : r.payment_method === 'card' ? '💳 Card' : '—') + '</td>' +
-            '<td data-label="Waiver">' + (r.waiver_signed ? '<i class="fas fa-check-circle text-success me-2"></i><a href="/uploads/waivers/waiver-' + r.id + '.html" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:11px;padding:2px 8px">View</a>' : '<i class="fas fa-times-circle text-danger"></i>') + '</td>' +
+            '<td data-label="Waiver">' + (r.waiver_signed ? '<svg class="bm-i text-success me-2" aria-hidden="true"><use href="#i-check-circle"/></svg><a href="/uploads/waivers/waiver-' + r.id + '.html" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:11px;padding:2px 8px">View</a>' : '<svg class="bm-i text-danger" aria-hidden="true"><use href="#i-times-circle"/></svg>') + '</td>' +
             '<td data-label="Status"><span class="badge-status ' + (r.payment_status === 'completed' ? 'badge-confirmed' : 'badge-pending') + '">' + r.payment_status + '</span></td>' +
             '<td data-label="Time" class="d-none d-md-table-cell text-muted small">' + fmtStamp(r.created_at) + '</td>' +
           '</tr>';
@@ -140,7 +140,7 @@
     var checked = document.querySelectorAll('.reg-checkbox:checked').length;
     deleteBtn.style.display = checked > 0 ? 'inline-block' : 'none';
     deleteBtn.textContent = checked > 0 ? ' Delete Selected (' + checked + ')' : '';
-    if (checked > 0) deleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Selected (' + checked + ')';
+    if (checked > 0) deleteBtn.innerHTML = '<svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg>Delete Selected (' + checked + ')';
   }
 
   if (selectAll) {

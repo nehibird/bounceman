@@ -6,7 +6,7 @@
     <p class="text-muted mb-0">${expenses.length} record${expenses.length !== 1 ? 's' : ''}</p>
   </div>
   <button class="btn btn-bm" type="button" data-bs-toggle="collapse" data-bs-target="#addExpenseForm">
-    <i class="fas fa-plus me-1"></i> Add Expense
+    <svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg> Add Expense
   </button>
 </div>
 
@@ -45,7 +45,7 @@ ${(reimburseOwed > 0 || reimburseDone > 0) ? `
 <div class="card mb-4 border-warning">
   <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center">
     <div>
-      <div class="fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-warning"></i>Reimbursements to Owner</div>
+      <div class="fw-semibold"><svg class="bm-i me-2 text-warning" aria-hidden="true"><use href="#i-hand-holding-usd"/></svg>Reimbursements to Owner</div>
       <div class="text-muted small">Business costs paid from a personal account — repay these from the BounceMan account, then check them off.</div>
     </div>
     <div class="text-end">
@@ -62,7 +62,7 @@ ${(reimburseOwed > 0 || reimburseDone > 0) ? `
 <!-- By Category Breakdown -->
 ${totals.length > 0 ? `
 <div class="card mb-4">
-  <div class="card-header fw-semibold"><i class="fas fa-chart-pie me-2"></i>By Category</div>
+  <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-pie"/></svg>By Category</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-sm mb-0">
@@ -87,7 +87,7 @@ ${totals.length > 0 ? `
 <!-- Add Expense Form -->
 <div class="collapse mb-4" id="addExpenseForm">
   <div class="card">
-    <div class="card-header"><i class="fas fa-plus-circle me-2"></i>New Expense</div>
+    <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-plus-circle"/></svg>New Expense</div>
     <div class="card-body">
       <form method="POST" action="/admin/expenses">
         <div class="row g-3">
@@ -141,7 +141,7 @@ ${totals.length > 0 ? `
             <input type="text" name="notes" class="form-control" placeholder="Optional">
           </div>
           <div class="col-12">
-            <button type="submit" class="btn btn-bm"><i class="fas fa-save me-1"></i> Save Expense</button>
+            <button type="submit" class="btn btn-bm"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-save"/></svg> Save Expense</button>
           </div>
         </div>
       </form>
@@ -210,17 +210,17 @@ ${totals.length > 0 ? `
               ${e.reimbursable ? (e.reimbursed
                 ? `<span class="badge bg-success">Reimbursed</span>${e.reimbursed_date ? `<div class="text-muted small">${fmtDateShort(e.reimbursed_date)}</div>` : ''}
                    <form method="POST" action="/admin/expenses/${e.id}/reimburse" class="d-inline"><button class="btn btn-sm btn-link text-muted p-0" title="Mark as not yet reimbursed">undo</button></form>`
-                : `<form method="POST" action="/admin/expenses/${e.id}/reimburse" class="d-inline"><button class="btn btn-sm btn-warning" title="Mark this reimbursed"><i class="fas fa-check me-1"></i>Mark paid</button></form>`)
+                : `<form method="POST" action="/admin/expenses/${e.id}/reimburse" class="d-inline"><button class="btn btn-sm btn-warning" title="Mark this reimbursed"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check"/></svg>Mark paid</button></form>`)
                 : '<span class="text-muted">—</span>'}
             </td>
             <td class="rt-actions">
               <button class="btn btn-sm btn-outline-secondary" type="button"
                 data-bs-toggle="collapse" data-bs-target="#edit-${e.id}">
-                <i class="fas fa-pencil-alt"></i>
+                <svg class="bm-i" aria-hidden="true"><use href="#i-pencil-alt"/></svg>
               </button>
               <form method="POST" action="/admin/expenses/${e.id}/delete" class="d-inline confirm-delete"
                 data-confirm="Delete this expense?">
-                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-sm btn-outline-danger"><svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
             </td>
           </tr>
@@ -253,7 +253,7 @@ ${totals.length > 0 ? `
             </td>
           </tr>
           `).join('') : '<tr><td colspan="9"><div class="bm-empty">' +
-  '<i class="fas fa-receipt bm-empty-icon"></i>' +
+  '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-receipt"/></svg>' +
   '<p class="bm-empty-title">No expenses recorded</p>' +
   '<p class="bm-empty-line">Expenses come in automatically from a connected bank, and can be added by ' +
   'hand for anything paid another way.</p>' +

@@ -5,14 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
-  <link href="/assets/css/admin.css?v=p216" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=p210" rel="stylesheet">
 <script>
   /* Inline and synchronous, before the first paint. A stored choice applied from a
      deferred script would show the light page first and then repaint dark, which is
@@ -71,6 +70,7 @@
   </style>
 </head>
 <body>
+<%- include('../partials/icon-sprite') %>
   <aside class="admin-sidebar" id="sidebar">
     <div class="logo">
       <img src="/assets/images/logo-full.png" alt="Bounce Man" style="height:56px;">
@@ -93,28 +93,28 @@
           containing the current page is open on arrival. */
        var _nav = {
          daily: [
-           { href: _satHome,          key: 'dashboard',  icon: 'fa-gauge-high',      label: 'Dashboard' },
-           { href: '/admin/delivery', key: 'delivery',   icon: 'fa-truck',           label: 'Today' },
-           { href: '/admin/inbox',    key: 'inbox',      icon: 'fa-inbox',           label: 'Inbox' },
-           { href: '/admin/bookings', key: 'bookings',   icon: 'fa-calendar-check',  label: 'Bookings' },
-           { href: '/admin/calendar', key: 'calendar',   icon: 'fa-calendar-alt',    label: 'Calendar' },
-           { href: '/admin/customers',key: 'customers',  icon: 'fa-users',           label: 'Customers' },
-           { href: '/admin/equipment',key: 'equipment',  icon: 'fa-chess-rook',      label: 'Equipment' }
+           { href: _satHome,          key: 'dashboard',  icon: 'gauge-high',      label: 'Dashboard' },
+           { href: '/admin/delivery', key: 'delivery',   icon: 'truck',           label: 'Today' },
+           { href: '/admin/inbox',    key: 'inbox',      icon: 'inbox',           label: 'Inbox' },
+           { href: '/admin/bookings', key: 'bookings',   icon: 'calendar-check',  label: 'Bookings' },
+           { href: '/admin/calendar', key: 'calendar',   icon: 'calendar-alt',    label: 'Calendar' },
+           { href: '/admin/customers',key: 'customers',  icon: 'users',           label: 'Customers' },
+           { href: '/admin/equipment',key: 'equipment',  icon: 'chess-rook',      label: 'Equipment' }
          ],
          groups: [
-           { id: 'money', icon: 'fa-sack-dollar', label: 'Money', items: [
-             { href: '/admin/reports',     key: 'reports',     icon: 'fa-chart-bar', label: 'Reports' },
-             { href: '/admin/expenses',    key: 'expenses',    icon: 'fa-receipt',   label: 'Expenses' },
-             { href: '/admin/obligations', key: 'obligations', icon: 'fa-rotate',    label: 'Recurring costs' },
-             { href: '/admin/banks',       key: 'banks',       icon: 'fa-university',label: 'Connected banks' }
+           { id: 'money', icon: 'sack-dollar', label: 'Money', items: [
+             { href: '/admin/reports',     key: 'reports',     icon: 'chart-bar', label: 'Reports' },
+             { href: '/admin/expenses',    key: 'expenses',    icon: 'receipt',   label: 'Expenses' },
+             { href: '/admin/obligations', key: 'obligations', icon: 'rotate',    label: 'Recurring costs' },
+             { href: '/admin/banks',       key: 'banks',       icon: 'university',label: 'Connected banks' }
            ]},
-           { id: 'growth', icon: 'fa-bullhorn', label: 'Marketing', items: [
-             { href: '/admin/ads',     key: 'ads',     icon: 'fa-ad',   label: 'Ad dashboard' },
-             { href: '/admin/reviews', key: 'reviews', icon: 'fa-star', label: 'Reviews' }
+           { id: 'growth', icon: 'bullhorn', label: 'Marketing', items: [
+             { href: '/admin/ads',     key: 'ads',     icon: 'ad',   label: 'Ad dashboard' },
+             { href: '/admin/reviews', key: 'reviews', icon: 'star', label: 'Reviews' }
            ]},
-           { id: 'yard', icon: 'fa-screwdriver-wrench', label: 'Yard & events', items: [
-             { href: '/admin/events',      key: 'events',      icon: 'fa-ticket-alt', label: 'Walk-up events' },
-             { href: '/admin/maintenance', key: 'maintenance', icon: 'fa-wrench',     label: 'Maintenance' }
+           { id: 'yard', icon: 'screwdriver-wrench', label: 'Yard & events', items: [
+             { href: '/admin/events',      key: 'events',      icon: 'ticket-alt', label: 'Walk-up events' },
+             { href: '/admin/maintenance', key: 'maintenance', icon: 'wrench',     label: 'Maintenance' }
            ]}
          ]
        };
@@ -123,7 +123,7 @@
     <nav>
       <% _nav.daily.forEach(function (it) { %>
       <a href="<%= it.href %>" class="<%= _isOn(it.key) ? 'active' : '' %>">
-        <i class="fas <%= it.icon %>"></i> <%= it.label %>
+        <svg class="bm-i" aria-hidden="true"><use href="#i-<%= it.icon %>"/></svg> <%= it.label %>
       </a>
       <% }); %>
 
@@ -131,12 +131,12 @@
            var openHere = g.items.some(function (it) { return _isOn(it.key); }); %>
       <details class="nav-group" data-nav-group="<%= g.id %>" <%= openHere ? 'open' : '' %>>
         <summary>
-          <i class="fas <%= g.icon %>"></i> <%= g.label %>
-          <i class="fas fa-chevron-down nav-caret"></i>
+          <svg class="bm-i" aria-hidden="true"><use href="#i-<%= g.icon %>"/></svg> <%= g.label %>
+          <svg class="bm-i nav-caret" aria-hidden="true"><use href="#i-chevron-down"/></svg>
         </summary>
         <% g.items.forEach(function (it) { %>
         <a href="<%= it.href %>" class="<%= _isOn(it.key) ? 'active' : '' %>">
-          <i class="fas <%= it.icon %>"></i> <%= it.label %>
+          <svg class="bm-i" aria-hidden="true"><use href="#i-<%= it.icon %>"/></svg> <%= it.label %>
         </a>
         <% }); %>
       </details>
@@ -150,7 +150,7 @@
       <div>
         <button class="btn btn-sm btn-outline-secondary d-md-none" id="sidebarToggleBtn"
                 aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
-          <i class="fas fa-bars"></i>
+          <svg class="bm-i" aria-hidden="true"><use href="#i-bars"/></svg>
         </button>
         <%
            /* The header used to read the page's name by cutting suffixes off the
@@ -170,10 +170,10 @@
                var last = i === _crumbs.length - 1; %>
             <% if (!last && c.href) { %>
               <a href="<%= c.href %>"><%= c.label %></a>
-              <i class="fas fa-chevron-right bm-crumb-sep" aria-hidden="true"></i>
+              <svg class="bm-i bm-crumb-sep" aria-hidden="true" aria-hidden="true"><use href="#i-chevron-right"/></svg>
             <% } else if (!last) { %>
               <span><%= c.label %></span>
-              <i class="fas fa-chevron-right bm-crumb-sep" aria-hidden="true"></i>
+              <svg class="bm-i bm-crumb-sep" aria-hidden="true" aria-hidden="true"><use href="#i-chevron-right"/></svg>
             <% } else { %>
               <strong aria-current="page"><%= c.label %></strong>
             <% } %>
@@ -182,7 +182,7 @@
       </div>
       <div class="d-flex align-items-center gap-3">
         <div class="bm-search" id="bmSearch">
-          <i class="fas fa-magnifying-glass bm-search-icon"></i>
+          <svg class="bm-i bm-search-icon" aria-hidden="true"><use href="#i-magnifying-glass"/></svg>
           <input type="search" id="bmSearchInput" autocomplete="off" spellcheck="false"
                  placeholder="Search bookings, customers, phone numbers"
                  aria-label="Search" aria-autocomplete="list" aria-expanded="false"
@@ -199,16 +199,16 @@
         <div class="bm-usermenu" id="bmUserMenu">
           <button type="button" class="bm-usermenu-btn" id="bmUserBtn"
                   aria-haspopup="true" aria-expanded="false">
-            <i class="fas fa-user"></i> <%= user.name %>
-            <i class="fas fa-chevron-down"></i>
+            <svg class="bm-i" aria-hidden="true"><use href="#i-user"/></svg> <%= user.name %>
+            <svg class="bm-i" aria-hidden="true"><use href="#i-chevron-down"/></svg>
           </button>
           <div class="bm-usermenu-panel" id="bmUserPanel" role="menu" hidden>
             <button type="button" class="bm-theme-btn" id="bmThemeBtn" role="menuitem">
-              <i class="fas fa-circle-half-stroke"></i> <span id="bmThemeLabel">Theme: system</span>
+              <svg class="bm-i" aria-hidden="true"><use href="#i-circle-half-stroke"/></svg> <span id="bmThemeLabel">Theme: system</span>
             </button>
-            <a href="/admin/settings" role="menuitem"><i class="fas fa-cog"></i> Settings</a>
-            <a href="/" target="_blank" rel="noopener" role="menuitem"><i class="fas fa-external-link-alt"></i> View website</a>
-            <a href="/auth/logout" role="menuitem" class="is-leave"><i class="fas fa-sign-out-alt"></i> Log out</a>
+            <a href="/admin/settings" role="menuitem"><svg class="bm-i" aria-hidden="true"><use href="#i-cog"/></svg> Settings</a>
+            <a href="/" target="_blank" rel="noopener" role="menuitem"><svg class="bm-i" aria-hidden="true"><use href="#i-external-link-alt"/></svg> View website</a>
+            <a href="/auth/logout" role="menuitem" class="is-leave"><svg class="bm-i" aria-hidden="true"><use href="#i-sign-out-alt"/></svg> Log out</a>
           </div>
         </div>
       </div>
@@ -600,7 +600,7 @@
       if (!mine) return;
       try { localStorage.setItem(BM_PHONE_KEY, mine); } catch (e) { /* private window */ }
       var original = restoreHtml || (btn ? btn.innerHTML : '');
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Calling...'; }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-spinner"/></svg>Calling...'; }
       function reset() { if (btn) { btn.disabled = false; btn.innerHTML = original; } }
       return fetch('/api/call/dial', {
         method: 'POST',
@@ -609,7 +609,7 @@
       }).then(function (r) { return r.json(); }).then(function (d) {
         if (d && d.success) {
           showToast('Ringing your phone now.', 'success');
-          if (btn) { btn.innerHTML = '<i class="fas fa-check me-1"></i>Ringing'; setTimeout(reset, 5000); }
+          if (btn) { btn.innerHTML = '<svg class="bm-i me-1" aria-hidden="true"><use href="#i-check"/></svg>Ringing'; setTimeout(reset, 5000); }
         } else {
           showToast('Could not place the call: ' + ((d && d.error) || 'unknown error'), 'error');
           reset();

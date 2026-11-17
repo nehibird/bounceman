@@ -6,7 +6,7 @@
     <p class="text-muted mb-0">${equipment.length} item${equipment.length !== 1 ? 's' : ''} total</p>
   </div>
   <a href="/admin/equipment/new" class="btn btn-bm">
-    <i class="fas fa-plus me-1"></i> Add Equipment
+    <svg class="bm-i me-1" aria-hidden="true"><use href="#i-plus"/></svg> Add Equipment
   </a>
 </div>
 
@@ -30,12 +30,12 @@
           ${equipment.length > 0 ? equipment.map(e => `
           <tr style="cursor:pointer" data-row-href="/admin/equipment/${e.id}/edit">
             <td class="rt-hide">
-              ${e.image ? '<img src="' + e.image + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px">' : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;display:flex;align-items:center;justify-content:center"><i class="fas fa-image text-muted"></i></div>'}
+              ${e.image ? '<img src="' + e.image + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px">' : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;display:flex;align-items:center;justify-content:center"><svg class="bm-i text-muted" aria-hidden="true"><use href="#i-image"/></svg></div>'}
             </td>
             <td class="rt-primary">
               ${e.name}
               ${e.dimensions ? '<br><small class="text-muted">' + e.dimensions + '</small>' : ''}
-              ${e.capacity_kids ? '<br><small class="text-muted"><i class="fas fa-child"></i> Up to ' + e.capacity_kids + ' kids</small>' : ''}
+              ${e.capacity_kids ? '<br><small class="text-muted"><svg class="bm-i" aria-hidden="true"><use href="#i-child"/></svg> Up to ' + e.capacity_kids + ' kids</small>' : ''}
             </td>
             <td data-label="Category"><span class="badge bg-secondary">${e.category || 'Uncategorized'}</span></td>
             <td data-label="Daily Price"><strong>$${parseFloat(e.price_daily || 0).toFixed(2)}</strong></td>
@@ -46,19 +46,19 @@
             </td>
             <td data-label="Condition">${e.condition || 'N/A'}</td>
             <td data-label="Featured">
-              ${e.featured ? '<i class="fas fa-star text-warning"></i>' : '<i class="far fa-star text-muted"></i>'}
+              ${e.featured ? '<svg class="bm-i text-warning" aria-hidden="true"><use href="#i-star"/></svg>' : '<svg class="bm-i text-muted" aria-hidden="true"><use href="#i-star"/></svg>'}
             </td>
             <td class="rt-actions">
               <a href="/admin/equipment/${e.id}/edit" class="btn btn-sm btn-outline-secondary me-1">
-                <i class="fas fa-edit"></i> Edit
+                <svg class="bm-i" aria-hidden="true"><use href="#i-edit"/></svg> Edit
               </a>
               <form method="POST" action="/admin/equipment/${e.id}/delete" style="display:inline" class="confirm-delete" data-confirm="Delete this equipment and all its images? This cannot be undone.">
-                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                <button type="submit" class="btn btn-sm btn-outline-danger"><svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
             </td>
           </tr>
           `).join('') : '<tr><td colspan="8"><div class="bm-empty">' +
-  '<i class="fas fa-chess-rook bm-empty-icon"></i>' +
+  '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-chess-rook"/></svg>' +
   '<p class="bm-empty-title">No equipment yet</p>' +
   '<p class="bm-empty-line">Add each unit once and it becomes bookable on the website, with its own ' +
   'photos, price and availability.</p>' +

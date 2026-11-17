@@ -19,7 +19,7 @@
           <div class="stat-label">Total Revenue</div>
           <div class="stat-value">$${parseFloat(revenue || 0).toFixed(2)}</div>
         </div>
-        <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><i class="fas fa-dollar-sign"></i></div>
+        <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><svg class="bm-i" aria-hidden="true"><use href="#i-dollar-sign"/></svg></div>
       </div>
     </div>
   </div>
@@ -30,7 +30,7 @@
           <div class="stat-label">Total Bookings</div>
           <div class="stat-value">${bookingCount || 0}</div>
         </div>
-        <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><i class="fas fa-calendar-check"></i></div>
+        <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><svg class="bm-i" aria-hidden="true"><use href="#i-calendar-check"/></svg></div>
       </div>
     </div>
   </div>
@@ -41,7 +41,7 @@
           <div class="stat-label">Avg Ticket</div>
           <div class="stat-value">$${parseFloat(avgTicket || 0).toFixed(2)}</div>
         </div>
-        <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-600)"><i class="fas fa-receipt"></i></div>
+        <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-600)"><svg class="bm-i" aria-hidden="true"><use href="#i-receipt"/></svg></div>
       </div>
     </div>
   </div>
@@ -51,7 +51,7 @@
 <div class="row g-4 mb-4">
   <div class="col-lg-8">
     <div class="card">
-      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Revenue by Month</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Revenue by Month</div>
       <div class="card-body">
         <canvas id="revenueChart" height="300"></canvas>
       </div>
@@ -59,7 +59,7 @@
   </div>
   <div class="col-lg-4">
     <div class="card">
-      <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Bookings by Status</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-pie"/></svg>Bookings by Status</div>
       <div class="card-body">
         <canvas id="statusChart" height="300"></canvas>
       </div>
@@ -71,7 +71,7 @@
 <div class="row g-4 mb-4">
   <div class="col-lg-6">
     <div class="card">
-      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Cumulative Revenue</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Cumulative Revenue</div>
       <div class="card-body">
         <canvas id="cumulativeChart" height="260"></canvas>
       </div>
@@ -79,7 +79,7 @@
   </div>
   <div class="col-lg-6">
     <div class="card">
-      <div class="card-header"><i class="fas fa-chart-line me-2"></i>Average Ticket by Month</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Average Ticket by Month</div>
       <div class="card-body">
         <canvas id="avgTicketChart" height="260"></canvas>
       </div>
@@ -89,7 +89,7 @@
 
 <!-- Top Items -->
 <div class="card">
-  <div class="card-header"><i class="fas fa-trophy me-2"></i>Top Equipment</div>
+  <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-trophy"/></svg>Top Equipment</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -107,7 +107,7 @@
   <div class="col-12">
     <div class="stat-card">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h6 class="mb-0"><i class="fas fa-file-invoice-dollar me-2" style="color:var(--bm-n-500)"></i>OkTAP Return Worksheet
+        <h6 class="mb-0"><svg class="bm-i me-2" style="color:var(--bm-n-500)" aria-hidden="true"><use href="#i-file-invoice-dollar"/></svg>OkTAP Return Worksheet
           <span class="text-muted small">— form STS-20002-C (not the superseded -A)</span></h6>
         <form method="GET" class="d-flex align-items-center gap-2">
           <label class="small text-muted mb-0">Filing period</label>
@@ -167,7 +167,7 @@
 
       ${okReturn.provenance.guessCount ? `
       <div class="alert alert-warning py-2 px-3 small mt-2 mb-2">
-        <i class="fas fa-triangle-exclamation me-1"></i><strong>$${okReturn.provenance.guessBase.toFixed(2)} of taxable sales (${okReturn.provenance.guessCount} booking${okReturn.provenance.guessCount===1?'':'s'}) is NOT boundary-verified.</strong>
+        <svg class="bm-i me-1" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg><strong>$${okReturn.provenance.guessBase.toFixed(2)} of taxable sales (${okReturn.provenance.guessCount} booking${okReturn.provenance.guessCount===1?'':'s'}) is NOT boundary-verified.</strong>
         Those rows were taxed by the typed city name, so their jurisdiction is a guess. Verified: $${okReturn.provenance.verifiedBase.toFixed(2)} (${okReturn.provenance.verifiedCount}).
         See the <em>Basis</em> column below.
       </div>` : `
@@ -175,7 +175,7 @@
 
       ${okReturn.lines.some(function(l){return l.mismatch || l.unresolved;}) ? `
       <div class="alert alert-warning py-2 px-3 small mt-2 mb-2">
-        <i class="fas fa-triangle-exclamation me-1"></i><strong>Some bookings do not match the current rate table.</strong>
+        <svg class="bm-i me-1" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg><strong>Some bookings do not match the current rate table.</strong>
         Tax charged at the time differs from what today's rates say, or the jurisdiction cannot be resolved. Review before filing.
       </div>` : ''}
 
@@ -213,7 +213,7 @@
   <div class="col-12">
     <div class="stat-card">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h6 class="mb-0"><i class="fas fa-landmark me-2" style="color:var(--bm-n-500)"></i>Sales Tax by Event Month <span class="text-muted small">— remit on the month the event happens</span></h6>
+        <h6 class="mb-0"><svg class="bm-i me-2" style="color:var(--bm-n-500)" aria-hidden="true"><use href="#i-landmark"/></svg>Sales Tax by Event Month <span class="text-muted small">— remit on the month the event happens</span></h6>
         <span class="small text-muted">Collected but event not yet occurred: <strong>$${parseFloat(taxCollectedFuture||0).toFixed(2)}</strong></span>
       </div>
       <div class="table-responsive">
@@ -232,7 +232,7 @@
 <div class="row g-4 mt-1 mb-2">
   <div class="col-12">
     <div class="stat-card">
-      <h6 class="mb-3"><i class="fas fa-file-contract me-2" style="color:#E8833A"></i>Tax Exemptions <span class="text-muted small">— an exemption with no certificate on file is UNBACKED (verify, or it's taxable)</span></h6>
+      <h6 class="mb-3"><svg class="bm-i me-2" style="color:#E8833A" aria-hidden="true"><use href="#i-file-contract"/></svg>Tax Exemptions <span class="text-muted small">— an exemption with no certificate on file is UNBACKED (verify, or it's taxable)</span></h6>
       <div class="table-responsive">
         <table class="table table-sm mb-0 rtable">
           <thead><tr><th>Booking</th><th>Customer</th><th>Event</th><th class="text-end">Total</th><th class="text-end">Tax</th><th>Certificate</th><th title="OAC 710:65-7-6(c)(2) — documentation must be in hand within 90 days of the sale">Docs deadline</th></tr></thead>

@@ -3,7 +3,7 @@
 ${unsignedContracts.length ? `
 <div class="bm-alert" role="alert">
   <div class="bm-alert-head">
-    <i class="fas fa-file-signature"></i>
+    <svg class="bm-i" aria-hidden="true"><use href="#i-file-signature"/></svg>
     <strong>${unsignedContracts.length === 1
       ? 'One booking has no signed contract'
       : unsignedContracts.length + ' bookings have no signed contract'}</strong>
@@ -48,11 +48,11 @@ ${unsignedContracts.length ? `
      DO were underneath everything you merely look at. -->
 <div class="bm-actions">
   <a href="/admin/bookings/new" class="bm-act bm-act-primary">
-    <i class="fas fa-plus"></i>New booking
+    <svg class="bm-i" aria-hidden="true"><use href="#i-plus"/></svg>New booking
   </a>
-  <a href="/admin/delivery" class="bm-act"><i class="fas fa-truck"></i>Today</a>
-  <a href="/admin/calendar" class="bm-act"><i class="fas fa-calendar"></i>Calendar</a>
-  <a href="/admin/equipment/new" class="bm-act"><i class="fas fa-plus"></i>Add equipment</a>
+  <a href="/admin/delivery" class="bm-act"><svg class="bm-i" aria-hidden="true"><use href="#i-truck"/></svg>Today</a>
+  <a href="/admin/calendar" class="bm-act"><svg class="bm-i" aria-hidden="true"><use href="#i-calendar"/></svg>Calendar</a>
+  <a href="/admin/equipment/new" class="bm-act"><svg class="bm-i" aria-hidden="true"><use href="#i-plus"/></svg>Add equipment</a>
   ${
     /* Pending and Reviews are counts, not actions. They used to render unconditionally,
        and "Pending (0)" in warning yellow was the single brightest control on the page
@@ -60,13 +60,13 @@ ${unsignedContracts.length ? `
        reading alarms. They appear only when there is something behind them. */
     stats.pendingBookings > 0
       ? `<a href="/admin/bookings?status=pending" class="bm-act bm-act-attn">
-           <i class="fas fa-clock"></i>${stats.pendingBookings} pending
+           <svg class="bm-i" aria-hidden="true"><use href="#i-clock"/></svg>${stats.pendingBookings} pending
          </a>`
       : ''
   }${
     stats.pendingReviews > 0
       ? `<a href="/admin/reviews" class="bm-act bm-act-attn">
-           <i class="fas fa-star"></i>${stats.pendingReviews} review${stats.pendingReviews === 1 ? '' : 's'} to approve
+           <svg class="bm-i" aria-hidden="true"><use href="#i-star"/></svg>${stats.pendingReviews} review${stats.pendingReviews === 1 ? '' : 's'} to approve
          </a>`
       : ''
   }
@@ -109,7 +109,7 @@ ${unsignedContracts.length ? `
             <div class="stat-label">Safe to Spend</div>
             <div class="stat-value" style="color:${finance.safeToSpend >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><i class="fas fa-wallet"></i></div>
+          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><svg class="bm-i" aria-hidden="true"><use href="#i-wallet"/></svg></div>
         </div>
       </div>
     </a>
@@ -122,7 +122,7 @@ ${unsignedContracts.length ? `
             <div class="stat-label">Net Liquid Position</div>
             <div class="stat-value" style="color:${finance.netLiquid >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-n-500)"><i class="fas fa-scale-balanced"></i></div>
+          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-n-500)"><svg class="bm-i" aria-hidden="true"><use href="#i-scale-balanced"/></svg></div>
         </div>
       </div>
     </a>
@@ -135,7 +135,7 @@ ${unsignedContracts.length ? `
             <div class="stat-label">Still Owed to You</div>
             <div class="stat-value" style="color:${parseFloat(analytics.balanceOwed) > 0 ? 'var(--bm-accent-text)' : 'var(--bm-n-400)'}">$${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><i class="fas fa-hand-holding-dollar"></i></div>
+          <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><svg class="bm-i" aria-hidden="true"><use href="#i-hand-holding-dollar"/></svg></div>
         </div>
       </div>
     </a>
@@ -148,7 +148,7 @@ ${unsignedContracts.length ? `
             <div class="stat-label">Month Revenue</div>
             <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-500)"><i class="fas fa-chart-line"></i></div>
+          <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-500)"><svg class="bm-i" aria-hidden="true"><use href="#i-chart-line"/></svg></div>
         </div>
       </div>
     </a>
@@ -159,7 +159,7 @@ ${unsignedContracts.length ? `
 <div class="row g-4 mb-4">
   <div class="col-12">
     <div class="card">
-      <div class="card-header fw-semibold"><i class="fas fa-university me-2"></i>Bank Accounts</div>
+      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-university"/></svg>Bank Accounts</div>
       <div class="card-body">
         ${(typeof finance !== 'undefined' && finance) ? `
         <div class="mb-3 pb-3 border-bottom">
@@ -170,7 +170,7 @@ ${unsignedContracts.length ? `
               <div class="text-muted small">$${finance.bankCash.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} available in bank${finance.stripeIncoming > 0 ? ' + $' + finance.stripeIncoming.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' on the way from Stripe' : ''}</div>
               <div class="d-flex align-items-center gap-2 mt-1">
                 <button type="button" id="bankSyncBtn" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:12px">
-                  <i class="fas fa-rotate me-1"></i>Sync now
+                  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-rotate"/></svg>Sync now
                 </button>
                 <span id="bankSyncedAt" class="small ${finance.bankAgeMins != null && finance.bankAgeMins > 120 ? 'text-warning fw-semibold' : 'text-muted'}">
                   ${finance.bankAgeMins == null ? 'never synced'
@@ -184,8 +184,7 @@ ${unsignedContracts.length ? `
             <div class="col-md-4">
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
                 Sales Tax Owed
-                <i class="fas fa-circle-info ms-1" style="opacity:.5"
-                   title="Tax collected on events that have already happened, less what has been remitted to the OTC. Updates automatically the morning after an OkTAP payment clears your bank."></i>
+                <svg class="bm-i ms-1" style="opacity:.5" title="Tax collected on events that have already happened, less what has been remitted to the OTC. Updates automatically the morning after an OkTAP payment clears your bank." aria-hidden="true"><use href="#i-circle-info"/></svg>
               </div>
               <div class="fs-2 fw-bold ${analytics.taxOwed > 0 ? 'text-danger' : 'text-success'}">$${parseFloat(analytics.taxOwed).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">
@@ -195,8 +194,7 @@ ${unsignedContracts.length ? `
             <div class="col-md-4">
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
                 Safe to Spend
-                <i class="fas fa-circle-info ms-1" style="opacity:.5"
-                   title="Bank available balance, minus sales tax held for Oklahoma, minus recurring money already committed (storage, the loan to Reagan, rent). Do not go below zero."></i>
+                <svg class="bm-i ms-1" style="opacity:.5" title="Bank available balance, minus sales tax held for Oklahoma, minus recurring money already committed (storage, the loan to Reagan, rent). Do not go below zero." aria-hidden="true"><use href="#i-circle-info"/></svg>
               </div>
               <div class="fs-2 fw-bold ${finance.safeToSpend >= 0 ? 'text-success' : 'text-danger'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">
@@ -242,7 +240,7 @@ ${unsignedContracts.length ? `
                 </div>
                 <div class="fs-4 fw-bold ${isCredit ? 'text-danger' : 'text-success'}">${isCredit && a.balance != null ? '-' : ''}${fmt(a.balance)}</div>
                 <div class="text-muted small">${sub}</div>
-                <div class="text-muted small mt-1"><i class="far fa-clock me-1"></i>Synced ${synced}</div>
+                <div class="text-muted small mt-1"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-clock"/></svg>Synced ${synced}</div>
               </div>
             </div>`;
           }).join('')}
@@ -250,7 +248,7 @@ ${unsignedContracts.length ? `
           <div class="col-md-4">
             <div class="border rounded p-3 h-100" style="border-color:#635bff !important">
               <div class="d-flex justify-content-between align-items-start mb-1">
-                <span class="fw-semibold"><i class="fab fa-stripe-s me-1" style="color:#635bff"></i> Stripe Payouts</span>
+                <span class="fw-semibold"><svg class="bm-i me-1" style="color:#635bff" aria-hidden="true"><use href="#i-stripe-s"/></svg> Stripe Payouts</span>
                 ${stripePayouts.interval ? '<span class="badge bg-light text-body text-capitalize">' + stripePayouts.interval + '</span>' : ''}
               </div>
               <div class="fs-4 fw-bold text-success">$${(stripePayouts.pendingCents / 100).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
@@ -270,7 +268,7 @@ ${unsignedContracts.length ? `
 <div class="row g-4 mb-4">
   <div class="col-md-4">
     <div class="card h-100">
-      <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2"></i>Financial Health</div>
+      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Financial Health</div>
       <div class="card-body">
         <div class="text-center mb-3">
           <div class="text-muted small mb-1">Net Position</div>
@@ -293,7 +291,7 @@ ${unsignedContracts.length ? `
         </div>
         ${Math.abs(analytics.booksGap) > 0.01 ? `
         <div class="alert alert-danger py-2 px-3 small mb-2" role="alert">
-          <i class="fas fa-triangle-exclamation me-1"></i><strong>Books don't balance by $${Math.abs(analytics.booksGap).toFixed(2)}.</strong>
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg><strong>Books don't balance by $${Math.abs(analytics.booksGap).toFixed(2)}.</strong>
           Booked should equal collected plus still-owed. Usually a refund that never came off the booking,
           or a booking carrying a deposit nobody paid.
         </div>` : ''}
@@ -318,18 +316,18 @@ ${unsignedContracts.length ? `
         ${analytics.reimburseOwed > 0 ? `
         <a href="/admin/expenses" class="text-decoration-none">
           <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2">
-            <span class="small"><i class="fas fa-hand-holding-usd me-1 text-muted"></i>Owed back to you <span class="text-muted">— already counted above</span></span>
+            <span class="small"><svg class="bm-i me-1 text-muted" aria-hidden="true"><use href="#i-hand-holding-usd"/></svg>Owed back to you <span class="text-muted">— already counted above</span></span>
             <strong class="text-muted">$${parseFloat(analytics.reimburseOwed).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
           </div>
         </a>` : ''}
         ${analytics.breakEven && analytics.breakEven.status === 'projected' ? `
         <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mt-2"
              title="Estimate: ~${analytics.breakEven.bookingsNeeded} more bookings to cover the remaining deficit, at your recent booking pace, stretched for the OK off-season (season modelled as ~6.5 active months). Updates live as bookings come in.">
-          <span class="small"><i class="fas fa-flag-checkered me-1 text-primary"></i>Est. break-even</span>
+          <span class="small"><svg class="bm-i me-1 text-primary" aria-hidden="true"><use href="#i-flag-checkered"/></svg>Est. break-even</span>
           <span><strong>${fmtDateShort(analytics.breakEven.date)}</strong> <span class="text-muted small">~${analytics.breakEven.bookingsNeeded} bookings</span></span>
         </div>` : analytics.breakEven && analytics.breakEven.status === 'reached' ? `
         <div class="d-flex justify-content-between align-items-center border border-success rounded px-3 py-2 mt-2">
-          <span class="small text-success"><i class="fas fa-flag-checkered me-1"></i>Broke even</span>
+          <span class="small text-success"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-flag-checkered"/></svg>Broke even</span>
           <strong class="text-success">🎉</strong>
         </div>` : ''}
         <hr class="my-2">
@@ -346,7 +344,7 @@ ${unsignedContracts.length ? `
   </div>
   <div class="col-md-4">
     <div class="card h-100">
-      <div class="card-header fw-semibold"><i class="fas fa-filter me-2"></i>Confirmed Pipeline</div>
+      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-filter"/></svg>Confirmed Pipeline</div>
       <div class="card-body text-center d-flex flex-column justify-content-center">
         <div class="text-muted small mb-1">Upcoming Booking Revenue</div>
         <div class="fs-2 fw-bold text-primary mb-3">$${parseFloat(analytics.pipeline.r).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
@@ -358,8 +356,8 @@ ${unsignedContracts.length ? `
   <div class="col-md-4">
     <div class="card h-100">
       <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-credit-card me-2"></i>Credit Card Debt</span>
-        <button class="btn btn-sm btn-link p-0 text-muted" data-bs-toggle="collapse" data-bs-target="#ccDebtEdit"><i class="fas fa-pencil-alt fa-xs"></i></button>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-credit-card"/></svg>Credit Card Debt</span>
+        <button class="btn btn-sm btn-link p-0 text-muted" data-bs-toggle="collapse" data-bs-target="#ccDebtEdit"><svg class="bm-i bm-i-xs" aria-hidden="true"><use href="#i-pencil-alt"/></svg></button>
       </div>
       <div class="card-body text-center d-flex flex-column justify-content-center">
         <div class="text-muted small mb-1">Chase Ink — ending 7513</div>
@@ -383,7 +381,7 @@ ${unsignedContracts.length ? `
 <div class="row g-4 mb-4">
   <div class="col-md-8">
     <div class="card">
-      <div class="card-header fw-semibold"><i class="fas fa-chart-bar me-2"></i>Monthly Revenue (Last 6 Months)</div>
+      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-bar"/></svg>Monthly Revenue (Last 6 Months)</div>
       <div class="card-body">
         <canvas id="monthlyRevenueChart" height="120"></canvas>
       </div>
@@ -391,7 +389,7 @@ ${unsignedContracts.length ? `
   </div>
   <div class="col-md-4">
     <div class="card h-100">
-      <div class="card-header fw-semibold"><i class="fas fa-boxes me-2"></i>Equipment Utilization</div>
+      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-boxes"/></svg>Equipment Utilization</div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr><th class="ps-3">Unit</th><th class="text-center">Jobs</th><th class="pe-3">Revenue</th></tr></thead>
@@ -415,7 +413,7 @@ ${unsignedContracts.length ? `
   <div class="col-md-8">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-calendar-check me-2"></i>Upcoming Events</span>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Upcoming Events</span>
         <a href="/admin/bookings" class="btn btn-sm btn-bm">View All</a>
       </div>
       <div class="card-body p-0">
@@ -440,7 +438,7 @@ ${unsignedContracts.length ? `
   </div>
   <div class="col-md-4">
     <div class="card">
-      <div class="card-header"><i class="fas fa-info-circle me-2"></i>Inventory</div>
+      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>Inventory</div>
       <div class="card-body">
         <div class="d-flex justify-content-between mb-2">
           <span>Total Equipment</span><strong>${stats.totalEquipment}</strong>
@@ -500,7 +498,7 @@ document.addEventListener("click", function(e) {
     btn.addEventListener('click', function() {
       var label = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-rotate fa-spin me-1"></i>Syncing...';
+      btn.innerHTML = '<svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-rotate"/></svg>Syncing...';
       fetch('/admin/banks/sync', { method: 'POST', headers: { 'Accept': 'application/json' } })
         .then(function(r) { return r.json(); })
         .then(function(d) {

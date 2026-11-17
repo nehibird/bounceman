@@ -1,7 +1,7 @@
 <%- include('../../layouts/admin', { body: `
 
 <a href="/admin/bookings" class="text-decoration-none mb-3 d-inline-block">
-  <i class="fas fa-arrow-left me-1"></i> Back to Bookings
+  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg> Back to Bookings
 </a>
 
 <h4 class="mb-4">New Booking</h4>
@@ -13,7 +13,7 @@
 
       <!-- Customer Info -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-user me-2"></i>Customer</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-user"/></svg>Customer</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-6">
@@ -38,7 +38,7 @@
 
       <!-- Event Details -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-calendar me-2"></i>Event Details</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar"/></svg>Event Details</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-4">
@@ -80,7 +80,7 @@
 
       <!-- Delivery -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-truck me-2"></i>Delivery Address</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-truck"/></svg>Delivery Address</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-12">
@@ -105,7 +105,7 @@
 
       <!-- Equipment Selection -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-chess-rook me-2"></i>Equipment</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chess-rook"/></svg>Equipment</div>
         <div class="card-body">
           ${equipment.map((e, i) => `
           <div class="form-check mb-3 p-3 border rounded">
@@ -133,7 +133,7 @@
 
       <!-- Notes -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-sticky-note me-2"></i>Internal Notes</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-sticky-note"/></svg>Internal Notes</div>
         <div class="card-body">
           <textarea name="internal_notes" class="form-control" rows="3" placeholder="Any notes about this booking..."></textarea>
         </div>
@@ -146,7 +146,7 @@
 
       <!-- Pricing -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-dollar-sign me-2"></i>Pricing</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-dollar-sign"/></svg>Pricing</div>
         <div class="card-body">
           <div class="mb-3">
             <label class="form-label">Delivery Fee</label>
@@ -181,7 +181,7 @@
 
       <!-- Status -->
       <div class="card mb-4">
-        <div class="card-header"><i class="fas fa-info-circle me-2"></i>Status</div>
+        <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>Status</div>
         <div class="card-body">
           <div class="mb-3">
             <label class="form-label">Booking Status</label>
@@ -204,7 +204,7 @@
 
       <!-- Submit -->
       <button type="submit" class="btn btn-bm btn-lg w-100">
-        <i class="fas fa-plus me-2"></i>Create Booking
+        <svg class="bm-i me-2" aria-hidden="true"><use href="#i-plus"/></svg>Create Booking
       </button>
 
     </div>

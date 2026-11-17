@@ -10,9 +10,9 @@
 <!-- Bulk Actions Bar - hidden by default -->
 <div id="bulkBar" class="alert alert-warning d-none mb-3">
   <div class="d-flex align-items-center justify-content-between">
-    <span><i class="fas fa-check-square me-2"></i><span id="selCount">0</span> customer(s) selected</span>
+    <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-check-square"/></svg><span id="selCount">0</span> customer(s) selected</span>
     <div>
-      <button type="button" id="delBtn" class="btn btn-sm btn-danger"><i class="fas fa-trash me-1"></i>Delete Selected</button>
+      <button type="button" id="delBtn" class="btn btn-sm btn-danger"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-trash"/></svg>Delete Selected</button>
       <button type="button" id="clearBtn" class="btn btn-sm btn-outline-secondary ms-2">Cancel</button>
     </div>
   </div>
@@ -23,7 +23,7 @@
   <div class="card-body">
     <form method="GET" action="/admin/customers" class="d-flex gap-2 flex-wrap">
       <div class="input-group">
-        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <span class="input-group-text"><svg class="bm-i" aria-hidden="true"><use href="#i-search"/></svg></span>
         <input type="text" name="q" class="form-control" placeholder="Search by name, email, or phone..." value="${esc(search)}">
       </div>
       <button type="submit" class="btn btn-bm">Search</button>
@@ -61,19 +61,19 @@
             <td data-label="Joined">${fmtStamp(c.created_at, false)}</td>
             <td class="rt-actions rt-hide">
               <a href="/admin/customers/${c.id}" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-eye"></i> View
+                <svg class="bm-i" aria-hidden="true"><use href="#i-eye"/></svg> View
               </a>
             </td>
           </tr>
           `).join('') : (search
   ? '<tr><td colspan="8"><div class="bm-empty">' +
-      '<i class="fas fa-magnifying-glass bm-empty-icon"></i>' +
+      '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-magnifying-glass"/></svg>' +
       '<p class="bm-empty-title">Nobody matches &ldquo;' + esc(search) + '&rdquo;</p>' +
       '<p class="bm-empty-line">Try part of a surname, or a phone number.</p>' +
       '<a href="/admin/customers" class="btn btn-sm btn-bm">Show everyone</a>' +
     '</div></td></tr>'
   : '<tr><td colspan="8"><div class="bm-empty">' +
-      '<i class="fas fa-users bm-empty-icon"></i>' +
+      '<svg class="bm-i bm-empty-icon" aria-hidden="true"><use href="#i-users"/></svg>' +
       '<p class="bm-empty-title">No customers yet</p>' +
       '<p class="bm-empty-line">A customer record is created automatically the first time somebody books.</p>' +
       '<a href="/admin/bookings/new" class="btn btn-sm btn-bm">New booking</a>' +

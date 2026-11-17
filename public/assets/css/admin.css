@@ -612,6 +612,34 @@ a:hover { color: var(--bm-accent-hover); }
 /* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
 @media (min-width: 768px) { .admin-backdrop { display: none !important; } }
 
+/* =============================== icons ==================================
+   An <i> with a Font Awesome class cost ~70KB of stylesheet plus two webfonts
+   to draw about a hundred small shapes. These are the same shapes, from the
+   same release, inlined once per page as <symbol> definitions.
+
+   Sizing is deliberately em-based rather than fixed: an icon inside a heading
+   should be the size of that heading, which is what the font-based version did
+   for free and what a px height would quietly take away. vertical-align keeps
+   it sitting on the text baseline rather than the box bottom. */
+
+.bm-i {
+  width: 1em; height: 1em;
+  fill: currentColor;          /* so text-muted, text-danger and friends still work */
+  vertical-align: -0.125em;
+  flex-shrink: 0;              /* an icon in a flex row must not be squeezed */
+}
+.bm-i-xs { width: .75em;  height: .75em; }
+.bm-i-sm { width: .875em; height: .875em; }
+.bm-i-lg { width: 1.25em; height: 1.25em; vertical-align: -0.2em; }
+.bm-i-2x { width: 2em;  height: 2em; }
+.bm-i-3x { width: 3em;  height: 3em; }
+.bm-i-4x { width: 4em;  height: 4em; }
+.bm-i-5x { width: 5em;  height: 5em; }
+.bm-i-fw { width: 1.25em; }
+.bm-i-spin { animation: bm-i-spin 2s linear infinite; }
+@keyframes bm-i-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bm-i-spin { animation: none; } }
+
 /* ========================= sorting and paging ============================
    A sortable header has to look like it can be clicked before it is clicked, and
    has to say which way it is sorted after. The arrow does the second job; the
