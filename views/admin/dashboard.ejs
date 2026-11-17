@@ -43,6 +43,54 @@ ${unsignedContracts.length ? `
   }
 </style>` : ''}
 
+<!-- Actions. These used to live in a Quick Actions card two full scrolls down, below
+     the bank panel, three analytics rows and the upcoming-events table -- the things you
+     DO were underneath everything you merely look at. -->
+<div class="bm-actions">
+  <a href="/admin/bookings/new" class="bm-act bm-act-primary">
+    <i class="fas fa-plus"></i>New booking
+  </a>
+  <a href="/admin/delivery" class="bm-act"><i class="fas fa-truck"></i>Today</a>
+  <a href="/admin/calendar" class="bm-act"><i class="fas fa-calendar"></i>Calendar</a>
+  <a href="/admin/equipment/new" class="bm-act"><i class="fas fa-plus"></i>Add equipment</a>
+  ${
+    /* Pending and Reviews are counts, not actions. They used to render unconditionally,
+       and "Pending (0)" in warning yellow was the single brightest control on the page
+       -- an alarm for nothing, every day, which is how an operator learns to stop
+       reading alarms. They appear only when there is something behind them. */
+    stats.pendingBookings > 0
+      ? `<a href="/admin/bookings?status=pending" class="bm-act bm-act-attn">
+           <i class="fas fa-clock"></i>${stats.pendingBookings} pending
+         </a>`
+      : ''
+  }${
+    stats.pendingReviews > 0
+      ? `<a href="/admin/reviews" class="bm-act bm-act-attn">
+           <i class="fas fa-star"></i>${stats.pendingReviews} review${stats.pendingReviews === 1 ? '' : 's'} to approve
+         </a>`
+      : ''
+  }
+</div>
+<style>
+  .bm-actions { display:flex; flex-wrap:wrap; gap:var(--bm-space-2);
+    margin-bottom:var(--bm-space-5); }
+  .bm-act { display:inline-flex; align-items:center; gap:7px; padding:8px 15px;
+    font-size:14px; font-weight:600; text-decoration:none; border-radius:var(--bm-radius-pill);
+    border:1px solid var(--bm-n-200); background:var(--bm-n-0); color:var(--bm-n-700); }
+  .bm-act:hover { border-color:var(--bm-n-300); background:var(--bm-n-25);
+    color:var(--bm-n-900); }
+  .bm-act i { font-size:12px; color:var(--bm-n-400); }
+  .bm-act-primary { background:var(--bm-accent); border-color:var(--bm-accent);
+    color:var(--bm-n-0); }
+  .bm-act-primary:hover { background:var(--bm-accent-hover);
+    border-color:var(--bm-accent-hover); color:var(--bm-n-0); }
+  .bm-act-primary i { color:var(--bm-n-0); }
+  .bm-act-attn { border-color:var(--bm-fb-warn); color:var(--bm-fb-warn); }
+  .bm-act-attn:hover { background:var(--bm-n-25); color:var(--bm-fb-warn); }
+  .bm-act-attn i { color:var(--bm-fb-warn); }
+  @media (max-width:575px) { .bm-act { flex:1 1 auto; justify-content:center; } }
+</style>
+
 <!-- Stats Row -->
 <div class="row g-4 mb-4">
   <div class="col-6 col-md-3">
@@ -354,7 +402,7 @@ ${unsignedContracts.length ? `
   </div>
 </div>
 
-<!-- Upcoming Events + Quick Actions -->
+<!-- Upcoming Events + Inventory (Quick Actions moved to the top -- P0-7) -->
 <div class="row g-4 mb-4">
   <div class="col-md-8">
     <div class="card">
@@ -383,16 +431,6 @@ ${unsignedContracts.length ? `
     </div>
   </div>
   <div class="col-md-4">
-    <div class="card mb-4">
-      <div class="card-header"><i class="fas fa-bolt me-2"></i>Quick Actions</div>
-      <div class="card-body d-grid gap-2">
-        <a href="/admin/bookings/new" class="btn btn-bm btn-sm"><i class="fas fa-plus me-2"></i>Add Booking</a>
-        <a href="/admin/bookings?status=pending" class="btn btn-warning btn-sm"><i class="fas fa-clock me-2"></i>Pending (${stats.pendingBookings})</a>
-        <a href="/admin/equipment/new" class="btn btn-bm btn-sm"><i class="fas fa-plus me-2"></i>Add Equipment</a>
-        <a href="/admin/calendar" class="btn btn-outline-primary btn-sm"><i class="fas fa-calendar me-2"></i>View Calendar</a>
-        <a href="/admin/reviews" class="btn btn-outline-secondary btn-sm"><i class="fas fa-star me-2"></i>Reviews (${stats.pendingReviews} pending)</a>
-      </div>
-    </div>
     <div class="card">
       <div class="card-header"><i class="fas fa-info-circle me-2"></i>Inventory</div>
       <div class="card-body">
