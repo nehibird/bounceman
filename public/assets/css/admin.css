@@ -250,9 +250,32 @@ a:hover { color: var(--bm-accent-hover); }
 .stat-card {
   background: var(--bm-n-0); border-radius: var(--bm-radius-md);
   padding: var(--bm-space-6); border: none;
-  box-shadow: var(--bm-shadow-2); transition: transform 0.2s;
+  box-shadow: var(--bm-shadow-2);
 }
-.stat-card:hover { transform: translateY(-2px); }
+
+/* Seventeen of the twenty-one stat cards are read-outs. They used to rise under the
+   cursor like a button, which is a promise the card cannot keep -- clicking does
+   nothing. Only the four on the dashboard that are wrapped in a link go anywhere, and
+   the markup already says which those are, so the selector asks it instead of needing a
+   new class. A fifth linked card later gets this for free; a card that is only a number
+   stays still. */
+a .stat-card {
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+a:hover .stat-card {
+  transform: translateY(-2px);
+  box-shadow: var(--bm-shadow-3);
+}
+/* If it is a control, a keyboard has to be able to see it. */
+a:focus-visible .stat-card {
+  outline: 2px solid var(--bm-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  a .stat-card { transition: box-shadow .18s ease; }
+  a:hover .stat-card { transform: none; }
+}
 .stat-card .stat-icon {
   width: 48px; height: 48px; border-radius: var(--bm-radius-md);
   display: flex; align-items: center; justify-content: center;
