@@ -355,6 +355,25 @@ a:hover { color: var(--bm-accent-hover); }
 }
 .bm-danger-zone p { margin: 0; font-size: 13px; color: var(--bm-n-500); }
 
+/* ============================ breadcrumbs ================================ */
+.bm-crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bm-crumbs a {
+  color: var(--bm-n-500); text-decoration: none; font-size: var(--bm-text-sm);
+  font-weight: 600; white-space: nowrap;
+}
+.bm-crumbs a:hover { color: var(--bm-accent-text); text-decoration: underline; }
+.bm-crumbs > span { color: var(--bm-n-500); font-size: var(--bm-text-sm); font-weight: 600; }
+.bm-crumbs strong {
+  color: var(--bm-n-900); font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bm-crumb-sep { font-size: 9px; color: var(--bm-n-300); }
+/* On a phone the parent is a tap target that costs a whole line, and the back link in
+   the page body already goes there. Keep the current page only. */
+@media (max-width: 575px) {
+  .bm-crumbs a, .bm-crumbs > span, .bm-crumb-sep { display: none; }
+}
+
 /* ====================== nav groups + account menu =========================
    P2-3. The sidebar's four noun headings became three collapsible groups, and the
    header's inert name became the menu holding Settings / View website / Log out. */

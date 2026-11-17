@@ -368,7 +368,8 @@ router.get('/bookings/new', (req, res) => {
   const settings = getSettings();
   const equipment = db.prepare("SELECT * FROM equipment WHERE status = 'available' ORDER BY sort_order").all();
   res.render('admin/bookings/new', {
-    title: 'New Booking - Admin', user: req.user, settings, equipment, page: 'bookings'
+    title: 'New Booking - Admin', user: req.user, settings, equipment, page: 'bookings',
+    crumbs: [CRUMB.bookings, { label: 'New booking' }]
   });
 });
 
@@ -439,7 +440,8 @@ router.post('/bookings/create', async (req, res) => {
     return res.render('admin/bookings/new', {
       title: 'New Booking - Admin', user: req.user, settings: getSettings(),
       equipment: db.prepare("SELECT * FROM equipment WHERE status = 'available' ORDER BY sort_order").all(),
-      error: bookingConflict, page: 'bookings', formData: data
+      error: bookingConflict, page: 'bookings', formData: data,
+      crumbs: [CRUMB.bookings, { label: 'New booking' }]
     });
   }
 
@@ -601,7 +603,10 @@ router.get('/bookings/:id', (req, res) => {
       (booking.event_date ? ' \u00b7 ' + dayjs(booking.event_date).format('ddd, MMM D') : '') +
       ' - Admin',
     user: req.user, settings,
-    booking, items, payments, contract, comms, roster, page: 'bookings'
+    booking, items, payments, contract, comms, roster, page: 'bookings',
+    crumbs: [CRUMB.bookings, {
+      label: [booking.first_name, booking.last_name].filter(Boolean).join(' ') || booking.booking_number
+    }]
   });
 });
 
@@ -769,7 +774,8 @@ router.get('/equipment/new', (req, res) => {
   const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order').all();
   res.render('admin/equipment/form', {
     title: 'Add Equipment - Admin', user: req.user, settings, categories,
-    item: null, images: [], page: 'equipment'
+    item: null, images: [], page: 'equipment',
+    crumbs: [CRUMB.equipment, { label: 'Add equipment' }]
   });
 });
 
@@ -829,7 +835,8 @@ router.get('/equipment/:id/edit', (req, res) => {
 
   res.render('admin/equipment/form', {
     title: `Edit ${item.name} - Admin`, user: req.user, settings,
-    item, images, categories, page: 'equipment'
+    item, images, categories, page: 'equipment',
+    crumbs: [CRUMB.equipment, { label: item.name }]
   });
 });
 
@@ -979,7 +986,10 @@ router.get('/customers/:id', (req, res) => {
 
   res.render('admin/customers/detail', {
     title: `${customer.first_name} ${customer.last_name} - Admin`, user: req.user, settings,
-    customer, bookings, payments, comms, page: 'customers', error: req.query.error
+    customer, bookings, payments, comms, page: 'customers', error: req.query.error,
+    crumbs: [CRUMB.customers, {
+      label: [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Customer'
+    }]
   });
 });
 
@@ -1091,6 +1101,18 @@ router.post('/bookings/:id/contract/send', async (req, res) => {
 
   res.redirect(back + '?sent=ok');
 });
+
+// Breadcrumb parents (P2-5). Named rather than inlined so a label or a URL changes in
+// one place -- the nav already learned that lesson in P2-3.
+const CRUMB = {
+  bookings:  { label: 'Bookings',        href: '/admin/bookings' },
+  customers: { label: 'Customers',       href: '/admin/customers' },
+  equipment: { label: 'Equipment',       href: '/admin/equipment' },
+  inbox:     { label: 'Inbox',           href: '/admin/inbox' },
+  settings:  { label: 'Settings',        href: '/admin/settings' },
+  events:    { label: 'Walk-up events',  href: '/admin/events' },
+  ads:       { label: 'Ad dashboard',    href: '/admin/ads' }
+};
 
 // === GLOBAL SEARCH ===
 
@@ -1980,7 +2002,8 @@ router.get('/calls/:id', async (req, res) => {
   res.render('admin/call-detail', {
     title: 'Call ' + (merged.caller || vapiCallId) + ' - Admin',
     user: req.user, settings, page: 'inbox',
-    vapiCallId, call: merged, vapiError, customerName, when, notFound: false
+    vapiCallId, call: merged, vapiError, customerName, when, notFound: false,
+    crumbs: [CRUMB.inbox, { label: customerName ? 'Call with ' + customerName : 'Call' }]
   });
 });
 
@@ -2057,7 +2080,8 @@ router.post('/maintenance', (req, res) => {
 // === DELIVERY ZONES CRUD ===
 router.get('/settings/zones/new', requireAdmin, (req, res) => {
   const settings = getSettings();
-  res.render('admin/zone-form', { title: 'New Delivery Zone - Admin', user: req.user, settings, zone: null, page: 'settings' });
+  res.render('admin/zone-form', { title: 'New Delivery Zone - Admin', user: req.user, settings, zone: null, page: 'settings',
+    crumbs: [CRUMB.settings, { label: 'New delivery zone' }] });
 });
 
 router.get('/settings/zones/:id/edit', requireAdmin, (req, res) => {
@@ -2065,7 +2089,8 @@ router.get('/settings/zones/:id/edit', requireAdmin, (req, res) => {
   const settings = getSettings();
   const zone = db.prepare('SELECT * FROM delivery_zones WHERE id = ?').get(req.params.id);
   if (!zone) return res.redirect('/admin/settings');
-  res.render('admin/zone-form', { title: 'Edit Delivery Zone - Admin', user: req.user, settings, zone, page: 'settings' });
+  res.render('admin/zone-form', { title: 'Edit Delivery Zone - Admin', user: req.user, settings, zone, page: 'settings',
+    crumbs: [CRUMB.settings, { label: zone && zone.zone_name ? zone.zone_name : 'Delivery zone' }] });
 });
 
 router.post('/settings/zones', requireAdmin, (req, res) => {
@@ -2094,7 +2119,8 @@ router.post('/settings/zones/:id/delete', requireAdmin, (req, res) => {
 // === DISCOUNT CODES CRUD ===
 router.get('/settings/codes/new', requireAdmin, (req, res) => {
   const settings = getSettings();
-  res.render('admin/code-form', { title: 'New Discount Code - Admin', user: req.user, settings, code: null, page: 'settings' });
+  res.render('admin/code-form', { title: 'New Discount Code - Admin', user: req.user, settings, code: null, page: 'settings',
+    crumbs: [CRUMB.settings, { label: 'New discount code' }] });
 });
 
 router.get('/settings/codes/:id/edit', requireAdmin, (req, res) => {
@@ -2102,7 +2128,8 @@ router.get('/settings/codes/:id/edit', requireAdmin, (req, res) => {
   const settings = getSettings();
   const code = db.prepare('SELECT * FROM discount_codes WHERE id = ?').get(req.params.id);
   if (!code) return res.redirect('/admin/settings');
-  res.render('admin/code-form', { title: 'Edit Discount Code - Admin', user: req.user, settings, code, page: 'settings' });
+  res.render('admin/code-form', { title: 'Edit Discount Code - Admin', user: req.user, settings, code, page: 'settings',
+    crumbs: [CRUMB.settings, { label: code && code.code ? code.code : 'Discount code' }] });
 });
 
 router.post('/settings/codes', requireAdmin, (req, res) => {
@@ -2143,7 +2170,8 @@ router.post('/settings/codes/:id/toggle', requireAdmin, (req, res) => {
 // === USERS CRUD ===
 router.get('/settings/users/new', requireAdmin, (req, res) => {
   const settings = getSettings();
-  res.render('admin/user-form', { title: 'New User - Admin', user: req.user, settings, editUser: null, page: 'settings' });
+  res.render('admin/user-form', { title: 'New User - Admin', user: req.user, settings, editUser: null, page: 'settings',
+    crumbs: [CRUMB.settings, { label: 'New user' }] });
 });
 
 router.get('/settings/users/:id/edit', requireAdmin, (req, res) => {
@@ -2151,7 +2179,8 @@ router.get('/settings/users/:id/edit', requireAdmin, (req, res) => {
   const settings = getSettings();
   const editUser = db.prepare('SELECT id, email, name, role, phone, active, created_at FROM users WHERE id = ?').get(req.params.id);
   if (!editUser) return res.redirect('/admin/settings');
-  res.render('admin/user-form', { title: 'Edit User - Admin', user: req.user, settings, editUser, page: 'settings' });
+  res.render('admin/user-form', { title: 'Edit User - Admin', user: req.user, settings, editUser, page: 'settings',
+    crumbs: [CRUMB.settings, { label: editUser && editUser.name ? editUser.name : 'User' }] });
 });
 
 router.post('/settings/users', requireAdmin, (req, res) => {
@@ -2269,7 +2298,8 @@ router.get('/events/:id', requireAuth, (req, res) => {
     FROM walk_up_registrations
     WHERE event_id = ? AND payment_status = 'completed'`).get(req.params.id);
 
-  res.render('admin/event-detail', { title: event.name, settings, event, registrations, stats, page: 'events', user: req.user });
+  res.render('admin/event-detail', { title: event.name, settings, event, registrations, stats, page: 'events', user: req.user,
+    crumbs: [CRUMB.events, { label: event.name }] });
 });
 
 
@@ -2413,7 +2443,8 @@ router.get('/ads/google', requireAdmin, (req, res) => {
   const config = Object.fromEntries(
     db.prepare("SELECT key, value FROM ad_config WHERE platform = 'google'").all().map(r => [r.key, r.value])
   );
-  res.render('admin/ads-google', { title: 'Google Ads Manager', settings, campaigns, config, page: 'ads', user: req.user });
+  res.render('admin/ads-google', { title: 'Google Ads Manager', settings, campaigns, config, page: 'ads', user: req.user,
+    crumbs: [CRUMB.ads, { label: 'Google Ads' }] });
 });
 
 // GET /admin/ads/facebook
@@ -2424,7 +2455,8 @@ router.get('/ads/facebook', requireAdmin, (req, res) => {
   const config = Object.fromEntries(
     db.prepare("SELECT key, value FROM ad_config WHERE platform = 'facebook'").all().map(r => [r.key, r.value])
   );
-  res.render('admin/ads-facebook', { title: 'Facebook Ads Manager', settings, campaigns, config, page: 'ads', user: req.user });
+  res.render('admin/ads-facebook', { title: 'Facebook Ads Manager', settings, campaigns, config, page: 'ads', user: req.user,
+    crumbs: [CRUMB.ads, { label: 'Facebook Ads' }] });
 });
 
 // GET /admin/ads/rules
@@ -2432,7 +2464,8 @@ router.get('/ads/rules', requireAdmin, (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const rules = db.prepare('SELECT * FROM ad_rules ORDER BY created_at ASC').all();
-  res.render('admin/ads-rules', { title: 'Ad Rules', settings, rules, page: 'ads', user: req.user });
+  res.render('admin/ads-rules', { title: 'Ad Rules', settings, rules, page: 'ads', user: req.user,
+    crumbs: [CRUMB.ads, { label: 'Rules' }] });
 });
 
 // GET /admin/ads/reports
@@ -2453,7 +2486,9 @@ router.get('/ads/reports', requireAdmin, (req, res) => {
     ${whereSql}
     ORDER BY p.date DESC LIMIT 200
   `).all(...params);
-  res.render('admin/ads-reports', { title: 'Ad Reports', settings, rows, page: 'ads', user: req.user, filter: { from: from || '', to: to || '', platform: platform || 'all' } });
+  res.render('admin/ads-reports', { title: 'Ad Reports', settings, rows, page: 'ads', user: req.user,
+    crumbs: [CRUMB.ads, { label: 'Reports' }],
+    filter: { from: from || '', to: to || '', platform: platform || 'all' } });
 });
 
 // --- JSON API ---
