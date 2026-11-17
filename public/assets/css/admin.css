@@ -68,7 +68,18 @@
 
   /* ---- type scale ------------------------------------------------------- */
   --bm-font-body:    'Nunito', 'Segoe UI', system-ui, sans-serif;
-  --bm-font-display: 'Fredoka', 'Nunito', sans-serif;  /* V1 revisits this */
+  /* V1 (2026-11-17): was Fredoka, a rounded kids'-party display face, setting every
+     heading on a screen whose largest figure is "Net Position -$18,327". Nunito 800 was
+     already being fetched for the body, so headings cost nothing extra and the admin no
+     longer downloads a second family.
+
+     Fredoka stays on the CUSTOMER side, where a party face belongs -- about.ejs, 404,
+     reviews, and the walk-in event pages all set it on their big display numbers. Note
+     for whoever touches those: only walkin.ejs and success.ejs actually LOAD it.
+     about.ejs, 404.ejs and reviews.ejs render through views/layouts/public.ejs, which
+     loads Poppins and Inter only, so those three ask for a font that was never fetched
+     and quietly fall back. Backlog item C-1. */
+  --bm-font-display: 'Nunito', 'Segoe UI', system-ui, sans-serif;
   --bm-text-xs:   11px;
   --bm-text-sm:   13px;
   --bm-text-base: 14px;
@@ -136,7 +147,14 @@ body {
   color: var(--bm-n-800);
 }
 
-h1, h2, h3, h4, h5, h6 { font-family: var(--bm-font-display); }
+/* 800 and slightly tight, because the display face no longer carries the weight the
+   way a rounded display face did -- without this the headings read lighter than the
+   figures underneath them. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--bm-font-display);
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
 
 a { color: var(--bm-accent-text); }
 a:hover { color: var(--bm-accent-hover); }
