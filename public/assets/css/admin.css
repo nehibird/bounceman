@@ -266,16 +266,94 @@ a:hover { color: var(--bm-accent-hover); }
 .badge-cancelled { background: var(--bm-state-void-bg);    color: var(--bm-state-void-fg); }
 
 /* ============================ buttons ====================================
-   V5 collapses the full button hierarchy; D0 only tokenises what exists. */
+   FOUR ROLES, and every button in the admin is one of them.
 
-.btn-bm {
-  background: var(--bm-accent); color: var(--bm-n-0); border: none;
+     primary      one per screen, filled accent -- the thing you came to do
+     secondary    outline, neutral -- everything else that is a real action
+     tertiary     text only -- navigation and escape hatches
+     destructive  text red, never filled, never the top-right of a page
+
+   The views still carry Bootstrap class names (48 .btn-outline-secondary, 42 .btn-bm,
+   12 .btn-outline-danger and so on). Rather than rewrite ~130 call sites for a visual
+   change, the names are mapped onto the roles here -- the same move D0 made for colour.
+   One consequence worth knowing: .btn-primary and .btn-outline-secondary no longer look
+   like Bootstrap, they look like this admin.
+
+   ONE EXCEPTION, deliberate: .btn-success / .btn-warning carry STATE, not rank -- the
+   inbox uses them for "Sarah auto-reply: ON". They stay distinguishable, just quieter
+   than a primary, so a toggle can never outrank the page's actual action. */
+
+.btn-bm,
+.btn-primary {
+  background: var(--bm-accent); color: var(--bm-n-0); border: 1px solid var(--bm-accent);
+  font-weight: 700;
 }
-.btn-bm:hover { background: var(--bm-accent-hover); color: var(--bm-n-0); }
-.btn-bm-outline {
-  border: 2px solid var(--bm-accent); color: var(--bm-accent-text);
+.btn-bm:hover, .btn-primary:hover,
+.btn-bm:focus, .btn-primary:focus {
+  background: var(--bm-accent-hover); border-color: var(--bm-accent-hover);
+  color: var(--bm-n-0);
 }
-.btn-bm-outline:hover { background: var(--bm-accent); color: var(--bm-n-0); }
+
+.btn-bm-outline,
+.btn-outline-secondary,
+.btn-outline-primary,
+.btn-secondary {
+  background: var(--bm-n-0); border: 1px solid var(--bm-n-200);
+  color: var(--bm-n-700); font-weight: 600;
+}
+.btn-bm-outline:hover, .btn-outline-secondary:hover,
+.btn-outline-primary:hover, .btn-secondary:hover,
+.btn-bm-outline:focus, .btn-outline-secondary:focus,
+.btn-outline-primary:focus, .btn-secondary:focus {
+  background: var(--bm-n-25); border-color: var(--bm-n-300);
+  color: var(--bm-n-900);
+}
+
+.btn-link {
+  color: var(--bm-accent-text); border: none; background: none;
+  font-weight: 600; text-decoration: none;
+}
+.btn-link:hover { color: var(--bm-accent-hover); text-decoration: underline; }
+
+/* Destructive reads as red TEXT. A filled red button competes with the primary for
+   attention, which is exactly backwards: deleting is the one thing nobody should do
+   by reflex. */
+.btn-danger,
+.btn-outline-danger {
+  background: none; border: 1px solid transparent;
+  color: var(--bm-fb-bad); font-weight: 600;
+}
+.btn-danger:hover, .btn-outline-danger:hover,
+.btn-danger:focus, .btn-outline-danger:focus {
+  background: var(--bm-state-void-bg); border-color: var(--bm-fb-bad);
+  color: var(--bm-fb-bad);
+}
+
+/* State, not rank. */
+.btn-success, .btn-outline-success {
+  background: var(--bm-state-done-bg); border: 1px solid var(--bm-fb-good);
+  color: var(--bm-fb-good); font-weight: 600;
+}
+.btn-success:hover, .btn-outline-success:hover {
+  background: var(--bm-fb-good); border-color: var(--bm-fb-good); color: var(--bm-n-0);
+}
+.btn-warning, .btn-outline-warning {
+  background: var(--bm-state-pending-bg); border: 1px solid var(--bm-fb-warn);
+  color: var(--bm-fb-warn); font-weight: 600;
+}
+.btn-warning:hover, .btn-outline-warning:hover {
+  background: var(--bm-fb-warn); border-color: var(--bm-fb-warn); color: var(--bm-n-0);
+}
+
+/* The one place a destructive action is allowed to look like a button: a confirmation
+   the operator opened on purpose. */
+.bm-danger-zone {
+  margin-top: var(--bm-space-6); padding-top: var(--bm-space-4);
+  border-top: 1px solid var(--bm-n-100);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: var(--bm-space-3);
+}
+.bm-danger-zone p { margin: 0; font-size: 13px; color: var(--bm-n-500); }
 
 /* ============================ toasts =====================================
    Colour lives here, not in the inline script. showToast() adds a class. */
