@@ -612,6 +612,35 @@ a:hover { color: var(--bm-accent-hover); }
 /* Above the breakpoint the sidebar is permanent, so the backdrop must never exist. */
 @media (min-width: 768px) { .admin-backdrop { display: none !important; } }
 
+/* ========================= sorting and paging ============================
+   A sortable header has to look like it can be clicked before it is clicked, and
+   has to say which way it is sorted after. The arrow does the second job; the
+   hover and the cursor do the first. */
+
+.bm-sort {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: inherit; text-decoration: none; white-space: nowrap;
+}
+.bm-sort:hover { color: var(--bm-accent-hover); text-decoration: none; }
+.bm-sort.is-on { color: var(--bm-n-900); }
+.bm-sort-arrow { font-size: 11px; color: var(--bm-accent); }
+/* Reserve the arrow's width on every header so the row does not shuffle sideways
+   when the sorted column changes. */
+.bm-sort .bm-sort-arrow:empty::before { content: '\2195'; color: var(--bm-n-300); }
+
+.bm-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--bm-space-4); flex-wrap: wrap;
+  padding: var(--bm-space-3) var(--bm-space-4);
+  border-top: 1px solid var(--bm-n-100);
+  font-size: var(--bm-text-sm); color: var(--bm-n-600);
+}
+.bm-pager-nav { display: inline-flex; align-items: center; gap: var(--bm-space-3); }
+.bm-pager-nav a { color: var(--bm-accent-text); text-decoration: none; font-weight: 600; }
+.bm-pager-nav a:hover { color: var(--bm-accent-hover); text-decoration: underline; }
+.bm-pager-nav .is-off { color: var(--bm-n-300); }
+.bm-pager-page { color: var(--bm-n-500); }
+
 /* ============================ empty states ===============================
    An empty table said "No bookings found" in grey and stopped. That answers the
    wrong question: a person looking at an empty screen wants to know whether

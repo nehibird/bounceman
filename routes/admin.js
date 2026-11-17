@@ -17,6 +17,7 @@ const { v4: uuid } = require('uuid');
 const dayjs = require('dayjs');
 const { taxBreakdown, STATE_RATE: OK_STATE_RATE, fmtTime12 } = require('../lib/helpers');
 const { recordManualPayment } = require('../lib/payments');
+const listing = require('../lib/listing');
 const bcrypt = require('bcryptjs');
 const vapiSvc = require('../services/vapi');
 const googleAds = require('../services/google-ads');
@@ -333,13 +334,33 @@ router.get('/bookings', (req, res) => {
   let query = `SELECT b.*, c.first_name, c.last_name, c.email, c.phone
     FROM bookings b JOIN customers c ON c.id = b.customer_id`;
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-  // Soonest first when looking forward -- the next job is the one that matters. Most
-  // recent first when looking back.
-  query += when === 'upcoming'
-    ? ' ORDER BY b.event_date ASC, b.event_start_time ASC, b.created_at ASC'
-    : ' ORDER BY b.event_date DESC, b.created_at DESC';
+  // Only these expressions can ever reach the query text; the key from the URL is a
+  // lookup into this map, never a fragment of SQL.
+  const BOOKING_COLS = {
+    customer: 'c.last_name COLLATE NOCASE, c.first_name COLLATE NOCASE',
+    when: 'b.event_date',
+    status: 'b.status COLLATE NOCASE',
+    total: 'CAST(b.total AS REAL)',
+    booking: 'b.id'
+  };
+  // The default stays what it was: soonest first when looking forward, because the next
+  // job is the one that matters; most recent first when looking back.
+  const sort = listing.parseSort(req.query, BOOKING_COLS,
+    { key: 'when', dir: when === 'upcoming' ? 'ASC' : 'DESC' });
+  const tiebreak = sort.key === 'when'
+    ? (sort.dir === 'ASC' ? ', b.event_start_time ASC, b.created_at ASC'
+      : ', b.created_at DESC')
+    : ', b.event_date DESC';
+  query += ' ORDER BY ' + sort.sql + tiebreak;
 
-  const bookings = db.prepare(query).all(...baseParams);
+  let countQ = 'SELECT COUNT(*) AS n FROM bookings b JOIN customers c ON c.id = b.customer_id';
+  if (conditions.length) countQ += ' WHERE ' + conditions.join(' AND ');
+  const matching = db.prepare(countQ).get(...baseParams).n;
+  const pageInfo = listing.parsePage(req.query, matching);
+  const link = listing.linker('/admin/bookings', req.query);
+
+  const bookings = db.prepare(query + ' LIMIT ? OFFSET ?')
+    .all(...baseParams, pageInfo.perPage, pageInfo.offset);
 
   // Counts carry whatever other filters are active, so the tabs never promise rows the
   // filter would exclude.
@@ -359,7 +380,8 @@ router.get('/bookings', (req, res) => {
   res.render('admin/bookings/list', {
     title: 'Bookings - Admin', user: req.user, settings, bookings,
     activeStatus: status || 'all', activeDate: date || '',
-    activeWhen: when, scopeCounts, page: 'bookings'
+    activeWhen: when, scopeCounts, page: 'bookings',
+    sort, pageInfo, link, listing
   });
 });
 
@@ -960,17 +982,36 @@ router.get('/customers', (req, res) => {
   const db = getDb();
   const settings = getSettings();
   const search = req.query.q;
-  let customers;
-  if (search) {
-    customers = db.prepare(`SELECT * FROM customers WHERE
-      first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR phone LIKE ?
-      ORDER BY created_at DESC`).all(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-  } else {
-    customers = db.prepare('SELECT * FROM customers ORDER BY created_at DESC LIMIT 100').all();
-  }
+
+  // This list used to end in `LIMIT 100` with no pager and no notice, and there are 91
+  // customers. At 101 it would simply have stopped showing people. A limit without a
+  // pager is a silent lie about what exists -- so now every row is reachable.
+  const CUSTOMER_COLS = {
+    name: 'last_name COLLATE NOCASE, first_name COLLATE NOCASE',
+    email: 'email COLLATE NOCASE',
+    phone: 'phone',
+    bookings: 'CAST(COALESCE(total_bookings, 0) AS INTEGER)',
+    revenue: 'CAST(COALESCE(total_revenue, 0) AS REAL)',
+    joined: 'created_at'
+  };
+  const sort = listing.parseSort(req.query, CUSTOMER_COLS, { key: 'joined', dir: 'DESC' });
+
+  const where = search
+    ? ' WHERE first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR phone LIKE ?'
+    : '';
+  const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`] : [];
+
+  const matching = db.prepare('SELECT COUNT(*) AS n FROM customers' + where).get(...params).n;
+  const pageInfo = listing.parsePage(req.query, matching);
+  const link = listing.linker('/admin/customers', req.query);
+
+  const customers = db.prepare(
+    'SELECT * FROM customers' + where + ' ORDER BY ' + sort.sql + ', id DESC LIMIT ? OFFSET ?'
+  ).all(...params, pageInfo.perPage, pageInfo.offset);
 
   res.render('admin/customers/list', {
-    title: 'Customers - Admin', user: req.user, settings, customers, search: search || '', page: 'customers'
+    title: 'Customers - Admin', user: req.user, settings, customers,
+    search: search || '', page: 'customers', sort, pageInfo, link, listing
   });
 });
 

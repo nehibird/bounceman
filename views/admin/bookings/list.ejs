@@ -35,10 +35,10 @@
     <h4 class="mb-1">Bookings</h4>
     <p class="text-muted mb-0">${
       activeWhen === 'upcoming'
-        ? (bookings.length === 1 ? '1 booking still ahead' : bookings.length + ' bookings still ahead')
+        ? (pageInfo.total === 1 ? '1 booking still ahead' : pageInfo.total + ' bookings still ahead')
         : activeWhen === 'past'
-          ? bookings.length + ' in the past'
-          : bookings.length + ' booking' + (bookings.length !== 1 ? 's' : '') + ' in total'
+          ? pageInfo.total + ' in the past'
+          : pageInfo.total + ' booking' + (pageInfo.total !== 1 ? 's' : '') + ' in total'
     }</p>
   </div>
   <a href="/admin/bookings/new" class="btn btn-bm"><i class="fas fa-plus me-1"></i> New Booking</a>
@@ -101,11 +101,11 @@
         <thead>
           <tr>
             <th style="width:40px"><input type="checkbox" class="form-check-input" id="selAll"></th>
-            <th>Customer</th>
-            <th>When</th>
-            <th>Status</th>
-            <th>Total</th>
-            <th>Booking</th>
+            ${listing.sortHeader('Customer', 'customer', sort, link)}
+            ${listing.sortHeader('When', 'when', sort, link)}
+            ${listing.sortHeader('Status', 'status', sort, link)}
+            ${listing.sortHeader('Total', 'total', sort, link)}
+            ${listing.sortHeader('Booking', 'booking', sort, link)}
           </tr>
         </thead>
         <tbody id="bookingsBody">
@@ -180,6 +180,7 @@
           })()}
         </tbody>
       </table>
+      ${listing.pager(pageInfo, link)}
     </div>
   </div>
 </div>
