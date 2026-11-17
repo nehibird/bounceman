@@ -1,0 +1,356 @@
+/* ============================================================================
+   Bounce Man admin — design tokens + layout
+   ----------------------------------------------------------------------------
+   Backlog item D0. This file is the ONLY place in the admin that may contain a
+   literal colour. Everything below the token block uses var(--bm-*).
+
+   Brand colours are NOT hardcoded here. The layout emits the two values the
+   customer site already reads from the settings table (primary_color,
+   secondary_color) as --bm-brand-primary / --bm-brand-secondary, and the
+   tokens below consume those with the current live values as fallbacks. Change
+   the colour in Admin -> Settings and both sites move together. Before D0 the
+   admin hardcoded #FF6B35 while the live brand was #d77c42, so the admin never
+   actually matched the customer site.
+   ========================================================================== */
+
+:root {
+  /* ---- brand ------------------------------------------------------------ */
+  /* Fallbacks are the live settings values as of 2026-11-16. */
+  --bm-accent:        var(--bm-brand-primary,   #d77c42);
+  --bm-ink:           var(--bm-brand-secondary, #1a212d);
+
+  /* Hand-tuned relatives of the accent. These cannot be computed from a
+     custom property in CSS, so they are literals and live here on purpose. */
+  --bm-accent-hover:  #b8652f;
+  --bm-accent-tint:   #fbf0e8;  /* 8% accent on white — badge + highlight fill */
+  /* Accent as TEXT on a light surface. Measured by whoever wrote the public
+     layout: #d77c42 is 3.07:1 on white and FAILS 4.5:1. #b84a12 is 5.22:1 on
+     white, 4.95:1 on #f7f8fa. Fills and buttons keep the bright accent. */
+  --bm-accent-text:   #b84a12;
+
+  /* ---- neutral ramp (cool, tuned to the brand ink) ---------------------- */
+  --bm-n-0:    #ffffff;
+  --bm-n-25:   #f7f8fa;   /* page background */
+  --bm-n-50:   #eef0f4;
+  --bm-n-100:  #e3e6eb;   /* hairline borders */
+  --bm-n-200:  #cbd1da;
+  --bm-n-300:  #aab2bf;
+  --bm-n-400:  #8b94a3;
+  --bm-n-500:  #6b7280;   /* muted / secondary text */
+  --bm-n-600:  #4b5563;
+  --bm-n-700:  #343b47;
+  --bm-n-800:  #232a35;
+  --bm-n-900:  #1a212d;   /* = brand ink */
+
+  /* ---- feedback ---------------------------------------------------------
+     Three colours, and they carry ONE meaning each. Green and red are spent
+     on money direction and on destructive confirmation, nowhere else: a status
+     chip does not get to be green just because it is a nice outcome. Status
+     uses the neutral ramp + accent (see --bm-state-* below). */
+  --bm-fb-good: #0f7a52;
+  --bm-fb-warn: #a76a10;
+  --bm-fb-bad:  #a8321f;
+
+  /* Money direction — the only intended consumer of good/bad. */
+  --bm-money-in:  var(--bm-fb-good);
+  --bm-money-out: var(--bm-fb-bad);
+
+  /* ---- state (booking lifecycle) ----------------------------------------
+     A sequence, not a traffic light: not-yet -> active -> done -> void. */
+  --bm-state-pending-bg:   var(--bm-n-100);
+  --bm-state-pending-fg:   var(--bm-n-700);
+  --bm-state-active-bg:    var(--bm-accent-tint);
+  --bm-state-active-fg:    var(--bm-accent-text);
+  --bm-state-done-bg:      var(--bm-n-50);
+  --bm-state-done-fg:      var(--bm-n-500);
+  --bm-state-void-bg:      var(--bm-n-50);
+  --bm-state-void-fg:      var(--bm-fb-bad);
+
+  /* ---- type scale ------------------------------------------------------- */
+  --bm-font-body:    'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --bm-font-display: 'Fredoka', 'Nunito', sans-serif;  /* V1 revisits this */
+  --bm-text-xs:   11px;
+  --bm-text-sm:   13px;
+  --bm-text-base: 14px;
+  --bm-text-md:   16px;
+  --bm-text-lg:   20px;
+  --bm-text-xl:   28px;
+
+  /* ---- spacing scale (4px base) ----------------------------------------- */
+  --bm-space-1:  4px;
+  --bm-space-2:  8px;
+  --bm-space-3:  12px;
+  --bm-space-4:  16px;
+  --bm-space-5:  20px;
+  --bm-space-6:  24px;
+  --bm-space-8:  32px;
+
+  /* ---- radius scale ----------------------------------------------------- */
+  --bm-radius-sm:   8px;
+  --bm-radius-md:   12px;
+  --bm-radius-pill: 999px;
+
+  /* ---- elevation scale -------------------------------------------------- */
+  --bm-shadow-1: 0 1px 4px rgba(26, 33, 45, 0.06);
+  --bm-shadow-2: 0 2px 8px rgba(26, 33, 45, 0.08);
+  --bm-shadow-3: 0 4px 20px rgba(26, 33, 45, 0.18);
+
+  /* ---- layout ----------------------------------------------------------- */
+  --bm-sidebar-width: 260px;
+
+  /* ---- legacy aliases ---------------------------------------------------
+     views/admin/events.ejs, event-detail.ejs and bookings/new.ejs still read
+     the old names. They are kept pointed at the new tokens so those views
+     render unchanged. --bm-orange was never defined in the admin layout at
+     all, so the booking total in bookings/new.ejs was rendering with an
+     invalid colour; aliasing it fixes that. */
+  --bm-primary:   var(--bm-accent);
+  --bm-orange:    var(--bm-accent);
+  --bm-secondary: var(--bm-n-900);
+  --bm-success:   var(--bm-fb-good);
+  --bm-warning:   var(--bm-fb-warn);
+  --bm-danger:    var(--bm-fb-bad);
+  --bm-dark:      var(--bm-n-900);
+  --bm-light:     var(--bm-n-25);
+
+  /* ---- Bootstrap handoff ------------------------------------------------
+     Without this, anything using Bootstrap's own .btn-primary / .text-primary
+     falls through to framework blue #0d6efd, which belongs to no palette this
+     business owns. -rgb cannot be derived from a custom property, so it holds
+     the fallback accent's channels. */
+  --bs-primary: var(--bm-accent);
+  --bs-primary-rgb: 215, 124, 66;
+  --bs-success: var(--bm-fb-good);
+  --bs-danger:  var(--bm-fb-bad);
+  --bs-warning: var(--bm-fb-warn);
+  --bs-link-color: var(--bm-accent-text);
+  --bs-link-hover-color: var(--bm-accent-hover);
+  --bs-body-font-family: var(--bm-font-body);
+}
+
+/* ============================ base ======================================= */
+
+body {
+  font-family: var(--bm-font-body);
+  background: var(--bm-n-25);
+  color: var(--bm-n-800);
+}
+
+h1, h2, h3, h4, h5, h6 { font-family: var(--bm-font-display); }
+
+a { color: var(--bm-accent-text); }
+a:hover { color: var(--bm-accent-hover); }
+
+/* ============================ sidebar ==================================== */
+
+.admin-sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: var(--bm-sidebar-width);
+  background: var(--bm-n-900);
+  color: var(--bm-n-0);
+  overflow-y: auto; z-index: 1000;
+  transition: transform 0.3s;
+}
+.admin-sidebar .logo {
+  padding: var(--bm-space-5); text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.admin-sidebar .logo h4 {
+  color: var(--bm-accent); margin: 0; font-weight: 800; letter-spacing: 1px;
+}
+.admin-sidebar .logo small {
+  color: rgba(255, 255, 255, 0.5); font-size: var(--bm-text-xs);
+}
+.admin-sidebar nav a {
+  display: flex; align-items: center;
+  padding: var(--bm-space-3) var(--bm-space-5);
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none; transition: all 0.2s;
+  font-size: var(--bm-text-base); gap: var(--bm-space-3);
+  border-left: 3px solid transparent;
+}
+.admin-sidebar nav a:hover,
+.admin-sidebar nav a.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--bm-n-0);
+  border-left-color: var(--bm-accent);
+}
+.admin-sidebar nav a i { width: 20px; text-align: center; }
+.admin-sidebar nav .divider {
+  height: 1px; background: rgba(255, 255, 255, 0.1);
+  margin: var(--bm-space-2) var(--bm-space-5);
+}
+.admin-sidebar nav .section-label {
+  padding: var(--bm-space-2) var(--bm-space-5) var(--bm-space-1);
+  color: rgba(255, 255, 255, 0.3); font-size: var(--bm-text-xs);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ============================ shell ====================================== */
+
+.admin-main { margin-left: var(--bm-sidebar-width); min-height: 100vh; }
+
+.admin-header {
+  background: var(--bm-n-0);
+  padding: var(--bm-space-4) var(--bm-space-8);
+  border-bottom: 1px solid var(--bm-n-100);
+  display: flex; justify-content: space-between; align-items: center;
+  position: sticky; top: 0; z-index: 100;
+}
+
+.admin-content { padding: var(--bm-space-8); }
+
+/* ============================ cards ====================================== */
+
+.stat-card {
+  background: var(--bm-n-0); border-radius: var(--bm-radius-md);
+  padding: var(--bm-space-6); border: none;
+  box-shadow: var(--bm-shadow-2); transition: transform 0.2s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card .stat-icon {
+  width: 48px; height: 48px; border-radius: var(--bm-radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--bm-text-lg);
+}
+.stat-card .stat-value {
+  font-size: var(--bm-text-xl); font-weight: 700; color: var(--bm-n-900);
+}
+.stat-card .stat-label {
+  color: var(--bm-n-500); font-size: var(--bm-text-sm);
+}
+
+.card {
+  border: none; border-radius: var(--bm-radius-md);
+  box-shadow: var(--bm-shadow-2);
+}
+.card-header {
+  background: var(--bm-n-0); border-bottom: 1px solid var(--bm-n-100);
+  font-weight: 600;
+}
+
+/* ============================ money ======================================
+   The only place green and red carry meaning. */
+.bm-money-in  { color: var(--bm-money-in); }
+.bm-money-out { color: var(--bm-money-out); }
+
+/* ============================ status chips =============================== */
+
+.badge-status {
+  padding: var(--bm-space-1) var(--bm-space-3);
+  border-radius: var(--bm-radius-pill);
+  font-size: var(--bm-text-xs); font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.badge-pending   { background: var(--bm-state-pending-bg); color: var(--bm-state-pending-fg); }
+.badge-confirmed { background: var(--bm-state-active-bg);  color: var(--bm-state-active-fg); }
+.badge-completed { background: var(--bm-state-done-bg);    color: var(--bm-state-done-fg); }
+.badge-cancelled { background: var(--bm-state-void-bg);    color: var(--bm-state-void-fg); }
+
+/* ============================ buttons ====================================
+   V5 collapses the full button hierarchy; D0 only tokenises what exists. */
+
+.btn-bm {
+  background: var(--bm-accent); color: var(--bm-n-0); border: none;
+}
+.btn-bm:hover { background: var(--bm-accent-hover); color: var(--bm-n-0); }
+.btn-bm-outline {
+  border: 2px solid var(--bm-accent); color: var(--bm-accent-text);
+}
+.btn-bm-outline:hover { background: var(--bm-accent); color: var(--bm-n-0); }
+
+/* ============================ toasts =====================================
+   Colour lives here, not in the inline script. showToast() adds a class. */
+
+#toast-container {
+  position: fixed; top: var(--bm-space-5); right: var(--bm-space-5);
+  z-index: 9999; max-width: 400px;
+}
+.bm-toast {
+  color: var(--bm-n-0);
+  padding: var(--bm-space-4) var(--bm-space-5);
+  border-radius: var(--bm-radius-md);
+  margin-bottom: var(--bm-space-2);
+  box-shadow: var(--bm-shadow-3);
+  display: flex; align-items: flex-start; gap: var(--bm-space-2);
+  font-size: var(--bm-text-base); line-height: 1.4;
+  animation: bm-toast-in 0.3s ease;
+  background: var(--bm-n-800);
+}
+.bm-toast.is-error   { background: var(--bm-fb-bad); }
+.bm-toast.is-warning { background: var(--bm-fb-warn); }
+.bm-toast.is-success { background: var(--bm-fb-good); }
+.bm-toast.is-info    { background: var(--bm-n-800); }
+.bm-toast .bm-toast-body { flex: 1; }
+.bm-toast .bm-toast-icon { margin-top: 2px; }
+.bm-toast .toast-close {
+  cursor: pointer; font-size: 18px; line-height: 1; opacity: 0.8;
+}
+@keyframes bm-toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ======================= responsive table helper =========================
+   Add class "rtable" to a Bootstrap .table and data-label="Column" to each
+   <td>. Under 768px the header hides and every row becomes a labeled card.
+   Extras: td.rt-actions = full-width button row (no label); td.rt-hide =
+   hidden on mobile (e.g. bulk-select checkbox); td.rt-primary = larger,
+   no label (card title). */
+
+@media (max-width: 767.98px) {
+  .admin-content { padding: var(--bm-space-4); }
+  table.rtable thead { display: none; }
+  table.rtable, table.rtable tbody, table.rtable tr, table.rtable td {
+    display: block; width: 100%;
+  }
+  table.rtable tr {
+    background: var(--bm-n-0); border: 1px solid var(--bm-n-100);
+    border-radius: var(--bm-radius-md); box-shadow: var(--bm-shadow-1);
+    margin-bottom: var(--bm-space-3); padding: 6px var(--bm-space-4);
+  }
+  table.rtable td {
+    border: 0 !important; padding: 7px 0 !important; min-height: 34px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--bm-space-3); text-align: right;
+  }
+  table.rtable td + td { border-top: 1px solid var(--bm-n-50) !important; }
+  table.rtable td::before {
+    content: attr(data-label); font-weight: 700; color: var(--bm-n-500);
+    text-transform: uppercase; letter-spacing: .3px;
+    font-size: var(--bm-text-xs);
+    text-align: left; flex: 0 0 auto; margin-right: auto;
+  }
+  table.rtable td:empty { display: none; }
+  table.rtable td.rt-primary { text-align: left; font-weight: 700; font-size: 1.05rem; }
+  table.rtable td.rt-primary::before { display: none; }
+  table.rtable td.rt-actions {
+    border-top: 1px solid var(--bm-n-50) !important;
+    padding-top: var(--bm-space-2) !important;
+    justify-content: stretch; gap: var(--bm-space-2);
+  }
+  table.rtable td.rt-actions::before { display: none; }
+  table.rtable td.rt-actions > * { flex: 1 1 auto; }
+  table.rtable td.rt-hide { display: none; }
+
+  /* Tappable cards (rows that link to a detail page) act as one clean button */
+  table.rtable tr[data-href], table.rtable tr[data-row-href] {
+    position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  table.rtable.table-hover > tbody > tr:hover > * { box-shadow: none !important; }
+  table.rtable tr[data-href]:hover, table.rtable tr[data-href]:active,
+  table.rtable tr[data-row-href]:hover, table.rtable tr[data-row-href]:active {
+    background: var(--bm-n-50);
+  }
+  table.rtable tr[data-href]::after, table.rtable tr[data-row-href]::after {
+    content: "\203A"; position: absolute; top: var(--bm-space-2); right: var(--bm-space-4);
+    color: var(--bm-n-300); font-size: 1.6rem; line-height: 1;
+    font-weight: 400; pointer-events: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-sidebar { transform: translateX(-100%); }
+  .admin-sidebar.open { transform: translateX(0); }
+  .admin-main { margin-left: 0; }
+}

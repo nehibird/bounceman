@@ -12,129 +12,17 @@
   <% if (typeof page !== 'undefined' && page === 'calendar') { %>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
   <% } %>
+  <link href="/assets/css/admin.css?v=d0" rel="stylesheet">
+  <%
+     /* Brand colours come from the settings table — the same two values the
+        customer site reads. admin.css consumes these with the live values as
+        fallbacks, so a colour change in Admin -> Settings moves both sites. */
+     var _s = (typeof settings !== 'undefined' && settings) ? settings : {};
+  %>
   <style>
     :root {
-      --bm-primary: #FF6B35;
-      --bm-secondary: #004E89;
-      --bm-success: #2ECC71;
-      --bm-warning: #F39C12;
-      --bm-danger: #E74C3C;
-      --bm-dark: #2C3E50;
-      --bm-light: #F8F9FA;
-      --bm-sidebar-width: 260px;
-    }
-    body { font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; }
-    h1, h2, h3, h4, h5, h6 { font-family: 'Fredoka', sans-serif; }
-    .admin-sidebar {
-      position: fixed; left: 0; top: 0; bottom: 0;
-      width: var(--bm-sidebar-width); background: var(--bm-dark);
-      color: white; overflow-y: auto; z-index: 1000;
-      transition: transform 0.3s;
-    }
-    .admin-sidebar .logo {
-      padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    .admin-sidebar .logo h4 { color: var(--bm-primary); margin: 0; font-weight: 800; letter-spacing: 1px; }
-    .admin-sidebar .logo small { color: rgba(255,255,255,0.5); font-size: 11px; }
-    .admin-sidebar nav a {
-      display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.7);
-      text-decoration: none; transition: all 0.2s; font-size: 14px; gap: 12px;
-      border-left: 3px solid transparent;
-    }
-    .admin-sidebar nav a:hover, .admin-sidebar nav a.active {
-      background: rgba(255,255,255,0.08); color: white; border-left-color: var(--bm-primary);
-    }
-    .admin-sidebar nav a i { width: 20px; text-align: center; }
-    .admin-sidebar nav .divider {
-      height: 1px; background: rgba(255,255,255,0.1); margin: 10px 20px;
-    }
-    .admin-sidebar nav .section-label {
-      padding: 8px 20px 4px; color: rgba(255,255,255,0.3); font-size: 11px;
-      text-transform: uppercase; letter-spacing: 1px;
-    }
-    .admin-main {
-      margin-left: var(--bm-sidebar-width); min-height: 100vh;
-    }
-    .admin-header {
-      background: white; padding: 15px 30px; border-bottom: 1px solid #e0e0e0;
-      display: flex; justify-content: space-between; align-items: center;
-      position: sticky; top: 0; z-index: 100;
-    }
-    .admin-content { padding: 30px; }
-    .stat-card {
-      background: white; border-radius: 12px; padding: 24px; border: none;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s;
-    }
-    .stat-card:hover { transform: translateY(-2px); }
-    .stat-card .stat-icon {
-      width: 48px; height: 48px; border-radius: 12px; display: flex;
-      align-items: center; justify-content: center; font-size: 20px;
-    }
-    .stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--bm-dark); }
-    .stat-card .stat-label { color: #6c757d; font-size: 13px; }
-    .card { border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .card-header { background: white; border-bottom: 1px solid #eee; font-weight: 600; }
-    .badge-status {
-      padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
-    }
-    .badge-pending { background: #FFF3CD; color: #856404; }
-    .badge-confirmed { background: #D4EDDA; color: #155724; }
-    .badge-completed { background: #CCE5FF; color: #004085; }
-    .badge-cancelled { background: #F8D7DA; color: #721C24; }
-    .btn-bm { background: var(--bm-primary); color: white; border: none; }
-    .btn-bm:hover { background: #e55a2b; color: white; }
-    .btn-bm-outline { border: 2px solid var(--bm-primary); color: var(--bm-primary); }
-    .btn-bm-outline:hover { background: var(--bm-primary); color: white; }
-
-    /* ── Shared mobile helper: responsive table → stacked cards ──
-       Add class "rtable" to a Bootstrap .table and data-label="Column" to each <td>.
-       Under 768px the header hides and every row becomes a labeled card. Extras:
-       td.rt-actions = full-width button row (no label); td.rt-hide = hidden on mobile
-       (e.g. bulk-select checkbox); td.rt-primary = larger, no label (card title). */
-    @media (max-width: 767.98px) {
-      .admin-content { padding: 16px; }
-      table.rtable thead { display: none; }
-      table.rtable, table.rtable tbody, table.rtable tr, table.rtable td { display: block; width: 100%; }
-      table.rtable tr {
-        background: #fff; border: 1px solid #e6e6e6; border-radius: 12px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.05); margin-bottom: 12px; padding: 6px 14px;
-      }
-      table.rtable td {
-        border: 0 !important; padding: 7px 0 !important; min-height: 34px;
-        display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: right;
-      }
-      table.rtable td + td { border-top: 1px solid #f1f1f1 !important; }
-      table.rtable td::before {
-        content: attr(data-label); font-weight: 700; color: #6c757d;
-        text-transform: uppercase; letter-spacing: .3px; font-size: 11px;
-        text-align: left; flex: 0 0 auto; margin-right: auto;
-      }
-      table.rtable td:empty { display: none; }
-      table.rtable td.rt-primary { text-align: left; }
-      table.rtable td.rt-primary::before { display: none; }
-      table.rtable td.rt-primary { font-weight: 700; font-size: 1.05rem; }
-      table.rtable td.rt-actions { border-top: 1px solid #f1f1f1 !important; padding-top: 10px !important; }
-      table.rtable td.rt-actions::before { display: none; }
-      table.rtable td.rt-actions { justify-content: stretch; gap: 8px; }
-      table.rtable td.rt-actions > * { flex: 1 1 auto; }
-      table.rtable td.rt-hide { display: none; }
-      /* Tappable cards (rows that link to a detail page) act as one clean button */
-      table.rtable tr[data-href], table.rtable tr[data-row-href] {
-        position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
-      }
-      table.rtable.table-hover > tbody > tr:hover > * { box-shadow: none !important; }
-      table.rtable tr[data-href]:hover, table.rtable tr[data-href]:active,
-      table.rtable tr[data-row-href]:hover, table.rtable tr[data-row-href]:active { background: #eceff3; }
-      table.rtable tr[data-href]::after, table.rtable tr[data-row-href]::after {
-        content: "\203A"; position: absolute; top: 8px; right: 14px;
-        color: #c2c8d0; font-size: 1.6rem; line-height: 1; font-weight: 400; pointer-events: none;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .admin-sidebar { transform: translateX(-100%); }
-      .admin-sidebar.open { transform: translateX(0); }
-      .admin-main { margin-left: 0; }
+      --bm-brand-primary: <%= _s.primary_color || '#d77c42' %>;
+      --bm-brand-secondary: <%= _s.secondary_color || '#1a212d' %>;
     }
   </style>
 </head>
@@ -264,24 +152,22 @@
     if (bookingRow) window.location.href = bookingRow.dataset.bookingHref;
   });
 </script>
-<div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
+<div id="toast-container"></div>
 <script>
 function showToast(message, type) {
   type = type || "error";
-  var colors = { error: "#EF476F", warning: "#f59e0b", success: "#06D6A0", info: "#118AB2" };
   var icons = { error: "fa-exclamation-circle", warning: "fa-exclamation-triangle", success: "fa-check-circle", info: "fa-info-circle" };
   var container = document.getElementById("toast-container");
   var toast = document.createElement("div");
-  toast.style.cssText = "background:" + (colors[type] || colors.error) + ";color:white;padding:16px 20px;border-radius:12px;margin-bottom:10px;box-shadow:0 4px 20px rgba(0,0,0,0.2);display:flex;align-items:flex-start;gap:10px;animation:slideIn 0.3s ease;font-size:14px;line-height:1.4";
+  var known = { error: 1, warning: 1, success: 1, info: 1 };
+  toast.className = "bm-toast is-" + (known[type] ? type : "error");
   var icon = document.createElement("i");
-  icon.className = "fas " + (icons[type] || icons.error);
-  icon.style.marginTop = "2px";
+  icon.className = "bm-toast-icon fas " + (icons[type] || icons.error);
   var body = document.createElement("div");
-  body.style.flex = "1";
+  body.className = "bm-toast-body";
   body.innerHTML = message;
   var closeBtn = document.createElement("span");
   closeBtn.className = "toast-close";
-  closeBtn.style.cssText = "cursor:pointer;font-size:18px;line-height:1;opacity:0.8";
   closeBtn.textContent = "\u00d7";
   closeBtn.addEventListener("click", function() { toast.remove(); });
   toast.appendChild(icon);
@@ -291,8 +177,5 @@ function showToast(message, type) {
   setTimeout(function() { toast.style.opacity = "0"; toast.style.transition = "opacity 0.3s"; setTimeout(function() { toast.remove(); }, 300); }, 6000);
 }
 </script>
-<style>
-@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-</style>
 </body>
 </html>
