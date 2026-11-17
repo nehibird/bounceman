@@ -91,17 +91,51 @@ ${unsignedContracts.length ? `
   @media (max-width:575px) { .bm-act { flex:1 1 auto; justify-content:center; } }
 </style>
 
-<!-- Stats Row -->
+<!-- Money Row. Was: Today's Events, Month Revenue, Pending Bookings, Total Customers --
+     a count, a revenue figure and two more counts, of which Today's Events and Pending
+     Bookings are structurally zero for most of the year (the season runs Apr-Nov and
+     "pending" is a status a booking passes through in minutes). So two of the four
+     largest numbers on the page were permanent zeroes, while the figures that actually
+     decide whether he can spend money -- safe-to-spend and net liquid position -- were
+     an 11px grey footnote underneath the bank panel.
+     Today's Events and Total Customers are both one click away: Today is in the action
+     bar above, Customers is in the sidebar. -->
 <div class="row g-4 mb-4">
   <div class="col-6 col-md-3">
-    <a href="/admin/calendar" class="text-decoration-none">
+    <a href="/admin/banks" class="text-decoration-none">
       <div class="stat-card" style="cursor:pointer">
         <div class="d-flex justify-content-between align-items-start">
           <div>
-            <div class="stat-label">Today's Events</div>
-            <div class="stat-value">${stats.todayBookings}</div>
+            <div class="stat-label">Safe to Spend</div>
+            <div class="stat-value" style="color:${finance.safeToSpend >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:rgba(255,107,53,0.1);color:#FF6B35"><i class="fas fa-calendar-day"></i></div>
+          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><i class="fas fa-wallet"></i></div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="/admin/banks" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Net Liquid Position</div>
+            <div class="stat-value" style="color:${finance.netLiquid >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+          </div>
+          <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-n-500)"><i class="fas fa-scale-balanced"></i></div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="/admin/bookings" class="text-decoration-none">
+      <div class="stat-card" style="cursor:pointer">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Still Owed to You</div>
+            <div class="stat-value" style="color:${parseFloat(analytics.balanceOwed) > 0 ? 'var(--bm-accent-text)' : 'var(--bm-n-400)'}">$${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+          </div>
+          <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><i class="fas fa-hand-holding-dollar"></i></div>
         </div>
       </div>
     </a>
@@ -112,35 +146,9 @@ ${unsignedContracts.length ? `
         <div class="d-flex justify-content-between align-items-start">
           <div>
             <div class="stat-label">Month Revenue</div>
-            <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+            <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
-          <div class="stat-icon" style="background:rgba(46,204,113,0.1);color:#2ECC71"><i class="fas fa-dollar-sign"></i></div>
-        </div>
-      </div>
-    </a>
-  </div>
-  <div class="col-6 col-md-3">
-    <a href="/admin/bookings?status=pending" class="text-decoration-none">
-      <div class="stat-card" style="cursor:pointer">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="stat-label">Pending Bookings</div>
-            <div class="stat-value">${stats.pendingBookings}</div>
-          </div>
-          <div class="stat-icon" style="background:rgba(243,156,18,0.1);color:#F39C12"><i class="fas fa-clock"></i></div>
-        </div>
-      </div>
-    </a>
-  </div>
-  <div class="col-6 col-md-3">
-    <a href="/admin/customers" class="text-decoration-none">
-      <div class="stat-card" style="cursor:pointer">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="stat-label">Total Customers</div>
-            <div class="stat-value">${stats.totalCustomers}</div>
-          </div>
-          <div class="stat-icon" style="background:rgba(0,78,137,0.1);color:#004E89"><i class="fas fa-users"></i></div>
+          <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-500)"><i class="fas fa-chart-line"></i></div>
         </div>
       </div>
     </a>
@@ -212,8 +220,8 @@ ${unsignedContracts.length ? `
             </div>
           </div>
           <div class="d-flex justify-content-between align-items-center small text-muted mt-3 pt-2 border-top">
-            <span>Net liquid position <span class="text-muted">(bank + Stripe &minus; card)</span></span>
-            <strong class="${finance.netLiquid >= 0 ? 'text-success' : 'text-danger'}">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>
+            <span class="text-muted">Net liquid position is bank + Stripe &minus; card debt &mdash; shown at the top</span>
+            <span class="text-muted">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
           </div>
         </div>` : ''}
         <div class="row g-3">
