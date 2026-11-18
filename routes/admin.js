@@ -1112,7 +1112,15 @@ router.get('/calendar', (req, res) => {
     ORDER BY b.event_date
   `).all();
 
-  const blocked = db.prepare('SELECT * FROM blocked_dates').all();
+  // R1: blocked_dates is per-EQUIPMENT, not per-day -- 61 of its 63 rows carry an
+  // equipment_id. The name is what makes the summary above the calendar say something
+  // ("Castle Clash unavailable Jun 10 - Jun 14") rather than "3 units unavailable".
+  const blocked = db.prepare(`
+    SELECT bd.date, bd.reason, bd.equipment_id, e.name AS equipment_name
+    FROM blocked_dates bd
+    LEFT JOIN equipment e ON e.id = bd.equipment_id
+    ORDER BY bd.date
+  `).all();
 
   res.render('admin/calendar', {
     title: 'Calendar - Admin', user: req.user, settings, bookings, blocked, page: 'calendar'

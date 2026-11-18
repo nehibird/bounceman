@@ -11,6 +11,26 @@
   </div>
 </div>
 
+<div id="bmBlocked" class="bm-blocked" hidden></div>
+<style>
+  /* R1. One row per blocked range in the month on screen, instead of the reason
+     reprinted inside every affected day cell. */
+  .bm-blocked { border:1px solid var(--bm-n-100); border-left:3px solid var(--bm-n-300);
+    background:var(--bm-n-0); border-radius:var(--bm-radius-md);
+    margin-bottom:var(--bm-space-4); overflow:hidden; }
+  .bm-blocked-row { display:flex; align-items:baseline; gap:var(--bm-space-3);
+    padding:9px var(--bm-space-4); font-size:var(--bm-text-base);
+    color:var(--bm-n-700); border-bottom:1px solid var(--bm-n-50); }
+  .bm-blocked-row:last-child { border-bottom:0; }
+  .bm-blocked-when { font-weight:700; color:var(--bm-n-900); white-space:nowrap; }
+  .bm-blocked-what { flex:1 1 auto; }
+  .bm-blocked-why { color:var(--bm-n-500); font-size:var(--bm-text-sm); }
+  @media (max-width:575px) {
+    .bm-blocked-row { flex-wrap:wrap; gap:2px var(--bm-space-3); }
+    .bm-blocked-why { width:100%; }
+  }
+</style>
+
 <div class="card">
   <div class="card-body">
     <div id="calendar"></div>
@@ -54,16 +74,66 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   })).replace(/</g, '\\u003c')};
 
-  var blockedEvents = ${JSON.stringify(blocked.map(function(bl) {
+  // R1. Two things were wrong here, and the second is the one that mattered.
+  //
+  // (a) A background event still renders its title inside the day cell. The reason was
+  //     therefore printed once per ROW, and blocked_dates has one row per unit -- so
+  //     June 10-14 printed the same sentence three times a day, 51 copies across the
+  //     range, displacing the real bookings in those cells.
+  //
+  // (b) blocked_dates is per-EQUIPMENT: 61 of its 63 rows carry an equipment_id. The
+  //     calendar painted every one of them as a full-day red wash, so a day when ONE
+  //     unit was away at ODOL inspection looked exactly like a day the business was
+  //     closed. August 7-16 is washed red and carries six confirmed bookings -- the
+  //     other eighteen units were free the whole time. The grid was stating something
+  //     untrue, which is worse than stating it repetitively.
+  //
+  // So only a whole-business block (equipment_id IS NULL) paints the day. A unit-level
+  // block is a unit-level fact: it is reported in the strip above the grid, by name,
+  // and it gets its proper home in R16's availability view, which is per unit by
+  // construction. The title is gone either way; the reason reaches the cell as a
+  // tooltip and the strip as text.
+  var blockedEvents = ${JSON.stringify(blocked.filter(function(bl) {
+    return !bl.equipment_id;
+  }).map(function(bl) {
     return {
-      title: bl.reason || 'Blocked',
+      title: '',
       start: bl.date,
       allDay: true,
       display: 'background',
+      extendedProps: { reason: bl.reason || 'Blocked' },
       backgroundColor: 'rgba(231,76,60,0.2)',
       borderColor: '#E74C3C'
     };
   })).replace(/</g, '\\u003c')};
+
+  // Contiguous runs of the same reason for the same unit, so the strip says
+  // "Jun 10 - Jun 14" once rather than listing five days.
+  var blockedRanges = ${JSON.stringify((function() {
+    var byKey = {};
+    (blocked || []).forEach(function(bl) {
+      var key = (bl.equipment_name || '') + '\u0000' + (bl.reason || '');
+      (byKey[key] = byKey[key] || []).push(bl);
+    });
+    var out = [];
+    Object.keys(byKey).forEach(function(key) {
+      var rows = byKey[key].slice().sort(function(a, b) {
+        return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+      });
+      var start = null, prev = null;
+      function flush() { if (start) out.push({ start: start, end: prev,
+        unit: rows[0].equipment_name || null, reason: rows[0].reason || null }); }
+      rows.forEach(function(r) {
+        if (prev === r.date) return;                       // same day, another row
+        var contiguous = prev &&
+          (new Date(r.date + 'T12:00:00') - new Date(prev + 'T12:00:00')) === 86400000;
+        if (!contiguous) { flush(); start = r.date; }
+        prev = r.date;
+      });
+      flush();
+    });
+    return out.sort(function(a, b) { return a.start < b.start ? -1 : 1; });
+  })()).replace(/</g, '\\u003c')};
 
   // On phones the month grid is unreadable — default to a clean list view
   // with a simplified toolbar; desktop keeps the full month/week/day grid.
@@ -83,12 +153,55 @@ document.addEventListener('DOMContentLoaded', function() {
     editable: false,
     dayMaxEvents: true,
     noEventsContent: 'No bookings this period',
+    // A background event has no title now, so the reason reaches the cell this way.
+    eventDidMount: function(info) {
+      var why = info.event.extendedProps && info.event.extendedProps.reason;
+      if (why && info.event.display === 'background') info.el.setAttribute('title', why);
+    },
+    // The strip tracks the month on screen. Rendering every range unconditionally
+    // would put last June's note above a November calendar -- the same noise this
+    // item exists to remove, moved somewhere else.
+    datesSet: function(info) { renderBlocked(info.startStr, info.endStr); },
     windowResize: function() {
       var m = window.matchMedia('(max-width: 767px)').matches;
       if (m && calendar.view.type === 'dayGridMonth') calendar.changeView('listMonth');
       else if (!m && calendar.view.type === 'listMonth') calendar.changeView('dayGridMonth');
     }
   });
+  // Built as DOM nodes with textContent: the reason is operator-entered text and must
+  // never be parsed as markup, for the same reason the event arrays above are escaped.
+  function renderBlocked(viewStart, viewEnd) {
+    var host = document.getElementById('bmBlocked');
+    if (!host) return;
+    var from = viewStart.slice(0, 10), to = viewEnd.slice(0, 10);   // to is exclusive
+    var shown = blockedRanges.filter(function(r) { return r.start < to && r.end >= from; });
+    host.textContent = '';
+    if (!shown.length) { host.hidden = true; return; }
+    shown.forEach(function(r) {
+      var row = document.createElement('div');
+      row.className = 'bm-blocked-row';
+      var when = document.createElement('span');
+      when.className = 'bm-blocked-when';
+      when.textContent = r.start === r.end ? fmtDay(r.start) : fmtDay(r.start) + ' \u2013 ' + fmtDay(r.end);
+      var what = document.createElement('span');
+      what.className = 'bm-blocked-what';
+      what.textContent = r.unit ? r.unit + ' unavailable' : 'No bookings taken';
+      row.appendChild(when); row.appendChild(what);
+      if (r.reason) {
+        var why = document.createElement('span');
+        why.className = 'bm-blocked-why';
+        why.textContent = r.reason;
+        row.appendChild(why);
+      }
+      host.appendChild(row);
+    });
+    host.hidden = false;
+  }
+  function fmtDay(iso) {
+    return new Date(iso + 'T12:00:00')
+      .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
   calendar.render();
 });
 </script>
