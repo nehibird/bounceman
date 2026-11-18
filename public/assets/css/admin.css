@@ -318,6 +318,14 @@ a:focus-visible .stat-card {
 .stat-card .stat-label {
   color: var(--bm-n-500); font-size: var(--bm-text-sm);
 }
+/* R12. A comparison under a figure. Neutral on purpose: green and red are spent on
+   money direction, and a delta that paints itself green for "revenue up" would be
+   competing with the figure above it for the same meaning. The arrow carries the
+   direction; the colour carries nothing. */
+.stat-card .bm-delta {
+  margin-top: 4px; font-size: var(--bm-text-sm); color: var(--bm-n-500);
+  font-variant-numeric: tabular-nums;
+}
 
 .card {
   border: none; border-radius: var(--bm-radius-md);

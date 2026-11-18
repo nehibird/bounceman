@@ -108,6 +108,8 @@ ${unsignedContracts.length ? `
           <div>
             <div class="stat-label">Safe to Spend</div>
             <div class="stat-value" style="color:${finance.safeToSpend >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+            <div class="bm-delta">${compare.cash30 === 0 ? 'bank level over 30 days'
+              : (compare.cash30 > 0 ? '▲ ' : '▼ ') + '$' + Math.abs(Math.round(compare.cash30)).toLocaleString('en-US') + ' in the bank over 30 days'}</div>
           </div>
           <div class="stat-icon" style="background:var(--bm-state-done-bg);color:var(--bm-money-in)"><svg class="bm-i" aria-hidden="true"><use href="#i-wallet"/></svg></div>
         </div>
@@ -119,6 +121,9 @@ ${unsignedContracts.length ? `
       <div class="stat-card">
         <div class="d-flex justify-content-between align-items-start">
           <div>
+            <!-- R12: no comparison here on purpose. This is a position, not a rate;
+                 "up $400 this month" says nothing about whether it is healthy, and a
+                 delta invented to fill the slot is worse than an empty one. -->
             <div class="stat-label">Net Liquid Position</div>
             <div class="stat-value" style="color:${finance.netLiquid >= 0 ? 'var(--bm-money-in)' : 'var(--bm-money-out)'}">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
           </div>
@@ -134,6 +139,12 @@ ${unsignedContracts.length ? `
           <div>
             <div class="stat-label">Still Owed to You</div>
             <div class="stat-value" style="color:${parseFloat(analytics.balanceOwed) > 0 ? 'var(--bm-accent-text)' : 'var(--bm-n-400)'}">$${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+            <div class="bm-delta">${
+              parseFloat(analytics.balanceOwed) <= 0 ? 'nothing outstanding'
+              : compare.owed.overdueCount > 0
+                ? '<span style="color:var(--bm-fb-bad);font-weight:700">' + compare.owed.overdueCount + ' past the event date</span>'
+                : compare.owed.next ? 'due at delivery, next ' + fmtDateShort(compare.owed.next) : 'due at delivery'
+            }</div>
           </div>
           <div class="stat-icon" style="background:var(--bm-accent-tint);color:var(--bm-accent-text)"><svg class="bm-i" aria-hidden="true"><use href="#i-hand-holding-dollar"/></svg></div>
         </div>
@@ -147,6 +158,10 @@ ${unsignedContracts.length ? `
           <div>
             <div class="stat-label">Month Revenue</div>
             <div class="stat-value">$${parseFloat(stats.monthRevenue).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+            <div class="bm-delta">${compare.monthVsPrev.pct === null
+              ? 'first ' + compare.monthVsPrev.days + ' days of the month'
+              : (compare.monthVsPrev.pct >= 0 ? '▲ ' : '▼ ') + Math.abs(compare.monthVsPrev.pct) + '% vs the same '
+                + compare.monthVsPrev.days + ' days last month'}</div>
           </div>
           <div class="stat-icon" style="background:var(--bm-n-50);color:var(--bm-n-500)"><svg class="bm-i" aria-hidden="true"><use href="#i-chart-line"/></svg></div>
         </div>

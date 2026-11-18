@@ -169,6 +169,17 @@ for (const theme of THEMES) {
       await page.waitForTimeout(250);
       if (prepare) await prepare(page);
 
+      // R12. An error page has colours too, and they pass. On R12 the dashboard threw
+      // because titan held an older routes/admin.js, rendered the PUBLIC 404, and this
+      // audit reported zero violations against it -- a clean bill of health for a page
+      // that was not the page. Every admin audit now proves it is looking at the admin.
+      if (!name.startsWith('public-')) {
+        await expect(page.locator('.admin-sidebar'),
+          `${url} did not render the admin layout -- it probably threw and fell through ` +
+          'to the public error page, so any colour result below is meaningless')
+          .toHaveCount(1, { timeout: 5000 });
+      }
+
       // The assertion that makes this gate able to fail. An empty calendar passes a
       // colour audit trivially, which is exactly how 2.10:1 text survived here.
       if (name.startsWith('calendar')) {

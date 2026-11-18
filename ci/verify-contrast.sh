@@ -30,7 +30,17 @@ VPS=root@76.13.118.165
 REMOTE=mrnehemiahreese@titan
 TMP=$(mktemp -t bm-a11y-XXXXXX).tar
 
-ssh "$VPS" 'cd /opt/bounceman && tar cf - views/ public/assets/css/admin.css' > "$TMP" || {
+# WHAT GETS SYNCED, and why it is more than it looks.
+#
+# This used to send only views/ and admin.css. On R12 a view started reading a variable
+# the route had just begun passing -- and titan still had the old route, so /admin threw
+# "compare is not defined", rendered the public 404 page, and this gate measured THAT.
+# The layout gate caught it because it asserts the page contains cards; the contrast gate
+# did not, because an error page has colours too and they happen to pass.
+#
+# A gate that silently measures the wrong page is the failure mode this project keeps
+# finding. The whole server-rendering surface goes over now.
+ssh "$VPS" 'cd /opt/bounceman && tar cf - views/ routes/ lib/ services/ middleware/ server.js db.js public/assets/css/admin.css public/assets/js/' > "$TMP" || {
   echo "BROKEN GATE: could not read the source tree from the VPS"; rm -f "$TMP"; exit 1; }
 scp -q "$TMP" "$REMOTE":/tmp/bm-a11y-sync.tar || {
   echo "BROKEN GATE: could not reach titan"; rm -f "$TMP"; exit 1; }

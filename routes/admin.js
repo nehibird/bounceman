@@ -283,6 +283,57 @@ router.get('/', async (req, res) => {
   }
   const bankAgeMins = bankSyncedAt ? Math.round((Date.now() - bankSyncedAt) / 60000) : null;
 
+  // ---- R12: a comparison for the figures that drive a decision ----------------
+  //
+  // THE CONSTRAINT THAT SHAPES ALL OF THIS: there is one season of history. The
+  // earliest record is 2026-04-12. A year-over-year delta is impossible, and a
+  // November-against-August delta is a seasonal artifact, not information. So there is
+  // no generic "vs last period" helper here -- each figure gets the comparison that is
+  // honest for it, and Net Liquid Position gets none, because it is a position rather
+  // than a rate and "up $400 this month" says nothing about whether it is healthy.
+  const _d = dayjs();
+  const _dayOfMonth = _d.date();
+  const _prevStart = _d.subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+  // Same NUMBER OF DAYS into the previous month, not the whole of it. On the 18th,
+  // comparing a part-month against a finished one reads as a 64% collapse every single
+  // month until the 30th, which is worse than no comparison at all.
+  const _prevCutoff = _d.subtract(1, 'month').startOf('month').add(_dayOfMonth, 'day').format('YYYY-MM-DD');
+  const _prevSame = db.prepare(`SELECT COALESCE(SUM(total), 0) as r FROM bookings
+    WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'`).get(_prevStart, _prevCutoff).r;
+
+  // Thirty-day direction of the cash itself. Excluded accounts are left out for the
+  // same reason they are left out of Total Cash Position: ....8287 is True Light
+  // Christmas and its money is not this business's money.
+  const _cash30 = db.prepare(`SELECT COALESCE(SUM(t.amount), 0) as r
+    FROM bank_transactions t JOIN bank_accounts a ON a.id = t.account_id
+    WHERE COALESCE(a.exclude_from_totals, 0) = 0 AND a.type != 'credit'
+      AND t.posted_date >= date('now', '-30 day')`).get().r;
+
+  // What is still owed is owed ON something. Balance is collected at delivery, so a
+  // balance against a future event is not late -- saying "3 outstanding" without that
+  // distinction invites chasing money that is not due.
+  const _owedNext = db.prepare(`SELECT MIN(event_date) as d FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND balance_due > 0`).get().d;
+  const _owedOverdue = db.prepare(`SELECT COUNT(*) as c, MIN(event_date) as d FROM bookings
+    WHERE status NOT IN ('cancelled', 'declined') AND balance_due > 0
+      AND date(event_date) < date('now', 'localtime')`).get();
+
+  const compare = {
+    monthVsPrev: {
+      prev: _prevSame,
+      days: _dayOfMonth,
+      // Only when there is something to compare against. A percentage off zero is not
+      // a percentage.
+      pct: _prevSame > 0 ? Math.round(((stats.monthRevenue - _prevSame) / _prevSame) * 100) : null
+    },
+    cash30: _cash30,
+    owed: {
+      next: _owedNext || null,
+      overdueCount: _owedOverdue.c || 0,
+      overdueSince: _owedOverdue.d || null
+    }
+  };
+
   const finance = {
     bankCash, stripeIncoming, cardDebt, bankSyncedAt, bankAgeMins,
     taxOwed, taxNotYetDue, obligations,
@@ -301,7 +352,7 @@ router.get('/', async (req, res) => {
       pipeline, reimburseOwed, breakEven,
       taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap, overpaid
     },
-    monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
+    monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance, compare
   });
 });
 

@@ -33,14 +33,22 @@ test.beforeEach(async ({ context }) => { await context.addCookies([adminCookie()
 // half air because a sibling in its row is tall.
 const SLACK_LIMIT = 110;
 
+// `always` means the page has cards whatever the data says, so finding none is proof
+// the page did not render -- which is how R12 caught /admin throwing on titan.
+//
+// /admin/delivery is different: with no stops today it legitimately renders an empty
+// state and no cards at all, and whether there are stops depends on which suite last
+// touched the shared test database. Requiring cards there made this gate fail for a
+// reason that had nothing to do with layout. It is measured when there is something to
+// measure, and says which case it took rather than passing silently.
 const PAGES = [
-  ['dashboard', '/admin'],
-  ['bookings', '/admin/bookings?when=all'],
-  ['today', '/admin/delivery'],
-  ['reports', '/admin/reports'],
+  ['dashboard', '/admin', { always: true }],
+  ['bookings', '/admin/bookings?when=all', { always: true }],
+  ['reports', '/admin/reports', { always: true }],
+  ['today', '/admin/delivery', { always: false }],
 ];
 
-for (const [name, url] of PAGES) {
+for (const [name, url, opts] of PAGES) {
   test(`voids: ${name}`, async ({ page }) => {
     await page.setViewportSize({ width: 1456, height: 900 });
     await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -75,9 +83,14 @@ for (const [name, url] of PAGES) {
       return out;
     }, SLACK_LIMIT);
 
-    // Non-vacuity: a page with no cards proves nothing about cards.
     const total = await page.locator('.card, .border.rounded.p-3').count();
-    expect(total, `${url} rendered no cards, so this measurement proves nothing`).toBeGreaterThan(0);
+    if (opts.always) {
+      // Non-vacuity: this page has cards whatever the data says, so none means it did
+      // not render -- an error page measures clean and tells you nothing.
+      expect(total, `${url} rendered no cards, so this measurement proves nothing`).toBeGreaterThan(0);
+    } else if (total === 0) {
+      console.log(`      note: ${url} has no cards right now (empty state), nothing measured`);
+    }
 
     const detail = cards.map((c) => `"${c.label}" ${c.slack}px empty in ${c.height}px`).join('; ');
     expect(cards.length, `cards that are mostly air on ${url}: ${detail}`).toBe(0);
