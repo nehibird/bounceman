@@ -87,7 +87,10 @@
   --bm-state-active-bg:    var(--bm-accent-tint);
   --bm-state-active-fg:    var(--bm-accent-text);
   --bm-state-done-bg:      var(--bm-n-50);
-  --bm-state-done-fg:      var(--bm-n-500);
+  /* R6: was n-500, which is 4.23:1 on n-50 -- a fail that survived P2-15 because the
+     contrast run had no completed booking to render. n-600 is 6.62:1 light, 7.65:1
+     dark. Drives .badge-completed and .bk-done. */
+  --bm-state-done-fg:      var(--bm-n-600);
   --bm-state-void-bg:      var(--bm-n-50);
   --bm-state-void-fg:      var(--bm-fb-bad);
 
@@ -781,7 +784,10 @@ a:focus-visible .stat-card {
    Without this the title inherits the accent link colour and every event in the
    month reads the same orange whatever its status. */
 .fc .fc-daygrid-dot-event .fc-event-title { color: var(--bm-n-800); font-weight: 700; }
-.fc .fc-daygrid-dot-event .fc-event-time  { color: var(--bm-n-500); }
+/* n-500 here is 4.23:1 against the today cell's n-50 background -- the one day a
+   month where this text does not sit on the card surface. R3 introduced it; R6's
+   seeded calendar is what made it visible. */
+.fc .fc-daygrid-dot-event .fc-event-time  { color: var(--bm-n-600); }
 .fc .fc-daygrid-dot-event:hover { background: var(--bm-n-50); }
 
 /* ---- R7: the toolbar joins the button system ----------------------------

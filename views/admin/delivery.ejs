@@ -14,8 +14,10 @@
   .stop-n { flex:0 0 64px; background:var(--bm-n-50); display:flex; flex-direction:column;
     align-items:center; justify-content:center; font-weight:800; font-size:24px;
     color:var(--bm-n-600); }
+  /* R6: was n-400, 2.68:1 on this chip. The 10px size is under the 12px floor too,
+     which is R13's business, not this item's. */
   .stop-n small { font-size:10px; font-weight:600; letter-spacing:.08em;
-    text-transform:uppercase; color:var(--bm-n-400); }
+    text-transform:uppercase; color:var(--bm-n-600); }
   .stop-body { flex:1 1 auto; padding:var(--bm-space-4); min-width:0; }
   .stop-top { display:flex; justify-content:space-between; align-items:flex-start;
     flex-wrap:wrap; gap:var(--bm-space-3); margin-bottom:var(--bm-space-3); }
@@ -32,7 +34,10 @@
     padding:3px 10px; border-radius:var(--bm-radius-pill); }
   .flag-bad  { background:var(--bm-state-void-bg); color:var(--bm-fb-bad); }
   .flag-ok   { background:var(--bm-state-done-bg); color:var(--bm-n-500); }
-  .flag-warn { background:var(--bm-state-pending-bg); color:var(--bm-fb-warn); }
+  /* R6: fb-warn on the pending bed is 4.06:1. The same brown on the card surface is
+     5.18:1, and a bordered chip reads as a flag just as well as a filled one. */
+  .flag-warn { background:var(--bm-n-0); border:1px solid var(--bm-fb-warn);
+    color:var(--bm-fb-warn); }
   .stop-item { display:inline-block; background:var(--bm-n-50); border:1px solid var(--bm-n-100);
     color:var(--bm-n-700); font-size:12px; font-weight:600; padding:3px 10px;
     border-radius:var(--bm-radius-pill); margin:2px 4px 2px 0; }
@@ -61,11 +66,11 @@
         <span>${stops.length === 1 ? 'delivery' : 'deliveries'}</span>
       </div>
       <div class="today-fig">
-        <b style="color:${day.toCollect > 0 ? 'var(--bm-money-in)' : 'var(--bm-n-400)'}">$${day.toCollectLabel}</b>
+        <b style="color:${day.toCollect > 0 ? 'var(--bm-money-in)' : 'var(--bm-n-500)'}">$${day.toCollectLabel}</b>
         <span>to collect at delivery</span>
       </div>
       <div class="today-fig">
-        <b style="color:${day.unsigned > 0 ? 'var(--bm-fb-bad)' : 'var(--bm-n-400)'}">${day.unsigned}</b>
+        <b style="color:${day.unsigned > 0 ? 'var(--bm-fb-bad)' : 'var(--bm-n-500)'}">${day.unsigned}</b>
         <span>${day.unsigned === 1 ? 'contract unsigned' : 'contracts unsigned'}</span>
       </div>
     </div>` : ''}
