@@ -38,3 +38,4 @@ docs
 # attack surface the same shape -- same reasoning as tests/ and docs/ above.
 ci
 a11y
+layout

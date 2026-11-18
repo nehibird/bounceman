@@ -233,7 +233,11 @@ ${unsignedContracts.length ? `
             const stale = a.status && a.status !== 'ok';
             return `
             <div class="col-md-4">
-              <div class="border rounded p-3 h-100">
+              <!-- R8: no h-100. The Stripe tile carries a sparkline and three payouts and
+                   is naturally much taller; matching the plain account tiles to it gave
+                   each of them ~150px of nothing. They are peer objects, so they sit
+                   top-aligned at their own heights instead. -->
+              <div class="border rounded p-3">
                 <div class="d-flex justify-content-between align-items-start mb-1">
                   <span class="fw-semibold">${a.name}</span>
                   ${stale ? `<span class="badge bg-warning text-dark">${a.status}</span>` : ''}
@@ -246,7 +250,7 @@ ${unsignedContracts.length ? `
           }).join('')}
           ${stripePayouts ? `
           <div class="col-md-4">
-            <div class="border rounded p-3 h-100" style="border-color:#635bff !important">
+            <div class="border rounded p-3" style="border-color:#635bff !important">
               <div class="d-flex justify-content-between align-items-start mb-1">
                 <span class="fw-semibold"><svg class="bm-i me-1" style="color:#635bff" aria-hidden="true"><use href="#i-stripe-s"/></svg> Stripe Payouts</span>
                 ${stripePayouts.interval ? '<span class="badge bg-light text-body text-capitalize">' + stripePayouts.interval + '</span>' : ''}
@@ -264,10 +268,18 @@ ${unsignedContracts.length ? `
   </div>
 </div>
 
-<!-- Analytics Row 1: Financial Health + Pipeline + CC Debt -->
+<!-- Analytics Row 1: Financial Health + Pipeline + CC Debt.
+     R8. These were three equal columns, all h-100, so Pipeline and Credit Card Debt were
+     each stretched to Financial Health's height: about 470px of card holding three lines
+     of content. Two enormous voids, side by side, and the most visible thing on the page
+     that nobody had decided to put there.
+     Financial Health is genuinely a tall card -- a figure, a progress bar, a three-cell
+     table, a break-even row. The other two are each ONE NUMBER. So one wide column for
+     the tall card, and the two short ones stacked in a narrow column beside it, each at
+     its own height. Nothing is stretched to match anything. -->
 <div class="row g-4 mb-4">
-  <div class="col-md-4">
-    <div class="card h-100">
+  <div class="col-md-7">
+    <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Financial Health</div>
       <div class="card-body">
         <div class="text-center mb-3">
@@ -342,24 +354,22 @@ ${unsignedContracts.length ? `
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card h-100">
+  <div class="col-md-5 d-flex flex-column gap-4">
+    <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-filter"/></svg>Confirmed Pipeline</div>
-      <div class="card-body text-center d-flex flex-column justify-content-center">
+      <div class="card-body text-center">
         <div class="text-muted small mb-1">Upcoming Booking Revenue</div>
         <div class="fs-2 fw-bold text-primary mb-3">$${parseFloat(analytics.pipeline.r).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
         <div class="badge bg-light text-dark fs-6 mb-3">${analytics.pipeline.c} upcoming event${analytics.pipeline.c !== 1 ? 's' : ''}</div>
         <a href="/admin/bookings" class="btn btn-sm btn-outline-primary">View All Bookings</a>
       </div>
     </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card h-100">
+    <div class="card">
       <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-credit-card"/></svg>Credit Card Debt</span>
         <button class="btn btn-sm btn-link p-0 text-muted" data-bs-toggle="collapse" data-bs-target="#ccDebtEdit"><svg class="bm-i bm-i-xs" aria-hidden="true"><use href="#i-pencil-alt"/></svg></button>
       </div>
-      <div class="card-body text-center d-flex flex-column justify-content-center">
+      <div class="card-body text-center">
         <div class="text-muted small mb-1">Chase Ink — ending 7513</div>
         <div class="fs-2 fw-bold text-danger mb-2">$${parseFloat(analytics.creditCardDebt).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         <div class="text-muted small mb-3">as of last update</div>
