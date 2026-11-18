@@ -220,7 +220,10 @@ a:hover { color: var(--bm-accent-hover); }
   color: var(--bm-chrome-fg);
   border-left-color: var(--bm-accent);
 }
-.admin-sidebar nav a i { width: 20px; text-align: center; }
+/* A 20px column so the nav labels share a left edge. Width only: .bm-i keeps
+   height: 1em, and an SVG's default preserveAspectRatio centres the glyph in the
+   wider box by itself, which is what text-align used to do for the font glyph. */
+.admin-sidebar nav a .bm-i { width: 20px; }
 .admin-sidebar nav .divider {
   height: 1px; background: rgba(255, 255, 255, 0.1);
   margin: var(--bm-space-2) var(--bm-space-5);
@@ -469,7 +472,7 @@ a:focus-visible .stat-card {
   color: var(--bm-n-700); text-decoration: none;
 }
 .bm-usermenu-panel a:hover { background: var(--bm-n-25); color: var(--bm-n-900); }
-.bm-usermenu-panel a i { width: 16px; text-align: center; color: var(--bm-n-400); }
+.bm-usermenu-panel a .bm-i { width: 16px; color: var(--bm-n-400); }
 .bm-theme-btn {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 8px 11px; border: none; background: none; border-radius: var(--bm-radius-sm);
@@ -477,9 +480,9 @@ a:focus-visible .stat-card {
   text-align: left; cursor: pointer; font-family: var(--bm-font-body);
 }
 .bm-theme-btn:hover { background: var(--bm-n-25); color: var(--bm-n-900); }
-.bm-theme-btn i { width: 16px; text-align: center; color: var(--bm-n-400); }
+.bm-theme-btn .bm-i { width: 16px; color: var(--bm-n-400); }
 .bm-usermenu-panel a.is-leave { color: var(--bm-fb-bad); }
-.bm-usermenu-panel a.is-leave i { color: var(--bm-fb-bad); }
+.bm-usermenu-panel a.is-leave .bm-i { color: var(--bm-fb-bad); }
 @media (max-width: 575px) { .bm-usermenu-btn span, .bm-usermenu-btn { max-width: 42vw; } }
 
 /* ============================ dialog =====================================
