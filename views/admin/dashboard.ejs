@@ -183,12 +183,20 @@ ${unsignedContracts.length ? `
             </div>
             <div class="col-md-4">
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
-                Sales Tax Owed
+                <!-- R11. This read "SALES TAX OWED  $-350.72" in green: a negative
+                     number, with a minus sign, under the word OWED, coloured as good
+                     news. It takes a beat to work out that it means the state owes YOU
+                     $350.72. The label carries the direction now and the figure is
+                     always positive, so there is nothing to decode.
+                     Colour: red when a bill is coming, because that is money leaving.
+                     Overpaid is NOT green -- green is money in, and an overpayment is a
+                     receivable from the OTC, not cash. It reads neutral. -->
+                ${parseFloat(analytics.taxOwed) < 0 ? 'Sales Tax Overpaid' : 'Sales Tax Owed'}
                 <svg class="bm-i ms-1" style="opacity:.5" title="Tax collected on events that have already happened, less what has been remitted to the OTC. Updates automatically the morning after an OkTAP payment clears your bank." aria-hidden="true"><use href="#i-circle-info"/></svg>
               </div>
-              <div class="fs-2 fw-bold ${analytics.taxOwed > 0 ? 'text-danger' : 'text-success'}">$${parseFloat(analytics.taxOwed).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+              <div class="fs-2 fw-bold ${parseFloat(analytics.taxOwed) > 0 ? 'text-danger' : ''}">$${Math.abs(parseFloat(analytics.taxOwed)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">
-                $${parseFloat(analytics.taxCollectedDelivered).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} collected &minus; $${parseFloat(analytics.taxRemitted).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} remitted${analytics.taxNotYetDue > 0 ? '<br>+ $' + parseFloat(analytics.taxNotYetDue).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' collected, not due yet' : ''}
+                ${parseFloat(analytics.taxOwed) < 0 ? 'Remitted more than was collected &mdash; the OTC is holding this.<br>' : ''}$${parseFloat(analytics.taxCollectedDelivered).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} collected &minus; $${parseFloat(analytics.taxRemitted).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} remitted${analytics.taxNotYetDue > 0 ? '<br>+ $' + parseFloat(analytics.taxNotYetDue).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' collected, not due yet' : ''}
               </div>
             </div>
             <div class="col-md-4">
@@ -233,9 +241,17 @@ ${unsignedContracts.length ? `
           ${(bankAccounts || []).map(a => {
             const isCredit = a.type === 'credit';
             const fmt = (v, d=2) => v == null ? '—' : '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
-            const sub = isCredit
-              ? (a.available == null ? '' : 'Avail. credit ' + fmt(a.available, 0))
-              : (a.available == null ? '' : 'Available ' + fmt(a.available));
+            // R11. This said "Avail. credit $-73", which means the card is SEVENTY-THREE
+            // DOLLARS OVER ITS LIMIT -- the most actionable fact in this panel, rendered
+            // as a minus sign in 13px grey under a 24px balance. A negative available
+            // balance is not a small number, it is a different situation, so it says so
+            // and takes the colour money leaving gets.
+            const overLimit = isCredit && a.available != null && parseFloat(a.available) < 0;
+            const sub = overLimit
+              ? '<span class="text-danger fw-semibold">Over limit by ' + fmt(Math.abs(parseFloat(a.available)), 0) + '</span>'
+              : isCredit
+                ? (a.available == null ? '' : 'Avail. credit ' + fmt(a.available, 0))
+                : (a.available == null ? '' : 'Available ' + fmt(a.available));
             const synced = a.last_synced ? new Date(a.last_synced).toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'never';
             const stale = a.status && a.status !== 'ok';
             return `
