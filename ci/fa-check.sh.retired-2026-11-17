@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Which Font Awesome classes used in the admin actually exist in the FREE build the
+# browser loads? Pro-only names are silently blank -- that is the P0-4 bug. This asks
+# the real stylesheet rather than trusting anyone's memory of the icon catalogue.
+set -uo pipefail
+cd /opt/bounceman
+
+CSS=/tmp/fa-all.css
+URL=$(grep -oE 'https://cdnjs[^"]*font-awesome[^"]*all\.min\.css' views/layouts/admin.ejs | head -1)
+echo "stylesheet: $URL"
+curl -s --max-time 40 "$URL" -o "$CSS" || { echo "could not fetch stylesheet"; exit 1; }
+echo "bytes: $(wc -c < "$CSS")"
+echo
+
+# Every fa-* class used anywhere in the admin, with where it came from.
+grep -rhoE 'fa-[a-z0-9-]+' views/layouts/admin.ejs views/admin/ 2>/dev/null \
+  | grep -vE '^fa-(solid|regular|brands|fw|lg|spin|pulse|2x|3x|4x|5x|xs|sm|beat|flip|shake|bounce|stack|inverse|border|pull-left|pull-right|rotate|spin-pulse)$' \
+  | sort -u > /tmp/fa-used.txt
+
+echo "=== classes used in the admin that the FREE build does NOT define ==="
+MISSING=0
+while read -r cls; do
+  # A usable icon has a ::before content rule somewhere in the free CSS.
+  if ! grep -q "\.${cls}:before" "$CSS" && ! grep -q "\.${cls}::before" "$CSS"; then
+    WHERE=$(grep -rlE "\"[^\"]*\b${cls}\b|'[^']*\b${cls}\b| ${cls}[ \"']" views/layouts/admin.ejs views/admin/ 2>/dev/null | tr '\n' ' ')
+    echo "MISSING  $cls   <- $WHERE"
+    MISSING=$((MISSING+1))
+  fi
+done < /tmp/fa-used.txt
+[ "$MISSING" = "0" ] && echo "(none)"
+echo
+echo "=== nav specifically ==="
+NAVBAD=0
+for cls in $(sed -n '/<nav/,/<\/nav>/p' views/layouts/admin.ejs | grep -oE 'fa-[a-z0-9-]+' | sort -u); do
+  if ! grep -q "\.${cls}:before" "$CSS"; then echo "NAV MISSING  $cls"; NAVBAD=$((NAVBAD+1)); fi
+done
+[ "$NAVBAD" = "0" ] && echo "every nav glyph resolves"
+echo
+echo "FA_MISSING_TOTAL=$MISSING  FA_MISSING_NAV=$NAVBAD"
+rm -f "$CSS" /tmp/fa-used.txt
+retired by P2-10. It fetched the Font Awesome CDN stylesheet and checked that every
+fa-* class the admin used was defined in the FREE build. There is no CDN stylesheet
+any more. verify-icons.sh asks the sprite the equivalent question, and asks it of
+every rendered page rather than of the source.
