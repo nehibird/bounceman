@@ -169,6 +169,35 @@ document.addEventListener('DOMContentLoaded', function() {
       if (info.event.url) { info.jsEvent.preventDefault(); window.location.href = info.event.url; }
     },
     height: 'auto',
+
+    // R4. The week and day views ran 12am to 11pm, so you scrolled past nine empty
+    // night hours to reach a 9am delivery -- about three quarters of the view was
+    // dead. The floor is 7am because the earliest booking in the database starts at
+    // 8am, so nothing is hidden by it.
+    //
+    // The ceiling stays at midnight, and that is the deliberate half. 21:00 was the
+    // obvious choice and it would have CLIPPED three real bookings -- 2026-07-03 to
+    // 10pm, 2026-07-24 to 9:30pm, and 2026-07-04 running to 11:59pm, which would have
+    // appeared to end at nine. A view that silently shortens a booking is worse than
+    // one with empty rows in it. verify-caltime.sh now fails if any booking falls
+    // outside these bounds, so the next late event forces the decision rather than
+    // disappearing.
+    slotMinTime: '07:00:00',
+    slotMaxTime: '24:00:00',
+
+    views: {
+      // Only the time-grid views. FullCalendar's timeGrid default omits the meridiem
+      // entirely -- an event block read "9:00 - 1:00" -- which is exactly the
+      // ambiguity the am/pm rule exists to prevent.
+      //
+      // The month view is left alone on purpose: it already renders "9a" and "1:30p",
+      // which carry a meridiem, and widening those to "9:00am" would eat the space
+      // R5 just won for the unit name.
+      timeGrid: {
+        eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'lowercase' }
+      }
+    },
+
     navLinks: true,
     editable: false,
     dayMaxEvents: true,
