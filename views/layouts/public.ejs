@@ -120,7 +120,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
   <style>
     /* Prevent small (Bootstrap gutter) horizontal overflow on mobile — no page should scroll sideways.
@@ -534,15 +533,33 @@
   </style>
 </head>
 <body>
+<%- include('../partials/icon-sprite-public') %>
+<style>
+  /* The customer site drew about a hundred small shapes by downloading ~70KB of
+     stylesheet and two webfonts. Same shapes, same Font Awesome release, inlined once
+     as <symbol> definitions. */
+  .bm-i { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; flex-shrink: 0; }
+  .bm-i-xs { width: .75em; height: .75em; }
+  .bm-i-sm { width: .875em; height: .875em; }
+  .bm-i-lg { width: 1.25em; height: 1.25em; vertical-align: -0.2em; }
+  .bm-i-2x { width: 2em; height: 2em; }
+  .bm-i-3x { width: 3em; height: 3em; }
+  .bm-i-4x { width: 4em; height: 4em; }
+  .bm-i-5x { width: 5em; height: 5em; }
+  .bm-i-fw { width: 1.25em; }
+  .bm-i-spin { animation: bm-i-spin 2s linear infinite; }
+  @keyframes bm-i-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .bm-i-spin { animation: none; } }
+</style>
   <!-- Top Bar -->
   <div class="top-bar d-none d-md-block">
     <div class="container d-flex justify-content-between">
-      <span><i class="fas fa-map-marker-alt me-2"></i>Serving Tonkawa, Ponca City, Stillwater & surrounding areas</span>
+      <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-map-marker-alt"/></svg>Serving Tonkawa, Ponca City, Stillwater & surrounding areas</span>
       <div>
         <% if (settings.company_phone) { %>
-          <a href="tel:<%= settings.company_phone %>" class="me-3"><i class="fas fa-phone me-1"></i><%= settings.company_phone %></a>
+          <a href="tel:<%= settings.company_phone %>" class="me-3"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-phone"/></svg><%= settings.company_phone %></a>
         <% } %>
-        <a href="mailto:<%= settings.company_email %>"><i class="fas fa-envelope me-1"></i><%= settings.company_email %></a>
+        <a href="mailto:<%= settings.company_email %>"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-envelope"/></svg><%= settings.company_email %></a>
       </div>
     </div>
   </div>
@@ -564,7 +581,7 @@
           <li class="nav-item"><a class="nav-link <%= locals.page === 'about' ? 'active' : '' %>" href="/about">About</a></li>
           <li class="nav-item"><a class="nav-link <%= locals.page === 'contact' ? 'active' : '' %>" href="/contact">Contact</a></li>
         </ul>
-        <a href="/booking" class="btn btn-book-now"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
+        <a href="/booking" class="btn btn-book-now"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Book Now</a>
       </div>
     </nav>
   </header>
@@ -580,7 +597,7 @@
     <div class="container">
       <h2>Ready to Bounce?</h2>
       <p class="mb-4" style="font-size:18px">Book your party equipment today and make your event unforgettable!</p>
-      <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn btn-cta"><i class="fas fa-calendar-check me-2"></i>Book Your Rental</a>
+      <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn btn-cta"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Book Your Rental</a>
     </div>
   </section>
   <% } %>
@@ -596,8 +613,8 @@
           <%# on the page that sends someone away mid-checkout. %>
           <% if (!(typeof isBookingFlow !== 'undefined' && isBookingFlow) && (settings.facebook_url || settings.instagram_url)) { %>
           <div class="social-links">
-            <% if (settings.facebook_url) { %><a href="<%= settings.facebook_url %>" target="_blank"><i class="fab fa-facebook-f"></i></a><% } %>
-            <% if (settings.instagram_url) { %><a href="<%= settings.instagram_url %>" target="_blank"><i class="fab fa-instagram"></i></a><% } %>
+            <% if (settings.facebook_url) { %><a href="<%= settings.facebook_url %>" target="_blank"><svg class="bm-i" aria-hidden="true"><use href="#i-facebook-f"/></svg></a><% } %>
+            <% if (settings.instagram_url) { %><a href="<%= settings.instagram_url %>" target="_blank"><svg class="bm-i" aria-hidden="true"><use href="#i-instagram"/></svg></a><% } %>
           </div>
           <% } %>
         </div>
@@ -629,12 +646,12 @@
           <h5>Contact Us</h5>
           <ul class="list-unstyled" style="opacity:0.7">
             <% if (settings.company_phone) { %>
-              <li class="mb-2"><i class="fas fa-phone me-2"></i><%= settings.company_phone %></li>
+              <li class="mb-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-phone"/></svg><%= settings.company_phone %></li>
             <% } %>
-            <li class="mb-2"><i class="fas fa-envelope me-2"></i><%= settings.company_email %></li>
-            <li class="mb-2"><i class="fas fa-map-marker-alt me-2"></i>Tonkawa, OK 74653</li>
-            <li class="mb-2"><i class="fas fa-clock me-2"></i>Outdoor season April–November &middot; indoor rentals year-round</li>
-            <li class="mb-2"><i class="fas fa-calendar-day me-2"></i>Open Sundays &mdash; full-day rentals only</li>
+            <li class="mb-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-envelope"/></svg><%= settings.company_email %></li>
+            <li class="mb-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-map-marker-alt"/></svg>Tonkawa, OK 74653</li>
+            <li class="mb-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-clock"/></svg>Outdoor season April–November &middot; indoor rentals year-round</li>
+            <li class="mb-2"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-day"/></svg>Open Sundays &mdash; full-day rentals only</li>
           </ul>
         </div>
       </div>
@@ -658,10 +675,10 @@
 <!-- Sticky Mobile CTA -->
 <div id="stickyCta" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:white;box-shadow:0 -4px 20px rgba(0,0,0,0.15);padding:10px 16px;border-radius:16px 16px 0 0">
   <div style="display:flex;gap:10px;align-items:center;max-width:600px;margin:0 auto">
-    <a href="tel:5803089288" style="flex:0 0 auto;width:48px;height:48px;border-radius:50%;background:var(--bm-blue,#004E89);color:white;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px"><i class="fas fa-phone"></i></a>
+    <a href="tel:5803089288" style="flex:0 0 auto;width:48px;height:48px;border-radius:50%;background:var(--bm-blue,#004E89);color:white;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px"><svg class="bm-i" aria-hidden="true"><use href="#i-phone"/></svg></a>
     <%# .btn-book-now supplies the gradient + ink text (white-on-orange was 3.07-3.50:1); only layout is inline so colour is styled centrally. %>
     <%# bookHref: a page (equipment-detail) may pass '/booking?preselect=<id>' so the big thumb-sized bar carries the unit like the in-page button does (it used to drop it: reader of Blue Crush landed on a generic /booking). Anything else falls back to plain /booking. %>
-    <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn-book-now" style="flex:1;display:block;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><i class="fas fa-calendar-check me-2"></i>Book Now</a>
+    <a href="<%= (typeof bookHref === 'string' && bookHref.indexOf('/booking') === 0) ? bookHref : '/booking' %>" class="btn-book-now" style="flex:1;display:block;text-align:center;padding:14px 20px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:0.5px"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Book Now</a>
   </div>
 </div>
 <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;max-width:400px"></div>
@@ -669,11 +686,16 @@
 function showToast(message, type) {
   type = type || 'error';
   var colors = { error: '#EF476F', warning: '#f59e0b', success: '#059669', info: '#118AB2' };
-  var icons = { error: 'fa-exclamation-circle', warning: 'fa-exclamation-triangle', success: 'fa-check-circle', info: 'fa-info-circle' };
+  // Bare sprite names. These were class fragments ('fa-check-circle') back when the
+  // family and the icon had to travel together in a class attribute.
+  // Sprite ids, which are the names the views used -- the FA5 spellings. Not the FA6
+  // names: #i-circle-exclamation and #i-circle-check are not in this sprite, and a
+  // <use> pointing at a symbol that is not there draws nothing at all.
+  var icons = { error: 'exclamation-circle', warning: 'exclamation-triangle', success: 'check-circle', info: 'info-circle' };
   var container = document.getElementById('toast-container');
   var toast = document.createElement('div');
   toast.style.cssText = 'background:' + (colors[type] || colors.error) + ';color:white;padding:16px 20px;border-radius:12px;margin-bottom:10px;box-shadow:0 4px 20px rgba(0,0,0,0.2);display:flex;align-items:flex-start;gap:10px;animation:slideIn 0.3s ease;font-size:14px;line-height:1.4';
-  toast.innerHTML = '<i class="fas ' + (icons[type] || icons.error) + '" style="margin-top:2px"></i><div style="flex:1">' + message + '</div><span class="toast-close" style="cursor:pointer;font-size:18px;line-height:1;opacity:0.8">&times;</span>';
+  toast.innerHTML = '<svg class="bm-i" style="margin-top:2px" aria-hidden="true"><use href="#i-' + (icons[type] || icons.error) + '"/></svg><div style="flex:1">' + message + '</div><span class="toast-close" style="cursor:pointer;font-size:18px;line-height:1;opacity:0.8">&times;</span>';
   container.appendChild(toast);
   setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(function() { toast.remove(); }, 300); }, 6000);
 }

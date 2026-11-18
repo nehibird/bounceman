@@ -140,7 +140,7 @@
     <div class="section-title">
       <h1>Book Your Bounce House Rental</h1>
       <p class="h5 fw-normal text-muted">When is your event? Pick a date and time to see what's available</p>
-      ${ typeof preselectItem !== 'undefined' && preselectItem ? '<div id="bookingChip" style="display:inline-flex;align-items:center;gap:8px;margin-top:6px;padding:8px 16px;border-radius:999px;background:#FFF3E8;border:1px solid #E8833A;color:#15263A;font-size:15px;font-weight:600"><i class="fas fa-check-circle" style="color:#E8833A"></i><span>Booking: ' + esc(preselectItem.name) + (preselectItem.price ? ' &mdash; Full Day $' + preselectItem.price.toFixed(0) : '') + '</span></div>' : '' }
+      ${ typeof preselectItem !== 'undefined' && preselectItem ? '<div id="bookingChip" style="display:inline-flex;align-items:center;gap:8px;margin-top:6px;padding:8px 16px;border-radius:999px;background:#FFF3E8;border:1px solid #E8833A;color:#15263A;font-size:15px;font-weight:600"><svg class="bm-i" style="color:#E8833A" aria-hidden="true"><use href="#i-check-circle"/></svg><span>Booking: ' + esc(preselectItem.name) + (preselectItem.price ? ' &mdash; Full Day $' + preselectItem.price.toFixed(0) : '') + '</span></div>' : '' }
     </div>
 
     <div class="row justify-content-center">
@@ -149,7 +149,7 @@
 
           <!-- 1. Date -->
           <div class="date-card mb-4">
-            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Event Date</h5>
+            <h5 style="color:var(--bm-blue);font-weight:700;" class="mb-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-alt"/></svg>Event Date</h5>
             <div class="date-card-calendar"><div id="datePicker"></div></div>
             <!-- Keyboard / screen-reader path. Inline flatpickr days are tabindex=-1, so Tab never
                  reached the calendar and the funnel was a WCAG 2.1.1 dead end without a mouse.
@@ -164,7 +164,7 @@
 
           <!-- 2. Duration -->
           <div class="date-card mb-4" id="durationCard">
-            <h6 class="fw-bold mb-3"><i class="fas fa-clock me-2"></i>How Long Do You Need It?</h6>
+            <h6 class="fw-bold mb-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-clock"/></svg>How Long Do You Need It?</h6>
             <div class="row g-3" role="group" aria-label="How long do you need it?">
               <div class="col-4">
                 <button type="button" class="btn btn-outline-primary w-100 text-center dur-btn" id="durHalfDay" aria-pressed="false">
@@ -186,40 +186,40 @@
               </div>
             </div>
             <div id="fulldayNote" style="margin-top:12px;font-size:13px;color:#004E89;display:block;">
-              <i class="fas fa-info-circle me-1"></i> 11 AM – 7 PM — we set up before 11.
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-info-circle"/></svg> 11 AM – 7 PM — we set up before 11.
             </div>
 
             <div id="sundayNote" aria-live="polite" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
-              <i class="fas fa-info-circle me-1"></i> Sundays are <strong>full-day only</strong>. We usually drop off
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-info-circle"/></svg> Sundays are <strong>full-day only</strong>. We usually drop off
               <strong>Saturday evening</strong> and pick up <strong>Monday morning</strong>, so you get the overnight
               free. Because it stays out overnight, Sunday setups can't be at a park or other public space.
               <a href="#" id="sundayTermsLink" style="color:#004E89;text-decoration:underline">See the details</a>
             </div>
 
             <div id="holidayNote" aria-live="polite" style="display:none;margin-top:12px;background:#eef3f8;border-radius:10px;padding:12px;font-size:14px;color:#004E89">
-              <i class="fas fa-info-circle me-1"></i> Memorial Day and Labor Day are <strong>full-day only</strong> — no half-day or multi-day on these holidays.
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-info-circle"/></svg> Memorial Day and Labor Day are <strong>full-day only</strong> — no half-day or multi-day on these holidays.
             </div>
 
             <div id="weekdaySpecialNote" aria-live="polite" style="display:none;margin-top:12px;background:#FFF3E8;border:1px solid #E8833A;border-radius:10px;padding:12px;font-size:14px;color:#15263A">
-              <i class="fas fa-sun me-1" style="color:#E8833A"></i> <strong>${settings.weekday_special_label || 'Weekday Special'}!</strong> On this weekday you get a <strong>Full Day for the Half-Day price</strong> — see your deal on the next step. 🎉
+              <svg class="bm-i me-1" style="color:#E8833A" aria-hidden="true"><use href="#i-sun"/></svg> <strong>${settings.weekday_special_label || 'Weekday Special'}!</strong> On this weekday you get a <strong>Full Day for the Half-Day price</strong> — see your deal on the next step. 🎉
             </div>
           </div>
 
           <!-- 2b. How many days? (multi-day only) -->
           <div class="date-card mb-4" id="daysCard" style="display:none;">
-            <h6 class="fw-bold mb-3"><i class="fas fa-calendar-week me-2"></i>How Many Days?</h6>
+            <h6 class="fw-bold mb-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-week"/></svg>How Many Days?</h6>
             <p class="text-muted small mb-3">Keep it for the whole weekend or event — you'll see each unit's multi-day total on the next step.</p>
             <div class="day-stepper">
               <button type="button" class="day-step-btn" id="dayMinus" aria-label="Fewer days">&minus;</button>
               <div class="day-count"><span id="dayCountNum">2</span> <span class="day-count-unit">days</span></div>
               <button type="button" class="day-step-btn" id="dayPlus" aria-label="More days">+</button>
             </div>
-            <div class="text-muted small mt-3" id="daysHint"><i class="fas fa-info-circle me-1"></i>From 2 up to 7 days.</div>
+            <div class="text-muted small mt-3" id="daysHint"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-info-circle"/></svg>From 2 up to 7 days.</div>
           </div>
 
           <!-- 3. Ready-by time (half-day only) -->
           <div class="date-card mb-4" id="timeCard" style="display:none;">
-            <h6 class="fw-bold mb-3"><i class="fas fa-sun me-2"></i>What time do you want to start?</h6>
+            <h6 class="fw-bold mb-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-sun"/></svg>What time do you want to start?</h6>
             <p class="text-muted small mb-3">Pick when your 4 hours begin.</p>
             <select id="readyBySelect" class="readyby-select">
               <option value="">Select a time...</option>
@@ -236,7 +236,7 @@
 
           <div class="text-center">
             <button type="submit" class="btn btn-book-now px-5 py-3">
-              See Available Equipment <i class="fas fa-arrow-right ms-2"></i>
+              See Available Equipment <svg class="bm-i ms-2" aria-hidden="true"><use href="#i-arrow-right"/></svg>
             </button>
           </div>
         </form>
@@ -262,14 +262,14 @@
     <div class="modal-content" style="border:none;border-radius:16px;overflow:hidden">
       <div class="modal-header" style="background:var(--bm-blue,#004E89);color:#fff;border:none;padding:18px 22px">
         <h5 class="modal-title" id="sundayModalLabel" style="font-weight:700">
-          <i class="fas fa-sun me-2"></i>About Sunday rentals
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-sun"/></svg>About Sunday rentals
         </h5>
       </div>
       <div class="modal-body" style="padding:22px">
 
         <div style="background:#FFF3E8;border:1px solid #E8833A;border-radius:12px;padding:14px 16px;margin-bottom:18px">
           <div style="font-weight:700;color:#15263A;font-size:16px;margin-bottom:4px">
-            <i class="fas fa-gift me-2" style="color:#E8833A"></i>You get a free overnight
+            <svg class="bm-i me-2" style="color:#E8833A" aria-hidden="true"><use href="#i-gift"/></svg>You get a free overnight
           </div>
           <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
             Sunday rentals are usually dropped off <strong>Saturday evening</strong> and picked up
@@ -279,7 +279,7 @@
         </div>
 
         <div style="display:flex;gap:12px;margin-bottom:14px">
-          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-ban"></i></div>
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><svg class="bm-i" aria-hidden="true"><use href="#i-ban"/></svg></div>
           <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
             <strong style="color:#15263A">No parks or public spaces on Sundays.</strong>
             Because the unit stays out overnight, Sunday setups have to be at a home, indoors,
@@ -288,7 +288,7 @@
         </div>
 
         <div style="display:flex;gap:12px;margin-bottom:14px">
-          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-clock"></i></div>
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><svg class="bm-i" aria-hidden="true"><use href="#i-clock"/></svg></div>
           <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
             <strong style="color:#15263A">Full day only.</strong>
             We don't do half days on Sundays.
@@ -296,7 +296,7 @@
         </div>
 
         <div style="display:flex;gap:12px">
-          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><i class="fas fa-house-chimney"></i></div>
+          <div style="flex:0 0 22px;text-align:center;color:#E8833A"><svg class="bm-i" aria-hidden="true"><use href="#i-house-chimney"/></svg></div>
           <div style="font-size:14px;color:#4a4a4a;line-height:1.55">
             <strong style="color:#15263A">Please leave it set up overnight.</strong>
             Keep it plugged in if you can, and make sure our crew can get to it Monday morning.

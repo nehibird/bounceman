@@ -43,17 +43,17 @@
     <!-- Progress Bar -->
     <div class="booking-progress">
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Select Items</span>
       </div>
       <div class="step-line completed"></div>
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Pick Date</span>
       </div>
       <div class="step-line completed"></div>
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Your Details</span>
       </div>
       <div class="step-line completed"></div>
@@ -76,7 +76,7 @@
 
           <!-- Line Items -->
           <div class="review-card">
-            <h5><i class="fas fa-box me-2"></i>Rental Items</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-box"/></svg>Rental Items</h5>
             ${lineItems.map(function(item) {
               return '<div class="line-item">' +
                 '<img src="' + esc(item.image || '/assets/images/placeholder-bounce.svg') + '" alt="' + esc(item.item_name) + '">' +
@@ -91,7 +91,7 @@
 
           <!-- Event Details -->
           <div class="review-card">
-            <h5><i class="fas fa-calendar me-2"></i>Event Details</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar"/></svg>Event Details</h5>
             <div class="review-row">
               <span class="label">Date</span>
               <span class="value">${esc(typeof fmtDate === 'function' ? fmtDate(event.event_date) : event.event_date)}</span>
@@ -117,7 +117,7 @@
             // "Sunday" otherwise reads as "gone Sunday night".
             return `
           <div class="review-card" style="border-left:4px solid #d77c42;background:#fdf7f3">
-            <h5 style="margin-bottom:8px"><i class="fas fa-sun me-2"></i>Sunday Rental &mdash; Free Overnight</h5>
+            <h5 style="margin-bottom:8px"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-sun"/></svg>Sunday Rental &mdash; Free Overnight</h5>
             <p style="margin:0;font-size:14px;color:#5a5a5a;line-height:1.55">
               Your rental is on a <strong>Sunday</strong>, so we usually drop off <strong>Saturday evening</strong> and
               pick up <strong>Monday morning</strong> &mdash; you keep it overnight at no extra charge. Please leave it
@@ -128,7 +128,7 @@
 
           <!-- Delivery Details -->
           <div class="review-card">
-            <h5><i class="fas fa-truck me-2"></i>Delivery Details</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-truck"/></svg>Delivery Details</h5>
             <div class="review-row">
               <span class="label">Address</span>
               <span class="value">${esc(delivery.delivery_address)}</span>
@@ -147,14 +147,14 @@
             </div>
             <div class="review-row">
               <span class="label">Power Available</span>
-              <span class="value">${delivery.power_available ? '<i class="fas fa-check-circle text-success"></i> Yes' : '<i class="fas fa-times-circle text-danger"></i> No'}</span>
+              <span class="value">${delivery.power_available ? '<svg class="bm-i text-success" aria-hidden="true"><use href="#i-check-circle"/></svg> Yes' : '<svg class="bm-i text-danger" aria-hidden="true"><use href="#i-times-circle"/></svg> No'}</span>
             </div>
             ${delivery.delivery_notes ? '<div class="review-row"><span class="label">Notes</span><span class="value">' + esc(delivery.delivery_notes) + '</span></div>' : ''}
           </div>
 
           <!-- Customer Details -->
           <div class="review-card">
-            <h5><i class="fas fa-user me-2"></i>Customer Details</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-user"/></svg>Customer Details</h5>
             <div class="review-row">
               <span class="label">Name</span>
               <span class="value">${esc(customer.first_name)} ${esc(customer.last_name)}</span>
@@ -174,7 +174,7 @@
              were the last thing on a long page. order-lg-last restores the original right-hand column at >=992px. -->
         <div class="col-lg-5 order-first order-lg-last">
           <div class="review-card" style="position:sticky;top:100px;">
-            <h5><i class="fas fa-receipt me-2"></i>Pricing Summary</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-receipt"/></svg>Pricing Summary</h5>
 
             <div class="price-breakdown">
               <div class="price-line">
@@ -185,11 +185,11 @@
                 <span>Delivery Fee</span>
                 <span>${parseFloat(pricing.delivery_fee) === 0 ? '<span class="text-success fw-bold">FREE</span>' : '$' + parseFloat(pricing.delivery_fee).toFixed(2)}</span>
               </div>
-              ${pricing.surface_fee && parseFloat(pricing.surface_fee) > 0 ? '<div class="price-line"><span><i class="fas fa-layer-group me-1"></i>Hard-surface / indoor setup (10%)</span><span>$' + parseFloat(pricing.surface_fee).toFixed(2) + '</span></div>' : ''}
+              ${pricing.surface_fee && parseFloat(pricing.surface_fee) > 0 ? '<div class="price-line"><span><svg class="bm-i me-1" aria-hidden="true"><use href="#i-layer-group"/></svg>Hard-surface / indoor setup (10%)</span><span>$' + parseFloat(pricing.surface_fee).toFixed(2) + '</span></div>' : ''}
               ${pricing.damage_waiver_fee ? '<div class="price-line"><span>Damage Waiver</span><span>$' + parseFloat(pricing.damage_waiver_fee).toFixed(2) + '</span></div>' : ''}
-              ${tax_exempt_claimed && parseFloat(pricing.tax_amount) === 0 ? '<div class="price-line" style="color:#2e7d32"><span><i class="fas fa-check-circle me-1"></i>Tax Exempt (pending verification)</span><span>$0.00</span></div>' : '<div class="price-line"><span>Tax (' + (parseFloat(pricing.tax_rate) * 100).toFixed(1) + '%)</span><span>$' + parseFloat(pricing.tax_amount).toFixed(2) + '</span></div>'}
-              ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><i class="fas fa-tag me-1"></i>Discount (' + esc(pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
-              ${pricing.free_extra_day && parseFloat(pricing.free_extra_day) > 0 ? '<div class="price-line discount"><span><i class="fas fa-gift me-1"></i>3+ Item Bonus — 1 Extra Day FREE</span><span>-$' + parseFloat(pricing.free_extra_day).toFixed(2) + '</span></div>' : ''}
+              ${tax_exempt_claimed && parseFloat(pricing.tax_amount) === 0 ? '<div class="price-line" style="color:#2e7d32"><span><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>Tax Exempt (pending verification)</span><span>$0.00</span></div>' : '<div class="price-line"><span>Tax (' + (parseFloat(pricing.tax_rate) * 100).toFixed(1) + '%)</span><span>$' + parseFloat(pricing.tax_amount).toFixed(2) + '</span></div>'}
+              ${pricing.discount_amount && parseFloat(pricing.discount_amount) > 0 ? '<div class="price-line discount"><span><svg class="bm-i me-1" aria-hidden="true"><use href="#i-tag"/></svg>Discount (' + esc(pricing.discount_code || '') + ')</span><span>-$' + parseFloat(pricing.discount_amount).toFixed(2) + '</span></div>' : ''}
+              ${pricing.free_extra_day && parseFloat(pricing.free_extra_day) > 0 ? '<div class="price-line discount"><span><svg class="bm-i me-1" aria-hidden="true"><use href="#i-gift"/></svg>3+ Item Bonus — 1 Extra Day FREE</span><span>-$' + parseFloat(pricing.free_extra_day).toFixed(2) + '</span></div>' : ''}
               <div class="price-line total">
                 <span>Total</span>
                 <span>$${parseFloat(pricing.total).toFixed(2)}</span>
@@ -248,27 +248,27 @@
             <input type="hidden" name="power_available" value="${esc(delivery.power_available || false)}">
 
             <div style="background:#fff3cd;border-radius:10px;padding:10px 14px;margin-top:16px;font-size:13px;color:#856404;text-align:center">
-              <i class="fas fa-exclamation-triangle me-1"></i>
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-exclamation-triangle"/></svg>
               Your deposit is non-refundable, but can be applied to a future date if you need to reschedule.
             </div>
 
             <button type="submit" class="btn btn-book-now w-100 mt-3" id="submitBtn" disabled style="font-size:16px;padding:14px;">
-              <i class="fas fa-signature me-2"></i>Sign Agreement &amp; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit
+              <svg class="bm-i me-2" aria-hidden="true"><use href="#i-signature"/></svg>Sign Agreement &amp; Pay $${parseFloat(pricing.deposit_amount).toFixed(2)} Deposit
             </button>
             <!-- The button is disabled until the box is ticked; tapping a disabled button gives no feedback, so say why. -->
             <p id="submitHint" class="text-center small mt-2 mb-0" style="color:#856404;font-weight:600" aria-live="polite">
-              <i class="fas fa-hand-point-up me-1"></i>Tick the agreement box above to turn this button on.
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-hand-point-up"/></svg>Tick the agreement box above to turn this button on.
             </p>
 
             <p class="text-muted text-center small mt-2 mb-0">
-              <i class="fas fa-shield-alt me-1"></i>Your information is secure and encrypted
+              <svg class="bm-i me-1" aria-hidden="true"><use href="#i-shield-alt"/></svg>Your information is secure and encrypted
             </p>
           </div>
 
           <!-- Back Button -->
           <div class="mt-3 mb-4">
             <a href="javascript:history.back()" class="btn btn-outline-secondary rounded-pill w-100">
-              <i class="fas fa-arrow-left me-2"></i>Go Back and Edit
+              <svg class="bm-i me-2" aria-hidden="true"><use href="#i-arrow-left"/></svg>Go Back and Edit
             </a>
           </div>
         </div>
@@ -296,7 +296,7 @@
     }
     btn.dataset.submitted = 'true';
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+    btn.innerHTML = '<svg class="bm-i bm-i-spin me-2" aria-hidden="true"><use href="#i-spinner"/></svg>Processing...';
   });
 </script>
 ` }) %>

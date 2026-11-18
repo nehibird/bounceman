@@ -7,7 +7,7 @@
       <!-- signer_name is posted by the signer (POST /contract/:id/sign) so it is untrusted; esc() everything below. -->
       <!-- Green Checkmark -->
       <div style="width:100px;height:100px;border-radius:50%;background:var(--bm-green);color:white;font-size:48px;line-height:100px;margin:0 auto 24px">
-        <i class="fas fa-check"></i>
+        <svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg>
       </div>
 
       <h1 style="color:var(--bm-blue);font-weight:700;margin-bottom:12px">Contract Signed!</h1>
@@ -25,14 +25,14 @@
         </div>
       </div>
 
-      <p class="text-muted mb-4"><i class="fas fa-envelope me-1"></i>A copy of the signed contract will be sent to your email.</p>
+      <p class="text-muted mb-4"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-envelope"/></svg>A copy of the signed contract will be sent to your email.</p>
 
       <div class="d-flex gap-3 justify-content-center flex-wrap">
         <a href="/booking/lookup" class="btn btn-book-now">
-          <i class="fas fa-search me-2"></i>View Your Booking
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-search"/></svg>View Your Booking
         </a>
         <a href="/" class="btn btn-outline-secondary rounded-pill px-4">
-          <i class="fas fa-home me-2"></i>Back to Home
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-home"/></svg>Back to Home
         </a>
       </div>
 

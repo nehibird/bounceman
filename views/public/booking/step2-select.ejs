@@ -38,12 +38,12 @@
   .wd-ic { width: 38px; height: 38px; min-width: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; font-size: 16px; }
   .wd-t { font-size: 15.5px; font-weight: 700; color: #1c2733; line-height: 1.1; }
   .wd-s { font-size: 12px; color: #6b7480; margin-top: 2px; }
-  .wd-btn[data-mode="dry"] .wd-ic i { color: #F39C12; }
-  .wd-btn[data-mode="wet"] .wd-ic i { color: #1C8FE0; }
+  .wd-btn[data-mode="dry"] .wd-ic .bm-i { color: #F39C12; }
+  .wd-btn[data-mode="wet"] .wd-ic .bm-i { color: #1C8FE0; }
   .wd-btn[data-mode="dry"].wd-active { background: linear-gradient(135deg,#FBB034,#F39C12); border-color: #F39C12; box-shadow: 0 6px 16px rgba(243,156,18,.32); }
   .wd-btn[data-mode="wet"].wd-active { background: linear-gradient(135deg,#27A9E5,#0E6BB8); border-color: #0E6BB8; box-shadow: 0 6px 16px rgba(14,107,184,.32); }
   .wd-btn.wd-active .wd-ic { background: rgba(255,255,255,.25); }
-  .wd-btn.wd-active .wd-ic i { color: #fff; }
+  .wd-btn.wd-active .wd-ic .bm-i { color: #fff; }
   .wd-btn.wd-active .wd-t { color: #fff; }
   .wd-btn.wd-active .wd-s { color: rgba(255,255,255,.92); }
   .filter-pill { border: 2px solid var(--bm-blue); color: var(--bm-blue); background: transparent; font-weight: 600; transition: all 0.2s; }
@@ -126,7 +126,7 @@
     <!-- Progress Bar -->
     <div class="booking-progress">
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Pick Date</span>
       </div>
       <div class="step-line"></div>
@@ -155,10 +155,10 @@
     <div class="text-center mb-4">
       <div style="background:#eef3f8;border-radius:12px;padding:14px 24px;display:inline-block;">
         <span style="font-weight:700;color:#004E89;font-size:15px;">
-          <i class="fas fa-calendar me-1"></i>
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-calendar"/></svg>
           ${eventDate ? (() => { var d = new Date(eventDate + 'T12:00:00'); return d.toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'}); })() : 'Your date'}
           &nbsp;&bull;&nbsp;
-          <i class="fas fa-clock me-1"></i>Ready by ${readyBy ? (() => { var p=String(readyBy).split(':'); var h=parseInt(p[0],10)||0; var m=String(parseInt(p[1],10)||0).padStart(2,'0'); var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-clock"/></svg>Ready by ${readyBy ? (() => { var p=String(readyBy).split(':'); var h=parseInt(p[0],10)||0; var m=String(parseInt(p[1],10)||0).padStart(2,'0'); var ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+m+' '+ap; })() : ''}
           &nbsp;&bull;&nbsp;
           ${rentalDays > 1 ? 'Multi-Day' : (rentalDuration === '4hr' ? 'Half Day (4 hrs)' : 'Full Day (11 AM–7 PM)')}
           &nbsp;&bull;&nbsp;
@@ -187,8 +187,8 @@
                 return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '">' +
                   '<div class="equipment-card" style="pointer-events:none;position:relative;border:2px solid #bbf7d0">' +
                     '<div style="position:absolute;top:10px;left:10px;right:10px;z-index:5;display:flex;justify-content:space-between;align-items:flex-start">' +
-                      '<div style="background:rgba(239,71,111,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><i class="fas fa-lock me-1"></i>' + currentTimeLabel + ' full</div>' +
-                      '<div style="background:rgba(22,163,74,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><i class="fas fa-check-circle me-1"></i>' + firstSlot + ' open</div>' +
+                      '<div style="background:rgba(239,71,111,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-lock"/></svg>' + currentTimeLabel + ' full</div>' +
+                      '<div style="background:rgba(22,163,74,0.95);color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.2)"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>' + firstSlot + ' open</div>' +
                     '</div>' +
                     '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
                     '<div class="card-body">' +
@@ -197,7 +197,7 @@
                       '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                       '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
                       (rentalDays > 1 ? '<span class="price-days-note">for ' + rentalDays + ' days</span>' : '') +
-                      '<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center"><i class="fas fa-clock me-1"></i>Switch to ' + otherSlots + ' to book this</div>' +
+                      '<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-clock"/></svg>Switch to ' + otherSlots + ' to book this</div>' +
                     '</div>' +
                   '</div>' +
                 '</div>';
@@ -205,7 +205,7 @@
               // Fully booked across all time windows — show grayed out card
               return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '">' +
                 '<div class="equipment-card" style="opacity:0.45;pointer-events:none;position:relative">' +
-                  '<div style="position:absolute;top:12px;right:12px;z-index:5;background:var(--bm-pink,#EF476F);color:white;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"><i class="fas fa-ban me-1"></i>Fully Booked</div>' +
+                  '<div style="position:absolute;top:12px;right:12px;z-index:5;background:var(--bm-pink,#EF476F);color:white;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-ban"/></svg>Fully Booked</div>' +
                   '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '" style="filter:grayscale(100%)' + ((item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? ';object-fit:contain;padding:20px;background:#f8f8f8' : '') + '">' +
                   '<div class="card-body">' +
                     '<span class="badge-category mb-2">' + (item.category || '').replace(/[-_]/g, ' ') + '</span>' +
@@ -220,24 +220,24 @@
             var hasWet = (item.category === 'water_slides' || item.category === 'water-slides' || item.category === 'combo_units' || item.category === 'combo-units') || (item.price_wet !== null && item.price_wet !== undefined && item.price_wet !== '');
             return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + itemPrice + '" data-addon-rate="' + (item.addonPrice !== null && item.addonPrice !== undefined ? item.addonPrice : '') + '" data-has-wet="' + (hasWet ? '1' : '0') + '" data-wet-up="' + wetUp + '" data-extra-day="' + (item.extraDayPrice !== null && item.extraDayPrice !== undefined ? item.extraDayPrice : '') + '" data-max-extra="' + (item.maxExtraDays || 0) + '">' +
             '<div class="equipment-card select-card">' +
-              '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
+              '<div class="check-overlay"><svg class="bm-i js-check" style="display:none" aria-hidden="true"><use href="#i-check"/></svg></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '"' + ((item.image_fit ? item.image_fit === 'contain' : (item.category === 'add_ons' || item.category === 'add-ons')) ? ' style="object-fit:contain;padding:20px;background:#f8f8f8"' : '') + '>' +
               '<div class="card-body">' +
                 '<span class="badge-category mb-2">' + (item.category || '').replace(/[-_]/g, ' ') + '</span>' +
                 '<h5 class="card-title mt-2">' + item.name + '</h5>' +
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
-                (item.dimensions ? '<div class="small text-muted mb-2"><i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + '</div>' : '') +
+                (item.dimensions ? '<div class="small text-muted mb-2"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-ruler-combined"/></svg>' + item.dimensions + '</div>' : '') +
                 (item.specialApplies && item.regularPrice ? '<div style="margin-bottom:4px"><span style="background:#E8833A;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">&#9728; FULL DAY, HALF-DAY PRICE</span></div><span style="text-decoration:line-through;color:#9aa0a6;font-size:18px;margin-right:6px">$' + parseFloat(item.regularPrice).toFixed(0) + '</span>' : '') +
                 '<span class="price-tag">$' + parseFloat(itemPrice).toFixed(0) + '</span>' +
                 (rentalDays > 1 ? '<span class="price-days-note">for ' + rentalDays + ' days</span>' : '') +
                 (item.addonPrice ? '<div style="margin-top:4px"><span style="color:#2e7d32;font-size:12px;font-weight:600">or &#36;' + parseFloat(item.addonPrice).toFixed(0) + ' added to any rental</span></div>' : '') +
-                (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-ban me-1"></i>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><i class="fas fa-fire me-1"></i>Only 1 left!</span></div>' : '') +
-                (rentalDays > 1 && /generator/i.test(item.name) ? '<div style="margin-top:8px;background:#fff3cd;border-radius:8px;padding:8px 12px"><span style="color:#856404;font-size:12px;font-weight:600"><i class="fas fa-gas-pump me-1"></i>You provide the gas for multi-day rentals.</span></div>' : '') +
+                (item.multidayUnavailable ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-ban"/></svg>Not available for ' + rentalDays + '+ days</span></div>' : item.availableQty === 1 ? '<div style="margin-top:6px"><span style="color:#c62828;font-size:12px;font-weight:600"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-fire"/></svg>Only 1 left!</span></div>' : '') +
+                (rentalDays > 1 && /generator/i.test(item.name) ? '<div style="margin-top:8px;background:#fff3cd;border-radius:8px;padding:8px 12px"><span style="color:#856404;font-size:12px;font-weight:600"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-gas-pump"/></svg>You provide the gas for multi-day rentals.</span></div>' : '') +
                 (hasWet ? '<div class="wet-dry-inline" id="wetdry-' + item.id + '" style="display:none">' +
                   '<div class="wd-q">Do you need it wet or dry? <span class="wd-req" id="wdreq-' + item.id + '">Choose one</span></div>' +
                   '<div class="wd-row">' +
-                    '<div class="wd-btn" data-mode="dry" id="wd-dry-' + item.id + '"><div class="wd-ic"><i class="fas fa-sun"></i></div><div><div class="wd-t">Dry</div><div class="wd-s">No water — keep it dry</div></div></div>' +
-                    '<div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><div class="wd-ic"><i class="fas fa-tint"></i></div><div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide — same price</div></div></div>' +
+                    '<div class="wd-btn" data-mode="dry" id="wd-dry-' + item.id + '"><div class="wd-ic"><svg class="bm-i" aria-hidden="true"><use href="#i-sun"/></svg></div><div><div class="wd-t">Dry</div><div class="wd-s">No water — keep it dry</div></div></div>' +
+                    '<div class="wd-btn" data-mode="wet" id="wd-wet-' + item.id + '"><div class="wd-ic"><svg class="bm-i" aria-hidden="true"><use href="#i-tint"/></svg></div><div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide — same price</div></div></div>' +
                   '</div></div>' : '') +
               '</div>' +
             '</div>' +
@@ -246,7 +246,7 @@
 
         
         <!-- Add-Ons Section -->
-        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><i class="fas fa-plus-circle me-2" style="color:var(--bm-orange)"></i>Add Extras to Your Event</h5><div class="row g-3" id="addonGrid">' + addons.map(function(addon) {
+        ${(typeof addons !== 'undefined' && addons.length > 0) ? '<div class="mt-4"><h5 style="color:var(--bm-blue);font-weight:700" class="mb-3"><svg class="bm-i me-2" style="color:var(--bm-orange)" aria-hidden="true"><use href="#i-plus-circle"/></svg>Add Extras to Your Event</h5><div class="row g-3" id="addonGrid">' + addons.map(function(addon) {
           var addonPrice = addon.computedPrice || (rentalDuration === '4hr' ? addon.price_4hr : addon.price_daily);
           // These cards sat OUTSIDE #equipmentGrid with no data-id/name/price, and the click handler
           // only listened on #equipmentGrid and bailed without data-id -- so cornhole/speaker/generator
@@ -256,7 +256,7 @@
           // filter pills hide every .equipment-item that does not match, which would hide the extras.
           var standalone = (addon.standalonePrice !== undefined && addon.standalonePrice !== null) ? addon.standalonePrice : addonPrice;
           var rate = (addon.addonPrice !== undefined && addon.addonPrice !== null) ? addon.addonPrice : '';
-          var inner = '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div>';
+          var inner = '<div class="check-overlay"><svg class="bm-i js-check" style="display:none" aria-hidden="true"><use href="#i-check"/></svg></div><div class="card-body d-flex align-items-center gap-3"><img src="' + (addon.image || '/assets/images/placeholder-bounce.svg') + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px"><div style="flex:1"><h6 class="mb-1">' + addon.name + '</h6><p class="text-muted small mb-0">' + (addon.short_description || '') + '</p></div><span class="fw-bold" style="color:var(--bm-orange)">+\x24' + addonPrice + '</span></div>';
           if (addon.booked) {
             return '<div class="col-md-6"><div class="equipment-card" style="padding:0;opacity:0.45;pointer-events:none">' + inner + '</div></div>';
           }
@@ -264,20 +264,20 @@
         }).join('') + '</div></div>' : ''}
 
 
-        ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
+        ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><svg class="bm-i" aria-hidden="true"><use href="#i-box-open"/></svg></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
       </div>
 
     </div>
 
     <!-- Multi-day note (day count is chosen up front on step 1) -->
-    ${rentalDays > 1 ? '<div class="row mt-4"><div class="col-lg-8 mx-auto"><div style="background:#eef3f8;border-radius:12px;padding:14px 20px;text-align:center;font-size:14px;color:#004E89;font-weight:600"><i class="fas fa-calendar-week me-2"></i>Prices below are the total for your ' + rentalDays + '-day rental. <a href="/booking" style="color:#004E89;text-decoration:underline">Change days</a></div></div></div>' : ''}
+    ${rentalDays > 1 ? '<div class="row mt-4"><div class="col-lg-8 mx-auto"><div style="background:#eef3f8;border-radius:12px;padding:14px 20px;text-align:center;font-size:14px;color:#004E89;font-weight:600"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-week"/></svg>Prices below are the total for your ' + rentalDays + '-day rental. <a href="/booking" style="color:#004E89;text-decoration:underline">Change days</a></div></div></div>' : ''}
 
         <!-- Selection Summary (below all options) -->
     <div class="row mt-4">
       <div class="col-lg-6 mx-auto">
         <div class="selection-summary" id="selectionSummary" style="border-radius:16px;padding:24px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
           <div id="selectionScroll">
-            <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-shopping-cart me-2"></i>Your Selection</h5>
+            <h5 style="color:var(--bm-blue);font-weight:700;"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-shopping-cart"/></svg>Your Selection</h5>
             <hr>
             <div id="selectedList">
               <p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>
@@ -291,13 +291,13 @@
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
           <div id="freeDayPromo" style="display:none;margin-bottom:10px;background:#e9f7ef;border:1px solid #b7e4c7;border-radius:10px;padding:9px 12px;font-size:13px;color:#1e7e4f;font-weight:600;"></div>
-          <button type="button" id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><i class="fas fa-circle-info me-1"></i><span id="wetChoiceWarnText"></span> <u>Tap to choose</u></button>
+          <button type="button" id="wetChoiceWarn" style="display:none;margin-bottom:10px;background:#fdecdf;border:1px solid #f6cda9;border-radius:10px;padding:9px 12px;font-size:13px;color:#b9521f;font-weight:600;"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-circle-info"/></svg><span id="wetChoiceWarnText"></span> <u>Tap to choose</u></button>
           <div id="sheetBar">
             <button type="button" class="sheet-toggle" id="sheetToggle" aria-expanded="false" aria-controls="selectionScroll">
-              <span id="sheetSummary">0 items &middot; $0</span><i class="fas fa-chevron-up" aria-hidden="true"></i>
+              <span id="sheetSummary">0 items &middot; $0</span><svg class="bm-i" aria-hidden="true" aria-hidden="true"><use href="#i-chevron-up"/></svg>
             </button>
             <button type="button" class="btn btn-book-now w-100" id="continueBtn" disabled style="opacity:0.5">
-            <i class="fas fa-arrow-right me-2"></i>Continue<span class="cont-more"> to Your Details</span>
+            <svg class="bm-i me-2" aria-hidden="true"><use href="#i-arrow-right"/></svg>Continue<span class="cont-more"> to Your Details</span>
           </button>
           </div>
           </div>
@@ -530,11 +530,11 @@
     if (selectedItems[id]) {
       delete selectedItems[id];
       card.classList.remove('selected');
-      card.querySelector('.fa-check').style.display = 'none';
+      card.querySelector('.js-check').style.display = 'none';
     } else {
       selectedItems[id] = { name: name, price: price, addonRate: (typeof addonRate === 'number' && !isNaN(addonRate)) ? addonRate : null };
       card.classList.add('selected');
-      card.querySelector('.fa-check').style.display = '';
+      card.querySelector('.js-check').style.display = '';
     }
     showHideWetDry();
     updateSummary();

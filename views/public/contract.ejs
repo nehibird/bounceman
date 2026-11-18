@@ -5,7 +5,7 @@
 
     <!-- Header -->
     <div class="text-center mb-4">
-      <h1 style="color:var(--bm-blue);font-weight:700"><i class="fas fa-file-contract me-2"></i>Rental Agreement</h1>
+      <h1 style="color:var(--bm-blue);font-weight:700"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-file-contract"/></svg>Rental Agreement</h1>
       <p class="text-muted">Booking #<strong>${esc(contract.booking_number)}</strong></p>
     </div>
 
@@ -26,26 +26,26 @@
     <!-- Contract Content. Every customer-derived value in this file goes through esc(): the body embeds the typed name + delivery address, and admin "View contract" opens this page in the owner session (stored XSS -> admin takeover). white-space:pre-line keeps line breaks, esc() does not touch newlines. -->
     <div class="bg-white rounded-4 shadow-sm mb-4">
       <div class="p-4" style="border-bottom:1px solid #eee">
-        <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><i class="fas fa-scroll me-2"></i>Terms & Conditions</h5>
+        <h5 style="color:var(--bm-blue);font-weight:700;margin:0"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-scroll"/></svg>Terms & Conditions</h5>
       </div>
       <div id="contractContent" class="p-4" style="max-height:400px;overflow-y:auto;line-height:1.7;color:#555;white-space:pre-line">${esc(contract.content)}</div>
     </div>
 
     <!-- Signature Section -->
     <div class="bg-white rounded-4 p-4 shadow-sm">
-      <h5 style="color:var(--bm-blue);font-weight:700;margin-bottom:20px"><i class="fas fa-signature me-2"></i>Your Signature</h5>
+      <h5 style="color:var(--bm-blue);font-weight:700;margin-bottom:20px"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-signature"/></svg>Your Signature</h5>
 
       <!-- Signature Canvas -->
       <div style="border:2px dashed #ccc;border-radius:12px;background:#fafafa;position:relative;margin-bottom:16px">
         <canvas id="sigCanvas" width="720" height="200" style="width:100%;height:200px;display:block;cursor:crosshair;touch-action:none"></canvas>
         <div id="sigPlaceholder" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#bbb;font-size:16px;pointer-events:none">
-          <i class="fas fa-pen me-2"></i>Sign here
+          <svg class="bm-i me-2" aria-hidden="true"><use href="#i-pen"/></svg>Sign here
         </div>
       </div>
 
       <div class="d-flex justify-content-end mb-3">
         <button id="clearSigBtn" class="btn btn-sm btn-outline-secondary rounded-pill">
-          <i class="fas fa-eraser me-1"></i>Clear Signature
+          <svg class="bm-i me-1" aria-hidden="true"><use href="#i-eraser"/></svg>Clear Signature
         </button>
       </div>
 
@@ -65,12 +65,12 @@
 
       <!-- Submit -->
       <button id="signBtn" class="btn btn-book-now btn-lg w-100" disabled>
-        <i class="fas fa-check-circle me-2"></i>Sign Contract
+        <svg class="bm-i me-2" aria-hidden="true"><use href="#i-check-circle"/></svg>Sign Contract
       </button>
 
       <div id="signError" class="alert alert-danger mt-3" style="display:none"></div>
       <div id="signLoading" class="text-center mt-3" style="display:none">
-        <i class="fas fa-spinner fa-spin me-1"></i>Submitting signature...
+        <svg class="bm-i bm-i-spin me-1" aria-hidden="true"><use href="#i-spinner"/></svg>Submitting signature...
       </div>
     </div>
 

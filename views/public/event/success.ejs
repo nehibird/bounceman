@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title><%= title %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root { --bm-orange: #FF6B35; --bm-blue: #004E89; --bm-green: #2ECC71; }
@@ -25,17 +24,35 @@
     .countdown { color: white; font-size: 14px; margin-top: 20px; opacity: 0.8; }
     .countdown strong { font-size: 20px; }
     .pending-spinner { padding: 40px; }
-    .pending-spinner i { font-size: 48px; color: white; opacity: 0.8; }
+    .pending-spinner .bm-i { font-size: 48px; color: white; opacity: 0.8; }
     .pending-spinner p { color: white; margin-top: 16px; font-size: 16px; }
   </style>
 </head>
 <body>
+<%- include('../../partials/icon-sprite-public') %>
+<style>
+  /* The customer site drew about a hundred small shapes by downloading ~70KB of
+     stylesheet and two webfonts. Same shapes, same Font Awesome release, inlined once
+     as <symbol> definitions. */
+  .bm-i { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; flex-shrink: 0; }
+  .bm-i-xs { width: .75em; height: .75em; }
+  .bm-i-sm { width: .875em; height: .875em; }
+  .bm-i-lg { width: 1.25em; height: 1.25em; vertical-align: -0.2em; }
+  .bm-i-2x { width: 2em; height: 2em; }
+  .bm-i-3x { width: 3em; height: 3em; }
+  .bm-i-4x { width: 4em; height: 4em; }
+  .bm-i-5x { width: 5em; height: 5em; }
+  .bm-i-fw { width: 1.25em; }
+  .bm-i-spin { animation: bm-i-spin 2s linear infinite; }
+  @keyframes bm-i-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .bm-i-spin { animation: none; } }
+</style>
 
 <div class="success-container">
   <% if (reg.payment_status === 'completed') { %>
 
   <div class="success-card">
-    <div class="check-icon"><i class="fas fa-check"></i></div>
+    <div class="check-icon"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></div>
     <h2 style="color:var(--bm-blue);font-weight:800;margin-bottom:4px">All Set!</h2>
     <% if (reg.payment_method === 'cash') { %>
       <p class="text-muted">Grab your wristband<%= reg.kid_count > 1 ? 's' : '' %> and pay at the booth!</p>
@@ -108,7 +125,7 @@
 
   <!-- Payment pending — poll for completion -->
   <div class="pending-spinner">
-    <i class="fas fa-spinner fa-spin"></i>
+    <svg class="bm-i bm-i-spin" aria-hidden="true"><use href="#i-spinner"/></svg>
     <p>Confirming your payment...</p>
   </div>
 

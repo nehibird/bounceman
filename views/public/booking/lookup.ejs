@@ -44,14 +44,14 @@
           '<input type="email" class="form-control" name="email" required placeholder="john@example.com">' +
         '</div>' +
         '<button type="submit" class="btn btn-book-now w-100">' +
-          '<i class="fas fa-search me-2"></i>Look Up Booking' +
+          '<svg class="bm-i me-2" aria-hidden="true"><use href="#i-search"/></svg>Look Up Booking' +
         '</button>' +
       '</form>' +
     '</div>' : ''}
 
     ${error ? '<!-- Error Alert -->' +
     '<div class="alert alert-danger text-center" style="max-width:500px;margin:0 auto 24px;border-radius:12px;">' +
-      '<i class="fas fa-exclamation-circle me-2"></i>' + error +
+      '<svg class="bm-i me-2" aria-hidden="true"><use href="#i-exclamation-circle"/></svg>' + error +
     '</div>' +
     '<div class="lookup-card">' +
       '<form action="/booking/lookup" method="POST">' +
@@ -64,7 +64,7 @@
           '<input type="email" class="form-control" name="email" required placeholder="john@example.com">' +
         '</div>' +
         '<button type="submit" class="btn btn-book-now w-100">' +
-          '<i class="fas fa-search me-2"></i>Try Again' +
+          '<svg class="bm-i me-2" aria-hidden="true"><use href="#i-search"/></svg>Try Again' +
         '</button>' +
       '</form>' +
     '</div>' : ''}
@@ -83,7 +83,7 @@
 
         '<!-- Event Details -->' +
         '<div class="result-card">' +
-          '<h5><i class="fas fa-calendar me-2"></i>Event Details</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar"/></svg>Event Details</h5>' +
           '<div class="detail-row">' +
             '<span class="label">Event Date</span>' +
             '<span class="value">' + (booking.rental_period || booking.event_date || '') + '</span>' +
@@ -100,7 +100,7 @@
 
         '<!-- Items -->' +
         '<div class="result-card">' +
-          '<h5><i class="fas fa-box me-2"></i>Rental Items</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-box"/></svg>Rental Items</h5>' +
           (items && items.length > 0 ? items.map(function(item) {
             var dayNote = (parseInt(item.rental_days) || 1) > 1 ? ' <small class="text-muted">(' + item.rental_days + '-day rental)</small>' : '';
             return '<div class="detail-row">' +
@@ -112,7 +112,7 @@
 
         '<!-- Pricing Summary -->' +
         '<div class="result-card">' +
-          '<h5><i class="fas fa-receipt me-2"></i>Pricing</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-receipt"/></svg>Pricing</h5>' +
           '<div class="detail-row">' +
             '<span class="label">Subtotal</span>' +
             '<span class="value">$' + parseFloat(booking.subtotal || 0).toFixed(2) + '</span>' +
@@ -134,7 +134,7 @@
         '<!-- Payment History -->' +
         (payments && payments.length > 0 ?
         '<div class="result-card">' +
-          '<h5><i class="fas fa-credit-card me-2"></i>Payment History</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-credit-card"/></svg>Payment History</h5>' +
           '<table class="payment-table">' +
             '<thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>' +
             '<tbody>' +
@@ -153,22 +153,22 @@
         '<!-- Contract Status -->' +
         (contract ?
         '<div class="result-card">' +
-          '<h5><i class="fas fa-file-signature me-2"></i>Rental Agreement</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-file-signature"/></svg>Rental Agreement</h5>' +
           '<div class="d-flex justify-content-between align-items-center">' +
             '<div>' +
               '<span class="fw-bold">' + (contract.signed ? 'Signed' : 'Awaiting Signature') + '</span>' +
               (contract.signed_at ? '<br><span class="text-muted small">Signed on ' + contract.signed_at + '</span>' : '') +
             '</div>' +
             (contract.signed ?
-              '<span class="status-badge status-completed"><i class="fas fa-check me-1"></i>Complete</span>' :
-              '<a href="/contract/' + (contract.id || booking.id || '') + '" class="btn btn-book-now btn-sm rounded-pill"><i class="fas fa-pen me-1"></i>Sign Now</a>'
+              '<span class="status-badge status-completed"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check"/></svg>Complete</span>' :
+              '<a href="/contract/' + (contract.id || booking.id || '') + '" class="btn btn-book-now btn-sm rounded-pill"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-pen"/></svg>Sign Now</a>'
             ) +
           '</div>' +
         '</div>' : '') +
 
         '<!-- Customer Info -->' +
         '<div class="result-card">' +
-          '<h5><i class="fas fa-user me-2"></i>Customer Information</h5>' +
+          '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-user"/></svg>Customer Information</h5>' +
           '<div class="detail-row">' +
             '<span class="label">Name</span>' +
             '<span class="value">' + (booking.first_name || '') + ' ' + (booking.last_name || '') + '</span>' +
@@ -186,7 +186,7 @@
         '<!-- Actions -->' +
         '<div class="text-center mt-3">' +
           '<a href="/booking/lookup" class="btn btn-outline-secondary rounded-pill px-4">' +
-            '<i class="fas fa-search me-2"></i>Look Up Another Booking' +
+            '<svg class="bm-i me-2" aria-hidden="true"><use href="#i-search"/></svg>Look Up Another Booking' +
           '</a>' +
         '</div>' +
 

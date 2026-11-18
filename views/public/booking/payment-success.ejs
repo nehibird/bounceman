@@ -5,7 +5,7 @@
       <div class="col-lg-6 text-center">
         <div class="card shadow-sm">
           <div class="card-body py-5">
-            <i class="fas fa-check-circle text-success" style="font-size:64px;margin-bottom:20px"></i>
+            <svg class="bm-i text-success" style="font-size:64px;margin-bottom:20px" aria-hidden="true"><use href="#i-check-circle"/></svg>
             <h2 style="color:var(--bm-blue)">Payment Complete!</h2>
             <p class="text-muted mb-4">Thank you for your payment.</p>
             ${booking ? `
@@ -16,7 +16,7 @@
             </div>
             ` : ""}
             <p class="text-muted">A receipt has been sent to your email.</p>
-            <a href="/" class="btn btn-bm mt-3"><i class="fas fa-home me-2"></i>Back to Home</a>
+            <a href="/" class="btn btn-bm mt-3"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-home"/></svg>Back to Home</a>
           </div>
         </div>
       </div>

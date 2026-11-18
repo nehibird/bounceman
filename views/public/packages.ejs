@@ -37,17 +37,17 @@
 
             ${pkg.description ? '<p class="text-muted mb-3" style="line-height:1.6">' + pkg.description + '</p>' : ''}
 
-            <h6 style="font-weight:700;color:#333;margin-bottom:12px"><i class="fas fa-box-open me-2" style="color:var(--bm-orange)"></i>Included Items</h6>
+            <h6 style="font-weight:700;color:#333;margin-bottom:12px"><svg class="bm-i me-2" style="color:var(--bm-orange)" aria-hidden="true"><use href="#i-box-open"/></svg>Included Items</h6>
             <ul class="list-unstyled mb-0">
               ${pkg.items_list.split(',').map(function(itm) {
-                return '<li class="mb-2"><i class="fas fa-check-circle me-2" style="color:var(--bm-green)"></i>' + itm.trim() + '</li>';
+                return '<li class="mb-2"><svg class="bm-i me-2" style="color:var(--bm-green)" aria-hidden="true"><use href="#i-check-circle"/></svg>' + itm.trim() + '</li>';
               }).join('')}
             </ul>
           </div>
 
           <div class="p-4 pt-0">
             <a href="/booking?preselect=${pkg.item_ids || ''}" class="btn btn-book-now w-100">
-              <i class="fas fa-calendar-check me-2"></i>Book This Package
+              <svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Book This Package
             </a>
           </div>
         </div>
@@ -65,11 +65,11 @@
 
     <!-- Custom Bundle CTA -->
     <div class="mt-5 text-center bg-white rounded-4 p-5 shadow-sm">
-      <div style="font-size:48px;margin-bottom:16px"><i class="fas fa-puzzle-piece" style="color:var(--bm-purple)"></i></div>
+      <div style="font-size:48px;margin-bottom:16px"><svg class="bm-i" style="color:var(--bm-purple)" aria-hidden="true"><use href="#i-puzzle-piece"/></svg></div>
       <h3 style="color:var(--bm-blue);font-weight:700">Can't find what you need?</h3>
       <p class="text-muted mb-4" style="max-width:500px;margin:0 auto">Build your own custom bundle by selecting exactly the equipment you want. Mix and match to create the perfect party setup!</p>
       <a href="/booking" class="btn btn-book-now btn-lg">
-        <i class="fas fa-wand-magic-sparkles me-2"></i>Build Your Own Bundle
+        <svg class="bm-i me-2" aria-hidden="true"><use href="#i-wand-magic-sparkles"/></svg>Build Your Own Bundle
       </a>
     </div>
   </div>

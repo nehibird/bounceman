@@ -39,12 +39,12 @@
   .wd-ic { width: 38px; height: 38px; min-width: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; font-size: 16px; }
   .wd-t { font-size: 15.5px; font-weight: 700; color: #1c2733; line-height: 1.1; }
   .wd-s { font-size: 12px; color: #6b7480; margin-top: 2px; }
-  .wd-btn[data-mode="dry"] .wd-ic i { color: #F39C12; }
-  .wd-btn[data-mode="wet"] .wd-ic i { color: #1C8FE0; }
+  .wd-btn[data-mode="dry"] .wd-ic .bm-i { color: #F39C12; }
+  .wd-btn[data-mode="wet"] .wd-ic .bm-i { color: #1C8FE0; }
   .wd-btn[data-mode="dry"].wd-active { background: linear-gradient(135deg,#FBB034,#F39C12); border-color: #F39C12; box-shadow: 0 6px 16px rgba(243,156,18,.32); }
   .wd-btn[data-mode="wet"].wd-active { background: linear-gradient(135deg,#27A9E5,#0E6BB8); border-color: #0E6BB8; box-shadow: 0 6px 16px rgba(14,107,184,.32); }
   .wd-btn.wd-active .wd-ic { background: rgba(255,255,255,.25); }
-  .wd-btn.wd-active .wd-ic i { color: #fff; }
+  .wd-btn.wd-active .wd-ic .bm-i { color: #fff; }
   .wd-btn.wd-active .wd-t { color: #fff; }
   .wd-btn.wd-active .wd-s { color: rgba(255,255,255,.92); }
   .wd-btn.wd-disabled { opacity: .5; cursor: not-allowed; background: #f1f3f5; }
@@ -89,12 +89,12 @@
     <!-- Progress Bar -->
     <div class="booking-progress">
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Select Items</span>
       </div>
       <div class="step-line completed"></div>
       <div class="step completed">
-        <span class="step-num"><i class="fas fa-check"></i></span>
+        <span class="step-num"><svg class="bm-i" aria-hidden="true"><use href="#i-check"/></svg></span>
         <span class="d-none d-md-inline">Pick Date</span>
       </div>
       <div class="step-line completed"></div>
@@ -131,8 +131,8 @@
           <!-- Order summary (filled by osRender() in the script below; hidden until it has items) -->
           <details class="order-sum" id="orderSum" style="display:none" open>
             <summary>
-              <span><i class="fas fa-receipt me-2"></i>Your order <span class="text-muted fw-normal" id="osCount"></span></span>
-              <span class="os-head"><span id="osHead"></span><i class="fas fa-chevron-down os-chev"></i></span>
+              <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-receipt"/></svg>Your order <span class="text-muted fw-normal" id="osCount"></span></span>
+              <span class="os-head"><span id="osHead"></span><svg class="bm-i os-chev" aria-hidden="true"><use href="#i-chevron-down"/></svg></span>
             </summary>
             <div class="os-body">
               <div id="osLines"></div>
@@ -155,7 +155,7 @@
                UI-only (power_choice / water_choice): the server turns ANY non-empty power_available/water_available
                into 1 (the string "false" is truthy), so only the hidden inputs below are ever submitted, and only for "yes". -->
           <div class="details-card" id="siteCard" style="display:none">
-            <h5><i class="fas fa-plug me-2"></i>Power &amp; water at your setup spot</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-plug"/></svg>Power &amp; water at your setup spot</h5>
             <div class="site-q" id="powerQ" style="display:none">
               <div class="wd-q"><span id="powerQLabel">Is there a power outlet close to where it will go?</span></div>
               <div class="tap-opts" role="radiogroup" aria-labelledby="powerQLabel">
@@ -180,7 +180,7 @@
 
           <!-- Customer Information -->
           <div class="details-card">
-            <h5><i class="fas fa-user me-2"></i>Customer Information</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-user"/></svg>Customer Information</h5>
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">First Name *</label>
@@ -203,7 +203,7 @@
 
           <!-- Delivery Information -->
           <div class="details-card">
-            <h5><i class="fas fa-truck me-2"></i>Delivery Information</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-truck"/></svg>Delivery Information</h5>
             <div class="row g-3">
               <div class="col-12">
                 <label class="form-label">Delivery Address *</label>
@@ -227,7 +227,7 @@
 
           <!-- Event Details -->
           <div class="details-card">
-            <h5><i class="fas fa-party-horn me-2" style="font-family:'Font Awesome 6 Free'"></i><i class="fas fa-star me-2"></i>Event Details</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-star"/></svg>Event Details</h5>
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">Event Type *</label>
@@ -252,7 +252,7 @@
                   <option value="Commercial">Commercial</option>
                 </select>
                 <div id="sundayParkNote" style="display:none;margin-top:6px;font-size:12px;color:#b9521f;background:#fdf1ea;border-left:3px solid #d77c42;border-radius:4px;padding:8px 10px">
-                  <i class="fas fa-triangle-exclamation me-1"></i><strong>Not available on Sundays.</strong>
+                  <svg class="bm-i me-1" aria-hidden="true"><use href="#i-triangle-exclamation"/></svg><strong>Not available on Sundays.</strong>
                   Sunday rentals are picked up Monday morning, so the unit would sit in the park overnight.
                   Please choose a backyard, indoor, or commercial location &mdash; or pick a Saturday instead.
                 </div>
@@ -266,7 +266,7 @@
                   <option value="Asphalt">Asphalt</option>
                   <option value="Dirt">Dirt</option>
                 </select>
-                <div id="surfaceFeeNote" style="display:none;margin-top:6px;font-size:12px;color:#5b6b7f"><i class="fas fa-info-circle me-1"></i>On concrete, asphalt or indoors we anchor with sandbags instead of stakes — no extra charge.</div>
+                <div id="surfaceFeeNote" style="display:none;margin-top:6px;font-size:12px;color:#5b6b7f"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-info-circle"/></svg>On concrete, asphalt or indoors we anchor with sandbags instead of stakes — no extra charge.</div>
               </div>
             </div>
           </div>
@@ -298,7 +298,7 @@
 
           <!-- Discount Code -->
           <div class="details-card">
-            <h5><i class="fas fa-tag me-2"></i>Discount Code</h5>
+            <h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-tag"/></svg>Discount Code</h5>
             <div class="row g-3">
               <div class="col-md-8">
                 <input type="text" class="form-control" name="discount_code" placeholder="Enter discount code (optional)">
@@ -312,10 +312,10 @@
           <!-- Navigation -->
           <div class="d-flex justify-content-between">
             <a href="#" class="btn btn-outline-secondary rounded-pill px-4" id="backBtn">
-              <i class="fas fa-arrow-left me-2"></i>Back
+              <svg class="bm-i me-2" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back
             </a>
             <button type="submit" class="btn btn-book-now px-4">
-              Continue to Review<i class="fas fa-arrow-right ms-2"></i>
+              Continue to Review<svg class="bm-i ms-2" aria-hidden="true"><use href="#i-arrow-right"/></svg>
             </button>
           </div>
 
@@ -351,7 +351,7 @@
     if (!units.length) return;
 
     var html = '<div class="details-card" id="wetDryCard">' +
-      '<h5><i class="fas fa-tint me-2"></i>Wet or Dry?</h5>';
+      '<h5><svg class="bm-i me-2" aria-hidden="true"><use href="#i-tint"/></svg>Wet or Dry?</h5>';
     units.forEach(function(u) {
       var id = wdEsc(u.id);
       html += '<div class="wd-unit" data-unit-id="' + id + '" data-dry-blocked="' + (u.dryBlocked ? '1' : '0') + '">' +
@@ -359,16 +359,16 @@
         '<span class="wd-req" id="wdreq-' + id + '">Choose one</span></div>' +
         '<div class="wd-row">' +
           '<div class="wd-btn' + (u.dryBlocked ? ' wd-disabled' : '') + '" data-mode="dry" data-unit="' + id + '" id="wd-dry-' + id + '">' +
-            '<div class="wd-ic"><i class="fas fa-sun"></i></div>' +
+            '<div class="wd-ic"><svg class="bm-i" aria-hidden="true"><use href="#i-sun"/></svg></div>' +
             '<div><div class="wd-t">Dry</div><div class="wd-s">No water — same price</div></div>' +
           '</div>' +
           '<div class="wd-btn" data-mode="wet" data-unit="' + id + '" id="wd-wet-' + id + '">' +
-            '<div class="wd-ic"><i class="fas fa-tint"></i></div>' +
+            '<div class="wd-ic"><svg class="bm-i" aria-hidden="true"><use href="#i-tint"/></svg></div>' +
             '<div><div class="wd-t">Wet</div><div class="wd-s">Splash &amp; slide — same price</div></div>' +
           '</div>' +
         '</div>' +
         (u.dryBlocked
-          ? '<div class="wd-why"><i class="fas fa-circle-info me-1"></i>This unit is booked wet shortly before your rental and needs time to dry, so dry is not available on this date. Wet is — or call (580) 308-9288 about another date.</div>'
+          ? '<div class="wd-why"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-circle-info"/></svg>This unit is booked wet shortly before your rental and needs time to dry, so dry is not available on this date. Wet is — or call (580) 308-9288 about another date.</div>'
           : '') +
       '</div>';
     });
@@ -756,19 +756,21 @@
           var el = document.getElementById('zipResult');
           el.style.display = 'block';
           // MED-1: Use textContent to avoid DOM XSS — message comes from API response
-          var icon = document.createElement('i');
+          var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           var span = document.createElement('span');
           var msg = document.createTextNode(data.message || '');
           if (data.valid) {
             zipValid = true;
             osDelivery = Number(data.fee) || 0; osRender();
             span.style.color = '#2e7d32';
-            icon.className = 'fas fa-check-circle me-1';
+            icon.setAttribute('class', 'bm-i me-1');
+            icon.innerHTML = '<use href="#i-check-circle"/>';
           } else {
             zipValid = false;
             osDelivery = null; osRender();
             span.style.color = '#c62828';
-            icon.className = 'fas fa-times-circle me-1';
+            icon.setAttribute('class', 'bm-i me-1');
+            icon.innerHTML = '<use href="#i-times-circle"/>';
           }
           span.appendChild(icon);
           span.appendChild(msg);

@@ -68,15 +68,15 @@
         <div class="row g-4" id="equipmentGrid">
           ${equipment.map(function(item) { return '<div class="col-md-6 equipment-item" data-category="' + (item.category || '') + '" data-id="' + item.id + '" data-name="' + item.name + '" data-price="' + item.price_daily + '">' +
             '<div class="equipment-card select-card">' +
-              '<div class="check-overlay"><i class="fas fa-check" style="display:none"></i></div>' +
+              '<div class="check-overlay"><svg class="bm-i js-check" style="display:none" aria-hidden="true"><use href="#i-check"/></svg></div>' +
               '<img src="' + (item.image || '/assets/images/placeholder-bounce.svg') + '" class="card-img-top" alt="' + item.name + '">' +
               '<div class="card-body">' +
                 '<span class="badge-category mb-2">' + (item.category || '').replace(/[-_]/g, ' ') + '</span>' +
                 '<h5 class="card-title mt-2">' + item.name + '</h5>' +
                 '<p class="text-muted small mb-2">' + (item.short_description || '') + '</p>' +
                 '<div class="small text-muted mb-2">' +
-                  (item.dimensions ? '<i class="fas fa-ruler-combined me-1"></i>' + item.dimensions + ' &bull; ' : '') +
-                  (item.capacity_kids ? '<i class="fas fa-child me-1"></i>Up to ' + item.capacity_kids + ' kids' : '') +
+                  (item.dimensions ? '<svg class="bm-i me-1" aria-hidden="true"><use href="#i-ruler-combined"/></svg>' + item.dimensions + ' &bull; ' : '') +
+                  (item.capacity_kids ? '<svg class="bm-i me-1" aria-hidden="true"><use href="#i-child"/></svg>Up to ' + item.capacity_kids + ' kids' : '') +
                 '</div>' +
                 '<span class="price-tag">From $' + parseFloat(item.full_day_only ? item.price_daily : (item.price_4hr || item.price_daily * 0.65)).toFixed(0) + '</span>' +
               '</div>' +
@@ -84,13 +84,13 @@
           '</div>'; }).join('')}
         </div>
 
-        ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><i class="fas fa-box-open"></i></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
+        ${equipment.length === 0 ? '<div class="text-center py-5"><div style="font-size:80px;opacity:0.3"><svg class="bm-i" aria-hidden="true"><use href="#i-box-open"/></svg></div><h4 class="text-muted">No equipment available yet</h4><p class="text-muted">Check back soon!</p></div>' : ''}
       </div>
 
       <!-- Selection Summary Sidebar -->
       <div class="col-lg-4">
         <div class="selection-summary sticky-summary" id="selectionSummary" style="position:sticky;top:100px;">
-          <h5 style="color:var(--bm-blue);font-weight:700;"><i class="fas fa-shopping-cart me-2"></i>Your Selection</h5>
+          <h5 style="color:var(--bm-blue);font-weight:700;"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-shopping-cart"/></svg>Your Selection</h5>
           <hr>
           <div id="selectedList">
             <p class="text-muted text-center small" id="emptyMsg">No items selected yet</p>
@@ -102,7 +102,7 @@
           </div>
           <span class="text-muted small d-block mb-3" id="itemCount">0 items selected</span>
           <a href="#" class="btn btn-book-now w-100 disabled" id="continueBtn">
-            <i class="fas fa-arrow-right me-2"></i>Continue to Date Selection
+            <svg class="bm-i me-2" aria-hidden="true"><use href="#i-arrow-right"/></svg>Continue to Date Selection
           </a>
         </div>
       </div>
@@ -153,11 +153,11 @@
     if (selectedItems[id]) {
       delete selectedItems[id];
       card.classList.remove('selected');
-      card.querySelector('.fa-check').style.display = 'none';
+      card.querySelector('.js-check').style.display = 'none';
     } else {
       selectedItems[id] = { name: name, price: price };
       card.classList.add('selected');
-      card.querySelector('.fa-check').style.display = '';
+      card.querySelector('.js-check').style.display = '';
     }
     updateSummary();
   }

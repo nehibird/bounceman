@@ -7,8 +7,8 @@
         <h1 style="font-size:42px;font-weight:700;margin-bottom:16px">${cityData.h1}</h1>
         <p style="font-size:19px;opacity:0.9;margin-bottom:28px">${cityData.subheading}</p>
         <div class="d-flex gap-3 flex-wrap">
-          <a href="/booking" class="btn btn-book-now btn-lg"><i class="fas fa-calendar-check me-2"></i>Book Online Now</a>
-          <a href="tel:(580) 308-9288" class="btn btn-outline-light btn-lg"><i class="fas fa-phone me-2"></i>(580) 308-9288</a>
+          <a href="/booking" class="btn btn-book-now btn-lg"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Book Online Now</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light btn-lg"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-phone"/></svg>(580) 308-9288</a>
         </div>
         <div class="d-flex gap-4 mt-4">
           <div><strong style="font-size:24px;display:block">${cityData.freeDelivery ? 'FREE' : cityData.deliveryFee}</strong><small>Delivery${cityData.freeDelivery ? ' to ' + cityData.name : ' fee'}</small></div>
@@ -34,10 +34,10 @@
       <div class="col-lg-4">
         <!-- Delivery Info Card -->
         <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
-          <h4 style="color:var(--bm-blue)"><i class="fas fa-truck me-2" style="color:var(--bm-orange)"></i>Delivery to ${cityData.name}</h4>
+          <h4 style="color:var(--bm-blue)"><svg class="bm-i me-2" style="color:var(--bm-orange)" aria-hidden="true"><use href="#i-truck"/></svg>Delivery to ${cityData.name}</h4>
           ${cityData.freeDelivery ? `
             <div class="alert alert-success border-0 rounded-3 py-2 mb-3">
-              <strong><i class="fas fa-check-circle me-1"></i>FREE Delivery!</strong>
+              <strong><svg class="bm-i me-1" aria-hidden="true"><use href="#i-check-circle"/></svg>FREE Delivery!</strong>
             </div>
             <p class="mb-0" style="font-size:15px">Bounce Man delivers and sets up your rental at no extra charge to ${cityData.name} and surrounding areas.</p>
           ` : `
@@ -51,8 +51,8 @@
         <div class="card border-0 rounded-4 p-4" style="background:var(--bm-gradient);color:white">
           <h4>Ready to Book?</h4>
           <p style="opacity:0.9;font-size:15px">Check availability for your date and lock in your rental today.</p>
-          <a href="/booking" class="btn btn-light fw-bold w-100" style="color:var(--bm-orange)"><i class="fas fa-calendar-check me-2"></i>Check Availability</a>
-          <a href="tel:(580) 308-9288" class="btn btn-outline-light mt-2 w-100"><i class="fas fa-phone me-2"></i>Call (580) 308-9288</a>
+          <a href="/booking" class="btn btn-light fw-bold w-100" style="color:var(--bm-orange)"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Check Availability</a>
+          <a href="tel:(580) 308-9288" class="btn btn-outline-light mt-2 w-100"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-phone"/></svg>Call (580) 308-9288</a>
         </div>
       </div>
     </div>
@@ -114,7 +114,7 @@
       <div class="col-md-6 col-lg-3">
         <div class="equipment-card">
           <div class="card-img-top d-flex align-items-center justify-content-center" style="height:240px;background:linear-gradient(135deg,var(--bm-blue),var(--bm-purple))">
-            <i class="fas fa-music" style="font-size:60px;color:white;opacity:0.7"></i>
+            <svg class="bm-i" style="font-size:60px;color:white;opacity:0.7" aria-hidden="true"><use href="#i-music"/></svg>
           </div>
           <div class="card-body">
             <span class="badge-category mb-2 d-inline-block">Add-On</span>
@@ -144,21 +144,21 @@
     <div class="row g-4">
       <div class="col-md-4 text-center">
         <div class="how-it-works-step">
-          <div class="step-number"><i class="fas fa-truck" style="font-size:28px;line-height:80px"></i></div>
+          <div class="step-number"><svg class="bm-i" style="font-size:28px;line-height:80px" aria-hidden="true"><use href="#i-truck"/></svg></div>
           <h4>We Deliver &amp; Set Up</h4>
           <p>No hauling required. We deliver, inflate, and take down everything. You focus on the fun.</p>
         </div>
       </div>
       <div class="col-md-4 text-center">
         <div class="how-it-works-step">
-          <div class="step-number"><i class="fas fa-shield-alt" style="font-size:28px;line-height:80px"></i></div>
+          <div class="step-number"><svg class="bm-i" style="font-size:28px;line-height:80px" aria-hidden="true"><use href="#i-shield-alt"/></svg></div>
           <h4>Safe &amp; Fully Cleaned</h4>
           <p>All equipment is sanitized between every rental and inspected for safety before delivery.</p>
         </div>
       </div>
       <div class="col-md-4 text-center">
         <div class="how-it-works-step">
-          <div class="step-number"><i class="fas fa-heart" style="font-size:28px;line-height:80px"></i></div>
+          <div class="step-number"><svg class="bm-i" style="font-size:28px;line-height:80px" aria-hidden="true"><use href="#i-heart"/></svg></div>
           <h4>Family-Owned &amp; Local</h4>
           <p>We're your neighbors right here in Tonkawa, OK. Christ-centered values, exceptional service.</p>
         </div>
