@@ -19,7 +19,7 @@
         never served. Its real theming surface is the --fc-* custom properties, which
         admin.css already drives for surfaces and R7 extends to the toolbar. */
   %>
-  <link href="/assets/css/admin.css?v=p215" rel="stylesheet">
+  <link href="/assets/css/admin.css?v=<%= vAdminCss %>" rel="stylesheet">
 <script>
   /* Inline and synchronous, before the first paint. A stored choice applied from a
      deferred script would show the light page first and then repaint dark, which is
@@ -238,7 +238,7 @@
         pages, and the theme right behind it. */
   %>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
-  <script src="/assets/js/chart-theme.js?v=p21"></script>
+  <script src="/assets/js/chart-theme.js?v=<%= vChartTheme %>"></script>
   <% } %>
   <%- typeof scripts !== 'undefined' ? scripts : '' %>
 <script>

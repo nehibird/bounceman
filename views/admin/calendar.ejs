@@ -2,12 +2,11 @@
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <h4 class="mb-0">Calendar</h4>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    <span class="badge bg-warning text-dark"><svg class="bm-i me-1" style="font-size:8px" aria-hidden="true"><use href="#i-circle"/></svg> Pending</span>
-    <span class="badge bg-success"><svg class="bm-i me-1" style="font-size:8px" aria-hidden="true"><use href="#i-circle"/></svg> Confirmed</span>
-    <span class="badge bg-primary"><svg class="bm-i me-1" style="font-size:8px" aria-hidden="true"><use href="#i-circle"/></svg> Completed</span>
-    <span class="badge bg-danger"><svg class="bm-i me-1" style="font-size:8px" aria-hidden="true"><use href="#i-circle"/></svg> Cancelled</span>
-    <span class="badge bg-dark"><svg class="bm-i me-1" style="font-size:8px" aria-hidden="true"><use href="#i-circle"/></svg> Blocked</span>
+  <div class="bm-legend">
+    <span class="bm-leg bm-ev-pending">Pending</span>
+    <span class="bm-leg bm-ev-confirmed">Confirmed</span>
+    <span class="bm-leg bm-ev-completed">Completed</span>
+    <span class="bm-leg bm-leg-blocked">Blocked</span>
   </div>
 </div>
 
@@ -41,7 +40,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   var calendarEl = document.getElementById('calendar');
-  var statusColors = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
 
   // SECURITY: these values are customer-supplied (names, item names, block reasons). They used
   // to be concatenated into single-quoted JS literals with only apostrophes stripped, so a
@@ -56,21 +54,26 @@ document.addEventListener('DOMContentLoaded', function() {
   // sees, and everything below here silently stops being JavaScript. That is exactly what
   // happened on 2026-11-11 -- this comment described the bug and then caused it, and the
   // calendar rendered as an empty card until it was found.
+  // R3. No colour is passed from here any more. It used to carry its own Flat-UI
+  // palette -- #F39C12 #2ECC71 #3498DB #E74C3C, hardcoded -- which made this view the
+  // only literal colour left outside admin.css, the only surface that did not move in
+  // dark mode, and the reason the legend disagreed with the calendar: the chips were
+  // drawn from the D0 tokens while the events were drawn from these. The Completed chip
+  // was brand orange while completed events were sky blue.
+  //
+  // A class instead, resolved in admin.css, where the legend chips resolve too. Two
+  // things that must match now cannot fail to.
   var bookingEvents = ${JSON.stringify(bookings.map(function(b) {
-    var STATUS_COLORS = { pending: '#F39C12', confirmed: '#2ECC71', completed: '#3498DB', cancelled: '#E74C3C' };
     var name = (b.first_name || '') + ' ' + (b.last_name || '');
     var items = b.items || '';
     var days = parseInt(b.rental_days) || 1;
     var endDate = (b.event_end_date && b.event_end_date !== b.event_date) ? b.event_end_date : b.event_date;
-    var color = STATUS_COLORS[b.status] || '#6c757d';
     return {
       title: name + (items ? ' - ' + items : '') + (days > 1 ? ' (' + days + ' days)' : ''),
       start: b.event_date + 'T' + (b.event_start_time || '08:00'),
       end: endDate + 'T' + (b.event_end_time || '17:00'),
       url: '/admin/bookings/' + b.id,
-      backgroundColor: color,
-      borderColor: color,
-      textColor: '#fff'
+      classNames: ['bm-ev-' + (b.status || 'pending')]
     };
   })).replace(/</g, '\\u003c')};
 
@@ -101,9 +104,7 @@ document.addEventListener('DOMContentLoaded', function() {
       start: bl.date,
       allDay: true,
       display: 'background',
-      extendedProps: { reason: bl.reason || 'Blocked' },
-      backgroundColor: 'rgba(231,76,60,0.2)',
-      borderColor: '#E74C3C'
+      extendedProps: { reason: bl.reason || 'Blocked' }
     };
   })).replace(/</g, '\\u003c')};
 

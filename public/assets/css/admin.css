@@ -55,6 +55,31 @@
   --bm-money-in:  var(--bm-fb-good);
   --bm-money-out: var(--bm-fb-bad);
 
+  /* ---- calendar events (R3) ---------------------------------------------
+     The calendar never joined D0. It carried its own Flat-UI palette from about
+     2013 -- #F39C12 #2ECC71 #3498DB #E74C3C -- hardcoded in the view, which made
+     it the only literal colour left outside this file and the only surface that
+     did not move in dark mode.
+
+     These follow the same sequence the state chips do, not a traffic light:
+     not-yet -> active -> done. One colour on the whole screen, the accent, and
+     it means "live work"; everything finished goes grey. The legend chips and
+     the events share these classes, so the two cannot drift apart again.
+
+     Light-mode ratios, measured: confirmed 6.04:1, completed 5.31:1,
+     pending 10.6:1. */
+  --bm-ev-confirmed-bg: var(--bm-accent);
+  --bm-ev-confirmed-fg: var(--bm-on-accent);
+  --bm-ev-completed-bg: var(--bm-n-400);
+  --bm-ev-completed-fg: var(--bm-n-900);
+  --bm-ev-pending-bg:   var(--bm-n-200);
+  --bm-ev-pending-fg:   var(--bm-n-700);
+  /* A blocked day is a wash, not an event, so it needs a solid colour rather than
+     an opacity: the legend swatch has to be able to match it exactly, and a 12%
+     fill behind 11px text is not readable. This is --bm-fb-bad at 12% over the
+     card surface, precomputed. */
+  --bm-ev-blocked-bg:   #f4e6e4;
+
   /* ---- state (booking lifecycle) ----------------------------------------
      A sequence, not a traffic light: not-yet -> active -> done -> void. */
   --bm-state-pending-bg:   var(--bm-n-100);
@@ -729,6 +754,58 @@ a:focus-visible .stat-card {
 .fc .fc-day-other .fc-daygrid-day-number { color: var(--bm-n-500); }
 .fc .fc-daygrid-day.fc-day-today { background: var(--bm-n-50); }
 
+/* ---- R3: one source for every colour on this screen ----------------------
+   FullCalendar reads --fc-event-bg-color / --fc-event-border-color / 
+   --fc-event-text-color for block events, and the month-view dot takes its border
+   from --fc-event-border-color too. Setting them per status on a class means the
+   view passes no colour at all, so a legend chip and the events it describes cannot
+   disagree -- they are the same rule. */
+.fc .bm-ev-confirmed, .bm-leg.bm-ev-confirmed {
+  --fc-event-bg-color: var(--bm-ev-confirmed-bg);
+  --fc-event-border-color: var(--bm-ev-confirmed-bg);
+  --fc-event-text-color: var(--bm-ev-confirmed-fg);
+}
+.fc .bm-ev-completed, .bm-leg.bm-ev-completed {
+  --fc-event-bg-color: var(--bm-ev-completed-bg);
+  --fc-event-border-color: var(--bm-ev-completed-bg);
+  --fc-event-text-color: var(--bm-ev-completed-fg);
+}
+.fc .bm-ev-pending, .bm-leg.bm-ev-pending {
+  --fc-event-bg-color: var(--bm-ev-pending-bg);
+  --fc-event-border-color: var(--bm-ev-pending-bg);
+  --fc-event-text-color: var(--bm-ev-pending-fg);
+}
+/* A dot event is the month view's default, and the dot is the whole status signal
+   there. The title must stay readable rather than take the fill colour -- pending's
+   fill as text would be invisible -- so it is neutral, and the dot carries status.
+   Without this the title inherits the accent link colour and every event in the
+   month reads the same orange whatever its status. */
+.fc .fc-daygrid-dot-event .fc-event-title { color: var(--bm-n-800); font-weight: 700; }
+.fc .fc-daygrid-dot-event .fc-event-time  { color: var(--bm-n-500); }
+.fc .fc-daygrid-dot-event:hover { background: var(--bm-n-50); }
+
+/* The blocked wash. Solid rather than an opacity so the legend swatch is able to
+   be exactly the same colour. */
+.fc { --fc-bg-event-color: var(--bm-ev-blocked-bg); --fc-bg-event-opacity: 1; }
+
+/* The legend. Same classes as the events above, which is the entire point. */
+.bm-legend { display: flex; gap: var(--bm-space-2); flex-wrap: wrap; align-items: center; }
+.bm-leg {
+  display: inline-flex; align-items: center; padding: 3px 11px;
+  border-radius: var(--bm-radius-pill); font-size: var(--bm-text-xs);
+  font-weight: 700; letter-spacing: .02em;
+  /* The chip reads the SAME tokens the events resolve through. It cannot take the
+     fill from .fc .bm-ev-* instead: that class also lands on the event element, and
+     filling a month-view dot event was never the intent -- it put the time text on a
+     light fill at 3.14:1. The variables drive the calendar, these two lines drive the
+     chip, both from one pair of tokens. */
+  background: var(--bm-leg-bg); color: var(--bm-leg-fg);
+}
+.bm-leg.bm-ev-confirmed { --bm-leg-bg: var(--bm-ev-confirmed-bg); --bm-leg-fg: var(--bm-ev-confirmed-fg); }
+.bm-leg.bm-ev-completed { --bm-leg-bg: var(--bm-ev-completed-bg); --bm-leg-fg: var(--bm-ev-completed-fg); }
+.bm-leg.bm-ev-pending   { --bm-leg-bg: var(--bm-ev-pending-bg);   --bm-leg-fg: var(--bm-ev-pending-fg); }
+.bm-leg-blocked { background: var(--bm-ev-blocked-bg); color: var(--bm-fb-bad); }
+
 /* Text on the accent fill. Same mistake as the primary button in P2-7: white on
    the brand orange is 3.06:1, and it had got into two more places. */
 .nav-pills .nav-link.active { color: var(--bm-on-accent); }
@@ -895,6 +972,13 @@ hr { border-color: var(--bm-n-100); }
     /* State chips follow the ramp, but void needs its own quiet red bed. */
     --bm-state-void-bg: #2e2220;
 
+    /* R3. Confirmed and pending follow the ramp correctly on their own: the accent
+       fill is unchanged, and pending lands at 6.57:1. Completed does not -- n-400
+       inverts to #6b7788, where even the strongest text measures 4.13:1 and fails.
+       One step darker is 6.36:1. */
+    --bm-ev-completed-bg: var(--bm-n-300);
+    --bm-ev-blocked-bg:   #352629;
+
     /* Chrome stays dark in both themes, so it must NOT ride the inverted ramp.
        A touch lighter than the page here, or the sidebar and the content merge. */
     --bm-chrome-bg:  #0e1218;
@@ -938,6 +1022,13 @@ hr { border-color: var(--bm-n-100); }
   --bm-fb-warn: #e0a33a;
   --bm-fb-bad:  #e8705a;
   --bm-state-void-bg: #2e2220;
+
+  /* R3. Confirmed and pending follow the ramp correctly on their own: the accent
+     fill is unchanged, and pending lands at 6.57:1. Completed does not -- n-400
+     inverts to #6b7788, where even the strongest text measures 4.13:1 and fails.
+     One step darker is 6.36:1. */
+  --bm-ev-completed-bg: var(--bm-n-300);
+  --bm-ev-blocked-bg:   #352629;
   --bm-chrome-bg:  #0e1218;
   --bm-toast-bg:   #2b3440;
   --bm-on-fill:   #11151b;

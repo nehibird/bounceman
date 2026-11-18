@@ -56,6 +56,29 @@ app.locals.fmtDate = require('./lib/helpers').fmtDate;
 
 // Cloudflare Turnstile site key for the lead-capture popup. Empty (e.g. on the
 // sandbox) means the widget isn't rendered and /api/lead skips verification.
+// Cache-busting for the two hand-versioned assets. The admin layout carried
+// `admin.css?v=p215` -- a string typed by hand during P2-15 and never moved again, so
+// every stylesheet change since then reached a returning browser only when its cache
+// happened to expire. R3 is almost entirely CSS and rendered from the stale copy on
+// the first try: the legend chips lost their fill and the blocked wash fell back to
+// FullCalendar's default green, on a server that was serving the correct file.
+//
+// Hashed at boot rather than typed. The code is baked into the image, so the digest is
+// fixed for the life of a deploy and changes exactly when the file does -- which is the
+// only thing a cache-buster was ever supposed to mean.
+const _assetVersion = (f) => {
+  try {
+    return require('crypto').createHash('sha1')
+      .update(require('fs').readFileSync(require('path').join(__dirname, 'public', f)))
+      .digest('hex').slice(0, 8);
+  } catch (e) {
+    console.error('[assets] could not hash ' + f + ': ' + e.message);
+    return String(Date.now());   // never cache something we failed to read
+  }
+};
+app.locals.vAdminCss = _assetVersion('assets/css/admin.css');
+app.locals.vChartTheme = _assetVersion('assets/js/chart-theme.js');
+
 app.locals.TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '';
 
 // Flag the booking flow so the shared layout can drop the footer's outbound
