@@ -88,10 +88,24 @@ allc, live = truth['all'], truth['live']
 
 check('the data really is mostly noise (sanity for this gate)', allc > live,
       'all=%d actionable=%d' % (allc, live))
-check('the dashboard no longer shows the all-time count',
-      not re.search(r'Contracts to chase\s*' + str(allc) + r'\b', dtext), 'would be %d' % allc)
-check('it shows the actionable count instead',
-      re.search(r'Contracts to chase\s*' + str(live) + r'\b', dtext) is not None, 'expect %d' % live)
+# R15, 2026-11-18, updated deliberately -- not to make a failure go away.
+#
+# P0-6's point was that the dashboard surfaces the ACTIONABLE unsigned contracts rather
+# than an all-time count nobody can act on. It proved that through a "Contracts to chase
+# N" row in an Inventory card. R15 deleted that row, because the alert banner at the top
+# of the same page already lists those bookings by name with a link each -- the count was
+# a second, weaker surface for a fact the banner states better, sitting two cards below
+# it.
+#
+# So the intent is asserted against the surface that survived. The all-time count must
+# still appear nowhere; the actionable set is checked by the banner assertions below,
+# which were always the stronger half of this gate.
+check('the dashboard shows the all-time count nowhere',
+      not re.search(r'(?i)contracts?\s+to\s+chase\s*' + str(allc) + r'\b', dtext)
+      and not re.search(r'(?i)unsigned\s+contracts?\s*' + str(allc) + r'\b', dtext),
+      'would be %d' % allc)
+check('the count row is not back as a second surface',
+      'Contracts to chase' not in dtext)
 check('the row is relabelled away from "Unsigned Contracts"', 'Unsigned Contracts' not in dtext)
 
 if live > 0:

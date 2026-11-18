@@ -218,7 +218,6 @@ ${unsignedContracts.length ? `
               </div>
               ${(finance.obligations && finance.obligations.items.length) ? `
               <div class="small text-muted mt-2 pt-2" style="border-top:1px dashed rgba(0,0,0,.12)">
-                <div class="text-uppercase" style="font-size:.65rem;letter-spacing:.5px">Also held back</div>
                 ${finance.obligations.items.map(function(o) {
                   return '<div class="d-flex justify-content-between"><span>' + o.name +
                     (o.overdue ? ' <span class="text-danger fw-semibold">overdue</span>' : '') +
@@ -330,22 +329,25 @@ ${unsignedContracts.length ? `
           Booked should equal collected plus still-owed. Usually a refund that never came off the booking,
           or a booking carrying a deposit nobody paid.
         </div>` : ''}
-        ${analytics.overpaid > 0.01 ? `
+        <!-- R15: was > 0.01, which still earns a whole row for a single cent. A
+             figure under a dollar is noise on a screen whose other numbers are in the
+             thousands. -->
+        ${analytics.overpaid >= 1 ? `
         <div class="d-flex justify-content-between small text-muted mb-2">
           <span>Customer overpayments kept</span><span>$${parseFloat(analytics.overpaid).toFixed(2)}</span>
         </div>` : ''}
         <div class="row g-0 text-center border rounded mb-2 py-2">
           <div class="col-4">
             <div class="text-muted" style="font-size:0.7rem" title="Every live booking including events that have not happened yet. Not the same as earned.">BOOKED (INCL. FUTURE)</div>
-            <div class="fw-bold small">${parseFloat(analytics.totalRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+            <div class="fw-bold small">$${parseFloat(analytics.totalRevenue).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
           <div class="col-4 border-start border-end">
             <div class="text-muted" style="font-size:0.7rem" title="Everything ever collected, net of refunds. This is not your bank balance — see Safe to Spend above.">COLLECTED TO DATE</div>
-            <div class="fw-bold small text-success">${parseFloat(analytics.cashCollected).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+            <div class="fw-bold small text-success">$${parseFloat(analytics.cashCollected).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
           <div class="col-4">
             <div class="text-muted" style="font-size:0.7rem">STILL OWED</div>
-            <div class="fw-bold small text-warning">${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+            <div class="fw-bold small text-warning">$${parseFloat(analytics.balanceOwed).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
           </div>
         </div>
         ${analytics.reimburseOwed > 0 ? `
@@ -414,7 +416,14 @@ ${unsignedContracts.length ? `
   </div>
   <div class="col-md-4">
     <div class="card h-100">
-      <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-boxes"/></svg>Equipment Utilization</div>
+      <!-- R15: "Jobs" and "Revenue" since WHEN was never stated. It is every booking
+           ever taken, so it says so. Ranked by revenue rather than job count, because
+           the interesting fact was invisible under the old sort: Mini Castle takes 17
+           jobs for $2,415 while Blue Crush takes 15 for $5,325. -->
+      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-boxes"/></svg>Equipment Utilization</span>
+        <span class="text-muted fw-normal" style="font-size:var(--bm-text-sm)">all time</span>
+      </div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr><th class="ps-3">Unit</th><th class="text-center">Jobs</th><th class="pe-3">Revenue</th></tr></thead>
@@ -435,16 +444,20 @@ ${unsignedContracts.length ? `
 
 <!-- Upcoming Events + Inventory (Quick Actions moved to the top -- P0-7) -->
 <div class="row g-4 mb-4">
-  <div class="col-md-8">
+  <div class="col-12">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Upcoming Events</span>
+        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-calendar-check"/></svg>Upcoming Events
+          <span class="text-muted fw-normal ms-2" style="font-size:var(--bm-text-sm)">${stats.weekBookings} this week &middot; ${stats.totalEquipment} units</span>
+        </span>
         <a href="/admin/bookings" class="btn btn-sm btn-bm">View All</a>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover mb-0 rtable">
-            <thead><tr><th>Date</th><th>Customer</th><th>Time</th><th>Status</th><th></th></tr></thead>
+            <!-- R15: the View button is gone; every row is already a link
+                 (data-booking-href), so the column was a second way to do one thing. -->
+            <thead><tr><th>Date</th><th>Customer</th><th>Time</th><th>Status</th></tr></thead>
             <tbody>
               ${upcoming.length > 0 ? upcoming.map(b => `
               <tr style="cursor:pointer" data-booking-href="/admin/bookings/${b.id}">
@@ -452,32 +465,21 @@ ${unsignedContracts.length ? `
                 <td class="rt-primary">${esc(b.first_name)} ${esc(b.last_name)}</td>
                 <td data-label="Time">${fmtTime12(b.event_start_time)} - ${fmtTime12(b.event_end_time)}</td>
                 <td data-label="Status"><span class="badge-status badge-${b.status}">${b.status}</span></td>
-                <td class="rt-actions"><a href="/admin/bookings/${b.id}" class="btn btn-sm btn-outline-secondary">View</a></td>
+
               </tr>
-              `).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No upcoming events</td></tr>'}
+              `).join('') : '<tr><td colspan="4" class="text-center text-muted py-4">No upcoming events</td></tr>'}
             </tbody>
           </table>
         </div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card">
-      <div class="card-header"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-info-circle"/></svg>Inventory</div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between mb-2">
-          <span>Total Equipment</span><strong>${stats.totalEquipment}</strong>
-        </div>
-        <div class="d-flex justify-content-between mb-2">
-          <span>Contracts to chase</span>
-          <strong style="color:${stats.unsignedContracts > 0 ? 'var(--bm-fb-bad)' : 'var(--bm-n-400)'}">${stats.unsignedContracts}</strong>
-        </div>
-        <div class="d-flex justify-content-between">
-          <span>Week Bookings</span><strong>${stats.weekBookings}</strong>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- R15. An "Inventory" card stood here holding three facts that shared no subject:
+       Total Equipment (a static count), Contracts to chase (which is the red banner at
+       the very top of this page, said again), and Week Bookings (an operations number).
+       Contracts to chase is dropped as the duplicate it was. The other two are not lost
+       -- they are a subtitle on the Upcoming Events card above, where a count of units
+       and a count of this week's work actually belong. -->
 </div>
 
 `, scripts: `

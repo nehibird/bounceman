@@ -11,7 +11,12 @@ const { syncAll } = require('./lib/plaid-sync');
   const db = getDb();
 
   // Friendly display names (Plaid returns the cardholder name)
-  const NAMES = { '7513': 'Chase Business Ink Unlimited Credit Card' };
+  // R15: ....7636 arrived from Plaid as "BOUNCE MAN ACCOUNT" and sat in the panel
+  // shouting beside two title-cased neighbours. Renamed through the mechanism that
+  // already exists for this rather than title-cased at render time, which would
+  // mangle any name that is legitimately capitalised. Takes effect on the next run.
+  const NAMES = { '7513': 'Chase Business Ink Unlimited Credit Card',
+                  '7636': 'Bounce Man Account' };
   for (const [mask, nm] of Object.entries(NAMES)) {
     db.prepare('UPDATE bank_accounts SET name=? WHERE mask=?').run(nm, mask);
   }

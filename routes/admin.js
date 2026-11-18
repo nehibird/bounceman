@@ -226,7 +226,9 @@ router.get('/', async (req, res) => {
   const monthlyRevenue = [];
   for (let i = 5; i >= 0; i--) {
     const key = dayjs().subtract(i, 'month').format('YYYY-MM');
-    const lbl = dayjs().subtract(i, 'month').format('MMM YY');
+    // R15: 'MMM YY' renders "Nov 26", which reads as the 26th of November on a
+    // screen full of dates. Brackets escape a literal in dayjs.
+    const lbl = dayjs().subtract(i, 'month').format("MMM [']YY");
     monthlyRevenue.push({ month: key, label: lbl, revenue: monthlyMap[key] || 0 });
   }
 
@@ -242,7 +244,7 @@ router.get('/', async (req, res) => {
     FROM equipment e
     LEFT JOIN booking_items bi ON bi.equipment_id = e.id
     LEFT JOIN bookings b ON b.id = bi.booking_id AND b.status NOT IN ('cancelled', 'declined')
-    GROUP BY e.id ORDER BY bookings DESC LIMIT 8
+    GROUP BY e.id ORDER BY revenue DESC LIMIT 8   -- R15: revenue, not job count
   `).all();
 
   // exclude_from_totals: an account that arrived on a shared Plaid connection but belongs to a

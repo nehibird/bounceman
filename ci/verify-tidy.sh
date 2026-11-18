@@ -85,6 +85,48 @@ else:
     check('NOTE: no card is over its limit right now, so that pair was not exercised',
           True, 'this is a data-dependent check')
 
+# ------------------------------------------------------------------ R15 ----
+# The small inconsistencies, which individually are nothing and together are most of
+# what "unfinished" looks like.
+dash = body.split('Upcoming Events')[0] if 'Upcoming Events' in body else body
+
+# One currency convention. BOOKED / COLLECTED TO DATE / STILL OWED printed bare
+# thousands-separated numbers on a page where every other figure carries a dollar sign.
+for label in ('BOOKED \\(INCL\\. FUTURE\\)', 'COLLECTED TO DATE', 'STILL OWED'):
+    m = re.search(label + r'.{0,200}?<div[^>]*>\s*([^<]{1,20})</div>', body, re.S)
+    plain = label.replace('\\', '')
+    if not m:
+        check('the %s cell was found' % plain, False)
+    else:
+        check('%s carries a dollar sign' % plain, m.group(1).strip().startswith('$'),
+              m.group(1).strip()[:18])
+
+# A row that is already a link does not also need a button that does the same thing.
+rows_with_button = re.findall(r'<tr[^>]*data-booking-href[^>]*>.*?</tr>', body, re.S)
+offenders = [r for r in rows_with_button if re.search(r'<a[^>]*class="[^"]*btn', r)]
+check('no clickable row also carries a button to the same place',
+      not offenders, '%d of %d rows' % (len(offenders), len(rows_with_button)))
+check('there ARE clickable rows, so that check is not vacuous', len(rows_with_button) > 0,
+      len(rows_with_button))
+
+# A month label that reads as a date.
+bad_months = re.findall(r'"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{2}"', body)
+check('chart month labels are not "Nov 26", which reads as a date', not bad_months, bad_months[:4])
+
+# The card whose three facts shared no subject.
+check('the Inventory card is gone', 'Inventory</div>' not in body and '>Inventory<' not in body)
+check('but its facts survive on the Upcoming Events card',
+      re.search(r'this week\s*&middot;|this week\s*\u00b7', body) is not None)
+check('Contracts to chase is not repeated below its own banner',
+      body.count('Contracts to chase') == 0)
+
+# Said once, not twice, after R9 retitled the column above it.
+check('the redundant "Also held back" sub-label is gone', 'Also held back' not in body)
+
+# "Jobs" and "Revenue" since when?
+check('Equipment Utilization states its window',
+      re.search(r'Equipment Utilization.{0,400}?all time', body, re.S) is not None)
+
 print('TIDY_FAILED=%d' % fails)
 sys.exit(1 if fails else 0)
 PY
