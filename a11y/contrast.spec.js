@@ -67,6 +67,15 @@ function seedCalendar() {
   const db = new (require('better-sqlite3'))(dbPath);
 
   // Idempotent: this file may run many times against the same database.
+  //
+  // Foreign keys go off for the cleanup, exactly as tests/global-setup.js does. The
+  // a11y server is live while this runs and its schedulers write rows that reference
+  // bookings -- reminders, communications -- so by the second run a seeded booking has
+  // dependents this function does not know about, and the delete fails with
+  // SQLITE_CONSTRAINT_FOREIGNKEY. That failure lands in beforeAll, where it does not
+  // report a contrast violation: it reports "24 did not run", which is a gate turning
+  // itself off.
+  db.pragma('foreign_keys = OFF');
   const old = db.prepare('SELECT id FROM bookings WHERE booking_number LIKE ?').all(SEED_TAG + '%');
   const del = db.prepare('DELETE FROM booking_items WHERE booking_id = ?');
   for (const r of old) del.run(r.id);
@@ -101,6 +110,7 @@ function seedCalendar() {
   db.prepare('INSERT INTO blocked_dates (id, date, reason) VALUES (?, ?, ?)')
     .run(SEED_TAG + '-block', isoDay(3), SEED_TAG);
 
+  db.pragma('foreign_keys = ON');
   db.close();
   return statuses.length;
 }
@@ -127,6 +137,20 @@ const PAGES = [
   ['expenses', '/admin/expenses'],
   ['today', '/admin/delivery'],
   ['settings', '/admin/settings'],
+];
+
+// R20. The customer site was never audited, and that is where contrast costs money:
+// a booking step nobody can read is a booking nobody makes. It got measured only by
+// accident, when a 500 on /admin/calendar rendered the public 404 and dragged the
+// footer into an admin page's audit -- where it came back at 3.74:1.
+//
+// Audited once rather than twice: the data-theme attribute is an admin mechanism and
+// the public layout does not read it, so a second pass would re-measure the same pixels
+// and report every finding twice.
+const PUBLIC_PAGES = [
+  ['public-home', '/'],
+  ['public-booking', '/booking/select'],
+  ['public-equipment', '/equipment'],
 ];
 
 const THEMES = ['light', 'dark'];
@@ -175,6 +199,37 @@ for (const theme of THEMES) {
       }
     });
   }
+}
+
+for (const [name, url] of PUBLIC_PAGES) {
+  test(`contrast: ${name}`, async ({ page }) => {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(250);
+
+    // The same non-vacuity rule the calendar audits get: a page that did not render
+    // is a page whose colours prove nothing. A customer page that 500s would
+    // otherwise sail through a colour audit.
+    const footer = await page.locator('footer, .main-footer').count();
+    expect(footer, `${url} did not render a footer -- it probably did not render`)
+      .toBeGreaterThan(0);
+
+    const results = await new AxeBuilder({ page })
+      .withRules(['color-contrast'])
+      .analyze();
+
+    for (const v of results.violations) {
+      for (const node of v.nodes) {
+        findings.push({
+          page: name,
+          theme: 'public',
+          impact: v.impact,
+          target: (node.target || []).join(' '),
+          summary: (node.failureSummary || '').split('\n').filter(Boolean).pop(),
+          html: (node.html || '').slice(0, 110),
+        });
+      }
+    }
+  });
 }
 
 test.afterAll(async () => {

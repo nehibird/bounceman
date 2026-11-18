@@ -661,7 +661,13 @@
         &nbsp;·&nbsp; <a href="/terms" style="color:inherit;text-decoration:underline">Terms &amp; Conditions</a>
         &nbsp;·&nbsp; <a href="/data-deletion" style="color:inherit;text-decoration:underline">Data Deletion</a>
 
-        <div class="powered-by" style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.10);font-size:13px;opacity:0.8">
+        <!-- R20. opacity:0.8 used to sit on this block. .footer-bottom is already
+             rgba(255,255,255,0.5) on the dark footer, which composites to 5.04:1 -- fine
+             on its own -- and the extra 0.8 took it to 3.74:1, under AA for 13px text.
+             Removing the opacity is the whole fix: no new colour is invented, and this
+             block now reads at exactly the same contrast as the copyright line above it,
+             which it always should have. -->
+        <div class="powered-by" style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.10);font-size:13px">
           This website is powered by <a href="https://birdherd.media/?utm_source=bouncemanrentals&amp;utm_medium=footer&amp;utm_campaign=powered_by" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Bird Herd Media</a>.
           Want one like it? <a href="https://birdherd.media/?utm_source=bouncemanrentals&amp;utm_medium=footer&amp;utm_campaign=powered_by#quote" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Request a quote</a>.
         </div>
