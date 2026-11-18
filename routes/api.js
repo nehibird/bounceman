@@ -351,18 +351,51 @@ router.get('/stats', (req, res) => {
   });
 });
 
-// Blocked dates management
+// Blocked dates management.
+//
+// R2. These two used to insert and delete whatever they were handed: no date format
+// check, no range, no existence check on delete, and nothing at all between a typo and a
+// day the public booking flow will refuse. routes/booking.js and lib/helpers.js both
+// read this table, so a bad row here is lost revenue that nothing reports.
+//
+// The rules now live in lib/blocked.js and are shared; these handlers do HTTP.
+router.get('/blocked-dates/conflicts', (req, res) => {
+  const { start, end, equipment_id } = req.query;
+  const blocked = require('../lib/blocked');
+  const p = blocked.plan({ start, end, equipment_id }, getDb());
+  if (!p.ok) return res.status(400).json({ error: p.error });
+  res.json({
+    days: p.dates.length,
+    bookings: blocked.bookingsInRange(getDb(), start, end || start, equipment_id)
+  });
+});
+
 router.post('/blocked-dates', (req, res) => {
-  const db = getDb();
-  const { date, reason, equipment_id } = req.body;
-  db.prepare('INSERT INTO blocked_dates (id, date, reason, equipment_id) VALUES (?, ?, ?, ?)')
-    .run(uuid(), date, reason || null, equipment_id || null);
-  res.json({ success: true });
+  const blocked = require('../lib/blocked');
+  const { date, start, end, reason, equipment_id } = req.body;
+  const result = blocked.block(getDb(), {
+    start: start || date, end: end || start || date, reason, equipment_id
+  });
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  res.json({ success: true, created: result.created.length, days: result.dates.length });
+});
+
+// By range, which is what the calendar has in hand, with the by-id form kept because
+// something outside this repository may still be calling it.
+router.delete('/blocked-dates/range', (req, res) => {
+  const blocked = require('../lib/blocked');
+  const { start, end, equipment_id } = req.body;
+  const result = blocked.unblock(getDb(), { start, end, equipment_id });
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  res.json({ success: true, removed: result.removed });
 });
 
 router.delete('/blocked-dates/:id', (req, res) => {
-  getDb().prepare('DELETE FROM blocked_dates WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM blocked_dates WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM blocked_dates WHERE id = ?').run(req.params.id);
+  res.json({ success: true, deleted: row });
 });
 
 // Quick booking create (admin)

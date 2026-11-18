@@ -49,6 +49,51 @@ const D=require("/app/node_modules/better-sqlite3");
 const d=new D("/app/data/bounceman.db",{readonly:true});
 process.stdout.write(JSON.stringify(d.prepare("SELECT date, reason, equipment_id FROM blocked_dates ORDER BY date").all()));' > "$WORK/rows.json"
 
+# ---------------------------------------------------------------- R2 ------
+# Until R2 nothing in the admin could block or unblock a date, and the work order's own
+# landmine was that nothing proved blocked_dates is honoured where it matters. So this
+# half does not read code -- it drives the real endpoints against a real database and
+# checks the PUBLIC availability answer changes.
+#
+# A future date with no booking and no block is chosen from the data rather than
+# hardcoded, so the gate cannot quietly start testing a day that was already special.
+FREE=$(docker exec "$NAME" node -e '
+const D=require("/app/node_modules/better-sqlite3");
+const d=new D("/app/data/bounceman.db",{readonly:true});
+for (let i = 400; i < 700; i++) {
+  const day = new Date(Date.now() + i*86400000).toISOString().slice(0,10);
+  const booked = d.prepare("SELECT 1 FROM bookings WHERE event_date=? AND status NOT IN (?,?)").get(day,"cancelled","declined");
+  const blocked = d.prepare("SELECT 1 FROM blocked_dates WHERE date=?").get(day);
+  if (!booked && !blocked) { process.stdout.write(day); break; }
+}')
+api() { curl -s -X "$1" --max-time 15 -H "Cookie: token=$TOKEN" \
+          -H 'Content-Type: application/json' -H 'Accept: application/json' \
+          ${3:+-d "$3"} "http://127.0.0.1:$PORT$2"; }
+
+echo "    using the free day $FREE"
+A1=$(curl -s --max-time 15 "http://127.0.0.1:$PORT/api/availability?date=$FREE")
+B1=$(api POST /api/blocked-dates "{\"start\":\"$FREE\",\"reason\":\"gate probe\"}")
+A2=$(curl -s --max-time 15 "http://127.0.0.1:$PORT/api/availability?date=$FREE")
+B2=$(api POST /api/blocked-dates "{\"start\":\"$FREE\",\"reason\":\"gate probe\"}")
+U1=$(api DELETE /api/blocked-dates/range "{\"start\":\"$FREE\"}")
+A3=$(curl -s --max-time 15 "http://127.0.0.1:$PORT/api/availability?date=$FREE")
+BAD1=$(api POST /api/blocked-dates '{"start":"not-a-date"}')
+BAD2=$(api POST /api/blocked-dates "{\"start\":\"$FREE\",\"end\":\"2020-01-01\"}")
+BAD3=$(api POST /api/blocked-dates "{\"start\":\"$FREE\",\"end\":\"2099-01-01\"}")
+BOOKED_DAY=$(docker exec "$NAME" node -e '
+const D=require("/app/node_modules/better-sqlite3");
+const d=new D("/app/data/bounceman.db",{readonly:true});
+const r=d.prepare("SELECT event_date FROM bookings WHERE status NOT IN (?,?) ORDER BY event_date DESC LIMIT 1").get("cancelled","declined");
+process.stdout.write(r ? r.event_date : "");')
+CONF=$(curl -s --max-time 15 -H "Cookie: token=$TOKEN" \
+  "http://127.0.0.1:$PORT/api/blocked-dates/conflicts?start=$BOOKED_DAY&end=$BOOKED_DAY")
+LEFT=$(docker exec "$NAME" node -e '
+const D=require("/app/node_modules/better-sqlite3");
+const d=new D("/app/data/bounceman.db",{readonly:true});
+process.stdout.write(String(d.prepare("SELECT COUNT(*) c FROM blocked_dates WHERE reason=?").get("gate probe").c));')
+
+export FREE A1 A2 A3 B1 B2 U1 BAD1 BAD2 BAD3 CONF LEFT BOOKED_DAY
+
 python3 - "$WORK" <<'PY'
 import json, re, sys, os
 work = sys.argv[1]
@@ -131,6 +176,34 @@ views = ''.join(open('/opt/bounceman/views/admin/' + f).read()
                 for f in os.listdir('/opt/bounceman/views/admin') if f.endswith('.ejs'))
 hidden = re.search(r'fc-bg-event[^{]*\.fc-event-title[^{]*\{[^}]*display\s*:\s*none', css + views)
 check('the title is not merely hidden with CSS', hidden is None)
+
+# ---- R2: the write path, driven end to end -------------------------------
+import os as _os
+def J(name):
+    try: return json.loads(_os.environ.get(name, '') or '{}')
+    except Exception: return {}
+
+free = _os.environ.get('FREE', '')
+check('the gate found a free future day to test with', bool(free), free)
+check('that day starts out available to customers', J('A1').get('available') is True, J('A1'))
+check('blocking it reports one day created', J('B1').get('created') == 1, J('B1'))
+check('the PUBLIC availability answer changes to unavailable',
+      J('A2').get('available') is False and J('A2').get('reason') == 'gate probe', J('A2'))
+check('blocking the same day again creates nothing (idempotent)',
+      J('B2').get('created') == 0, J('B2'))
+check('unblocking removes exactly one day', J('U1').get('removed') == 1, J('U1'))
+check('and the day is offered to customers again', J('A3').get('available') is True, J('A3'))
+check('the probe left nothing behind in the table',
+      _os.environ.get('LEFT') == '0', _os.environ.get('LEFT'))
+
+check('a malformed date is refused', 'error' in J('BAD1'), J('BAD1'))
+check('an end before the start is refused', 'error' in J('BAD2'), J('BAD2'))
+check('a range longer than the cap is refused', 'error' in J('BAD3'), J('BAD3'))
+
+conf = J('CONF')
+check('the conflicts check NAMES what is already booked, not just a count',
+      bool(conf.get('bookings')) and 'first_name' in (conf['bookings'][0] if conf.get('bookings') else {}),
+      str(conf)[:120])
 
 print('BLOCKED_FAILED=%d' % fails)
 sys.exit(1 if fails else 0)

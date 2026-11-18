@@ -44,6 +44,7 @@
   .bm-blocked-when { font-weight:700; color:var(--bm-n-900); white-space:nowrap; }
   .bm-blocked-what { flex:1 1 auto; }
   .bm-blocked-why { color:var(--bm-n-500); font-size:var(--bm-text-sm); }
+  .bm-blocked-lift { flex:0 0 auto; margin-left:var(--bm-space-3); }
   @media (max-width:575px) {
     .bm-blocked-row { flex-wrap:wrap; gap:2px var(--bm-space-3); }
     .bm-blocked-why { width:100%; }
@@ -162,7 +163,8 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       var start = null, prev = null;
       function flush() { if (start) out.push({ start: start, end: prev,
-        unit: rows[0].equipment_name || null, reason: rows[0].reason || null }); }
+        unit: rows[0].equipment_name || null, equipmentId: rows[0].equipment_id || null,
+        reason: rows[0].reason || null }); }
       rows.forEach(function(r) {
         if (prev === r.date) return;                       // same day, another row
         var contiguous = prev &&
@@ -220,6 +222,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     navLinks: true,
     editable: false,
+
+    // R2. Until now nothing in the admin could block or unblock a date: 63 rows were in
+    // that table and every one had been put there by hand. Dragging across days offers
+    // to block them.
+    //
+    // This is the only write in this series that changes what a CUSTOMER can buy --
+    // routes/booking.js and lib/helpers.js both refuse a date that appears in
+    // blocked_dates -- so it asks what is already booked inside the range and shows the
+    // answer BEFORE anything is written. A block over a live booking is allowed, because
+    // the booking still exists and is still being delivered, but it never happens
+    // without the operator seeing it.
+    selectable: true,
+    selectMirror: true,
+    select: function(info) {
+      // FullCalendar's end is exclusive; the last day a person selected is the one before.
+      var last = new Date(new Date(info.endStr + 'T12:00:00').getTime() - 86400000)
+        .toISOString().slice(0, 10);
+      calendar.unselect();
+      offerBlock(info.startStr, last);
+    },
     dayMaxEvents: true,
     noEventsContent: 'No bookings this period',
     // A background event has no title now, so the reason reaches the cell this way.
@@ -264,10 +286,97 @@ document.addEventListener('DOMContentLoaded', function() {
         why.textContent = r.reason;
         row.appendChild(why);
       }
+      // Lifting a block is the safe direction -- it gives a day back rather than taking
+      // one away -- so it is one click and a confirmation, not a form.
+      var lift = document.createElement('button');
+      lift.type = 'button';
+      lift.className = 'btn btn-sm btn-outline-secondary bm-blocked-lift';
+      lift.textContent = 'Unblock';
+      lift.addEventListener('click', function() { offerUnblock(r); });
+      row.appendChild(lift);
       host.appendChild(row);
     });
     host.hidden = false;
   }
+  // NOTE. Everything below lives inside a JavaScript template literal, so a backslash
+  // escape written in this file is resolved by Node before the browser sees it. A '\\n'
+  // here reaches the browser as '\\n'; a single one reaches it as a real newline and
+  // splits whatever string literal it was inside. Same family as the closing-script-tag
+  // and EJS-delimiter traps already recorded at the top of this file.
+  function spanWords(a, b) {
+    var days = Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
+    return a === b
+      ? fmtFull(a) + ' \u2014 1 day'
+      : fmtFull(a) + ' through ' + fmtFull(b) + ' \u2014 ' + days + ' days';
+  }
+  function fmtFull(iso) {
+    return new Date(iso + 'T12:00:00')
+      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function offerBlock(start, end) {
+    fetch('/api/blocked-dates/conflicts?start=' + start + '&end=' + end,
+      { headers: { Accept: 'application/json' } })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) throw new Error(d.error);
+        var msg = 'Block ' + spanWords(start, end) + '.';
+        if (d.bookings && d.bookings.length) {
+          // Named, not counted. "3 bookings in this range" is a number; "Liz Leaming,
+          // Sat Nov 21" is something you can act on before you decide.
+          msg += '\\n\\nAlready booked in that range:\\n' + d.bookings.map(function(b) {
+            return '\u2022 ' + fmtFull(b.event_date) + ' \u2014 ' +
+              (b.first_name || '') + ' ' + (b.last_name || '') +
+              (b.items ? ' (' + b.items + ')' : '');
+          }).join('\\n') + '\\n\\nThose stay booked. The days stop being offered to anyone else.';
+        }
+        msg += '\\n\\nCustomers will not be able to book these days.';
+        return bmPrompt({
+          title: d.bookings && d.bookings.length ? 'Block days that already have bookings?' : 'Block these days?',
+          message: msg,
+          placeholder: 'Why? e.g. new unit, awaiting inspection',
+          confirmLabel: 'Block',
+          danger: !!(d.bookings && d.bookings.length)
+        });
+      })
+      .then(function(reason) {
+        if (reason === null || reason === undefined) return;   // cancelled
+        return fetch('/api/blocked-dates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ start: start, end: end, reason: reason || null })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.error) throw new Error(d.error);
+          showToast(d.created ? d.created + ' day' + (d.created === 1 ? '' : 's') + ' blocked'
+                              : 'Those days were already blocked', 'success');
+          if (d.created) location.reload();
+        });
+      })
+      .catch(function(e) { showToast(e.message || 'Could not block those days', 'error'); });
+  }
+
+  function offerUnblock(r) {
+    var what = r.unit ? r.unit : 'bookings';
+    bmConfirm({
+      title: 'Unblock these days?',
+      message: spanWords(r.start, r.end) + '.\\n\\n' +
+        (r.unit ? r.unit + ' becomes available again on those days.'
+                : 'Those days start being offered to customers again.'),
+      confirmLabel: 'Unblock'
+    }).then(function(ok) {
+      if (!ok) return;
+      return fetch('/api/blocked-dates/range', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ start: r.start, end: r.end, equipment_id: r.equipmentId })
+      }).then(function(res) { return res.json(); }).then(function(d) {
+        if (d.error) throw new Error(d.error);
+        showToast(d.removed + ' day' + (d.removed === 1 ? '' : 's') + ' unblocked', 'success');
+        location.reload();
+      });
+    }).catch(function(e) { showToast(e.message || 'Could not unblock those days', 'error'); });
+  }
+
   function fmtDay(iso) {
     return new Date(iso + 'T12:00:00')
       .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
