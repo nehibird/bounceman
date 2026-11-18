@@ -784,6 +784,43 @@ a:focus-visible .stat-card {
 .fc .fc-daygrid-dot-event .fc-event-time  { color: var(--bm-n-500); }
 .fc .fc-daygrid-dot-event:hover { background: var(--bm-n-50); }
 
+/* ---- R7: the toolbar joins the button system ----------------------------
+   `today` and the month/week/day switcher rendered in FullCalendar's stock dark
+   slate -- the only controls in the admin that did not come from the four roles
+   P2-7 established, sitting at the top of the screen.
+
+   They map onto the SECONDARY role: outline, neutral, because none of them is the
+   thing you came to the page to do. The selected view is state, not rank, so it
+   takes a filled neutral the way a segmented control does. It deliberately does NOT
+   take the accent fill: that would put a second primary-looking control on a screen
+   whose primary action is elsewhere, and D0 allows one.
+
+   --fc-button-text-color is a single value across every state, so the active state
+   needs its own colour rule or the selected button reads n-700 on a darker bed. */
+.fc {
+  --fc-button-text-color: var(--bm-n-700);
+  --fc-button-bg-color: var(--bm-n-0);
+  --fc-button-border-color: var(--bm-n-200);
+  --fc-button-hover-bg-color: var(--bm-n-25);
+  --fc-button-hover-border-color: var(--bm-n-300);
+  --fc-button-active-bg-color: var(--bm-n-100);
+  --fc-button-active-border-color: var(--bm-n-300);
+}
+.fc .fc-button {
+  font-family: var(--bm-font-body); font-weight: 600; font-size: var(--bm-text-sm);
+  border-radius: var(--bm-radius-sm); box-shadow: none;
+  text-transform: none;
+}
+.fc .fc-button:focus, .fc .fc-button:active:focus { box-shadow: none; }
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active { color: var(--bm-n-900); }
+/* If it is a control, a keyboard has to be able to see it -- same rule the stat
+   cards got in P2-11. */
+.fc .fc-button:focus-visible {
+  outline: 2px solid var(--bm-accent); outline-offset: 2px;
+}
+.fc .fc-toolbar-title { font-size: var(--bm-text-lg); font-weight: 800; }
+
 /* The blocked wash. Solid rather than an opacity so the legend swatch is able to
    be exactly the same colour. */
 .fc { --fc-bg-event-color: var(--bm-ev-blocked-bg); --fc-bg-event-opacity: 1; }

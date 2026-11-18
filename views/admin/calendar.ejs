@@ -1,7 +1,27 @@
 <%- include('../layouts/admin', { body: `
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <h4 class="mb-0">Calendar</h4>
+<!-- R7. The page heading that used to sit here repeated the breadcrumb two inches
+     above it, word for word. The header has carried the page name since P2-5, so this
+     one said nothing. The legend keeps the row.
+
+     THREE TRAPS, and this comment fell into all of them before it worked.
+
+     1. It cannot be an EJS comment. This whole file is one include tag, and EJS scans
+        for its own delimiters without caring that they sit inside a JavaScript template
+        literal -- an opening delimiter here closes the OUTER include early and the page
+        500s with "Could not find matching close tag".
+     2. It cannot NAME those delimiters either, not even in prose inside an HTML comment.
+        EJS does not respect HTML comments; it scans the raw file. Hence this paragraph
+        describing them in words.
+     3. It must not quote the markup it describes. verify-fcchrome.sh greps this file for
+        a heading containing the page's name, and the first draft quoted the tag it had
+        just deleted and failed its own gate.
+
+     Only the smoke gate catches 1 and 2. Lint, the build, the node suites and the
+     browser specs all pass straight through a broken template. Same family as the
+     closing-script-tag warning at the top of this file, which also described the bug
+     it was causing. -->
+<div class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-4">
   <div class="bm-legend">
     <span class="bm-leg bm-ev-pending">Pending</span>
     <span class="bm-leg bm-ev-confirmed">Confirmed</span>
