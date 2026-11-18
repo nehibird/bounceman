@@ -278,10 +278,22 @@ a:hover { color: var(--bm-accent-hover); }
 
 /* ============================ cards ====================================== */
 
+/* ---- R14: borders, not shadows ---------------------------------------------
+   `.card { box-shadow }` plus a `.card-header` with a rule under it is the 2019
+   Bootstrap-admin signature, and it is most of why this screen read as dated whatever
+   the content said. A hairline does the same job -- it separates a surface from the
+   page -- without pretending every panel is hovering a few millimetres above it.
+   The token for it already existed: --bm-n-100.
+
+   Shadows are not banned, they are spent on things that genuinely float: the dialog,
+   the search panel, the account menu, the toast, and the sidebar when it slides over
+   the page on a phone. Those five, and the hover lift on a card that is really a link.
+   Nothing else. */
 .stat-card {
   background: var(--bm-n-0); border-radius: var(--bm-radius-md);
-  padding: var(--bm-space-6); border: none;
-  box-shadow: var(--bm-shadow-2);
+  padding: var(--bm-space-6);
+  border: 1px solid var(--bm-n-100);
+  box-shadow: none;
 }
 
 /* Seventeen of the twenty-one stat cards are read-outs. They used to rise under the
@@ -296,7 +308,8 @@ a .stat-card {
 }
 a:hover .stat-card {
   transform: translateY(-2px);
-  box-shadow: var(--bm-shadow-3);
+  border-color: var(--bm-n-200);
+  box-shadow: var(--bm-shadow-2);
 }
 /* If it is a control, a keyboard has to be able to see it. */
 a:focus-visible .stat-card {
@@ -307,11 +320,10 @@ a:focus-visible .stat-card {
   a .stat-card { transition: box-shadow .18s ease; }
   a:hover .stat-card { transform: none; }
 }
-.stat-card .stat-icon {
-  width: 48px; height: 48px; border-radius: var(--bm-radius-md);
-  display: flex; align-items: center; justify-content: center;
-  font-size: var(--bm-text-lg);
-}
+/* R14: .stat-icon was a 48px tinted rounded square holding a decorative glyph beside
+   every figure -- a 2020 template tell, and the thing that made each card look like a
+   component from a kit rather than a number worth reading. The rule is gone along with
+   its markup; a stat card is a label, a figure and a comparison. */
 .stat-card .stat-value {
   font-size: var(--bm-text-xl); font-weight: 700; color: var(--bm-n-900);
   font-variant-numeric: tabular-nums;
@@ -374,13 +386,20 @@ body { font-variant-numeric: tabular-nums; }
 }
 
 .card {
-  border: none; border-radius: var(--bm-radius-md);
-  box-shadow: var(--bm-shadow-2);
+  border: 1px solid var(--bm-n-100); border-radius: var(--bm-radius-md);
+  box-shadow: none;
 }
+/* A card header was a titlebar: same weight as the content, with a rule under it
+   dividing one thing into two. It is a label now -- quieter than what it introduces,
+   and no line, because the card's own border already says where the card starts. */
 .card-header {
-  background: var(--bm-n-0); border-bottom: 1px solid var(--bm-n-100);
-  font-weight: 600;
+  background: transparent; border-bottom: 0;
+  padding-bottom: var(--bm-space-2);
+  font-size: var(--bm-text-sm); font-weight: 600;
+  color: var(--bm-n-500); letter-spacing: .01em;
 }
+/* The header's own icon follows the label rather than competing with it. */
+.card-header .bm-i { color: var(--bm-n-400); }
 
 /* ============================ money ======================================
    The only place green and red carry meaning. */
@@ -658,7 +677,7 @@ body { font-variant-numeric: tabular-nums; }
   }
   table.rtable tr {
     background: var(--bm-n-0); border: 1px solid var(--bm-n-100);
-    border-radius: var(--bm-radius-md); box-shadow: var(--bm-shadow-1);
+    border-radius: var(--bm-radius-md); box-shadow: none;
     margin-bottom: var(--bm-space-3); padding: 6px var(--bm-space-4);
   }
   table.rtable td {
