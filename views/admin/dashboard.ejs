@@ -192,15 +192,21 @@ ${unsignedContracts.length ? `
               </div>
             </div>
             <div class="col-md-4">
+              <!-- R9. This column used to restate Safe to Spend in 32px type, two inches
+                   below the card at the top of the page that already says it -- and to two
+                   decimals where the card shows none, so the same figure appeared as $758
+                   and $758.22. The top row was promoted precisely so this number would be
+                   the first thing on the screen; repeating it here spent that promotion.
+                   What the panel is for is the WORKING: what came off the bank balance to
+                   get there. That is what it shows now. -->
               <div class="text-muted small text-uppercase" style="letter-spacing:.5px">
-                Safe to Spend
+                Held back from Safe to Spend
                 <svg class="bm-i ms-1" style="opacity:.5" title="Bank available balance, minus sales tax held for Oklahoma, minus recurring money already committed (storage, the loan to Reagan, rent). Do not go below zero." aria-hidden="true"><use href="#i-circle-info"/></svg>
               </div>
-              <div class="fs-2 fw-bold ${finance.safeToSpend >= 0 ? 'text-success' : 'text-danger'}">${finance.safeToSpend < 0 ? '−' : ''}$${Math.abs(finance.safeToSpend).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
               <div class="text-muted small">
                 ${finance.safeToSpend < 0
                   ? '<span class="text-danger fw-semibold">Committed money exceeds what is in the bank.</span>'
-                  : 'Bank available less tax and committed costs'}
+                  : 'Taken off the bank balance to reach the figure at the top of the page'}
               </div>
               ${(finance.obligations && finance.obligations.items.length) ? `
               <div class="small text-muted mt-2 pt-2" style="border-top:1px dashed rgba(0,0,0,.12)">
@@ -218,8 +224,9 @@ ${unsignedContracts.length ? `
             </div>
           </div>
           <div class="d-flex justify-content-between align-items-center small text-muted mt-3 pt-2 border-top">
+            <!-- R9: the sentence explains the card at the top of the page; it does not
+                 need to print the same figure again beside it. -->
             <span class="text-muted">Net liquid position is bank + Stripe &minus; card debt &mdash; shown at the top</span>
-            <span class="text-muted">${finance.netLiquid < 0 ? '−' : ''}$${Math.abs(finance.netLiquid).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
           </div>
         </div>` : ''}
         <div class="row g-3">
@@ -347,10 +354,12 @@ ${unsignedContracts.length ? `
           <span class="text-muted">Avg ticket</span>
           <strong>$${parseFloat(analytics.avgTicket).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</strong>
         </div>
-        <div class="d-flex justify-content-between small mt-1">
-          <span class="text-muted">Bookings to break even</span>
-          <strong class="${analytics.bookingsToBreakEven > 0 ? 'text-warning' : 'text-success'}">${analytics.bookingsToBreakEven > 0 ? '~' + analytics.bookingsToBreakEven + ' more' : 'Profitable!'}</strong>
-        </div>
+        <!-- R9. "Bookings to break even" stood here and it DISAGREED with the Est.
+             break-even row three lines above: ~47 against ~50. One is netPosition divided
+             by the all-time average ticket; the other is paced on recent bookings and
+             stretched for the Oklahoma off-season. Two calculations, one question, two
+             answers on one card. The paced one survives -- it is the one that knows the
+             season exists -- and it already prints its own count. -->
       </div>
     </div>
   </div>

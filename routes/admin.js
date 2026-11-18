@@ -166,7 +166,6 @@ router.get('/', async (req, res) => {
   const recoveryPct = operatingExpenses > 0 ? (earnedNetOfTax / operatingExpenses * 100) : 0;
   const avgTicketRow = db.prepare("SELECT COALESCE(AVG(total), 350) as a FROM bookings WHERE status NOT IN ('cancelled', 'declined') AND total > 0").get();
   const avgTicket = avgTicketRow.a || 350;
-  const bookingsToBreakEven = netPosition >= 0 ? 0 : Math.ceil(Math.abs(netPosition) / avgTicket);
 
   // The three headline tiles must reconcile. A booking created with a pre-seeded
   // balance_due but no payment used to put money in BOOKED and in neither of the
@@ -194,8 +193,16 @@ router.get('/', async (req, res) => {
   // Bounded at BOTH ends. Open-ended, this swept in every future booking, so "recent
   // pace" was an all-time average wearing a recency label — it could not detect a
   // slowdown, and future bookings counted twice (shrinking the deficit AND inflating
-  // the pace that pays it off). total > 0 keeps comped bookings out of the average so
-  // this and bookingsToBreakEven stop disagreeing.
+  // the pace that pays it off). total > 0 keeps comped bookings out of the average.
+  //
+  // R9, 2026-11-18: there used to be a second figure next to this one on the dashboard,
+  // bookingsToBreakEven, and the two DISAGREED -- ~50 against ~47. The comment that
+  // stood here said excluding comped bookings would make them stop disagreeing. It did
+  // not, because they were never the same quantity: this one divides the DEFICIT by a
+  // 120-day average ticket, the other divided |netPosition| by the ALL-TIME average.
+  // Two different numerators over two different denominators cannot be reconciled by
+  // tidying one of the denominators. The other figure is gone; this is the one that
+  // knows the Oklahoma season exists.
   const bk120 = db.prepare(`SELECT COUNT(*) as c, COALESCE(SUM(total),0) as r FROM bookings
     WHERE status NOT IN ('cancelled','declined') AND total > 0
       AND event_date >= ? AND date(event_date) <= date('now','localtime')`).get(dayjs().subtract(120, 'day').format('YYYY-MM-DD'));
@@ -290,7 +297,7 @@ router.get('/', async (req, res) => {
     analytics: {
       totalRevenue, earnedRevenue, earnedNetOfTax, cashCollected, balanceOwed,
       totalExpenses, operatingExpenses, netPosition, recoveryPct, avgTicket,
-      bookingsToBreakEven, pipeline, creditCardDebt, reimburseOwed, breakEven,
+      pipeline, creditCardDebt, reimburseOwed, breakEven,
       taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap, overpaid
     },
     monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
