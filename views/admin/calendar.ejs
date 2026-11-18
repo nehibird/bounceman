@@ -64,16 +64,35 @@ document.addEventListener('DOMContentLoaded', function() {
   // A class instead, resolved in admin.css, where the legend chips resolve too. Two
   // things that must match now cannot fail to.
   var bookingEvents = ${JSON.stringify(bookings.map(function(b) {
-    var name = (b.first_name || '') + ' ' + (b.last_name || '');
+    var name = ((b.first_name || '') + ' ' + (b.last_name || '')).trim();
     var items = b.items || '';
     var days = parseInt(b.rental_days) || 1;
     var endDate = (b.event_end_date && b.event_end_date !== b.event_date) ? b.event_end_date : b.event_date;
+    var extra = Math.max(0, (parseInt(b.item_count) || 0) - 1);
+
+    // R5. The title used to read "Callie Hart - Mini Castle Bounce House & Slide".
+    // A month cell shows about eighteen characters, so every event on the screen
+    // read "Callie Hart - Mi..." and the one thing the grid could not tell you was
+    // WHICH UNIT IS OUT -- which is the reason to open a calendar at all. The
+    // customer is one click away and on the booking itself; the unit is not
+    // anywhere.
+    //
+    // So the unit leads. Long names still truncate -- "Mini Castle Bounce House &
+    // Slide" is 32 characters -- but "Mini Castle Bou..." identifies the unit,
+    // which "Callie Hart - Mi..." never did. No clever abbreviation: shortening
+    // these names by rule would mean guessing which words are disposable, and
+    // "Dual Lane Axe Throw", "Dual Lane Blitz" and "Dual Lane Hoop Shot" are three
+    // different units that any such rule collapses into one.
+    var head = (b.primary_item || 'Booking') + (extra ? ' +' + extra : '');
     return {
-      title: name + (items ? ' - ' + items : '') + (days > 1 ? ' (' + days + ' days)' : ''),
+      title: head + (name ? ' \u00b7 ' + name : '') + (days > 1 ? ' (' + days + ' days)' : ''),
       start: b.event_date + 'T' + (b.event_start_time || '08:00'),
       end: endDate + 'T' + (b.event_end_time || '17:00'),
       url: '/admin/bookings/' + b.id,
-      classNames: ['bm-ev-' + (b.status || 'pending')]
+      classNames: ['bm-ev-' + (b.status || 'pending')],
+      // The full string, for the tooltip and anywhere with room to show it.
+      extendedProps: { full: (name ? name + ' \u2014 ' : '') + (items || 'no items')
+        + (days > 1 ? ' (' + days + ' days)' : '') }
     };
   })).replace(/</g, '\\u003c')};
 
@@ -156,8 +175,10 @@ document.addEventListener('DOMContentLoaded', function() {
     noEventsContent: 'No bookings this period',
     // A background event has no title now, so the reason reaches the cell this way.
     eventDidMount: function(info) {
-      var why = info.event.extendedProps && info.event.extendedProps.reason;
-      if (why && info.event.display === 'background') info.el.setAttribute('title', why);
+      var p = info.event.extendedProps || {};
+      if (p.reason && info.event.display === 'background') info.el.setAttribute('title', p.reason);
+      // A truncated title is only acceptable if the whole thing is one hover away.
+      if (p.full) info.el.setAttribute('title', p.full);
     },
     // The strip tracks the month on screen. Rendering every range unconditionally
     // would put last June's note above a November calendar -- the same noise this

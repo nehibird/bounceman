@@ -1103,7 +1103,17 @@ router.get('/calendar', (req, res) => {
     SELECT b.id, b.booking_number, b.event_date, b.event_end_date, b.event_start_time, b.event_end_time, b.status,
       c.first_name, c.last_name,
       MAX(bi.rental_days) as rental_days,
-      GROUP_CONCAT(bi.item_name, ', ') as items
+      GROUP_CONCAT(bi.item_name, ', ') as items,
+      -- R5. The headline on a calendar event is the unit, so it has to be the RIGHT
+      -- unit. Alphabetical would have headlined "Cornhole Set" over "Mini Castle
+      -- Bounce House & Slide", and GROUP_CONCAT's order is not defined anyway.
+      -- Price picks it out cleanly: in every multi-item booking in the database the
+      -- rental is the dearest line and the extras -- cornhole, a generator, the
+      -- night-before delivery fee -- fall below it. item_name breaks ties so the
+      -- choice is stable between page loads.
+      (SELECT bi2.item_name FROM booking_items bi2 WHERE bi2.booking_id = b.id
+         ORDER BY bi2.unit_price DESC, bi2.item_name ASC LIMIT 1) as primary_item,
+      (SELECT COUNT(*) FROM booking_items bi3 WHERE bi3.booking_id = b.id) as item_count
     FROM bookings b
     JOIN customers c ON c.id = b.customer_id
     LEFT JOIN booking_items bi ON bi.booking_id = b.id
