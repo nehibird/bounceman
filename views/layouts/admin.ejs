@@ -8,9 +8,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <% if (typeof page !== 'undefined' && page === 'calendar') { %>
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
-  <% } %>
+  <%
+     /* R17. There is no index.global.min.css in fullcalendar@6.1.11 -- that URL returns
+        404, and has since this page was built. FullCalendar 6 injects its own stylesheet
+        from index.global.min.js, which is loaded further down, so the calendar rendered
+        correctly and the dead request went unnoticed.
+
+        The wasted request was the smaller cost. The larger one: anyone theming the
+        calendar by "overriding FullCalendar's stylesheet" was overriding a file that was
+        never served. Its real theming surface is the --fc-* custom properties, which
+        admin.css already drives for surfaces and R7 extends to the toolbar. */
+  %>
   <link href="/assets/css/admin.css?v=p215" rel="stylesheet">
 <script>
   /* Inline and synchronous, before the first paint. A stored choice applied from a
