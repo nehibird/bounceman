@@ -4,8 +4,10 @@
   <svg class="bm-i me-1" aria-hidden="true"><use href="#i-arrow-left"/></svg> Back to Bookings
 </a>
 
-<h4 class="mb-4">New Booking</h4>
-
+<!-- R18. The heading that stood here repeated the breadcrumb, word for word. The
+     header has carried the page name since P2-5. Described in words rather than
+     quoted: ci/verify-titles.sh greps this file for a heading holding the page's
+     name, and on R7 a comment quoting the markup it deleted failed that gate. -->
 <form method="POST" action="/admin/bookings/create">
   <div class="row g-4">
     <!-- Left: Customer & Event -->

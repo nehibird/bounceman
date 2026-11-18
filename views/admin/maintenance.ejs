@@ -1,8 +1,11 @@
 <%- include('../layouts/admin', { body: `
 
 <div class="d-flex justify-content-between align-items-center mb-4">
+<!-- R18. The heading that stood here repeated the breadcrumb, word for word. The
+     header has carried the page name since P2-5. Described in words rather than
+     quoted: ci/verify-titles.sh greps this file for a heading holding the page's
+     name, and on R7 a comment quoting the markup it deleted failed that gate. -->
   <div>
-    <h4 class="mb-1">Maintenance Log</h4>
     <p class="text-muted mb-0">${logs.length} record${logs.length !== 1 ? 's' : ''}</p>
   </div>
   <button class="btn btn-bm" type="button" data-bs-toggle="collapse" data-bs-target="#addMaintenanceForm">

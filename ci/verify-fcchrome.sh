@@ -140,14 +140,9 @@ else
   bad "the selected view button inherits one text colour across all states"
 fi
 
-# --- 6. the calendar page is titled once (R7) -------------------------------
-# The <h4>Calendar</h4> said the same word as the breadcrumb two inches above it.
-# Scoped to this page on purpose: reports.ejs, reviews.ejs and settings.ejs do the
-# same thing and are filed as R18, so a global assertion would fail on work that
-# has not been done yet rather than on a regression.
-n=$(grep -cE '<h[1-4][^>]*>\s*Calendar\s*</h[1-4]>' views/admin/calendar.ejs || true)
-check "the calendar view does not print its own name as a heading" \
-      "$([ "$n" = "0" ] && echo 1 || echo 0)" "headings found: $n"
+# R7's heading check moved to ci/verify-titles.sh on R18, which asks the same question
+# of every admin view instead of this one -- and found six more pages doing it, four of
+# them in subdirectories. One assertion, one home.
 
 echo "FCCHROME_FAILED=$fails"
 [ "$fails" -eq 0 ] || exit 1
