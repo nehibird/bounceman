@@ -184,7 +184,6 @@ router.get('/', async (req, res) => {
     ) b`).get().o;
   const booksGap = Math.round((totalRevenue - cashCollected - balanceOwed + overpaid) * 100) / 100;
   const pipeline = db.prepare("SELECT COALESCE(SUM(total), 0) as r, COUNT(*) as c FROM bookings WHERE event_date > ? AND status IN ('confirmed', 'pending')").get(today);
-  const creditCardDebt = parseFloat(settings.credit_card_debt || '0');
 
   // Live break-even projection by booking pace (stable vs. lumpy one-time capital like equipment/insurance).
   // remaining deficit -> # more bookings at the recent avg ticket -> calendar time at the recent booking pace,
@@ -297,7 +296,7 @@ router.get('/', async (req, res) => {
     analytics: {
       totalRevenue, earnedRevenue, earnedNetOfTax, cashCollected, balanceOwed,
       totalExpenses, operatingExpenses, netPosition, recoveryPct, avgTicket,
-      pipeline, creditCardDebt, reimburseOwed, breakEven,
+      pipeline, reimburseOwed, breakEven,
       taxOwed, taxNotYetDue, taxCollectedDelivered, taxRemitted, booksGap, overpaid
     },
     monthlyRevenue, equipmentUtil, bankAccounts, stripePayouts, finance
@@ -2873,11 +2872,10 @@ module.exports = router;
 
 
 // POST credit card debt update from dashboard
-router.post('/settings/credit-card-debt', requireAdmin, (req, res) => {
-  const db = getDb();
-  const amount = parseFloat(req.body.amount || 0).toFixed(2);
-  const exists = db.prepare('SELECT key FROM settings WHERE key = ?').get('credit_card_debt');
-  if (exists) db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(amount, 'credit_card_debt');
-  else db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('credit_card_debt', amount);
-  res.redirect('/admin');
-});
+// R10: POST /settings/credit-card-debt is gone with the card that posted to it. It
+// wrote the same settings key scripts/cron-bank-sync.js refreshes from the live Chase
+// balance every night, so every value it accepted was reverted within a day. An endpoint
+// that takes input and quietly discards it is worse than no endpoint.
+//
+// The setting itself still exists and the cron still maintains it; nothing in this
+// application reads it any more.

@@ -16,7 +16,14 @@ const { syncAll } = require('./lib/plaid-sync');
     db.prepare('UPDATE bank_accounts SET name=? WHERE mask=?').run(nm, mask);
   }
 
-  // Keep credit_card_debt setting matched to the live Chase balance
+  // Keep credit_card_debt setting matched to the live Chase balance.
+  //
+  // R10, 2026-11-18: nothing in the application reads this setting any more. The
+  // dashboard card that displayed it duplicated the Chase account tile and carried an
+  // edit form writing this same key, so anything typed there was reverted by this
+  // script within a day; card and endpoint are both gone. The write is left in place
+  // because it is cheap and something outside this repository may read the setting --
+  // but if you are here wondering what consumes it, the answer is currently nothing.
   const cc = db.prepare("SELECT balance FROM bank_accounts WHERE type='credit' ORDER BY last_synced DESC LIMIT 1").get();
   if (cc && cc.balance != null) {
     const v = String(cc.balance);

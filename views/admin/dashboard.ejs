@@ -285,7 +285,7 @@ ${unsignedContracts.length ? `
      the tall card, and the two short ones stacked in a narrow column beside it, each at
      its own height. Nothing is stretched to match anything. -->
 <div class="row g-4 mb-4">
-  <div class="col-md-7">
+  <div class="col-md-8">
     <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Financial Health</div>
       <div class="card-body">
@@ -363,7 +363,7 @@ ${unsignedContracts.length ? `
       </div>
     </div>
   </div>
-  <div class="col-md-5 d-flex flex-column gap-4">
+  <div class="col-md-4 d-flex flex-column gap-4">
     <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-filter"/></svg>Confirmed Pipeline</div>
       <div class="card-body text-center">
@@ -373,26 +373,16 @@ ${unsignedContracts.length ? `
         <a href="/admin/bookings" class="btn btn-sm btn-outline-primary">View All Bookings</a>
       </div>
     </div>
-    <div class="card">
-      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-        <span><svg class="bm-i me-2" aria-hidden="true"><use href="#i-credit-card"/></svg>Credit Card Debt</span>
-        <button class="btn btn-sm btn-link p-0 text-muted" data-bs-toggle="collapse" data-bs-target="#ccDebtEdit"><svg class="bm-i bm-i-xs" aria-hidden="true"><use href="#i-pencil-alt"/></svg></button>
-      </div>
-      <div class="card-body text-center">
-        <div class="text-muted small mb-1">Chase Ink — ending 7513</div>
-        <div class="fs-2 fw-bold text-danger mb-2">$${parseFloat(analytics.creditCardDebt).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        <div class="text-muted small mb-3">as of last update</div>
-        <div class="collapse" id="ccDebtEdit">
-          <form method="POST" action="/admin/settings/credit-card-debt" class="d-flex gap-2 justify-content-center mt-1">
-            <div class="input-group input-group-sm" style="max-width:180px">
-              <span class="input-group-text">$</span>
-              <input type="number" name="amount" class="form-control" step="0.01" value="${parseFloat(analytics.creditCardDebt).toFixed(2)}" placeholder="0.00">
-            </div>
-            <button type="submit" class="btn btn-sm btn-bm">Save</button>
-          </form>
-        </div>
-      </div>
-    </div>
+    <!-- R10. A "Credit Card Debt" card stood here showing the same figure the Chase
+         tile in the bank panel already shows, under a different label, with a pencil
+         that opened a form writing the same settings key the nightly bank sync writes.
+         Anything typed into it was reverted by the next run. It also said "as of last
+         update" about a value refreshed every night, and hard-coded a card number the
+         tile gets from Plaid.
+         The account's home is the account tile. Deleted rather than made read-only:
+         a second read-out of one number, in a different place and a different wording,
+         is the problem this series keeps finding. -->
+</div>
   </div>
 </div>
 
