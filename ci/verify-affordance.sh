@@ -58,12 +58,18 @@ css = open(os.path.join(w, 'admin.css')).read()
 # Comments are prose about selectors; they are not selectors.
 css_live = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
 
-cards = len(re.findall(r'class="stat-card"', html))
+# R13, 2026-11-18: this matched class="stat-card" exactly, so the moment a card took a
+# modifier -- class="stat-card is-hero" -- it stopped being counted and this gate
+# reported three clickable cards where there are four. The card had not changed; the
+# pattern had become too literal to describe it. Matching the class within its list is
+# what was meant all along.
+CARD = r'class="[^"]*\bstat-card\b[^"]*"'
+cards = len(re.findall(CARD, html))
 check('stat cards are on the pages', cards >= 15, cards)
 
 # A card is interactive when an <a> opens before it and has not closed yet.
 linked = 0
-for m in re.finditer(r'class="stat-card"', html):
+for m in re.finditer(CARD, html):
     before = html[:m.start()]
     a_open = before.rfind('<a ')
     a_close = before.rfind('</a>')

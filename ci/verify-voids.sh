@@ -34,7 +34,7 @@ scp -q "$TMP" "$REMOTE":/tmp/bm-layout-sync.tar || {
 rm -f "$TMP"
 
 OUT=$(ssh "$REMOTE" 'cd ~/bounceman-e2e && tar xf /tmp/bm-layout-sync.tar && rm -f /tmp/bm-layout-sync.tar && \
-  npx playwright test --config=playwright.layout.config.js 2>&1')
+  npx playwright test --config=playwright.layout.config.js --grep voids 2>&1')
 
 PASSED=$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
 FAILED=$(printf '%s' "$OUT" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+')

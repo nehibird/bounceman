@@ -103,7 +103,7 @@
             <tbody>
               ${history.length ? history.map(function(h) {
                 return '<tr><td>' + h.paid_date + '</td><td>' + h.name +
-                  (h.expense_id ? '' : ' <span class="text-muted" style="font-size:.7rem">(not an expense)</span>') +
+                  (h.expense_id ? '' : ' <span class="text-muted" style="font-size:var(--bm-text-xs)">(not an expense)</span>') +
                   '</td><td>' + h.period + '</td><td class="text-end">$' + parseFloat(h.amount).toFixed(2) + '</td></tr>';
               }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">No payments recorded yet.</td></tr>'}
             </tbody>

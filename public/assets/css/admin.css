@@ -314,7 +314,53 @@ a:focus-visible .stat-card {
 }
 .stat-card .stat-value {
   font-size: var(--bm-text-xl); font-weight: 700; color: var(--bm-n-900);
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---- R13: one figure leads --------------------------------------------------
+   The scale was inverted. The bank panel's trio rendered at 32px, the top row of
+   promoted cards at 28px, and account balances at 24px -- so the three figures an
+   earlier item deliberately PROMOTED to the top were smaller than their own duplicates
+   underneath them, and the largest number on the page was Net Position: a lifetime
+   accounting figure, not a decision.
+
+   One figure leads now, and it is the one that answers "can I spend money today".
+   Everything else steps down. A second 32px figure means one of them is in the wrong
+   place, which is what the gate checks.
+
+   Weight stops meaning emphasis when everything is bold, so the hero carries it and
+   supporting figures come back to 700. */
+.stat-card.is-hero .stat-value { font-size: 32px; font-weight: 800; }
+
+/* Two of the four cards in this row carry a comparison line and two do not, so they
+   finish at different heights. Matched here, deliberately and narrowly -- unlike the
+   h-100 R8 removed, these four hold the same KIND of content and differ by one line,
+   so matching them costs a few pixels of padding rather than 300px of air. */
+.bm-stat-row > [class*="col"] > a,
+.bm-stat-row > [class*="col"] > a > .stat-card,
+.bm-stat-row > [class*="col"] > .stat-card { height: 100%; }
+
+/* Supporting figures: the bank panel, Financial Health, Pipeline. Below the promoted
+   row, above body text. */
+.bm-figure {
+  font-size: 24px; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+/* An account tile's balance is detail within a panel, not a headline. */
+.bm-figure-sm {
+  font-size: var(--bm-text-lg); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Money lines up or it is harder to read than it needs to be. Set once on the body
+   rather than per component: the scoped version missed money inside a <strong> in a
+   div, the obligations list, and most of Reports and Today, and chasing those one
+   selector at a time is how a rule acquires exceptions nobody can explain. */
+body { font-variant-numeric: tabular-nums; }
+
+/* The 12px floor. Four places on the dashboard were at 0.65-0.7rem (10.4-11.2px),
+   including a link and three column headings that carry money. */
+.bm-meta { font-size: var(--bm-text-xs); }
 .stat-card .stat-label {
   color: var(--bm-n-500); font-size: var(--bm-text-sm);
 }
@@ -342,6 +388,12 @@ a:focus-visible .stat-card {
 .bm-money-out { color: var(--bm-money-out); }
 
 /* ============================ status chips =============================== */
+
+/* R13. Bootstrap sizes .badge at .75em, so a badge inside a .small compounds down:
+   16 x .875 x .75 = 10.5px, which is below the scale's own smallest size. The inbox's
+   "Phone call" markers were landing there. An em that multiplies by its context cannot
+   be reasoned about from the markup, so badges take the token directly. */
+.badge { font-size: var(--bm-text-xs); }
 
 .badge-status {
   padding: var(--bm-space-1) var(--bm-space-3);

@@ -228,9 +228,9 @@
                 '<img src="' + img.image_path + '" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:3px solid ' + (img.is_primary ? 'var(--bm-orange,#FF6B35)' : '#eee') + '">' +
                 '<div style="margin-top:6px;display:flex;gap:4px;justify-content:center">' +
                   (img.is_primary
-                    ? '<span class="badge bg-warning text-dark" style="font-size:10px"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-star"/></svg>Featured</span>'
-                    : '<a href="/admin/equipment/image/' + img.id + '/set-primary" class="btn btn-sm btn-outline-warning" style="font-size:10px;padding:2px 6px" title="Set as featured"><svg class="bm-i" aria-hidden="true"><use href="#i-star"/></svg></a>') +
-                  '<a href="/admin/equipment/image/' + img.id + '/delete" class="btn btn-sm btn-outline-danger delete-image-link" style="font-size:10px;padding:2px 6px" title="Delete"><svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg></a>' +
+                    ? '<span class="badge bg-warning text-dark" style="font-size:var(--bm-text-xs)"><svg class="bm-i me-1" aria-hidden="true"><use href="#i-star"/></svg>Featured</span>'
+                    : '<a href="/admin/equipment/image/' + img.id + '/set-primary" class="btn btn-sm btn-outline-warning" style="font-size:var(--bm-text-xs);padding:2px 6px" title="Set as featured"><svg class="bm-i" aria-hidden="true"><use href="#i-star"/></svg></a>') +
+                  '<a href="/admin/equipment/image/' + img.id + '/delete" class="btn btn-sm btn-outline-danger delete-image-link" style="font-size:var(--bm-text-xs);padding:2px 6px" title="Delete"><svg class="bm-i" aria-hidden="true"><use href="#i-trash"/></svg></a>' +
                 '</div>' +
               '</div>';
             }).join('')}
