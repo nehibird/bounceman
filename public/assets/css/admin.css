@@ -401,6 +401,27 @@ body { font-variant-numeric: tabular-nums; }
 /* The header's own icon follows the label rather than competing with it. */
 .card-header .bm-i { color: var(--bm-n-400); }
 
+/* ============================ section rhythm =============================
+   R24. Every block on the dashboard sat at the same 24px from its neighbour, so eight
+   unrelated things -- an alarm, a row of buttons, the cash position, the bank detail,
+   the business's position, its history, the work ahead -- read as one undifferentiated
+   stack. Equal spacing says equal relationship, and that was never true.
+
+   Two gaps, and only two, so the rule is legible from the markup and checkable from the
+   rendered page:
+
+     .bm-sec        a new subject starts here        32px above
+     .bm-sec-cont   this continues the one above it  16px above
+
+   Named classes rather than per-row utilities on purpose. A utility says how far apart
+   two things are; a name says why -- and a gate can hold a name to it. The first
+   section in the content area takes no top margin: the page already has padding. */
+
+.bm-sec      { margin-top: var(--bm-space-8); }
+.bm-sec-cont { margin-top: var(--bm-space-4); }
+.admin-content > .bm-sec:first-child,
+.admin-content > .bm-sec-cont:first-child { margin-top: 0; }
+
 /* ============================ money ======================================
    The only place green and red carry meaning. */
 .bm-money-in  { color: var(--bm-money-in); }

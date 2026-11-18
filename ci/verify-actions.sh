@@ -60,7 +60,15 @@ def check(label, ok, detail=''):
     if not ok: fails += 1
 
 body = page.find('<div class="admin-content">')
-bar  = page.find('class="bm-actions"')
+# R24, 2026-11-18: this was page.find('class="bm-actions"'), an exact-attribute match,
+# so the moment the bar took a second class -- class="bm-actions bm-sec-cont" -- it
+# returned -1 and the gate reported that the action bar does not exist. The bar had not
+# moved; the pattern had become too literal to find it. Second time this exact staleness
+# has shown up in this series (verify-affordance.sh, R13), so it is worth saying plainly:
+# match the class WITHIN its list, never the whole attribute.
+import re as _re
+_m = _re.search(r'class="[^"]*\bbm-actions\b[^"]*"', page)
+bar  = _m.start() if _m else -1
 # V2 replaced the "Stats Row" of counts with the "Money Row" of figures, so this gate's
 # landmark moved with it. The assertion is unchanged: the actions come first.
 stats = page.find('Money Row')

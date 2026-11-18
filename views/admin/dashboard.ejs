@@ -1,7 +1,7 @@
 <%- include('../layouts/admin', { body: `
 
 ${unsignedContracts.length ? `
-<div class="bm-alert" role="alert">
+<div class="bm-alert bm-sec" role="alert">
   <div class="bm-alert-head">
     <svg class="bm-i" aria-hidden="true"><use href="#i-file-signature"/></svg>
     <strong>${unsignedContracts.length === 1
@@ -22,7 +22,7 @@ ${unsignedContracts.length ? `
 <style>
   .bm-alert { border:1px solid var(--bm-fb-bad); border-left-width:4px;
     background:var(--bm-n-0); border-radius:var(--bm-radius-md);
-    box-shadow:var(--bm-shadow-1); margin-bottom:var(--bm-space-5); overflow:hidden; }
+    box-shadow:var(--bm-shadow-1); overflow:hidden; }
   .bm-alert-head { display:flex; align-items:center; gap:10px;
     padding:var(--bm-space-3) var(--bm-space-4); color:var(--bm-fb-bad);
     font-size:15px; border-bottom:1px solid var(--bm-n-100); }
@@ -46,7 +46,7 @@ ${unsignedContracts.length ? `
 <!-- Actions. These used to live in a Quick Actions card two full scrolls down, below
      the bank panel, three analytics rows and the upcoming-events table -- the things you
      DO were underneath everything you merely look at. -->
-<div class="bm-actions">
+<div class="bm-actions bm-sec-cont">
   <a href="/admin/bookings/new" class="bm-act bm-act-primary">
     <svg class="bm-i" aria-hidden="true"><use href="#i-plus"/></svg>New booking
   </a>
@@ -72,8 +72,7 @@ ${unsignedContracts.length ? `
   }
 </div>
 <style>
-  .bm-actions { display:flex; flex-wrap:wrap; gap:var(--bm-space-2);
-    margin-bottom:var(--bm-space-5); }
+  .bm-actions { display:flex; flex-wrap:wrap; gap:var(--bm-space-2); }
   .bm-act { display:inline-flex; align-items:center; gap:7px; padding:8px 15px;
     font-size:14px; font-weight:600; text-decoration:none; border-radius:var(--bm-radius-pill);
     border:1px solid var(--bm-n-200); background:var(--bm-n-0); color:var(--bm-n-700); }
@@ -100,7 +99,7 @@ ${unsignedContracts.length ? `
      an 11px grey footnote underneath the bank panel.
      Today's Events and Total Customers are both one click away: Today is in the action
      bar above, Customers is in the sidebar. -->
-<div class="row g-4 mb-4 bm-stat-row">
+<div class="row g-4 bm-stat-row bm-sec">
   <div class="col-6 col-md-3">
     <a href="/admin/banks" class="text-decoration-none">
       <!-- R13: the one figure that leads. It answers "can I spend money today", which
@@ -169,7 +168,7 @@ ${unsignedContracts.length ? `
 </div>
 
 <!-- Bank Accounts (live balances from titan bank sync) -->
-<div class="row g-4 mb-4">
+<div class="row g-4 bm-sec-cont">
   <div class="col-12">
     <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-university"/></svg>Bank Accounts</div>
@@ -312,7 +311,7 @@ ${unsignedContracts.length ? `
      table, a break-even row. The other two are each ONE NUMBER. So one wide column for
      the tall card, and the two short ones stacked in a narrow column beside it, each at
      its own height. Nothing is stretched to match anything. -->
-<div class="row g-4 mb-4">
+<div class="row g-4 bm-sec">
   <div class="col-md-8">
     <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-line"/></svg>Financial Health</div>
@@ -418,7 +417,7 @@ ${unsignedContracts.length ? `
 </div>
 
 <!-- Analytics Row 2: Monthly Chart + Equipment Utilization -->
-<div class="row g-4 mb-4">
+<div class="row g-4 bm-sec-cont">
   <div class="col-md-8">
     <div class="card">
       <div class="card-header fw-semibold"><svg class="bm-i me-2" aria-hidden="true"><use href="#i-chart-bar"/></svg>Monthly Revenue (Last 6 Months)</div>
@@ -456,7 +455,7 @@ ${unsignedContracts.length ? `
 </div>
 
 <!-- Upcoming Events + Inventory (Quick Actions moved to the top -- P0-7) -->
-<div class="row g-4 mb-4">
+<div class="row g-4 bm-sec">
   <div class="col-12">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
