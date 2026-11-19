@@ -61,7 +61,7 @@ process.stdout.write(r ? String(r.id) : "");
 echo "sample booking id: ${BID:-<none>}"
 echo
 
-PAGES="/admin /admin/bookings /admin/calendar /admin/customers /admin/equipment
+PAGES="/admin /admin/bookings /admin/calendar /admin/calendar/units /admin/customers /admin/equipment
 /admin/delivery /admin/events /admin/maintenance /admin/inbox /admin/inbox?tab=alerts
 /admin/ads /admin/expenses /admin/obligations /admin/banks
 /admin/reports /admin/reviews /admin/settings"

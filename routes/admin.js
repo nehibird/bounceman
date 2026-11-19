@@ -1196,6 +1196,165 @@ router.get('/calendar', (req, res) => {
   });
 });
 
+// === CALENDAR, BY UNIT (R16) ===
+// The month grid answers "what is on the 14th". It cannot answer "what is the Castle
+// doing", because one unit's month is scattered across thirty cells -- and on Saturday,
+// the only column with real work in it, those cells overflow and clip. Here a unit is a
+// ROW, so one unit's month is one line and a double-book is two marks on that line
+// instead of two events that look exactly like two bookings on two different units.
+//
+// This is NOT an availability screen and nothing it renders uses that word. Nehemiah's
+// framing, 2026-11-18: show what is BOOKED, and free is what is left over. The single
+// assumption the page must not invite is that an empty cell can be hired -- a blocked day
+// carries no booking at all, and every booking also holds buffer_min either side of
+// itself. So blocks are drawn as marks and the buffer is stated in the footnote.
+//
+// Availability itself is never recomputed here. getBookedEquipmentIds() is the only
+// correct source -- it is what the public booking flow asks -- and this route calls it
+// once per day exactly as that flow does.
+router.get('/calendar/units', (req, res) => {
+  const db = getDb();
+  const settings = getSettings();
+  const { getBookedEquipmentIds, isoOffset, todayCT, fmtTime12 } = require('../lib/helpers');
+
+  const DAYS = 28;
+  const today = todayCT();
+  const start = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(req.query.start || '')) ? req.query.start : today;
+  const showAddons = req.query.addons === '1';
+  const bufferMin = Number(settings.buffer_min || 120);
+
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const days = [];
+  for (let i = 0; i < DAYS; i++) {
+    const date = isoOffset(start, i);
+    const dt = new Date(date + 'T12:00:00Z');
+    const prev = i > 0 ? days[i - 1].date : null;
+    days.push({
+      date,
+      dow: dt.getUTCDay(),
+      dom: dt.getUTCDate(),
+      monthLabel: MON[dt.getUTCMonth()],
+      monthFirst: i === 0 || date.slice(5, 7) !== prev.slice(5, 7),
+      isToday: date === today
+    });
+  }
+  const end = days[days.length - 1].date;
+
+  // An add-on is not a unit and a service is not stock: "Guaranteed Night-Before
+  // Delivery" carries quantity 999. Both are hidden unless asked for.
+  const allUnits = db.prepare(
+    "SELECT id, name, COALESCE(category, '') category, COALESCE(quantity, 1) quantity FROM equipment"
+  ).all();
+  const units = allUnits.filter(u => showAddons || (u.category !== 'add_ons' && Number(u.quantity) < 999));
+
+  const rows = db.prepare(`
+    SELECT b.id, b.status, b.event_date, b.event_end_date, b.event_start_time, b.event_end_time,
+           bi.equipment_id, c.first_name, c.last_name
+    FROM bookings b
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN customers c ON c.id = b.customer_id
+    WHERE b.status NOT IN ('cancelled', 'declined')
+      AND bi.equipment_id IS NOT NULL
+      AND ((b.event_date BETWEEN ? AND ?)
+        OR (b.event_end_date IS NOT NULL AND b.event_date <= ? AND b.event_end_date >= ?))
+  `).all(start, end, end, start);
+
+  const blockedRows = db.prepare(
+    'SELECT date, equipment_id, COALESCE(reason, \'\') reason FROM blocked_dates WHERE date BETWEEN ? AND ?'
+  ).all(start, end);
+  // A row with no equipment_id closes the whole day; getBookedEquipmentIds only reports
+  // the per-unit ones, so the day-wide ones are carried separately.
+  const dayWide = new Map();
+  blockedRows.filter(b => !b.equipment_id).forEach(b => dayWide.set(b.date, b.reason));
+  const unitBlockReason = new Map();
+  blockedRows.filter(b => b.equipment_id).forEach(b => unitBlockReason.set(b.date + '|' + b.equipment_id, b.reason));
+
+  const covers = (r, date) =>
+    r.event_date === date || (r.event_end_date && r.event_date <= date && r.event_end_date >= date);
+
+  const takenByDay = new Map();
+  days.forEach(d => takenByDay.set(d.date, getBookedEquipmentIds(db, d.date, '00:00', '23:59:59', 'daily')));
+
+  const nameOf = (r) => ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Booking';
+
+  function cellFor(unit, day) {
+    const mine = rows.filter(r => r.equipment_id === unit.id && covers(r, day.date));
+    const cap = Math.max(1, Number(unit.quantity) || 1);
+    const taken = takenByDay.get(day.date).get(unit.id) || 0;
+    const blockedHere = taken >= 999 || dayWide.has(day.date);
+    const key = blockedHere ? 'blocked' : mine.map(r => r.id).sort().join(',');
+
+    let kind = 'free', label = '', tip = unit.name + ' - nothing booked';
+    if (blockedHere) {
+      const why = unitBlockReason.get(day.date + '|' + unit.id) || dayWide.get(day.date) || '';
+      kind = 'blocked';
+      label = '&times;';
+      tip = unit.name + ' - blocked' + (why ? ': ' + why : '') + ' - not offered to anyone';
+    } else if (mine.length) {
+      const counted = Math.min(taken || mine.length, 999);
+      const allPending = mine.every(r => r.status === 'pending');
+      if (counted > cap) { kind = 'double'; label = counted + '/' + cap; }
+      else if (counted < cap) { kind = 'partial'; label = counted + '/' + cap; }
+      else kind = allPending ? 'hold' : 'booked';
+      tip = unit.name + ' - ' + mine.map(r =>
+        nameOf(r) + ' (' + fmtTime12(r.event_start_time) + ' to ' + fmtTime12(r.event_end_time) +
+        ', ' + r.status + ')').join('; ');
+    }
+    return { kind, label, tip, key, sat: day.dow === 6, today: day.isToday, monthFirst: day.monthFirst };
+  }
+
+  const CAT_ORDER = ['bounce-houses', 'combo-units', 'water-slides', 'obstacle-courses',
+                     'interactive-games', 'soft-play', 'add_ons'];
+  const CAT_LABEL = {
+    'bounce-houses': 'Bounce houses', 'combo-units': 'Combos', 'water-slides': 'Water slides',
+    'obstacle-courses': 'Obstacle courses', 'interactive-games': 'Interactive games',
+    'soft-play': 'Soft play', 'add_ons': 'Add-ons'
+  };
+  const ordered = units.slice().sort((a, b) => {
+    const ai = CAT_ORDER.indexOf(a.category), bi = CAT_ORDER.indexOf(b.category);
+    if (ai !== bi) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    return a.name.localeCompare(b.name);
+  });
+
+  const groups = [];
+  ordered.forEach(u => {
+    const cells = days.map(d => cellFor(u, d));
+    // A booking that runs Friday to Sunday is one bar, not three squares: the radius and
+    // the gap are dropped where the same booking (or the same block) continues.
+    cells.forEach((c, i) => {
+      c.contL = c.kind !== 'free' && i > 0 && cells[i - 1].key === c.key;
+      c.contR = c.kind !== 'free' && i < cells.length - 1 && cells[i + 1].key === c.key;
+      if (c.kind === 'blocked' && c.contL) c.label = '';
+    });
+    const g = groups.length && groups[groups.length - 1].category === u.category
+      ? groups[groups.length - 1]
+      : (groups.push({ category: u.category, label: CAT_LABEL[u.category] || u.category, units: [] }),
+         groups[groups.length - 1]);
+    g.units.push(Object.assign({}, u, { cells }));
+  });
+
+  const fmtRange = (iso) => {
+    const dt = new Date(iso + 'T12:00:00Z');
+    return MON[dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+  };
+
+  res.render('admin/calendar-units', {
+    title: 'Calendar by unit - Admin',
+    user: req.user,
+    settings,
+    page: 'calendar',
+    days,
+    groups,
+    bufferMin,
+    start,
+    showAddons,
+    addonQS: showAddons ? '&addons=1' : '',
+    prevStart: isoOffset(start, -DAYS),
+    nextStart: isoOffset(start, DAYS),
+    rangeLabel: fmtRange(start) + ' to ' + fmtRange(end) + ', ' + end.slice(0, 4)
+  });
+});
+
 // Chasing a signature used to mean re-sending the whole booking confirmation to a
 // customer who already had it, because the contract link only ever travelled inside
 // that email and the delivery reminder. This sends only the signing link.

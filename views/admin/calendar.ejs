@@ -21,7 +21,11 @@
      browser specs all pass straight through a broken template. Same family as the
      closing-script-tag warning at the top of this file, which also described the bug
      it was causing. -->
-<div class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <!-- R16. The month grid and the by-unit grid are two views of one object, so the way
+       between them belongs on both screens rather than in the sidebar as a second
+       Calendar. -->
+  <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar/units">By unit</a>
   <div class="bm-legend">
     <span class="bm-leg bm-ev-pending">Pending</span>
     <span class="bm-leg bm-ev-confirmed">Confirmed</span>

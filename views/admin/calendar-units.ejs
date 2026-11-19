@@ -1,0 +1,130 @@
+<%- include('../layouts/admin', { body: `
+
+<!-- R16. The month grid answers "what is on the 14th". This one answers "what is the
+     Castle doing", because a unit is a ROW and one unit's month is one line.
+
+     It is NOT an availability screen, and nothing on it uses that word. Nehemiah's
+     framing on 2026-11-18, and it is the right one: show what is BOOKED and let free be
+     what is left over. The one assumption the page must not invite is that an empty cell
+     is always rentable -- a blocked day carries no booking at all, and every booking
+     reserves the buffer either side of itself. So blocks are drawn and the buffer is
+     named in the footnote.
+
+     Same three traps as calendar.ejs, which this file has to respect too: no EJS comment
+     (it would close the outer include early), no naming the EJS delimiters even inside an
+     HTML comment, and no quoting markup that a gate greps for. There is deliberately NO
+     client-side script here -- every mark is rendered by the server -- which also keeps
+     this file clear of the escape-sequence trap that took the calendar down on R2. -->
+
+<div class="bm-ug-bar">
+  <div class="bm-ug-nav">
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar/units?start=${esc(prevStart)}${addonQS}" aria-label="Previous four weeks">&larr;</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar/units${addonQS ? '?addons=1' : ''}">Today</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar/units?start=${esc(nextStart)}${addonQS}" aria-label="Next four weeks">&rarr;</a>
+    <span class="bm-ug-range">${esc(rangeLabel)}</span>
+  </div>
+  <div class="bm-ug-right">
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar/units?start=${esc(start)}${addonQS ? '' : '&addons=1'}">${showAddons ? 'Hide add-ons' : 'Show add-ons'}</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/calendar">Month view</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body bm-ug-body">
+    <div class="bm-ug-scroll">
+      <table class="bm-ug">
+        <thead>
+          <tr>
+            <th class="bm-ug-unit"><span class="visually-hidden">Unit</span></th>
+            ${days.map((d, i) => `
+            <th class="${d.dow === 6 ? 'bm-ug-sat' : ''}${d.isToday ? ' bm-ug-today' : ''}${d.monthFirst ? ' bm-ug-mstart' : ''}">
+              <span class="bm-ug-mon">${d.monthFirst ? d.monthLabel : '&nbsp;'}</span>
+              <span class="bm-ug-dom">${d.dom}</span>
+            </th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${groups.map(g => `
+          <tr class="bm-ug-cat"><th colspan="${days.length + 1}">${esc(g.label)}</th></tr>
+          ${g.units.map(u => `
+          <tr>
+            <th class="bm-ug-unit">${esc(u.name)}<span class="bm-ug-cap">${u.quantity > 1 ? u.quantity + ' in stock' : ''}</span></th>
+            ${u.cells.map(c => `
+            <td class="bm-ug-cell${c.sat ? ' bm-ug-sat' : ''}${c.today ? ' bm-ug-today' : ''}${c.monthFirst ? ' bm-ug-mstart' : ''}">
+              <div class="bm-ug-mark bm-ug-${c.kind}${c.contL ? ' bm-ug-cl' : ''}${c.contR ? ' bm-ug-cr' : ''}" title="${esc(c.tip)}">${c.label}</div>
+            </td>`).join('')}
+          </tr>`).join('')}`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bm-ug-legend">
+      <span class="bm-ug-leg"><span class="bm-ug-sw bm-ug-booked"></span>Booked</span>
+      <span class="bm-ug-leg"><span class="bm-ug-sw bm-ug-hold"></span>On hold (pending)</span>
+      <span class="bm-ug-leg"><span class="bm-ug-sw bm-ug-partial"></span>Some of the stock out</span>
+      <span class="bm-ug-leg"><span class="bm-ug-sw bm-ug-blocked"></span>Blocked</span>
+      <span class="bm-ug-leg"><span class="bm-ug-sw bm-ug-double"></span>Double-booked</span>
+    </div>
+
+    <p class="bm-ug-foot">
+      An empty cell means nothing is booked on it &mdash; not that the unit can be hired.
+      Every booking also holds <strong>${bufferMin} minutes</strong> either side of itself for delivery
+      and pickup, and a blocked day carries no booking at all. Hover any mark for the name and the times.
+    </p>
+  </div>
+</div>
+
+<style>
+  .bm-ug-bar { display:flex; flex-wrap:wrap; gap:var(--bm-space-3);
+    align-items:center; justify-content:space-between; margin-bottom:var(--bm-space-4); }
+  .bm-ug-nav, .bm-ug-right { display:flex; align-items:center; gap:var(--bm-space-2); }
+  .bm-ug-range { font-size:var(--bm-text-sm); color:var(--bm-n-500); margin-left:var(--bm-space-2); }
+  .bm-ug-body { padding-top:var(--bm-space-3); }
+  .bm-ug-scroll { overflow-x:auto; }
+  table.bm-ug { border-collapse:separate; border-spacing:0; width:100%; }
+  table.bm-ug th, table.bm-ug td { padding:0; border:0; }
+  table.bm-ug thead th { font-size:var(--bm-text-xs); color:var(--bm-n-500); font-weight:500;
+    text-align:center; vertical-align:bottom; padding-bottom:var(--bm-space-2); min-width:28px; }
+  .bm-ug-mon { display:block; }
+  .bm-ug-dom { display:block; font-size:var(--bm-text-sm); color:var(--bm-n-700); }
+  thead th.bm-ug-sat, thead th.bm-ug-sat .bm-ug-dom { color:var(--bm-accent-text); font-weight:600; }
+  thead th.bm-ug-today .bm-ug-dom { box-shadow:inset 0 -2px 0 var(--bm-accent); }
+  th.bm-ug-unit { position:sticky; left:0; z-index:2; background:var(--bm-n-0); text-align:left;
+    padding-right:var(--bm-space-3); min-width:186px; max-width:186px; font-weight:500;
+    font-size:var(--bm-text-sm); border-bottom:1px solid var(--bm-n-50); }
+  .bm-ug-cap { display:block; font-size:var(--bm-text-xs); color:var(--bm-n-400); }
+  tr.bm-ug-cat th { position:sticky; left:0; background:var(--bm-n-0); text-align:left;
+    padding:var(--bm-space-3) 0 2px; font-size:var(--bm-text-xs); font-weight:600;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--bm-n-400); }
+  td.bm-ug-cell { height:30px; border-bottom:1px solid var(--bm-n-50); }
+  td.bm-ug-mstart, thead th.bm-ug-mstart { border-left:1px solid var(--bm-n-100); }
+  .bm-ug-mark { height:22px; margin:4px 2px; border-radius:var(--bm-radius-sm);
+    background:transparent; display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:600; }
+  /* The tint on the Saturday column has to sit UNDER the booked colour. It used to be
+     written as a descendant rule, which out-specified the state classes and painted every
+     Saturday booking as if the unit were free -- on this business, the one column that
+     matters. The tint now only ever applies to a free cell. */
+  .bm-ug-mark.bm-ug-free { background:var(--bm-n-25); }
+  td.bm-ug-sat .bm-ug-mark.bm-ug-free { background:var(--bm-n-50); }
+  /* These are deliberately single-class so the legend swatch and the mark cannot
+     drift apart -- the same reason R3 put the calendar legend on the event classes. */
+  .bm-ug-booked { background:var(--bm-ev-confirmed-bg); color:var(--bm-ev-confirmed-fg); }
+  .bm-ug-hold { background:var(--bm-ev-pending-bg); color:var(--bm-ev-pending-fg);
+    border:1px solid var(--bm-n-300); }
+  .bm-ug-partial { background:var(--bm-ev-confirmed-bg); color:var(--bm-ev-confirmed-fg);
+    opacity:.6; }
+  .bm-ug-blocked { background:var(--bm-ev-blocked-bg); color:var(--bm-fb-bad); }
+  .bm-ug-double { background:var(--bm-fb-bad); color:var(--bm-n-0); }
+  /* A run of days on one unit is ONE bar, not N squares. */
+  .bm-ug-cl { margin-left:0; border-top-left-radius:0; border-bottom-left-radius:0; }
+  .bm-ug-cr { margin-right:0; border-top-right-radius:0; border-bottom-right-radius:0; }
+  .bm-ug-legend { display:flex; flex-wrap:wrap; gap:var(--bm-space-4);
+    margin-top:var(--bm-space-4); font-size:var(--bm-text-xs); color:var(--bm-n-600); }
+  .bm-ug-leg { display:flex; align-items:center; gap:6px; }
+  .bm-ug-sw { width:22px; height:12px; border-radius:var(--bm-radius-sm); display:inline-block; }
+  .bm-ug-foot { margin:var(--bm-space-3) 0 0; font-size:var(--bm-text-xs);
+    color:var(--bm-n-500); max-width:84ch; }
+</style>
+
+`, scripts: '' }) %>
