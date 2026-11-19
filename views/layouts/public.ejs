@@ -133,7 +133,10 @@
       --bm-orange: <%= settings.primary_color || '#FF6B35' %>;
       --bm-blue: <%= settings.secondary_color || '#004E89' %>;
       --bm-yellow: #FFD166;
-      --bm-green: #059669;
+      /* R23. #059669 was 3.77:1 as text on white AND 3.77:1 as a fill under white
+         text -- 25 of the site's 43 contrast failures, in both directions. One step
+         darker fixes both: #047857 is 5.48:1 either way, 5.24:1 on the cream band. */
+      --bm-green: #047857;
       --bm-pink: #EF476F;
       --bm-purple: #7B2D8E;
       --bm-light-bg: #FFF9F0;
@@ -141,11 +144,21 @@
       /* PRICE TEXT on light surfaces. Measured: --bm-orange #d77c42 text is 2.91:1 on the #f8f9fa tier card (3.07:1 on white) at 24px bold - fails 4.5:1.
          #b84a12 = 4.95:1 on #f8f9fa, 5.22:1 on white, 4.98:1 on --bm-light-bg. Use ONLY for text; fills/buttons keep the bright --bm-orange. */
       --bm-orange-text: #b84a12;
+      /* Muted text that still passes. #6c757d (Bootstrap's own) is 4.48:1 on the cream
+         band and #888 is 3.54:1 on white -- both just under. #5c636a is 5.82:1 on cream,
+         6.09:1 on white. The softer one is for text that must read as NOT YET (the
+         future steps in the booking stepper): #6b7280, 4.62:1 on cream. */
+      --bm-muted: #5c636a;
+      --bm-muted-soft: #6b7280;
       --bm-gradient: linear-gradient(135deg, var(--bm-orange) 0%, #ee5626 100%);
       --bm-gradient-cool: linear-gradient(140deg, #17123a 0%, #2a1c5e 52%, #3c2270 100%);
       /* Make Bootstrap utility classes inherit the brand palette instead of framework defaults */
       --bs-primary: #004E89; --bs-primary-rgb: 0,78,137;
-      --bs-success: #059669; --bs-success-rgb: 5,150,105;
+      /* Bootstrap's default link blue was 4.29:1 on the cream band and belongs to no
+         palette this business owns. Links take the brand orange's TEXT value. */
+      --bs-link-color: #b84a12; --bs-link-color-rgb: 184,74,18;
+      --bs-link-hover-color: #a4400f;
+      --bs-success: #047857; --bs-success-rgb: 4,120,87;
     }
 
     * { box-sizing: border-box; }
@@ -179,7 +192,8 @@
       position: relative; transition: color 0.3s;
     }
     .main-header .nav-link:hover, .main-header .nav-link.active {
-      color: var(--bm-orange) !important;
+      /* 3.06:1 as the bright orange. The underline below keeps it; the word does not. */
+      color: var(--bm-orange-text) !important;
     }
     .main-header .nav-link.active::after {
       content: ''; position: absolute; bottom: 0; left: 18px; right: 18px;
@@ -200,6 +214,10 @@
     /* Brand the outline buttons so they stop rendering Bootstrap default blue */
     .btn-outline-primary { color: var(--bm-blue); border-color: var(--bm-blue); }
     .btn-outline-primary:hover, .btn-outline-primary:focus { background: var(--bm-blue); border-color: var(--bm-blue); color: #fff; }
+    /* Bootstrap bakes #6c757d into this component rather than reading --bs-secondary.
+       4.48:1 on the cream band -- under by two hundredths, across every category pill. */
+    .btn-outline-secondary { --bs-btn-color: var(--bm-muted); --bs-btn-border-color: var(--bm-muted);
+      --bs-btn-hover-bg: var(--bm-muted); --bs-btn-hover-border-color: var(--bm-muted); }
     /* Keyboard focus ring. Gold (#FFD166) was only 1.44:1 on white and 2.1-2.4:1 on the orange gradient -
        effectively invisible. No single colour reaches 3:1 on white, orange AND the dark indigo hero, so this
        is a two-tone ring: ink outline (17.5:1 on white, 5.0-5.7:1 on the orange) separated from the element

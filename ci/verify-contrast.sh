@@ -49,6 +49,11 @@ rm -f "$TMP"
 OUT=$(ssh "$REMOTE" 'cd ~/bounceman-e2e && tar xf /tmp/bm-a11y-sync.tar && rm -f /tmp/bm-a11y-sync.tar && \
   BM_SEED_DB=/opt/bounceman/data/bounceman.db bash tests/run-a11y.sh 2>&1')
 
+# The full axe report is kept on disk: R23 has to burn 43 violations down pair by pair,
+# and re-running a five-minute browser gate to re-read a list it already produced is
+# waste. Overwritten each run; nothing reads it but a person.
+printf '%s\n' "$OUT" > /tmp/bm-contrast-last.txt
+
 TOTAL=$(printf '%s' "$OUT" | grep -oE '^total violations: [0-9]+' | tail -1 | grep -oE '[0-9]+')
 RAN=$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
 
@@ -87,7 +92,12 @@ else
   # So the public count is a RATCHET. It may not grow. If it shrinks, this number comes
   # down with it -- and the gate says so rather than quietly accepting the slack, which
   # is how a baseline turns into a licence.
-  PUBLIC_BASELINE=43
+  # R23, 2026-11-18: 0. It was 43 when R20 first audited the customer site -- nine
+  # colour pairs, 25 of them one green that failed in both directions. All nine are
+  # fixed, so the ratchet is at the floor: the customer site may not gain a single
+  # contrast violation. A baseline nobody lowers is a licence, which is why the gate
+  # fails on an improvement too.
+  PUBLIC_BASELINE=0
   ADMIN=$(printf '%s' "$OUT" | sed -n '/each finding/,/END AXE/p' | grep -cE '^\[(light|dark)\]' || true)
   PUBLIC=$(printf '%s' "$OUT" | sed -n '/each finding/,/END AXE/p' | grep -cE '^\[public\]' || true)
   echo "admin violations:   ${ADMIN:-0}  (must be 0)"
